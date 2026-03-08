@@ -194,11 +194,19 @@ Sources:
 
 ## Practical Recommendation
 
-For current planning:
+For current planning at that stage:
 
 * use `Nyrn` as the leading public-name candidate in future naming discussions
 * do not publicly rebrand until domain review and legal review are complete
 * keep evaluating whether the pronunciation cost of `Nyrn` is acceptable for a language and CLI brand
+
+This recommendation is retained as historical context only.
+
+The final public naming decision for the project is:
+
+* language name: **Orbis**
+* CLI binary: `orb`
+* source file extension: `.orb`
 
 ## Scope Limits
 
