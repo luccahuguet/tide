@@ -84,5 +84,5 @@
 - [x] T049 Run trademark review for `Tark` in target jurisdictions
 - [x] T050 Run software and developer-tool brand conflict review for `Tark`
 - [x] T054 Find and screen a replacement public name for the language
-- [ ] T051 Review domain strategy for `orbis.*` and `orb.*`
+- [x] T051 Review domain strategy for `orbis.*` and `orb.*`
 - [x] T052 Finalize whether `.orb` is the official source file extension

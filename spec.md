@@ -24,6 +24,7 @@ Current status:
 
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
+* [DOMAIN_STRATEGY.md](./DOMAIN_STRATEGY.md): domain strategy review for `Orbis` and `orb`
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): ownership and borrowing research notes

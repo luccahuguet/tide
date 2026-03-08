@@ -41,7 +41,7 @@ Follow-up checks still recommended:
 
 * trademark search in target jurisdictions for `Orbis` and `orb`
 * product and company-name conflict review in developer tools and software markets
-* domain strategy review for `orbis.*` and `orb.*`
+* domain acquisition plan for the preferred compound `orbis` domain and any optional redirects
 * source file extension review, including collision risk, searchability, editor support, and confusion with internet domains
 
 ---
