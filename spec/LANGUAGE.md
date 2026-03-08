@@ -1,0 +1,2983 @@
+# Tark Language Specification (v0.3)
+
+This document contains the language-level rules for Tark.
+
+Related documents:
+
+* `spec/VISION.md` for project goals and positioning
+* `spec/TOOLING.md` for formatter, CLI, manifests, and package design
+* `spec/IMPLEMENTATION.md` for bootstrap and self-hosting strategy
+
+---
+
+## Memory Model
+
+Tark uses:
+
+**Ownership + simplified borrowing + regions**
+
+instead of a full Rust-style borrow checker.
+
+Goals:
+
+* Deterministic memory management
+* No garbage collector required
+* Prevent use-after-free
+* Prevent double-free
+* Prevent data races in safe code
+* Keep the reasoning model smaller than Rust
+
+Key characteristics:
+
+* Every value has an **owner**
+* Moves are the default for non-copy types
+* Copies must be explicit or restricted to copy-safe types
+* Borrowing is allowed but simplified
+* Borrowing is strictly lexical in v1
+* Complex long-distance borrowing patterns are discouraged
+* **Regions / arenas** exist as first-class constructs for grouped allocation
+* References tied to a region cannot escape it unsafely
+* Shared ownership must be explicit
+
+## Borrowing Scope Policy
+
+Tark uses a strictly lexical borrowing model in v1.
+
+This means:
+
+* borrow scopes are intentionally local and predictable
+* some valid-but-complex Rust borrowing patterns may be rejected
+* Tark prefers simpler user reasoning over maximum borrow expressiveness
+
+Rationale:
+
+* keeps the memory model smaller than Rust
+* makes compiler behavior easier to predict
+* supports Tark's explicitness and analyzability goals
+
+## Move Semantics
+
+For non-copy types, assignment, argument passing, and return move ownership by default.
+
+Examples:
+
+```tark
+let a = user;
+let b = a;
+```
+
+After the move into `b`, `a` may no longer be used unless the type is copy-safe.
+
+Argument passing also moves by default:
+
+```tark
+fn save(user: User) -> Unit {
+    persist(user);
+}
+
+let user = load_user();
+save(user);
+```
+
+After `save(user);`, the original binding is considered moved.
+
+Rules:
+
+* Non-copy values move on assignment
+* Non-copy values move when passed by value to a function
+* Non-copy values move when returned from a function
+* Using a moved value in safe code is rejected
+* Borrowing must be explicit when ownership transfer is not intended
+
+Goals:
+
+* make ownership transfer visible
+* prevent accidental implicit copying of expensive values
+* preserve predictable runtime behavior
+* keep the ownership model teachable
+
+## Copy-Safe Types
+
+Copy-safe types may be duplicated implicitly on assignment, argument passing, and return.
+
+The initial v1 rule is intentionally narrow.
+
+Built-in copy-safe categories:
+
+* booleans
+* characters
+* integer types
+* floating-point types
+* unit
+
+User-defined types are copy-safe only when they are explicitly declared as copy-safe and all stored fields are themselves copy-safe.
+
+Example:
+
+```tark
+copy struct Point {
+    x: Int,
+    y: Int,
+}
+```
+
+This means:
+
+```tark
+let a = Point { x: 1, y: 2 };
+let b = a;
+```
+
+Both `a` and `b` remain valid because `Point` is copy-safe.
+
+Non-copy examples in the initial model:
+
+* strings
+* heap-owning containers
+* region-owned values
+* shared ownership types
+* types with explicit destruction behavior
+
+Rules:
+
+* Copy-safe types copy implicitly
+* Non-copy types move by default
+* A user-defined type may only be marked `copy` if every stored field is copy-safe
+* Types with ownership-sensitive resources may not be marked `copy`
+* Copy-safety is part of a type's definition, not inferred ad hoc at each use site
+
+## Explicit Copy Behavior
+
+For values that are not implicitly copy-safe, duplication must be explicit.
+
+Initial design direction:
+
+* implicit copies are reserved for copy-safe types
+* non-copy values require an explicit duplication operation
+* the exact surface form for deep duplication may later be trait-backed, but it is never implicit
+
+Example intent:
+
+```tark
+let b = clone(a);
+```
+
+This expresses that duplication is a deliberate operation with visible cost.
+
+Goals:
+
+* keep cheap value copies ergonomic
+* make expensive duplication visible in source
+* prevent accidental performance regressions
+* preserve the move-default mental model
+
+## Borrowing Model
+
+Tark defines two safe borrow forms in v1:
+
+* shared borrow
+* exclusive mutable borrow
+
+Borrow syntax:
+
+```tark
+let r = &value;
+let w = &mut value;
+```
+
+Shared borrows allow read access without taking ownership.
+
+Example:
+
+```tark
+let user = load_user();
+let r1 = &user;
+let r2 = &user;
+show(r1);
+show(r2);
+```
+
+Exclusive mutable borrows allow mutation without transferring ownership.
+
+Example:
+
+```tark
+let mut user = load_user();
+let w = &mut user;
+rename(w, "new-name");
+```
+
+## Borrowing Rules
+
+The aliasing rule is:
+
+* many readers or one writer
+
+Concretely:
+
+* many shared borrows may coexist
+* at most one exclusive mutable borrow may exist at a time
+* no shared borrow may overlap an exclusive mutable borrow of the same value
+* while a value is borrowed mutably, the original binding may not be read or written directly
+* while a value is borrowed, moving that value is rejected
+
+Examples:
+
+Allowed:
+
+```tark
+let r1 = &user;
+let r2 = &user;
+```
+
+Rejected:
+
+```tark
+let r = &user;
+let w = &mut user;
+```
+
+Rejected:
+
+```tark
+let w1 = &mut user;
+let w2 = &mut user;
+```
+
+## Lexical Borrow Scope
+
+Borrow scopes are lexical in v1.
+
+Example:
+
+```tark
+let mut user = load_user();
+
+{
+    let w = &mut user;
+    rename(w, "new-name");
+}
+
+save(user);
+```
+
+Here the mutable borrow ends when the inner block ends.
+
+Rules:
+
+* a borrow begins where the borrow expression is created
+* a borrow ends at the end of its enclosing lexical scope
+* Tark does not attempt to accept every valid non-lexical borrowing pattern in v1
+* shorter explicit scopes are the primary way to end borrows earlier
+
+## Design Intent
+
+This borrowing model is deliberately more restrictive than the most advanced borrow systems.
+
+Goals:
+
+* keep the core rule teachable
+* make compiler behavior predictable
+* reduce hidden lifetime reasoning
+* support safe mutation without full Rust-level borrow complexity
+
+## Arenas
+
+Tark provides one explicit grouped-allocation construct in v1:
+
+* `arena`
+
+An arena is a lexical allocation scope with block-bounded lifetime.
+
+Example:
+
+```tark
+arena scratch {
+    let user = alloc scratch User {
+        id: 1,
+        name: "ana",
+    };
+
+    let task = alloc scratch Task {
+        id: 7,
+    };
+
+    process(&user, &task);
+}
+```
+
+In this example, `scratch` exists only for the duration of its block.
+
+## Arena Creation
+
+Arena creation uses the form:
+
+```tark
+arena name {
+    ...
+}
+```
+
+Rules:
+
+* an arena introduces a new lexical scope
+* the arena name is available only inside that scope
+* arenas are explicit; ordinary local values do not require an arena
+* arenas are the only first-class region-like construct in v1
+
+## Arena Allocation
+
+Values may be allocated into a named arena using explicit arena allocation.
+
+Initial syntax shape:
+
+```tark
+let value = alloc scratch Expression;
+```
+
+Examples:
+
+```tark
+let node = alloc scratch Node { value: 1 };
+let buffer = alloc scratch Buffer::new(1024);
+```
+
+Rules:
+
+* arena allocation is explicit in source
+* the target arena is named directly
+* values allocated into an arena are associated with that arena for their lifetime
+* arena allocation is intended for grouped lifetime management, not as the default allocation mechanism for all values
+
+## Arena Ownership
+
+The arena is the lifetime owner of values allocated within it.
+
+This means:
+
+* the arena controls the storage lifetime of arena-allocated values
+* local bindings may refer to arena-allocated values, but they do not individually control deallocation
+* moving a binding that refers to an arena-allocated value does not move the arena itself
+
+Design intent:
+
+* ordinary ownership rules remain the default model
+* arenas are an explicit alternative for grouped lifetimes
+* arena use should remain local and structured
+
+## Arena Destruction
+
+Arena destruction happens automatically at the end of the arena's lexical scope.
+
+Example:
+
+```tark
+arena scratch {
+    let node = alloc scratch Node::new();
+    visit(&node);
+}
+
+// `scratch` is destroyed here
+```
+
+Rules:
+
+* all storage associated with an arena is reclaimed when the arena scope ends
+* arena destruction is deterministic
+* individual arena allocations are not freed manually in safe code
+* nested arenas are destroyed from inner scope to outer scope
+
+## Arena Escape Rules
+
+References into an arena may not escape that arena's lexical lifetime.
+
+This is a core v1 safety rule.
+
+Rejected patterns include:
+
+* returning a reference to an arena-allocated value from outside the arena scope
+* storing a reference to an arena-allocated value into a longer-lived object
+* moving an arena-scoped reference into a location that may outlive the arena
+
+Rejected example:
+
+```tark
+fn make_user_ref() -> &User {
+    arena scratch {
+        let user = alloc scratch User::new();
+        &user
+    }
+}
+```
+
+This is rejected because the returned reference would outlive `scratch`.
+
+Rejected example:
+
+```tark
+let mut saved = none();
+
+arena scratch {
+    let user = alloc scratch User::new();
+    saved = some(&user);
+}
+```
+
+This is rejected because `saved` would outlive the arena reference stored inside it.
+
+Allowed pattern:
+
+```tark
+arena scratch {
+    let user = alloc scratch User::new();
+    inspect(&user);
+}
+```
+
+This is allowed because the reference stays within the arena scope.
+
+Rules:
+
+* references to arena-allocated values must not outlive the arena that owns them
+* returning an arena-backed reference from the arena scope is rejected
+* storing an arena-backed reference into a longer-lived binding, field, or container is rejected
+* passing an arena-backed reference is allowed only when the compiler can prove the callee use remains within the arena lifetime
+* Tark does not attempt region polymorphism or complex arena-lifetime abstraction in v1
+
+Design intent:
+
+* keep arena safety rules mechanical
+* avoid subtle lifetime inference
+* preserve the "smaller than Rust" promise by rejecting complex edge cases early
+
+## Shared Ownership
+
+Tark allows shared ownership only through explicit standard-library primitives.
+
+Shared ownership is not ordinary borrowing and is not the default ownership mode.
+
+Initial shared ownership primitives:
+
+* `Shared[T]` for single-threaded shared ownership
+* `SyncShared[T]` for synchronized shared ownership across concurrent contexts
+
+Design rules:
+
+* shared ownership must be visible in the type
+* shared ownership carries explicit cost
+* single-threaded sharing and synchronized sharing are distinct
+* shared ownership does not weaken the borrowing rules for ordinary owned values
+
+Example:
+
+```tark
+let a = Shared::new(Config::load());
+let b = a.share();
+let c = a.share();
+```
+
+Here `a`, `b`, and `c` refer to the same underlying value through explicit shared ownership.
+
+## Single-Threaded Shared Ownership
+
+`Shared[T]` is intended for cases where multiple parts of a program need access to the same value within a single-threaded context.
+
+Rules:
+
+* `Shared[T]` permits multiple owners
+* cloning or sharing a `Shared[T]` value is explicit
+* `Shared[T]` does not imply mutable shared access
+* mutable access through shared ownership requires additional explicit mechanisms, not ordinary borrowing
+
+## Synchronized Shared Ownership
+
+`SyncShared[T]` is intended for ownership shared across concurrent execution contexts.
+
+Rules:
+
+* synchronized shared ownership must be explicit in the type
+* synchronization cost must not be hidden behind ordinary ownership or borrowing syntax
+* concurrent mutable access requires explicit synchronization constructs
+* Tark does not treat synchronized sharing as equivalent to ordinary local ownership
+
+Example intent:
+
+```tark
+let state = SyncShared::new(State::new());
+```
+
+## Shared Ownership and Borrowing
+
+Borrowing and shared ownership are separate mechanisms.
+
+Rules:
+
+* borrowing creates temporary access without changing ownership count
+* shared ownership creates multiple owners explicitly
+* ordinary `&value` and `&mut value` do not create shared ownership
+* converting owned values into shared ownership must be explicit
+
+## Initial Non-Goals for Shared Ownership
+
+The initial shared ownership model does not include:
+
+* implicit promotion from owned values to shared ownership
+* automatic synchronized sharing
+* interior mutability as a default property of shared ownership
+* conflating borrowing, sharing, and synchronization into one mechanism
+
+This keeps shared ownership explicit, visible, and distinct from the normal ownership fast path.
+
+## Initial Non-Goals
+
+The initial arena model does not include:
+
+* multiple user-visible arena classes
+* region inference
+* region polymorphism
+* manual free of individual arena allocations in safe code
+* treating every value as implicitly arena-allocated
+
+This keeps the arena design small enough to support Tark's "smaller than Rust" goal instead of becoming its own full sublanguage.
+
+---
+
+## Safety Guarantees
+
+Safe Tark code is intended to guarantee the following within the boundaries of the safe language subset:
+
+* Use-after-free
+* Double free
+* Null dereference
+* Data races
+* Uninitialized reads
+* Invalid enum states created through safe construction paths
+
+These guarantees apply only after the ownership, borrowing, mutation, and effects rules are fully specified and implemented.
+
+This section does not claim:
+
+* semantic correctness of business logic
+* prevention of all invalid program states
+* safety for `unsafe` code
+
+Principle:
+
+> If safe Tark code compiles, it should satisfy a small, explicit, and mechanically enforced set of structural safety guarantees.
+
+Unsafe code exists but must be explicit and isolated.
+
+---
+
+## Type System
+
+Tark uses:
+
+* Static typing
+* Strong type inference for local variables
+* Explicit types in public APIs
+* Algebraic data types (ADTs)
+* Tagged unions / enums
+* Exhaustive pattern matching
+* Traits / protocols instead of inheritance
+* No implicit conversions
+* No null values
+
+Built-in primitives:
+
+Option
+Result
+
+Goals:
+
+* Make invalid states unrepresentable
+* Increase compiler guarantees
+* Improve program reasoning
+
+## Inference Boundaries
+
+Tark uses strong local inference, but inference is intentionally bounded.
+
+Design rules:
+
+* local implementation detail may be inferred
+* public API surface must remain explicit
+* inference should reduce noise without hiding type structure that matters for maintenance
+
+### Local Variable Inference
+
+Local bindings may omit an explicit type when the compiler can infer it from the initializer.
+
+Examples:
+
+```tark
+let count = 42;
+let name = "ana";
+let pair = (1, true);
+```
+
+This is allowed because the initializer provides the type information directly.
+
+Local bindings may also use explicit annotations:
+
+```tark
+let retries: Int = 3;
+```
+
+Rules:
+
+* local `let` bindings may use type inference
+* inference is based on the initializer and local context
+* if inference would be ambiguous, the compiler must require an explicit type
+* type inference does not override the rule against implicit conversions
+
+### Function Signatures
+
+Function parameters must be explicitly typed.
+
+Return types in function declarations are also explicit in the initial design.
+
+Example:
+
+```tark
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+```
+
+Rules:
+
+* parameter types are always explicit
+* declared function return types are explicit
+* the function body is checked against the declared return type
+* Tark does not use inferred parameter types in function declarations
+
+### Public APIs
+
+All public APIs must use explicit types.
+
+Examples of public API surface:
+
+* `pub fn`
+* `pub trait`
+* public methods in public traits
+* public type declarations and their exposed fields if field visibility is later introduced
+
+Example:
+
+```tark
+pub fn parse(text: String) -> Result[Config, ParseError] {
+    parse_config(text)
+}
+```
+
+Rules:
+
+* public signatures must not rely on inferred parameter or return types
+* public API types should remain stable and visible in source
+* Tark prefers explicitness at module boundaries over shorter declarations
+
+### Design Intent
+
+Inference should help inside implementation code, not erase structure at API boundaries.
+
+Goals:
+
+* keep local code concise
+* keep public interfaces explicit
+* improve diagnostics by reducing hidden type decisions
+* preserve refactor safety across module boundaries
+
+## ADTs and Enum Layout
+
+Tark uses `struct` and `enum` as the primary algebraic data type forms in v1.
+
+Design rules:
+
+* data layout must be explicit in source
+* enum variants are tagged by default
+* invalid enum states must be unrepresentable in safe code
+* ADT forms should remain small and regular
+
+### Structs
+
+Structs define product types with named fields.
+
+Example:
+
+```tark
+struct User {
+    id: Int,
+    name: String,
+}
+```
+
+Rules:
+
+* struct fields are named
+* field types are explicit
+* field order is part of the source definition
+* structs do not imply inheritance or subtyping
+
+### Enums
+
+Enums define tagged sum types.
+
+Example:
+
+```tark
+enum Token {
+    number(Int),
+    text(String),
+    end,
+}
+```
+
+Rules:
+
+* each enum value belongs to exactly one declared variant
+* the active variant tag is part of the value representation
+* enum construction is explicit through variant names
+* safe code cannot create a value with an invalid or unknown variant tag
+
+### Supported Variant Forms
+
+The initial enum model supports:
+
+* unit-like variants
+* tuple-like variants
+* named-field variants
+
+Unit-like variant:
+
+```tark
+enum Mode {
+    read,
+    write,
+}
+```
+
+Tuple-like variant:
+
+```tark
+enum Message {
+    text(String),
+    binary(Bytes),
+}
+```
+
+Named-field variant:
+
+```tark
+enum Event {
+    connected { user: User, at: Time },
+    disconnected { user: User, at: Time },
+}
+```
+
+Rules:
+
+* variant shape is explicit in the enum definition
+* all values of a given variant follow that variant's declared field layout
+* variant layouts may differ across variants within the same enum
+
+### Option and Result
+
+`Option[T]` and `Result[T, E]` are standard tagged data types in the language model.
+
+Canonical forms:
+
+```tark
+some(value)
+none
+ok(value)
+err(error)
+```
+
+These are ordinary tagged forms from the language user's point of view, even if the implementation later applies optimized layouts.
+
+### Layout Policy
+
+The language-level guarantee is semantic, not byte-level.
+
+This means:
+
+* the source definition determines the logical shape of the type
+* the compiler may optimize physical layout
+* such optimization must not change observable safe-language behavior
+* the spec does not promise a stable ABI layout for all ADTs in v1
+
+### Design Intent
+
+Tark's ADT model should make invalid states hard or impossible to represent while staying easy to inspect and transform.
+
+Goals:
+
+* make sum and product types explicit
+* keep variant shape obvious in source
+* support exhaustive matching cleanly
+* preserve room for compiler optimization without exposing layout tricks as source-level complexity
+
+## Pattern Destructuring
+
+Tark supports destructuring patterns for structs, enums, tuples, `Option`, and `Result`.
+
+Design rules:
+
+* destructuring follows the declared shape of the type
+* bindings introduced by destructuring are explicit and local to the pattern arm
+* destructuring syntax should mirror construction syntax where practical
+* pattern destructuring must not bypass exhaustiveness checking
+
+### Tuple Destructuring
+
+Tuple values are destructured positionally.
+
+Example:
+
+```tark
+match pair {
+    (left, right) => left + right,
+}
+```
+
+Rules:
+
+* tuple positions are matched in order
+* tuple arity must match the scrutinee type
+* `_` may be used to ignore elements
+
+Example:
+
+```tark
+match pair {
+    (left, _) => left,
+}
+```
+
+### Struct Destructuring
+
+Struct values are destructured by field name.
+
+Example:
+
+```tark
+match user {
+    User { id, name } => name,
+}
+```
+
+Rules:
+
+* struct fields are matched by name, not by declaration order
+* field names may bind directly to local names
+* `_` may be used to ignore a field value
+* omitted fields are not implicitly ignored in the initial design
+
+Example:
+
+```tark
+match user {
+    User { id, name: username } => username,
+}
+```
+
+### Enum Destructuring
+
+Enum values are destructured according to their variant form.
+
+Tuple-like variant:
+
+```tark
+match message {
+    text(value) => value,
+    binary(bytes) => decode(bytes),
+}
+```
+
+Named-field variant:
+
+```tark
+match event {
+    connected { user, at } => user.name,
+    disconnected { user, at } => user.name,
+}
+```
+
+Unit-like variant:
+
+```tark
+match mode {
+    read => open_read(),
+    write => open_write(),
+}
+```
+
+Rules:
+
+* tuple-like variants destructure positionally
+* named-field variants destructure by field name
+* unit-like variants bind no inner values
+* pattern shape must match the declared variant shape
+
+### Option and Result Destructuring
+
+`Option` and `Result` use their canonical tagged forms in patterns.
+
+Examples:
+
+```tark
+match value {
+    some(inner) => inner,
+    none => fallback,
+}
+```
+
+```tark
+match result {
+    ok(value) => value,
+    err(error) => handle(error),
+}
+```
+
+Rules:
+
+* `some(...)` and `none` are the canonical `Option` patterns
+* `ok(...)` and `err(...)` are the canonical `Result` patterns
+* these forms participate in ordinary exhaustiveness checking
+
+### Nested Destructuring
+
+Patterns may nest when the inner structure is explicit.
+
+Example:
+
+```tark
+match response {
+    ok(some(User { name, id })) => name,
+    ok(none) => "missing",
+    err(error) => "error",
+}
+```
+
+Rules:
+
+* nested destructuring is allowed
+* each nested layer must follow the declared type shape
+* nested patterns do not weaken exhaustiveness requirements
+
+### Design Intent
+
+Destructuring should make structured data easy to unpack without introducing hidden control flow or ambiguous binding behavior.
+
+Goals:
+
+* keep patterns close to type shape
+* support readable case handling
+* improve refactor safety for ADTs
+* keep compiler analysis straightforward
+
+---
+
+## Mutation Model
+
+* Immutable bindings by default
+* Mutation must be explicit
+* Mutable access requires exclusivity
+* Shared mutation requires explicit synchronization or special constructs
+* Mutation should remain local whenever possible
+
+## Mutable Bindings
+
+Local mutation is declared with `mut`.
+
+Example:
+
+```tark
+let mut total = 0;
+total = total + 1;
+```
+
+Rules:
+
+* bindings are immutable by default
+* a binding must be declared with `mut` before it may be reassigned
+* reassignment to an immutable binding is rejected
+* `mut` belongs to the binding, not to the value's type
+
+### Mutable Reassignment
+
+Assignment is the basic mutation form for mutable bindings.
+
+Example:
+
+```tark
+let mut retries = 3;
+retries = retries - 1;
+```
+
+This mutates the binding by assigning a new value.
+
+### Mutable Access Through Borrowing
+
+Mutation of an existing owned value should normally happen through exclusive mutable access.
+
+Example:
+
+```tark
+let mut user = load_user();
+let writer = &mut user;
+rename(writer, "new-name");
+```
+
+Rules:
+
+* direct reassignment uses a `mut` binding
+* in-place mutation of an existing value uses exclusive mutable access
+* `&mut value` is the standard safe form for mutable access
+
+### Parameters and Public APIs
+
+Public APIs remain explicit about mutation.
+
+Initial design direction:
+
+* parameter types are explicit
+* mutation through parameters should be visible through mutable access forms, not hidden implicit aliasing
+* ordinary by-value parameters do not imply caller-visible mutation of the original binding
+
+## Mutable Access Exclusivity
+
+Exclusive mutable access is enforced conservatively in v1.
+
+Core rule:
+
+* at most one active mutable access path may target a given root value at a time
+
+Concretely:
+
+* creating `&mut value` blocks any overlapping shared or mutable borrow of that same value
+* while an exclusive mutable access path is active, the original binding may not be read, written, or moved directly
+* exclusivity is tracked lexically and ends when the mutable borrow's scope ends
+* Tark v1 does not attempt fine-grained safe-code borrow splitting for separate fields or elements of the same root value
+
+Rejected intent:
+
+```tark
+let mut pair = Pair { left: 1, right: 2 };
+let a = &mut pair.left;
+let b = &mut pair.right;
+```
+
+In v1 this is rejected, even though the fields are intuitively distinct, because both access paths originate from the same root value.
+
+Allowed intent:
+
+```tark
+let mut left = 1;
+let mut right = 2;
+let a = &mut left;
+let b = &mut right;
+```
+
+This is allowed because the mutable borrows target different root bindings.
+
+### Design Intent
+
+The goal is to make mutable access rules obvious from source without requiring deep alias analysis.
+
+Goals:
+
+* keep exclusivity simple to teach
+* reject overlap conservatively in safe code
+* avoid hidden borrow-splitting rules in v1
+* leave room for future refinement only if it clearly improves the language
+
+## Shared Mutation and Synchronization
+
+Shared mutation is not the default consequence of shared ownership.
+
+Core rule:
+
+* a shared owner may mutate underlying state only through an explicit mutation or synchronization wrapper
+
+Initial standard-library direction:
+
+* `Cell[T]` for small single-threaded replace-style shared mutation
+* `RefCell[T]` for checked single-threaded interior mutation with dynamic exclusivity enforcement
+* `Mutex[T]` for synchronized exclusive shared mutation across concurrent contexts
+* `RwLock[T]` for synchronized shared-read / exclusive-write access across concurrent contexts
+
+Examples of intended use:
+
+```tark
+let counter = Shared::new(Cell::new(0));
+counter.set(counter.get() + 1);
+```
+
+```tark
+let state = SyncShared::new(Mutex::new(State::new()));
+
+let guard = state.lock();
+guard.update();
+```
+
+Rules:
+
+* `Shared[T]` alone does not permit shared mutation
+* `SyncShared[T]` alone does not permit unsynchronized shared mutation
+* mutable access through `Cell[T]`, `RefCell[T]`, `Mutex[T]`, or `RwLock[T]` is explicit in the type
+* synchronization boundaries must be visible in source through wrapper types and guard-producing operations
+* lock or guard lifetimes are lexical in v1 and end at scope exit
+* ordinary `&mut value` borrowing remains the preferred fast path for local non-shared mutation
+
+### Single-Threaded Shared Mutation
+
+Single-threaded shared mutation is allowed only through explicit interior-mutation wrappers.
+
+Initial direction:
+
+* `Cell[T]` is for simple copy-like replacement and retrieval operations
+* `RefCell[T]` is for cases that need temporary mutable access within one thread
+* runtime exclusivity violations in `RefCell[T]` are treated as checked failures, not as permission to weaken safe borrowing everywhere else
+
+### Concurrent Shared Mutation
+
+Concurrent shared mutation requires explicit synchronization wrappers.
+
+Initial direction:
+
+* `Mutex[T]` provides one writer at a time
+* `RwLock[T]` provides many readers or one writer under explicit synchronization
+* synchronized access produces scoped guard values rather than raw unsynchronized aliases
+* safe Tark does not permit concurrent mutable access to ordinary owned values or plain shared owners without synchronization
+
+### Initial Non-Goals
+
+The initial shared-mutation model does not include:
+
+* implicit interior mutability
+* automatic locking
+* lock-free shared mutation as the default model
+* treating synchronized shared mutation as equivalent to ordinary local mutation
+
+## Unsafe Capabilities
+
+`unsafe` exists for operations that cannot be verified by the safe Tark rules but are still necessary for systems programming and runtime implementation work.
+
+Core rule:
+
+* `unsafe` may bypass specific structural safety checks, but it does not disable parsing, type checking, or visibility rules
+
+Initial operations permitted only in `unsafe` code:
+
+* creating and dereferencing raw pointers
+* pointer arithmetic
+* calling functions explicitly marked `unsafe`
+* calling foreign functions or interoperating with foreign memory representations
+* unchecked casts or reinterpretation between layouts that the compiler cannot prove safe
+* manual allocation, deallocation, and low-level memory initialization primitives
+* constructing references or views from raw memory when the programmer is asserting validity manually
+
+Example intent:
+
+```tark
+unsafe {
+    let p = raw_ptr(buffer);
+    let q = p.offset(1);
+    write_raw(q, 42);
+}
+```
+
+Rules:
+
+* entering `unsafe` does not make ordinary ownership and borrowing rules irrelevant; it only permits a defined escape hatch set
+* values produced through `unsafe` may be used by safe code only if the unsafe code upholds Tark's safety invariants
+* `unsafe` is for low-level capability, not for bypassing ordinary API design constraints
+* code that can be expressed with ordinary ownership, borrowing, arenas, or synchronized wrappers should stay in safe Tark
+
+### Initial Non-Goals
+
+`unsafe` is not intended to permit:
+
+* arbitrary suspension of the type system
+* implicit weakening of visibility or module boundaries
+* unchecked mutation through ordinary shared borrows
+* using `unsafe` as a substitute for missing high-level language design
+
+## Unsafe Isolation and Auditability
+
+Unsafe code must remain easy to locate, review, and contain.
+
+Initial forms:
+
+* `unsafe { ... }` for a local unsafe block
+* `unsafe fn` for a function with an explicit caller-side safety contract
+* modules may contain unsafe code, but Tark v1 does not provide a module-wide "everything here is unsafe" mode
+
+### Unsafe Blocks
+
+Unsafe blocks are the primary form for isolating unsafe operations.
+
+Rules:
+
+* the preferred unit of unsafe code is the smallest practical block
+* only operations that require unsafe capability should be placed inside the block
+* entering an unsafe block does not implicitly mark nested helper functions or surrounding scopes as unsafe
+
+Example intent:
+
+```tark
+fn read_header(bytes: &[Byte]) -> Header {
+    unsafe {
+        parse_header_unchecked(bytes)
+    }
+}
+```
+
+### Unsafe Functions
+
+Unsafe functions expose a safety contract to their callers.
+
+Rules:
+
+* `unsafe fn` means the caller must satisfy explicit preconditions before calling the function
+* calling an `unsafe fn` requires an `unsafe` context
+* the body of an `unsafe fn` does not become implicitly unsafe; unsafe operations inside it should still use explicit `unsafe` blocks
+* every `unsafe fn` should document the invariants the caller must uphold
+
+This keeps the call boundary and the implementation boundary separately visible.
+
+### Unsafe in Modules
+
+Unsafe code may appear inside ordinary modules, but module boundaries do not suppress unsafe markers.
+
+Rules:
+
+* a module containing unsafe code remains an ordinary module for parsing, visibility, and import purposes
+* unsafe code inside a module must still appear in explicit unsafe blocks or unsafe function signatures
+* Tark v1 does not allow a whole file or module to become implicitly unsafe
+* review tooling should be able to identify unsafe blocks and unsafe functions by direct syntax search
+
+### Audit Expectations
+
+Unsafe code should be written so that audits can focus on a small number of explicit trust boundaries.
+
+Initial expectations:
+
+* every unsafe block should be narrow in scope
+* every unsafe function should state its safety requirements in prose
+* safe wrappers around unsafe internals should expose ordinary safe APIs whenever possible
+* the standard library and core runtime should concentrate unsafe code in well-known low-level modules rather than spreading it through surface APIs
+
+### Design Intent
+
+Mutation syntax should make state change easy to see in source.
+
+Goals:
+
+* keep the default case immutable
+* make local mutation straightforward
+* keep state changes visible for humans and tools
+* align mutation syntax with the ownership and borrowing model
+
+---
+
+## Effects Model
+
+Side effects should be **visible and explicit**.
+
+Examples of effects:
+
+* IO
+* Async operations
+* Unsafe operations
+* Global/state mutation
+
+Goals:
+
+* Improve reasoning
+* Improve testing
+* Improve compiler analysis
+* Improve agentic refactoring
+
+## Effects as Computation Properties
+
+Effects belong to computations, not to plain values.
+
+Core rule:
+
+* every expression, block, and callable body has an effect set determined by the operations it may perform
+
+This means Tark tracks effects as part of executable behavior rather than as a property of data types themselves.
+
+Initial model:
+
+* pure expressions have an empty effect set
+* effectful operations contribute named effects to the surrounding computation
+* calling an effectful function contributes that function's declared effects to the caller
+* branching and block composition combine effects conservatively by set union
+
+### Effect Sets
+
+Tark models effects as a small explicit set of named effect kinds attached to computations.
+
+Initial direction:
+
+* effect information is part of function and method signatures
+* local blocks and expressions are checked against the effects they introduce
+* a computation that performs `io` and `async` is considered to have both effects
+* an empty effect set represents a computation that is effect-free in the safe-language sense
+
+This gives Tark a representation that is easy for compilers, formatters, and refactoring tools to inspect mechanically.
+
+### Propagation
+
+Effects propagate outward unless they are explicitly transformed by language constructs that define effect boundaries.
+
+Rules:
+
+* calling a computation with effects requires the enclosing computation to account for those effects
+* effect-free code may call only effect-free operations directly
+* effects are tracked conservatively across control flow; if one branch performs an effect, the enclosing expression carries that effect
+* effect information is part of the callable contract, not hidden implementation detail
+
+### Initial Scope
+
+The initial effects model is intentionally smaller than a full algebraic-effects system.
+
+Initial non-goals:
+
+* user-defined effect handlers in v1
+* higher-order effect polymorphism in v1
+* implicit effect inference across public API boundaries
+* treating every runtime capability as a distinct new effect kind from day one
+
+This keeps the model analyzable and compatible with Tark's broader goal of a smaller reasoning surface than Rust.
+
+## Effect Surface Form
+
+Tark uses explicit effect annotations on callable signatures in v1.
+
+Initial syntax direction:
+
+```tark
+fn read(path: String) -> String ![io] {
+    ...
+}
+
+fn fetch(path: String) -> Response ![io, async] {
+    ...
+}
+```
+
+Rules:
+
+* effect information is written as an annotation after the return type
+* the annotation is a small named effect set written as `![...]`
+* pure functions omit the effect annotation entirely
+* functions and methods use the same surface form
+* public callable signatures must declare effects explicitly
+
+### Chosen Direction
+
+Tark v1 chooses:
+
+* annotations on signatures as the primary effect surface
+
+Tark v1 does not choose:
+
+* capability-passing as the default effect model
+* first-class effect types as ordinary user-visible types
+* dedicated per-effect keywords such as separate `async`, `throws`, or `io` signature forms for every effect kind
+
+This keeps the syntax uniform across effect kinds and avoids fragmenting the language into multiple unrelated effect notations.
+
+### Design Intent
+
+The effect surface should be explicit without turning every function declaration into a mini type-theory exercise.
+
+Goals:
+
+* make effect contracts visible at a glance
+* keep syntax regular across all effect kinds
+* avoid capability plumbing in ordinary application code
+* leave room for richer effect machinery later without breaking the basic callable shape
+
+## IO Boundaries
+
+The `io` effect marks operations that interact with the outside world or with ambient process state.
+
+Initial `io` categories:
+
+* filesystem reads and writes
+* network communication
+* terminal and console input/output
+* process creation and process control
+* environment-variable access
+* clock, time, and timer access
+* randomness sourced from the operating system or runtime environment
+* foreign calls whose observable behavior depends on external state
+
+Rules:
+
+* any function that may perform one of these operations must declare `![io]` in its effect set
+* calling a function marked with `io` propagates `io` to the caller unless a later effect-boundary construct explicitly handles or defers it
+* standard-library modules that touch the operating system should expose effectful entry points explicitly rather than hiding IO behind apparently pure APIs
+* pure data transformation performed on already-available values does not require `io`
+
+Examples:
+
+```tark
+fn read_file(path: String) -> String ![io] {
+    ...
+}
+
+fn parse_config(text: String) -> Config {
+    ...
+}
+```
+
+Here `read_file` is effectful because it touches external state, while `parse_config` remains pure because it only transforms an in-memory string.
+
+### Marking Effectful Operations
+
+Effectful operations are marked through the callable signatures that expose them.
+
+Initial direction:
+
+* public functions and methods that may perform IO must declare `![io]`
+* local helper functions should also declare `![io]` when they perform IO directly
+* importing an IO-capable module does not itself create an effect; performing an IO operation does
+* ordinary expressions such as arithmetic, matching, allocation, and pure collection transformation do not imply `io`
+
+### Initial Non-Goals
+
+The initial IO model does not include:
+
+* a separate checked distinction between individual IO subcategories such as `fs`, `net`, or `clock`
+* capability-token plumbing for ordinary filesystem or network access in v1
+* treating allocation or local mutation as `io`
+
+This keeps the first effect boundary broad enough to be useful while still making external interaction visible in signatures.
+
+## Async Model
+
+The `async` effect marks computations that may suspend and later resume.
+
+Core rule:
+
+* `async` means suspendable execution, not automatic parallel execution
+
+Initial direction:
+
+* functions that may suspend declare `async` in their effect set using `![async]` or combined sets such as `![io, async]`
+* async functions use ordinary `fn` declarations; Tark does not introduce a separate `async fn` signature form in v1
+* the result type in the signature remains the logical result type of the computation, not a user-written future wrapper
+
+Examples:
+
+```tark
+fn fetch(url: String) -> Response ![io, async] {
+    ...
+}
+
+fn render_page(url: String) -> Html ![io, async] {
+    let response = await fetch(url);
+    render(response)
+}
+```
+
+Here `fetch` may suspend, and `await` marks the suspension point at the call site.
+
+### Await Syntax
+
+Tark uses `await expr` as the suspension-point syntax.
+
+Rules:
+
+* `await` may be used only inside a computation whose effect set includes `async`
+* awaiting an async computation yields its logical result value
+* calling an async function in a value position requires `await` unless a later concurrency construct explicitly captures the computation for concurrent execution
+* `await` marks a possible suspension point and is therefore always explicit in source
+
+### Model Boundaries
+
+The initial async model does not assume that every async computation is running concurrently.
+
+Rules:
+
+* async controls suspension and resumption semantics
+* concurrency primitives that create independent tasks are specified separately
+* pure synchronous functions may be called freely from async code
+* async functions propagate the `async` effect to their callers
+
+### Initial Non-Goals
+
+The initial async model does not include:
+
+* explicit future or promise types in ordinary user-facing function signatures
+* implicit async contagion without visible `await`
+* a hidden global runtime model baked into the language specification
+
+---
+
+## Concurrency
+
+Goals:
+
+* Safe concurrency by default
+* Structured concurrency
+* No data races in safe code
+* Explicit async behavior
+* Cancellation-friendly execution model
+
+## Structured Concurrency
+
+Tark uses structured concurrency in v1.
+
+Core rule:
+
+* every concurrently running child task must belong to a lexical parent scope
+
+This means child tasks are created inside an enclosing async computation and do not outlive that computation unless a later explicit detached model is added.
+
+### Initial Primitives
+
+Tark v1 uses two structured-concurrency forms:
+
+* `async let` for a small fixed set of child computations
+* `task group` for dynamic fan-out within a lexical scope
+
+Example intent:
+
+```tark
+fn load_page(url: String) -> Page ![io, async] {
+    async let profile = fetch_profile(url);
+    async let posts = fetch_posts(url);
+
+    Page {
+        profile: await profile,
+        posts: await posts,
+    }
+}
+```
+
+Example intent:
+
+```tark
+fn load_all(urls: [String]) -> [Page] ![io, async] {
+    task group group {
+        for url in urls {
+            group.spawn(fetch_page(url));
+        }
+
+        collect_pages(group)
+    }
+}
+```
+
+### Parent-Child Rules
+
+Structured concurrency is governed by parent-child lifetime rules.
+
+Rules:
+
+* child tasks begin within a lexical parent scope
+* the parent scope is responsible for awaiting, collecting, or otherwise concluding all child tasks before exit
+* leaving a scope with unfinished child tasks is not allowed to silently detach them
+* child tasks inherit the enclosing async context rather than creating an unrelated global execution context
+
+### Design Boundaries
+
+The initial structured-concurrency model does not include:
+
+* detached tasks as a default primitive
+* unscoped background task spawning
+* implicit task creation from every async call
+
+This keeps concurrency visible, bounded, and compatible with Tark's long-term maintainability goals.
+
+## Cancellation Semantics
+
+Cancellation in Tark is cooperative and structured.
+
+Core rule:
+
+* cancellation requests propagate through the parent-child task tree, but running code must reach an observation point to stop cooperatively
+
+Initial direction:
+
+* cancelling a parent task requests cancellation of its unfinished child tasks
+* child-task failure or early scope exit may also trigger cancellation of sibling tasks when the enclosing construct requires coordinated completion
+* cancellation is observed at `await` points and at explicit cancellation checks in long-running computations
+
+### Observation and Propagation
+
+Rules:
+
+* `await` is a cancellation observation point
+* blocking or suspending standard-library async operations must be cancellation-aware where practical
+* long-running CPU-bound async work should use explicit cancellation checks rather than relying only on suspension points
+* cancellation does not imply immediate forceful termination of arbitrary code in the middle of ordinary execution
+
+### Scope Behavior
+
+Cancellation is tied to lexical task structure.
+
+Rules:
+
+* if a structured-concurrency scope exits early, unfinished child tasks are cancelled rather than detached
+* parent scopes remain responsible for driving children to cancellation completion before the scope fully ends
+* cancellation should preserve the same structured cleanup expectations as ordinary scope exit
+
+### Initial Non-Goals
+
+The initial cancellation model does not include:
+
+* asynchronous preemptive task killing at arbitrary instruction boundaries
+* unstructured global cancellation signals as the primary model
+* hidden cancellation behavior that occurs without an explicit task relationship
+
+This keeps cancellation predictable and compatible with safe resource cleanup.
+
+## Task Spawning and Synchronization
+
+Task creation and task completion are both explicit in v1.
+
+Core rule:
+
+* spawning child work creates an obligation for the parent scope to synchronize with that work before normal scope completion
+
+### `async let`
+
+`async let` creates a child task immediately when the declaration is evaluated.
+
+Rules:
+
+* `async let name = expr;` starts `expr` as a child task of the current async scope
+* the bound name represents the eventual result of that child task
+* `await name` synchronizes with the child task and yields its result
+* using the bound value without `await` is rejected
+* normal scope completion with an unfinished `async let` binding is rejected unless the scope is already leaving through cancellation or another control-flow path that triggers structured cancellation
+
+Example:
+
+```tark
+async let profile = fetch_profile(user_id);
+let data = await profile;
+```
+
+### `task group`
+
+`task group` supports dynamic child-task creation inside a lexical scope.
+
+Initial direction:
+
+* `group.spawn(expr)` starts a child task within that specific group
+* group results are synchronized through explicit group operations such as awaiting the next completed child or finishing the group as a whole
+* a group may not outlive its lexical scope
+* spawned tasks belong to the group, not to an ambient global scheduler handle visible in source
+
+Example intent:
+
+```tark
+task group group {
+    for url in urls {
+        group.spawn(fetch_page(url));
+    }
+
+    while let some(page) = await group.next() {
+        pages.push(page);
+    }
+}
+```
+
+### Synchronization Rules
+
+Rules:
+
+* every spawned child task must be joined, collected, cancelled, or otherwise concluded before its parent scope ends
+* synchronization points are explicit: `await name`, `await group.next()`, `await group.finish()`, or scope cancellation
+* the language does not implicitly detach unfinished child tasks on successful scope exit
+* child-task results become available only through explicit synchronization operations
+* synchronization preserves structured cleanup: parent scope exit is complete only after children have reached completion or cancellation completion
+
+### Initial Non-Goals
+
+The initial task-spawning model does not include:
+
+* fire-and-forget task spawning in ordinary safe code
+* implicit join on successful scope exit without visible synchronization in source
+* exposing raw scheduler handles as the default user model
+
+This keeps concurrency mechanics explicit and makes spawned work visible to both humans and tools.
+
+---
+
+## Error Handling
+
+Errors are handled through types.
+
+Recoverable errors:
+
+Result
+
+Absence of value:
+
+Option
+
+Unexpected fatal conditions:
+
+panic / crash
+
+## Option and Result Usage
+
+Tark uses `Option[T]` for presence or absence and `Result[T, E]` for recoverable success or failure.
+
+Canonical construction forms:
+
+```tark
+let user = some(current_user);
+let missing = none;
+
+let parsed = ok(config);
+let failed = err(ParseError::new("invalid"));
+```
+
+Rules:
+
+* `some(value)` and `none` are the canonical `Option` construction forms
+* `ok(value)` and `err(error)` are the canonical `Result` construction forms
+* these forms are ordinary value expressions and may appear anywhere an expression is allowed
+
+### Match-Based Usage
+
+The primary control-flow form for `Option` and `Result` is `match`.
+
+Examples:
+
+```tark
+match user {
+    some(value) => render(value),
+    none => render_missing(),
+}
+```
+
+```tark
+match parsed {
+    ok(value) => use_config(value),
+    err(error) => report(error),
+}
+```
+
+Rules:
+
+* `Option` and `Result` participate in normal exhaustiveness checking
+* handling code should make success and failure paths explicit
+* nested `Option` and `Result` values may be matched using ordinary nested patterns
+
+### Conditional Pattern Forms
+
+Tark supports `if let` and `while let` as focused pattern-driven control flow for common `Option` and `Result` usage.
+
+Examples:
+
+```tark
+if let some(value) = maybe_user {
+    show(value);
+} else {
+    show_missing();
+}
+```
+
+```tark
+while let some(item) = next_item() {
+    process(item);
+}
+```
+
+```tark
+if let ok(config) = parse(text) {
+    use_config(config);
+}
+```
+
+Rules:
+
+* `if let pattern = expr { ... }` is shorthand for a single-success-case match with an optional `else`
+* `while let pattern = expr { ... }` repeats while the pattern continues to match
+* these forms do not replace full `match` when multiple distinct cases need explicit handling
+
+### Design Intent
+
+Option and Result usage should remain explicit without becoming ceremonious.
+
+Goals:
+
+* keep absence and recoverable failure in the type system
+* make common success-path handling concise
+* preserve `match` as the general control-flow form
+* avoid exception-like hidden control flow
+
+## Error Propagation
+
+Tark uses postfix `?` for concise propagation of `Result` and `Option`.
+
+Examples:
+
+```tark
+fn load_config(path: String) -> Result[Config, ConfigError] ![io] {
+    let text = read_file(path)?;
+    let config = parse_config(text)?;
+    ok(config)
+}
+```
+
+```tark
+fn current_name(user: Option[User]) -> Option[String] {
+    let value = user?;
+    some(value.name)
+}
+```
+
+Rules:
+
+* `expr?` may be used only when `expr` has type `Result[T, E]` or `Option[T]`
+* for `Result[T, E]`, `expr?` yields the inner `T` on `ok(...)` and returns early with `err(...)` on failure
+* for `Option[T]`, `expr?` yields the inner `T` on `some(...)` and returns early with `none` on absence
+* the enclosing function or block must return a compatible `Result` or `Option`
+* `?` is shorthand for ordinary early-return control flow, not an exception mechanism
+
+### Propagation Boundaries
+
+Rules:
+
+* `?` does not cross incompatible return types automatically
+* conversions between error types are not implicit in v1
+* if an error must be transformed, the program should use `match` or an explicit conversion operation before propagation
+* `?` may be used together with effect annotations, but it propagates typed failure, not effects
+
+### Design Intent
+
+The propagation operator should remove boilerplate while preserving the visibility of typed failure paths.
+
+Goals:
+
+* keep `Result` and `Option` ergonomic in straight-line code
+* preserve explicit typed error boundaries
+* avoid hidden stack unwinding semantics
+* keep propagation easy for humans and tools to recognize mechanically
+
+## Panic Semantics
+
+Tark provides `panic(...)` for unexpected fatal conditions that should immediately abandon normal local error handling.
+
+Example:
+
+```tark
+fn expect_header(bytes: Bytes) -> Header {
+    if bytes.len() < HEADER_SIZE {
+        panic("header too short");
+    }
+
+    parse_header(bytes)
+}
+```
+
+Rules:
+
+* `panic(message)` is an explicit fatal operation
+* panic is not a recoverable `Result` path and is not represented by `Option`
+* panic should be rare in ordinary application logic
+* safe Tark code may still panic when an explicit panic path is executed or when the standard library detects a fatal violated precondition
+
+### Acceptable Uses
+
+Panic is acceptable in v1 for:
+
+* violated internal invariants that indicate a bug
+* impossible states that should be unreachable in correct code
+* runtime contract failures in APIs that are explicitly documented as panicking on misuse
+* fatal initialization or runtime conditions where continuing would leave the process in an unusable state
+
+### Non-Acceptable Uses
+
+Panic should not be the default tool for:
+
+* expected IO failures
+* normal parse or validation errors
+* routine absence of data
+* ordinary control flow
+
+These should use `Result` or `Option` instead.
+
+### Design Intent
+
+The language should have one clear typed path for recoverable failure and one clear explicit path for fatal failure.
+
+Goals:
+
+* keep `Result` as the primary recoverable error mechanism
+* make panic sites easy to search and audit
+* avoid exception-style hidden control flow
+* allow invariant enforcement without forcing every impossible case into public error types
+
+## Error Traits and Protocols
+
+Tark v1 does not require a built-in universal error trait or protocol for all recoverable errors.
+
+Decision:
+
+* `Result[T, E]` accepts any explicit error type `E`
+* user code may define domain-specific error traits if useful, but the language does not depend on a mandatory built-in `Error` trait in v1
+* standard-library conventions for formatting or reporting errors may use ordinary traits such as `Display` or later dedicated library traits, but this is not a core language requirement
+
+Rationale:
+
+* keeps the error model small while the language and standard library are still settling
+* avoids forcing every error type into a shared abstraction before the real reporting and interoperability needs are clear
+* preserves the usefulness of simple enum-based error types
+
+### Initial Non-Goals
+
+The initial error model does not include:
+
+* a required universal `Error` supertrait for all `Result` error values
+* automatic error boxing or erased dynamic error types as the default pattern
+* implicit conversion between unrelated error types through a global error protocol
+
+### Design Intent
+
+Error typing should remain explicit and practical instead of prematurely abstract.
+
+Goals:
+
+* keep `Result[T, E]` flexible for concrete domain errors
+* avoid unnecessary trait machinery in the first version
+* leave room for later library-level conventions once real usage patterns exist
+
+Exceptions are **not used** for standard control flow.
+
+---
+
+## Syntax Philosophy
+
+Syntax should prioritize:
+
+* Regularity
+* Explicitness
+* Readability
+* Predictability
+
+Expected characteristics:
+
+* Small grammar
+* Few keywords
+* Expression-oriented constructs
+* Minimal magic
+* Consistent formatting
+
+Arbitrary syntax macros are discouraged or forbidden.
+
+---
+
+## Core Syntax
+
+This section defines the initial surface syntax for:
+
+* functions
+* bindings
+* blocks
+* expressions
+* statements
+
+Design rules:
+
+* Curly braces delimit blocks
+* Semicolons terminate statements
+* Blocks are expressions
+* The final expression in a block becomes the block value if it has no semicolon
+* Public APIs use explicit parameter and return types
+
+## Functions
+
+Function declarations use `fn`.
+
+Syntax shape:
+
+```tark
+fn name(param: Type, param: Type) -> Type {
+    expression
+}
+```
+
+Examples:
+
+```tark
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn is_even(value: Int) -> Bool {
+    value % 2 == 0
+}
+```
+
+Rules:
+
+* Parameters are separated by commas
+* Each parameter has an explicit type
+* Return types use `->`
+* A function body is always a block
+* The final expression is the return value unless `return` is used explicitly
+
+## Bindings
+
+Bindings use `let`.
+
+Immutable binding:
+
+```tark
+let port = 8080;
+```
+
+Mutable binding:
+
+```tark
+let mut total = 0;
+```
+
+Rules:
+
+* Bindings are immutable by default
+* Mutation requires `mut`
+* Binding statements end with `;`
+* Type inference is allowed for local bindings
+* Explicit local type annotations are allowed
+
+Typed local binding:
+
+```tark
+let retries: Int = 3;
+```
+
+## Blocks
+
+Blocks use braces and may contain zero or more statements followed by an optional final expression.
+
+Example:
+
+```tark
+let result = {
+    let base = 40;
+    let extra = 2;
+    base + extra
+};
+```
+
+Rules:
+
+* A block creates a new scope
+* Names declared inside a block do not escape it unless returned through the block value
+* A trailing expression without `;` becomes the value of the block
+* Adding `;` discards the value and makes the block evaluate to unit
+
+## Expressions
+
+Initial core expression forms:
+
+* literals
+* name references
+* grouped expressions
+* unary expressions
+* binary expressions
+* function calls
+* block expressions
+* `if` expressions
+
+Examples:
+
+```tark
+42
+ready
+(a + b)
+-count
+left + right
+hash(value)
+if valid { 1 } else { 0 }
+```
+
+Operator expressions are expression-oriented and produce values.
+
+## Statements
+
+Initial core statement forms:
+
+* `let` binding statements
+* assignment statements
+* `return` statements
+* expression statements
+
+Examples:
+
+```tark
+let value = 1;
+total = total + value;
+log(total);
+return total;
+```
+
+Rules:
+
+* Statements inside a block end with `;`
+* Expression statements are allowed when the value is intentionally discarded
+* `return` exits the current function immediately
+* Assignment is a statement, not an expression
+
+## If Expressions
+
+`if` is an expression, not only a statement.
+
+Example:
+
+```tark
+let label = if score >= 90 {
+    "great"
+} else {
+    "ok"
+};
+```
+
+Rules:
+
+* Conditions must evaluate to `Bool`
+* Both branches must produce compatible types when the `if` expression is used as a value
+* `else if` chains are allowed as nested `if` expressions
+
+## Match Expressions
+
+Tark uses `match` for pattern matching.
+
+`match` is an expression.
+
+Basic shape:
+
+```tark
+match value {
+    pattern => expression,
+    pattern => expression,
+}
+```
+
+Block arms are also allowed:
+
+```tark
+match value {
+    pattern => {
+        statement;
+        expression
+    },
+    _ => fallback,
+}
+```
+
+Design rules:
+
+* `match` must be exhaustive
+* each arm uses `=>`
+* arm separators use `,`
+* arms may evaluate to expressions or blocks
+* when used as a value, all arms must produce compatible types
+
+### Supported Initial Pattern Forms
+
+The initial pattern set includes:
+
+* wildcard pattern: `_`
+* name binding pattern: `name`
+* literal pattern
+* enum/variant pattern
+* tuple pattern
+
+Examples:
+
+```tark
+match result {
+    ok(value) => value,
+    err(error) => handle(error),
+}
+```
+
+```tark
+match option {
+    some(value) => value,
+    none => default_value,
+}
+```
+
+```tark
+match pair {
+    (left, right) => left + right,
+}
+```
+
+### Binding Behavior
+
+Patterns may introduce new bindings.
+
+Example:
+
+```tark
+let message = match event {
+    connected(user) => user.name,
+    disconnected(user) => user.name,
+};
+```
+
+Bindings introduced by a pattern are scoped to that arm only.
+
+### Exhaustiveness
+
+Match expressions must cover all possible cases.
+
+Examples:
+
+```tark
+match option {
+    some(value) => value,
+    none => fallback,
+}
+```
+
+This is exhaustive.
+
+```tark
+match option {
+    some(value) => value,
+}
+```
+
+This is rejected because `none` is not covered.
+
+Wildcard arms may be used to make a match exhaustive:
+
+```tark
+match token {
+    number(value) => value,
+    _ => 0,
+}
+```
+
+### Ordering
+
+Arms are checked in source order.
+
+Rules:
+
+* the first matching arm is selected
+* unreachable arms should be diagnosed by the compiler
+* wildcard arms should normally appear last
+
+### Design Intent
+
+Pattern matching is part of Tark's invalid-state modeling story.
+
+Goals:
+
+* encourage explicit handling of all cases
+* make enum and result handling mechanical
+* improve refactor safety
+* keep control flow analyzable
+
+## Literal Syntax
+
+Tark defines a small and regular set of literal forms in v1.
+
+Initial literal categories:
+
+* integer literals
+* floating-point literals
+* boolean literals
+* string literals
+* tuple literals
+* array literals
+* map literals
+* enum variant literals
+
+### Integer Literals
+
+Basic decimal integers:
+
+```tark
+0
+1
+42
+1000000
+```
+
+Readable separators are allowed:
+
+```tark
+1_000_000
+```
+
+### Floating-Point Literals
+
+Examples:
+
+```tark
+0.0
+3.14
+10.5
+1_000.25
+```
+
+### Boolean Literals
+
+Boolean literals are:
+
+```tark
+true
+false
+```
+
+### String Literals
+
+Double-quoted strings:
+
+```tark
+"hello"
+"config.toml"
+"line\nbreak"
+```
+
+Initial rules:
+
+* string literals use double quotes
+* common escape sequences are supported
+* single-quoted strings are reserved for character literals if introduced later
+
+### Tuple Literals
+
+Examples:
+
+```tark
+(1, 2)
+("x", 10, true)
+```
+
+Rules:
+
+* tuple elements are comma-separated
+* parentheses distinguish tuples from other collection forms
+
+### Array Literals
+
+Examples:
+
+```tark
+[]
+[1, 2, 3]
+["a", "b", "c"]
+```
+
+Rules:
+
+* array literals use square brackets
+* elements are comma-separated
+* element types must be compatible
+
+### Map Literals
+
+Examples:
+
+```tark
+{}
+{"host": "localhost", "port": 5432}
+```
+
+Rules:
+
+* map literals use braces
+* key-value pairs use `:`
+* pairs are comma-separated
+* key and value types must be compatible within the map
+
+### Enum Variant Literals
+
+Enum variants are constructed by naming the variant directly.
+
+Examples:
+
+```tark
+some(42)
+none
+ok(value)
+err("failed")
+```
+
+Rules:
+
+* unit-like variants use the variant name alone
+* value-carrying variants use function-like construction syntax
+* variant construction is explicit and regular
+
+### Design Intent
+
+Literal syntax should stay easy to parse, easy to generate, and easy to read.
+
+Goals:
+
+* keep the literal surface small
+* avoid many special-case forms
+* support predictable parsing
+* make generated code stable and uniform
+
+## Semicolon Rule
+
+Semicolons determine whether a construct contributes a value.
+
+```tark
+fn answer() -> Int {
+    42
+}
+
+fn ignore() -> Unit {
+    42;
+}
+```
+
+Interpretation:
+
+* `42` without `;` is the return value of the block
+* `42;` is a statement whose value is discarded
+
+This rule is part of Tark's core readability and analyzability model.
+
+## Modules, Imports, Exports, and Visibility
+
+Tark uses a file-and-module model with explicit imports and explicit public exports.
+
+Design rules:
+
+* Each source file defines one module
+* Module boundaries follow the file system layout
+* Imports are always explicit
+* Visibility is private by default
+* Public API surface must be marked explicitly
+
+### Modules
+
+A source file corresponds to a module named from its file.
+
+Examples:
+
+* `math.tark` defines module `math`
+* `net/http.tark` defines module `net.http`
+* `main.tark` may define the entry module for an executable package
+
+Tark does not require a `module` declaration in the file in the initial design.
+
+Rationale:
+
+* reduces boilerplate
+* keeps the AST predictable
+* makes the module graph follow the repository layout directly
+
+### Imports
+
+Imports use `use`.
+
+Import a single item:
+
+```tark
+use net.http.Client;
+```
+
+Import a module namespace:
+
+```tark
+use net.http;
+```
+
+Import with alias:
+
+```tark
+use net.http.Client as HttpClient;
+```
+
+Grouped import:
+
+```tark
+use net.http.{Client, Request, Response};
+```
+
+Rules:
+
+* Import paths are dot-separated
+* Imports end with `;`
+* Aliases use `as`
+* Grouped imports are allowed for multiple items from the same module
+* Wildcard imports are forbidden in the initial design
+
+### Exports
+
+Public symbols are exported by marking their declarations with `pub`.
+
+Examples:
+
+```tark
+pub fn parse(input: String) -> Result<Value, ParseError> {
+    parse_impl(input)
+}
+
+fn parse_impl(input: String) -> Result<Value, ParseError> {
+    todo();
+}
+```
+
+Rules:
+
+* `pub` exports a declaration from its defining module
+* Unmarked declarations remain private to the module
+* Export lists are not used in the initial design
+* Public API is declaration-based, not file-footer-based
+
+### Visibility
+
+Initial visibility levels:
+
+* private
+* public
+
+Private declaration:
+
+```tark
+fn normalize(value: String) -> String {
+    value
+}
+```
+
+Public declaration:
+
+```tark
+pub fn parse_config(text: String) -> Result<Config, ConfigError> {
+    build_config(text)
+}
+```
+
+Rules:
+
+* Visibility is private by default
+* `pub` is the only visibility modifier in the initial design
+* More granular visibility such as package-scoped or module-subtree-scoped access is deferred
+
+### Imported Name Usage
+
+Imported names are referenced directly by their local imported name.
+
+Examples:
+
+```tark
+use core.io.Writer;
+use core.hash.HashMap as Map;
+
+fn write_all(writer: Writer, values: Map<String, Int>) -> Unit {
+    writer.flush();
+}
+```
+
+Module-qualified references are also allowed when importing a namespace:
+
+```tark
+use net.http;
+
+fn new_client() -> http.Client {
+    http.Client::new()
+}
+```
+
+### Initial Non-Goals
+
+The initial module system does not include:
+
+* wildcard imports
+* implicit re-exports
+* package-private visibility
+* cyclic import support as a design goal
+* runtime module loading
+
+## Traits and Implementations
+
+Tark uses `trait` as the initial surface syntax for protocol-like behavior.
+
+Design rules:
+
+* Traits define required behavior
+* Types implement traits explicitly
+* Inheritance is not part of the model
+* Trait conformance is declaration-based, not structural by default
+* Visibility follows the same `pub` rules as other declarations
+
+### Trait Declarations
+
+Traits use the `trait` keyword.
+
+Example:
+
+```tark
+pub trait Display {
+    fn render(self) -> String;
+}
+```
+
+Traits may also provide default method bodies.
+
+```tark
+pub trait Named {
+    fn name(self) -> String;
+
+    fn is_empty(self) -> Bool {
+        self.name() == ""
+    }
+}
+```
+
+Rules:
+
+* A trait body contains method declarations
+* Required methods end with `;`
+* Default methods provide a block body
+* Traits do not declare stored fields
+* Trait items are ordered explicitly in source and preserved by formatting
+
+### Implementations
+
+Trait implementations use `impl Trait for Type`.
+
+Example:
+
+```tark
+impl Display for User {
+    fn render(self) -> String {
+        self.username
+    }
+}
+```
+
+Rules:
+
+* An implementation must name both the trait and the target type explicitly
+* All required trait methods must be implemented unless a default body exists in the trait
+* Implementations may override default trait methods
+* Methods defined in an `impl` block must match the trait signature
+
+### Receiver Syntax
+
+The initial syntax reserves `self` as the receiver parameter in trait and impl methods.
+
+Example:
+
+```tark
+trait Len {
+    fn len(self) -> Int;
+}
+```
+
+Rules:
+
+* `self` may appear as the first parameter of a trait method or trait implementation method
+* Receiver ownership and borrowing variants will be refined in the memory model sections
+* The surface syntax keeps method declarations compact while deferring exact receiver semantics
+
+### Associated Functions
+
+Traits may declare functions that do not take `self`.
+
+Example:
+
+```tark
+trait Parser {
+    fn parse(input: String) -> Result<Value, ParseError>;
+}
+```
+
+These are associated functions, not instance methods.
+
+### Associated Types
+
+Associated types are **not supported** in the initial version of Tark.
+
+Decision:
+
+* initial Tark traits do not declare associated types
+* initial Tark impls do not define associated type bindings
+* generic parameters should be used instead where a relationship must be expressed in v1
+
+Example of the preferred v1 style:
+
+```tark
+trait Parser[T] {
+    fn parse(input: String) -> Result[T, ParseError>;
+}
+```
+
+instead of an associated-type style such as:
+
+```tark
+trait Parser {
+    type Output;
+    fn parse(input: String) -> Result[Output, ParseError>;
+}
+```
+
+Rationale:
+
+* keeps the trait model smaller
+* avoids adding another layer of generic reasoning in v1
+* reduces interaction complexity between traits, bounds, and inference
+* fits Tark's goal of staying smaller and more predictable than Rust
+
+### Visibility
+
+Traits and impl methods follow normal declaration visibility rules.
+
+Examples:
+
+```tark
+pub trait Write {
+    fn write(self, bytes: Bytes) -> Result<Unit, IoError>;
+}
+
+impl Write for File {
+    fn write(self, bytes: Bytes) -> Result<Unit, IoError> {
+        write_file(self, bytes)
+    }
+}
+```
+
+Rules:
+
+* `pub trait` exports the trait from its module
+* Trait methods inside a public trait are part of the public interface of that trait
+* `impl` blocks do not use a separate visibility modifier in the initial design
+
+### Initial Non-Goals
+
+The initial trait system does not include:
+
+* trait inheritance
+* specialization
+* blanket implementations
+* negative implementations
+* associated types
+* operator overloading via traits as a design priority
+* structural typing as the default conformance model
+
+These may be considered later, but they are intentionally excluded from the initial design to keep the trait model small and analyzable.
+
+## Generic Types and Generic Functions
+
+Tark uses square brackets for generic parameter lists and generic type arguments.
+
+Design rules:
+
+* Generic syntax must remain visually distinct from function call syntax
+* Generic parameter and argument syntax should be uniform across types, functions, and impl blocks
+* Generic use sites may omit explicit type arguments when inference is sufficient
+* Advanced generic features are deferred until the core type system is stable
+
+### Generic Functions
+
+Generic functions place type parameters after the function name.
+
+Example:
+
+```tark
+fn identity[T](value: T) -> T {
+    value
+}
+
+fn pair[A, B](left: A, right: B) -> Pair[A, B] {
+    Pair::new(left, right)
+}
+```
+
+Rules:
+
+* Generic parameters use `[]`
+* Parameters are comma-separated
+* Generic parameters are part of the function signature
+* Generic functions may be called with inferred or explicit type arguments
+
+Examples:
+
+```tark
+let a = identity(1);
+let b = identity[Int](1);
+```
+
+### Generic Types
+
+Generic type declarations place type parameters after the type name using the same bracket syntax.
+
+Example:
+
+```tark
+struct Pair[A, B] {
+    left: A,
+    right: B,
+}
+```
+
+Type application uses the same form:
+
+```tark
+let item: Pair[String, Int] = Pair::new("x", 1);
+```
+
+Rules:
+
+* Generic type parameters are ordered and positional
+* Type arguments use the same `[]` syntax as type parameters
+* Nested type arguments are allowed
+
+Example:
+
+```tark
+let result: Result[Option[String], ParseError];
+```
+
+### Generic Implementations
+
+Generic `impl` blocks place type parameters after `impl`.
+
+Example:
+
+```tark
+impl[T] Display for Box[T] {
+    fn render(self) -> String {
+        format_box(self)
+    }
+}
+```
+
+Rules:
+
+* Generic parameters introduced by an `impl` are in scope for the entire impl block
+* The target type may use those parameters directly
+
+### Trait Bounds and Constraints
+
+Tark uses inline trait bounds in generic parameter lists.
+
+Basic shape:
+
+```tark
+fn name[T: Trait](value: T) -> T {
+    value
+}
+```
+
+Multiple bounds use `+`:
+
+```tark
+fn render[T: Display + Debug](value: T) -> String {
+    value.render()
+}
+```
+
+Design rules:
+
+* bounds are written next to the constrained type parameter
+* bounds use `:`
+* multiple bounds use `+`
+* the same surface form is used for functions, types, traits, and impl blocks where applicable
+
+### Generic Function Bounds
+
+Example:
+
+```tark
+fn max[T: Ord](left: T, right: T) -> T {
+    if left >= right { left } else { right }
+}
+```
+
+Rules:
+
+* constrained parameters remain part of the generic parameter list
+* bounds restrict which types may satisfy the parameter
+* function bodies may rely on the operations guaranteed by the stated bounds
+
+### Generic Type Bounds
+
+Type declarations may also constrain their parameters inline.
+
+Example:
+
+```tark
+struct SortedSet[T: Ord] {
+    values: List[T],
+}
+```
+
+Rules:
+
+* type-level bounds constrain valid instantiations of the generic type
+* bounds on type declarations are part of the public type definition
+
+### Generic Impl Bounds
+
+Bounds may appear on generic `impl` blocks.
+
+Example:
+
+```tark
+impl[T: Display] Display for Box[T] {
+    fn render(self) -> String {
+        self.value.render()
+    }
+}
+```
+
+Rules:
+
+* impl bounds restrict when the implementation applies
+* bounds must be explicit in the impl header
+* Tark does not use implicit blanket applicability without stated constraints
+
+### Design Intent
+
+Constraint syntax should stay small and local.
+
+Goals:
+
+* keep constraints near the parameter they affect
+* avoid introducing multiple equivalent constraint syntaxes in v1
+* make generic requirements visible in public declarations
+
+### Generic Argument Inference
+
+Tark allows generic argument inference when the compiler can determine the type arguments from:
+
+* function arguments
+* expected result types
+* local type context
+
+Explicit type arguments remain available when inference would be ambiguous or when the programmer wants to pin a type.
+
+### Initial Non-Goals
+
+The initial generic syntax does not include:
+
+* higher-kinded types
+* default type parameters
+* const generics
+* variance annotations
+* `where` clauses
+
+These may be added later, but they are intentionally excluded from the initial generic surface.
+
+---

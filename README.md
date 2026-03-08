@@ -47,7 +47,11 @@ The current preferred source file extension is `.tark`.
 
 The main documents are:
 
-* [spec.md](./spec.md): the working language specification
+* [spec.md](./spec.md): spec index and document map
+* [spec/LANGUAGE.md](./spec/LANGUAGE.md): the working language specification
+* [spec/VISION.md](./spec/VISION.md): project vision, priorities, and positioning
+* [spec/TOOLING.md](./spec/TOOLING.md): tooling, manifests, workspaces, and package design
+* [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
@@ -65,31 +69,27 @@ Already specified:
 * move semantics
 * copy-safe type rules
 * basic borrowing model with lexical borrow scopes
+* arenas, arena escape rules, and shared ownership primitives
+* effects, async, structured concurrency, and cancellation
+* error handling with `Option`, `Result`, `?`, and `panic`
+* package manifests, workspaces, and dependency resolution
 
 Still in progress:
 
-* regions and arenas
-* region escape rules
-* shared ownership
-* pattern matching details
-* literal syntax
-* effects and concurrency
-* package and toolchain details
+* registry and publishing strategy
+* documentation generation and machine-readable tooling output
+* canonical formatting details
+* implementation sequencing and self-hosting criteria
 
 ## Near-Term Priorities
 
-The next core design work is focused on the remaining memory-model tasks:
+The next core design work is focused on:
 
-* region and arena creation
-* region escape rules
-* shared ownership primitives
-
-After that, the likely next areas are:
-
-* pattern matching
-* literal syntax
-* type-system constraints
-* package/tooling structure
+* registry and publishing strategy
+* documentation generation
+* machine-readable tooling output
+* formatting rules
+* implementation sequencing
 
 ## Principle
 

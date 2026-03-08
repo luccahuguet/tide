@@ -6,8 +6,8 @@
 - [x] T002 Define module, import, export, and visibility syntax
 - [x] T003 Define trait/protocol syntax and implementation syntax
 - [x] T004 Define generic type and generic function syntax
-- [ ] T005 Define pattern matching syntax and exhaustiveness rules
-- [ ] T006 Define literal syntax for numbers, strings, booleans, collections, and enums
+- [x] T005 Define pattern matching syntax and exhaustiveness rules
+- [x] T006 Define literal syntax for numbers, strings, booleans, collections, and enums
 
 ## Ownership and Memory Model
 
@@ -15,47 +15,47 @@
 - [x] T008 Define which types are copy-safe and how copy behavior is expressed
 - [x] T009 Define the borrowing model and its exact restrictions
 - [x] T010 Define region/arena creation, ownership, and destruction rules
-- [ ] T011 Define region escape rules for references
-- [ ] T012 Define shared ownership primitives and when they are allowed
+- [x] T011 Define region escape rules for references
+- [x] T012 Define shared ownership primitives and when they are allowed
 
 ## Type System
 
-- [ ] T013 Define inference boundaries for local variables, function signatures, and public APIs
-- [ ] T014 Define trait bounds and constraint syntax
-- [ ] T015 Decide whether associated types are supported in the initial version
-- [ ] T016 Define enum and ADT layout rules at the language level
-- [ ] T017 Define pattern destructuring rules for structs, enums, tuples, and results
+- [x] T013 Define inference boundaries for local variables, function signatures, and public APIs
+- [x] T014 Define trait bounds and constraint syntax
+- [x] T015 Decide whether associated types are supported in the initial version
+- [x] T016 Define enum and ADT layout rules at the language level
+- [x] T017 Define pattern destructuring rules for structs, enums, tuples, and results
 
 ## Mutation and Unsafe
 
-- [ ] T018 Define how mutable bindings and mutable access are declared
-- [ ] T019 Define exclusivity rules for mutable access
-- [ ] T020 Define the model for shared mutation and synchronization
-- [ ] T021 Define what `unsafe` permits
-- [ ] T022 Define how `unsafe` blocks, functions, and modules are isolated and audited
+- [x] T018 Define how mutable bindings and mutable access are declared
+- [x] T019 Define exclusivity rules for mutable access
+- [x] T020 Define the model for shared mutation and synchronization
+- [x] T021 Define what `unsafe` permits
+- [x] T022 Define how `unsafe` blocks, functions, and modules are isolated and audited
 
 ## Effects and Concurrency
 
-- [ ] T023 Define how effects are represented in the language
-- [ ] T024 Decide whether effects use annotations, capabilities, effect types, or dedicated keywords
-- [ ] T025 Define IO boundaries and how effectful operations are marked
-- [ ] T026 Define the async model and async syntax
-- [ ] T027 Define structured concurrency primitives
-- [ ] T028 Define cancellation semantics
-- [ ] T029 Define task spawning and synchronization rules
+- [x] T023 Define how effects are represented in the language
+- [x] T024 Decide whether effects use annotations, capabilities, effect types, or dedicated keywords
+- [x] T025 Define IO boundaries and how effectful operations are marked
+- [x] T026 Define the async model and async syntax
+- [x] T027 Define structured concurrency primitives
+- [x] T028 Define cancellation semantics
+- [x] T029 Define task spawning and synchronization rules
 
 ## Error Handling
 
-- [ ] T030 Define the syntax for `Option` and `Result` usage
-- [ ] T031 Define error propagation syntax
-- [ ] T032 Define `panic` semantics and when panic is acceptable
-- [ ] T033 Define whether custom error traits or protocols exist in the initial version
+- [x] T030 Define the syntax for `Option` and `Result` usage
+- [x] T031 Define error propagation syntax
+- [x] T032 Define `panic` semantics and when panic is acceptable
+- [x] T033 Define whether custom error traits or protocols exist in the initial version
 
 ## Toolchain and Packages
 
-- [ ] T034 Define the package manifest format
-- [ ] T035 Define workspace layout and multi-package project structure
-- [ ] T036 Define dependency declaration and dependency resolution rules
+- [x] T034 Define the package manifest format
+- [x] T035 Define workspace layout and multi-package project structure
+- [x] T036 Define dependency declaration and dependency resolution rules
 - [ ] T037 Define registry and package publishing strategy
 - [ ] T038 Define documentation generation format and commands
 - [ ] T039 Define machine-readable compiler and tooling output formats
