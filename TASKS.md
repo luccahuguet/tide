@@ -12,8 +12,8 @@
 ## Ownership and Memory Model
 
 - [x] T007 Define move semantics for non-copy types
-- [ ] T008 Define which types are copy-safe and how copy behavior is expressed
-- [ ] T009 Define the borrowing model and its exact restrictions
+- [x] T008 Define which types are copy-safe and how copy behavior is expressed
+- [x] T009 Define the borrowing model and its exact restrictions
 - [ ] T010 Define region/arena creation, ownership, and destruction rules
 - [ ] T011 Define region escape rules for references
 - [ ] T012 Define shared ownership primitives and when they are allowed

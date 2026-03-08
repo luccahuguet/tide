@@ -190,6 +190,191 @@ Goals:
 * preserve predictable runtime behavior
 * keep the ownership model teachable
 
+## Copy-Safe Types
+
+Copy-safe types may be duplicated implicitly on assignment, argument passing, and return.
+
+The initial v1 rule is intentionally narrow.
+
+Built-in copy-safe categories:
+
+* booleans
+* characters
+* integer types
+* floating-point types
+* unit
+
+User-defined types are copy-safe only when they are explicitly declared as copy-safe and all stored fields are themselves copy-safe.
+
+Example:
+
+```tark
+copy struct Point {
+    x: Int,
+    y: Int,
+}
+```
+
+This means:
+
+```tark
+let a = Point { x: 1, y: 2 };
+let b = a;
+```
+
+Both `a` and `b` remain valid because `Point` is copy-safe.
+
+Non-copy examples in the initial model:
+
+* strings
+* heap-owning containers
+* region-owned values
+* shared ownership types
+* types with explicit destruction behavior
+
+Rules:
+
+* Copy-safe types copy implicitly
+* Non-copy types move by default
+* A user-defined type may only be marked `copy` if every stored field is copy-safe
+* Types with ownership-sensitive resources may not be marked `copy`
+* Copy-safety is part of a type's definition, not inferred ad hoc at each use site
+
+## Explicit Copy Behavior
+
+For values that are not implicitly copy-safe, duplication must be explicit.
+
+Initial design direction:
+
+* implicit copies are reserved for copy-safe types
+* non-copy values require an explicit duplication operation
+* the exact surface form for deep duplication may later be trait-backed, but it is never implicit
+
+Example intent:
+
+```tark
+let b = clone(a);
+```
+
+This expresses that duplication is a deliberate operation with visible cost.
+
+Goals:
+
+* keep cheap value copies ergonomic
+* make expensive duplication visible in source
+* prevent accidental performance regressions
+* preserve the move-default mental model
+
+## Borrowing Model
+
+Tark defines two safe borrow forms in v1:
+
+* shared borrow
+* exclusive mutable borrow
+
+Borrow syntax:
+
+```tark
+let r = &value;
+let w = &mut value;
+```
+
+Shared borrows allow read access without taking ownership.
+
+Example:
+
+```tark
+let user = load_user();
+let r1 = &user;
+let r2 = &user;
+show(r1);
+show(r2);
+```
+
+Exclusive mutable borrows allow mutation without transferring ownership.
+
+Example:
+
+```tark
+let mut user = load_user();
+let w = &mut user;
+rename(w, "new-name");
+```
+
+## Borrowing Rules
+
+The aliasing rule is:
+
+* many readers or one writer
+
+Concretely:
+
+* many shared borrows may coexist
+* at most one exclusive mutable borrow may exist at a time
+* no shared borrow may overlap an exclusive mutable borrow of the same value
+* while a value is borrowed mutably, the original binding may not be read or written directly
+* while a value is borrowed, moving that value is rejected
+
+Examples:
+
+Allowed:
+
+```tark
+let r1 = &user;
+let r2 = &user;
+```
+
+Rejected:
+
+```tark
+let r = &user;
+let w = &mut user;
+```
+
+Rejected:
+
+```tark
+let w1 = &mut user;
+let w2 = &mut user;
+```
+
+## Lexical Borrow Scope
+
+Borrow scopes are lexical in v1.
+
+Example:
+
+```tark
+let mut user = load_user();
+
+{
+    let w = &mut user;
+    rename(w, "new-name");
+}
+
+save(user);
+```
+
+Here the mutable borrow ends when the inner block ends.
+
+Rules:
+
+* a borrow begins where the borrow expression is created
+* a borrow ends at the end of its enclosing lexical scope
+* Tark does not attempt to accept every valid non-lexical borrowing pattern in v1
+* shorter explicit scopes are the primary way to end borrows earlier
+
+## Design Intent
+
+This borrowing model is deliberately more restrictive than the most advanced borrow systems.
+
+Goals:
+
+* keep the core rule teachable
+* make compiler behavior predictable
+* reduce hidden lifetime reasoning
+* support safe mutation without full Rust-level borrow complexity
+
 ---
 
 # Safety Guarantees
