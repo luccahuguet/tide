@@ -375,6 +375,124 @@ Goals:
 * reduce hidden lifetime reasoning
 * support safe mutation without full Rust-level borrow complexity
 
+## Arenas
+
+Tark provides one explicit grouped-allocation construct in v1:
+
+* `arena`
+
+An arena is a lexical allocation scope with block-bounded lifetime.
+
+Example:
+
+```tark
+arena scratch {
+    let user = alloc scratch User {
+        id: 1,
+        name: "ana",
+    };
+
+    let task = alloc scratch Task {
+        id: 7,
+    };
+
+    process(&user, &task);
+}
+```
+
+In this example, `scratch` exists only for the duration of its block.
+
+## Arena Creation
+
+Arena creation uses the form:
+
+```tark
+arena name {
+    ...
+}
+```
+
+Rules:
+
+* an arena introduces a new lexical scope
+* the arena name is available only inside that scope
+* arenas are explicit; ordinary local values do not require an arena
+* arenas are the only first-class region-like construct in v1
+
+## Arena Allocation
+
+Values may be allocated into a named arena using explicit arena allocation.
+
+Initial syntax shape:
+
+```tark
+let value = alloc scratch Expression;
+```
+
+Examples:
+
+```tark
+let node = alloc scratch Node { value: 1 };
+let buffer = alloc scratch Buffer::new(1024);
+```
+
+Rules:
+
+* arena allocation is explicit in source
+* the target arena is named directly
+* values allocated into an arena are associated with that arena for their lifetime
+* arena allocation is intended for grouped lifetime management, not as the default allocation mechanism for all values
+
+## Arena Ownership
+
+The arena is the lifetime owner of values allocated within it.
+
+This means:
+
+* the arena controls the storage lifetime of arena-allocated values
+* local bindings may refer to arena-allocated values, but they do not individually control deallocation
+* moving a binding that refers to an arena-allocated value does not move the arena itself
+
+Design intent:
+
+* ordinary ownership rules remain the default model
+* arenas are an explicit alternative for grouped lifetimes
+* arena use should remain local and structured
+
+## Arena Destruction
+
+Arena destruction happens automatically at the end of the arena's lexical scope.
+
+Example:
+
+```tark
+arena scratch {
+    let node = alloc scratch Node::new();
+    visit(&node);
+}
+
+// `scratch` is destroyed here
+```
+
+Rules:
+
+* all storage associated with an arena is reclaimed when the arena scope ends
+* arena destruction is deterministic
+* individual arena allocations are not freed manually in safe code
+* nested arenas are destroyed from inner scope to outer scope
+
+## Initial Non-Goals
+
+The initial arena model does not include:
+
+* multiple user-visible arena classes
+* region inference
+* region polymorphism
+* manual free of individual arena allocations in safe code
+* treating every value as implicitly arena-allocated
+
+This keeps the arena design small enough to support Tark's "smaller than Rust" goal instead of becoming its own full sublanguage.
+
 ---
 
 # Safety Guarantees

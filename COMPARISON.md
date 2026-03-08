@@ -19,16 +19,23 @@ Tark is aiming for this space:
 
 ## Comparison Table
 
+Score meaning:
+
+* `1` = very weak on that dimension
+* `10` = very strong on that dimension
+
+These scores are directional, not scientific.
+
 | Dimension | Tark | Rust | Zig | Go |
 |---|---|---|---|---|
-| Safety model | Safe by default with ownership and simplified borrowing | Safe by default with full borrow checker | Lower-level manual control with fewer default safety guarantees | GC-based safety with fewer compile-time correctness guarantees |
-| Memory management | Deterministic, no GC, ownership plus lexical borrowing plus arenas/regions | Deterministic, no GC, ownership plus borrowing | Manual allocators and explicit memory management | Garbage collection |
-| Borrowing complexity | Intentionally smaller than Rust | High expressiveness, higher complexity | No borrow checker | No borrow checker |
-| Performance transparency | Core design goal | Strong | Strong | More hidden runtime costs than Tark intends |
-| Language regularity | High priority | High, but with more feature interaction | High at low level, but rougher edges | Simple surface, less expressive |
-| Tooling philosophy | One official toolchain and canonical formatting | Strong tooling ecosystem | Strong but leaner tooling model | Strong official toolchain |
-| Agent-friendliness | Explicit design goal | Good in many areas, but more semantic complexity | Good for explicitness, weaker for structural guarantees | Good simplicity, weaker safety/model precision |
-| Target feeling | High-trust systems with smaller mental model than Rust | Maximal safety and control with higher complexity | Explicit systems programming with manual sharp edges | Productive backend engineering with weaker low-level guarantees |
+| Safety model | `9/10` Safe by default with ownership and simplified borrowing | `10/10` Safe by default with full borrow checker | `5/10` Lower-level manual control with fewer default safety guarantees | `6/10` GC-based safety with fewer compile-time correctness guarantees |
+| Memory management | `9/10` Deterministic, no GC, ownership plus lexical borrowing plus arenas/regions | `10/10` Deterministic, no GC, ownership plus borrowing | `9/10` Manual allocators and explicit memory management | `4/10` Garbage collection |
+| Borrowing complexity | `6/10` Intentionally smaller than Rust | `9/10` High expressiveness, higher complexity | `1/10` No borrow checker | `1/10` No borrow checker |
+| Performance transparency | `9/10` Core design goal | `9/10` Strong | `10/10` Strong | `5/10` More hidden runtime costs than Tark intends |
+| Language regularity | `9/10` High priority | `8/10` High, but with more feature interaction | `7/10` High at low level, but rougher edges | `8/10` Simple surface, less expressive |
+| Tooling philosophy | `8/10` One official toolchain and canonical formatting | `9/10` Strong tooling ecosystem | `7/10` Strong but leaner tooling model | `9/10` Strong official toolchain |
+| Agent-friendliness | `10/10` Explicit design goal | `7/10` Good in many areas, but more semantic complexity | `6/10` Good for explicitness, weaker for structural guarantees | `7/10` Good simplicity, weaker safety/model precision |
+| Target feeling | `9/10` High-trust systems with smaller mental model than Rust | `10/10` Maximal safety and control with higher complexity | `8/10` Explicit systems programming with manual sharp edges | `8/10` Productive backend engineering with weaker low-level guarantees |
 
 ## Tark vs Rust
 
