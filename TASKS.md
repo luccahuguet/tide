@@ -1,5 +1,10 @@
 # Ferox Task List
 
+Task-list convention:
+
+* keep entries in this file short
+* put detailed task bodies in `tasks/T###.md` when a task needs more context
+
 ## Core Language Design
 
 - [x] T001 Define the core syntax for functions, bindings, blocks, expressions, and statements
@@ -78,6 +83,8 @@
 ## Code Generation and Backend Strategy
 
 - [x] T053 Define the phased code generation and backend strategy, including early bring-up path and long-term backend direction
+- [ ] T059 Run an adversarial spec review to pressure-test the current design before implementation starts
+  See `tasks/T059.md`.
 
 ## Naming and Release Readiness
 
