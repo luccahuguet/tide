@@ -85,6 +85,16 @@ Task-list convention:
 - [x] T053 Define the phased code generation and backend strategy, including early bring-up path and long-term backend direction
 - [ ] T059 Run an adversarial spec review to pressure-test the current design before implementation starts
   See `tasks/T059.md`.
+- [ ] T060 Decide whether the general effect-set model belongs in Ferox v1
+  See `tasks/T060.md`.
+- [ ] T061 Narrow the ownership model to a smaller v1 surface
+  See `tasks/T061.md`.
+- [ ] T062 Settle trait and method receiver semantics for v1
+  See `tasks/T062.md`.
+- [ ] T063 Ground async, structured concurrency, and cancellation in a smaller executable v1 model
+  See `tasks/T063.md`.
+- [ ] T064 Rewrite vision and comparison claims to match the actual confidence level of the spec
+  See `tasks/T064.md`.
 
 ## Naming and Release Readiness
 
