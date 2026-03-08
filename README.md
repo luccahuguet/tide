@@ -50,6 +50,7 @@ The main documents are:
 * [spec.md](./spec.md): the working language specification
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
+* [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): research notes for the ownership and borrowing design
 * [GOVERNANCE.md](./GOVERNANCE.md): project governance rules
 
