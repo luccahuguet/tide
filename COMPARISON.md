@@ -30,12 +30,25 @@ These scores are directional, not scientific.
 |---|---|---|---|---|
 | Safety model | `9/10` Safe by default with ownership and simplified borrowing | `10/10` Safe by default with full borrow checker | `5/10` Lower-level manual control with fewer default safety guarantees | `6/10` GC-based safety with fewer compile-time correctness guarantees |
 | Memory management | `9/10` Deterministic, no GC, ownership plus lexical borrowing plus arenas/regions | `10/10` Deterministic, no GC, ownership plus borrowing | `9/10` Manual allocators and explicit memory management | `4/10` Garbage collection |
-| Borrowing complexity | `6/10` Intentionally smaller than Rust | `9/10` High expressiveness, higher complexity | `1/10` No borrow checker | `1/10` No borrow checker |
+| Borrowing power | `7/10` Intentionally smaller than Rust, but still ownership-based | `10/10` Highest expressiveness and maturity in this group | `1/10` No borrow checker | `1/10` No borrow checker |
+| Raw runtime performance | `9/10` Intended to be near-native and systems-grade | `10/10` Mature, high-performance systems language | `10/10` Extremely strong low-level performance profile | `7/10` Good, but GC and runtime tradeoffs remain |
 | Performance transparency | `9/10` Core design goal | `9/10` Strong | `10/10` Strong | `5/10` More hidden runtime costs than Tark intends |
+| Predictability of runtime cost | `9/10` Explicit-cost design is a core goal | `9/10` Strong and mature | `10/10` Best-in-class explicitness | `5/10` Runtime behavior is less explicit |
+| Allocation visibility | `9/10` Intended to keep allocation decisions visible | `8/10` Strong, though abstractions can hide details | `10/10` Very explicit allocation model | `4/10` Allocation costs are less visible by design |
+| Low-level control | `8/10` Strong, but not trying to beat Zig at raw control | `9/10` Strong with safety machinery | `10/10` Primary strength | `4/10` Lower-level control is not a main design goal |
+| Backend productivity per unit performance | `8/10` Intended balance between rigor and practicality | `6/10` Powerful, but heavier for many backend teams | `5/10` Strong control, lower productivity for typical backend work | `9/10` One of Go's strongest tradeoffs |
+| Mental-model simplicity | `9/10` Explicit goal: smaller than Rust | `6/10` Powerful but demanding | `7/10` Simple in some areas, sharp in others | `9/10` Small and teachable |
 | Language regularity | `9/10` High priority | `8/10` High, but with more feature interaction | `7/10` High at low level, but rougher edges | `8/10` Simple surface, less expressive |
+| Syntax analyzability | `10/10` Explicit design goal | `8/10` Strong, but more semantic interaction | `7/10` Explicit, but lower-level and rougher | `8/10` Very parseable, but less expressive structure |
+| Refactorability and transformability | `10/10` Explicitly optimized for machine-assisted maintenance | `8/10` Strong, but borrow/type complexity raises cost | `6/10` Explicit, but more manual edge handling | `7/10` Simpler than Rust, but weaker type precision |
 | Tooling philosophy | `8/10` One official toolchain and canonical formatting | `9/10` Strong tooling ecosystem | `7/10` Strong but leaner tooling model | `9/10` Strong official toolchain |
+| Formatting uniformity | `10/10` Canonical formatting is a core policy | `6/10` Strong formatter, but less central as a language-level rule | `9/10` Strong formatter culture | `10/10` gofmt-level uniformity is one of Go's strongest properties |
 | Agent-friendliness | `10/10` Explicit design goal | `7/10` Good in many areas, but more semantic complexity | `6/10` Good for explicitness, weaker for structural guarantees | `7/10` Good simplicity, weaker safety/model precision |
+| Invalid-state modeling | `9/10` Core goal through ADTs, matching, and explicit types | `9/10` Very strong | `5/10` Weaker as a language-level priority | `6/10` Better than dynamic languages, but less expressive here |
+| Deterministic destruction and lifetime control | `9/10` Ownership plus arenas | `10/10` Mature ownership and destruction model | `9/10` Strong manual control | `3/10` GC-oriented runtime model |
+| Long-term maintainability structure | `9/10` Strong bias toward explicitness, analyzability, and stable tooling | `8/10` Strong, but complexity raises maintenance cost | `6/10` Powerful, but rougher long-term ergonomics | `8/10` Operationally maintainable, but with weaker semantic guarantees |
 | Target feeling | `9/10` High-trust systems with smaller mental model than Rust | `10/10` Maximal safety and control with higher complexity | `8/10` Explicit systems programming with manual sharp edges | `8/10` Productive backend engineering with weaker low-level guarantees |
+| Average score | `8.9/10` | `8.5/10` | `7.0/10` | `6.4/10` |
 
 ## Tark vs Rust
 
