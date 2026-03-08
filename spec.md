@@ -24,6 +24,7 @@ Current status:
 
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
+* [FEROX_DOMAIN_STRATEGY.md](./FEROX_DOMAIN_STRATEGY.md): first-pass domain strategy for `Ferox`
 * [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
 * [FEROX_SOFTWARE_BRAND_REVIEW.md](./FEROX_SOFTWARE_BRAND_REVIEW.md): first-pass software and developer-brand review for `Ferox`
 * [AI_SUPERVISOR.md](./AI_SUPERVISOR.md): mandatory AI supervisor review policy and prompt template

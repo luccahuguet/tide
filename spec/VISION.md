@@ -9,7 +9,8 @@ Status:
 * selected as the public language name
 * official CLI binary is `ferox`
 * official source file extension is `.ferox`
-* domain and legal follow-up review remain advisable before public launch
+* first-pass domain, trademark, and brand review are complete
+* legal follow-up still remains advisable before public launch
 
 The name is treated as a standalone project name.
 
@@ -39,10 +40,10 @@ Status:
 
 Follow-up checks still recommended:
 
-* trademark search in target jurisdictions for `Ferox` and `ferox`
-* product and company-name conflict review in developer tools and software markets
-* domain strategy review for `Ferox` and `ferox.*`
-* source file extension review, including collision risk, searchability, editor support, and confusion with internet domains
+* legal clearance review in target jurisdictions for `Ferox` and `ferox`
+* deeper product and company-name conflict review if the project approaches public launch
+* registrar and social-handle checkout once the project is ready to claim public assets
+* source file extension follow-up, including editor support, registry conventions, and practical ecosystem friction
 
 ---
 
