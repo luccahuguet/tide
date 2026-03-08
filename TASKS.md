@@ -1,4 +1,4 @@
-# Orbis Task List
+# Ferox Task List
 
 ## Core Language Design
 
@@ -81,8 +81,12 @@
 
 ## Naming and Release Readiness
 
-- [x] T049 Run trademark review for `Tark` in target jurisdictions
-- [x] T050 Run software and developer-tool brand conflict review for `Tark`
+- [x] T049 Run trademark review for the earlier working name
+- [x] T050 Run software and developer-tool brand conflict review for the earlier working name
 - [x] T054 Find and screen a replacement public name for the language
-- [x] T051 Review domain strategy for `orbis.*` and `orb.*`
-- [x] T052 Finalize whether `.orb` is the official source file extension
+- [ ] T051 Review domain strategy for `Ferox` and `ferox.*`
+- [x] T052 Finalize whether `.ferox` is the official source file extension
+- [x] T055 Run trademark review for `Orbis` in target jurisdictions
+- [x] T056 Run software and developer-tool brand conflict review for `Orbis`
+- [x] T057 Run trademark review for `Ferox` in target jurisdictions
+- [x] T058 Run software and developer-tool brand conflict review for `Ferox`

@@ -1,16 +1,16 @@
-# Orbis Spec Index
+# Ferox Spec Index
 
 This repository now splits the specification into focused documents instead of keeping all language, tooling, and strategy material in one file.
 
 ## Current Status
 
-The language is called **Orbis**.
+The language is called **Ferox**.
 
 Current status:
 
-* public language name selected as **Orbis**
-* official CLI binary selected as `orb`
-* official source file extension selected as `.orb`
+* public language name selected as **Ferox**
+* official CLI binary selected as `ferox`
+* official source file extension selected as `.ferox`
 * domain and legal follow-up review remain advisable before public launch
 
 ## Main Documents
@@ -24,7 +24,8 @@ Current status:
 
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
-* [DOMAIN_STRATEGY.md](./DOMAIN_STRATEGY.md): domain strategy review for `Orbis` and `orb`
+* [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
+* [FEROX_SOFTWARE_BRAND_REVIEW.md](./FEROX_SOFTWARE_BRAND_REVIEW.md): first-pass software and developer-brand review for `Ferox`
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): ownership and borrowing research notes

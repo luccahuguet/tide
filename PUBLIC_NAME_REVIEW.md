@@ -1,6 +1,6 @@
 # Public Name Review And Decision
 
-This document records the naming exploration that replaced the earlier `Tark` working name with the public language name **Orbis**.
+This document records the naming exploration that replaced the earlier working name and ultimately selected **Ferox** as the public language name.
 
 This is **not legal clearance**.
 
@@ -12,13 +12,14 @@ Review date:
 
 Selected public identity:
 
-* language name: **Orbis**
-* CLI binary: `orb`
-* source file extension: `.orb`
+* language name: **Ferox**
+* CLI binary: `ferox`
+* source file extension: `.ferox`
 
 Decision note:
 
 * this final choice was made after the earlier 4-letter-only exploration documented below
+* the project later evaluated `Orbis` and rejected it after name-specific trademark and software-brand review
 * the remaining candidate notes are kept as historical screening context, not as the current recommendation
 
 ## Earlier Constraint
@@ -35,7 +36,7 @@ Current conclusion:
 
 Current interpretation at that stage:
 
-* keep the earlier `Tark` name as an internal working codename until the public rename is finalized
+* keep the earlier working name as an internal codename until the public rename is finalized
 * treat `Nyrn` as the leading public-name candidate
 * keep domain review and final legal review as explicit follow-up gates
 
@@ -204,9 +205,9 @@ This recommendation is retained as historical context only.
 
 The final public naming decision for the project is:
 
-* language name: **Orbis**
-* CLI binary: `orb`
-* source file extension: `.orb`
+* language name: **Ferox**
+* CLI binary: `ferox`
+* source file extension: `.ferox`
 
 ## Scope Limits
 

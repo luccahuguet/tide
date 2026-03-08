@@ -1,19 +1,19 @@
-# Orbis Implementation Strategy
+# Ferox Implementation Strategy
 
 ## Implementation Strategy
 
-Orbis will be **bootstrapped in Rust**.
+Ferox will be **bootstrapped in Rust**.
 
 Reasons:
 
-* Rust aligns with Orbis’s safety goals
+* Rust aligns with Ferox’s safety goals
 * Rust has a mature ecosystem for building compilers
 * Rust provides excellent performance for language tooling
 * Rust enables a fast and reliable first implementation
 
 ### Self-hosting goal
 
-Orbis is intended to become **self-hosting**.
+Ferox is intended to become **self-hosting**.
 
 Plan:
 
@@ -21,9 +21,9 @@ Plan:
 
    The first compiler, formatter, and toolchain are implemented in Rust.
 
-2. **Phase 2 — Orbis transition**
+2. **Phase 2 — Ferox transition**
 
-   As the language stabilizes, components are gradually rewritten in Orbis:
+   As the language stabilizes, components are gradually rewritten in Ferox:
 
    * formatter
    * small utilities
@@ -33,16 +33,16 @@ Plan:
    * compiler frontend
    * full compiler
 
-3. **Phase 3 — Orbis-first**
+3. **Phase 3 — Ferox-first**
 
-   Orbis becomes the primary implementation language for its own ecosystem.
+   Ferox becomes the primary implementation language for its own ecosystem.
 
 Rust may remain in selected infrastructure layers where it continues to provide strategic value.
 
 Principle:
 
-> Rust brings Orbis into existence.
-> Orbis proves it deserves to exist.
+> Rust brings Ferox into existence.
+> Ferox proves it deserves to exist.
 
 ## Rust Bootstrap Architecture
 
@@ -52,19 +52,19 @@ Core direction:
 
 * one Rust workspace contains the bootstrap toolchain components
 * shared language data structures are defined in reusable library crates
-* the `orb` CLI is a thin orchestration layer over those libraries
+* the `ferox` CLI is a thin orchestration layer over those libraries
 
 ### Initial Component Layout
 
 Initial bootstrap components:
 
-* `orbis_cli`: command-line entrypoint and command dispatch
-* `orbis_syntax`: tokens, concrete syntax tree, parser, and source span handling
-* `orbis_ast`: normalized language AST where needed beyond the syntax tree
-* `orbis_fmt`: formatter built on syntax and source mapping
-* `orbis_sem`: name resolution, type checking, effect checking, and other semantic analysis
-* `orbis_diag`: diagnostics data model and rendering
-* `orbis_driver`: build orchestration, package loading, and pipeline coordination
+* `ferox_cli`: command-line entrypoint and command dispatch
+* `ferox_syntax`: tokens, concrete syntax tree, parser, and source span handling
+* `ferox_ast`: normalized language AST where needed beyond the syntax tree
+* `ferox_fmt`: formatter built on syntax and source mapping
+* `ferox_sem`: name resolution, type checking, effect checking, and other semantic analysis
+* `ferox_diag`: diagnostics data model and rendering
+* `ferox_driver`: build orchestration, package loading, and pipeline coordination
 
 This structure keeps the formatter, diagnostics, parser, and semantic passes usable as libraries instead of only as subcommands inside one binary.
 
@@ -84,7 +84,7 @@ The Rust bootstrap architecture should make later self-hosting incremental rathe
 Goals:
 
 * keep component boundaries explicit
-* allow individual tools such as the formatter to be rewritten in Orbis independently
+* allow individual tools such as the formatter to be rewritten in Ferox independently
 * avoid tight coupling between the CLI and the compiler pipeline
 * support testing of parser, formatter, and semantic logic as standalone libraries
 
@@ -138,7 +138,7 @@ Initial scope:
 
 Package loading and orchestration should be integrated once parsing, formatting, and semantic checking already exist as libraries.
 
-This stage turns the individual components into coherent `orb check`, `orb fmt`, and build-oriented workflows.
+This stage turns the individual components into coherent `ferox check`, `ferox fmt`, and build-oriented workflows.
 
 #### 5. Compiler Stages After Frontend Maturity
 
@@ -146,7 +146,7 @@ Lowering, code generation, and backend integration come after the frontend pipel
 
 Rationale:
 
-* frontend correctness is the larger risk for Orbis right now
+* frontend correctness is the larger risk for Ferox right now
 * code generation strategy is a separate decision area and should not force premature architecture choices
 * a stable checked intermediate form should exist before backend work becomes the main focus
 
@@ -167,18 +167,18 @@ Self-hosting is a gated transition, not just a symbolic rewrite milestone.
 
 Core rule:
 
-* a component should move from Rust to Orbis only when the Orbis toolchain can build, check, and validate that component with enough reliability to improve the project rather than destabilize it
+* a component should move from Rust to Ferox only when the Ferox toolchain can build, check, and validate that component with enough reliability to improve the project rather than destabilize it
 
 ### Phase 2 Entry Criteria
 
-The project may begin rewriting selected tools in Orbis when the following are true:
+The project may begin rewriting selected tools in Ferox when the following are true:
 
 * the Rust bootstrap parser, formatter, and semantic checker are stable enough to support day-to-day development
-* `orb check` and `orb fmt` are usable on the project's own codebase
+* `ferox check` and `ferox fmt` are usable on the project's own codebase
 * diagnostics are good enough that language-tooling bugs are debuggable without extraordinary effort
 * package loading, workspace handling, and deterministic builds are in place for the project's own repository
 
-At that point, the first Orbis rewrites should target lower-risk components such as:
+At that point, the first Ferox rewrites should target lower-risk components such as:
 
 * formatter
 * small utilities
@@ -186,20 +186,20 @@ At that point, the first Orbis rewrites should target lower-risk components such
 
 ### Phase 3 Entry Criteria
 
-Orbis should be considered meaningfully self-hosting only when the following are true:
+Ferox should be considered meaningfully self-hosting only when the following are true:
 
-* the Orbis implementation can build the primary Orbis compiler or compiler frontend from source
+* the Ferox implementation can build the primary Ferox compiler or compiler frontend from source
 * the resulting artifacts can rebuild themselves reproducibly or with only narrowly understood bootstrap steps
-* the Orbis-based implementation passes the same language and tooling test suites expected of the Rust bootstrap
-* the Orbis-based toolchain is usable for normal project development without falling back to Rust for routine iteration
+* the Ferox-based implementation passes the same language and tooling test suites expected of the Rust bootstrap
+* the Ferox-based toolchain is usable for normal project development without falling back to Rust for routine iteration
 
 ### Practical Definition
 
 Initial practical interpretation:
 
-* rewriting one tool in Orbis does not by itself make the project self-hosting
-* the project becomes self-hosting in stages as more of the trusted development path is handled by Orbis
-* the milestone that matters is whether Orbis is the primary language used to build and evolve Orbis itself
+* rewriting one tool in Ferox does not by itself make the project self-hosting
+* the project becomes self-hosting in stages as more of the trusted development path is handled by Ferox
+* the milestone that matters is whether Ferox is the primary language used to build and evolve Ferox itself
 
 ### Design Intent
 
@@ -210,28 +210,28 @@ Goals:
 * prevent premature rewrites that slow the project down
 * move components in an order that matches toolchain maturity
 * make the self-hosting claim technically meaningful
-* preserve the Rust bootstrap as a reliability baseline until Orbis genuinely earns the handoff
+* preserve the Rust bootstrap as a reliability baseline until Ferox genuinely earns the handoff
 
 ## Long-Term Rust Boundary
 
-Orbis should become the primary implementation language for language-facing tooling, but not every supporting layer must be rewritten for ideological purity.
+Ferox should become the primary implementation language for language-facing tooling, but not every supporting layer must be rewritten for ideological purity.
 
 Core rule:
 
-* Rust may remain long-term for infrastructure that is strategically low-level, heavily platform-bound, or not central to Orbis's language-design value
+* Rust may remain long-term for infrastructure that is strategically low-level, heavily platform-bound, or not central to Ferox's language-design value
 
-### Orbis-First Targets
+### Ferox-First Targets
 
-The following should be preferred candidates for eventual Orbis ownership:
+The following should be preferred candidates for eventual Ferox ownership:
 
 * formatter
 * linter
 * parser
 * semantic checker
 * compiler frontend
-* core developer-facing command logic where Orbis is exercising its own language strengths
+* core developer-facing command logic where Ferox is exercising its own language strengths
 
-These are the parts most directly tied to proving that Orbis can build and maintain real language tooling.
+These are the parts most directly tied to proving that Ferox can build and maintain real language tooling.
 
 ### Rust-Permitted Long-Term Layers
 
@@ -241,7 +241,7 @@ The following may reasonably remain in Rust if doing so continues to provide cle
 * platform-specific integration layers
 * deeply optimized backend or systems-integration shims
 * infrastructure wrappers around external toolchains or host APIs
-* narrowly scoped bootstrap utilities that do not materially affect day-to-day Orbis development
+* narrowly scoped bootstrap utilities that do not materially affect day-to-day Ferox development
 
 ### Decision Standard
 
@@ -249,25 +249,25 @@ Rust retention should be judged pragmatically.
 
 Questions to ask:
 
-* does rewriting this component in Orbis materially strengthen the language or its ecosystem?
-* is the component part of the trusted developer-facing path that Orbis should own?
-* would a Orbis rewrite reduce complexity, or merely duplicate stable low-level infrastructure?
+* does rewriting this component in Ferox materially strengthen the language or its ecosystem?
+* is the component part of the trusted developer-facing path that Ferox should own?
+* would a Ferox rewrite reduce complexity, or merely duplicate stable low-level infrastructure?
 * does the component depend heavily on platform APIs or mature Rust ecosystem libraries that are not worth reimplementing early?
 
 ### Design Intent
 
-The project should pursue self-hosting where it proves Orbis's value, not where it creates ceremonial work.
+The project should pursue self-hosting where it proves Ferox's value, not where it creates ceremonial work.
 
 Goals:
 
-* keep Orbis as the primary language for the language's own core tooling
+* keep Ferox as the primary language for the language's own core tooling
 * avoid performative rewrites of low-level support code
 * preserve the option to use Rust where it remains the sharper engineering choice
 * keep the self-hosting claim meaningful without demanding total infrastructure purity
 
 ## Code Generation And Backend Strategy
 
-Orbis should use a phased backend strategy rather than committing immediately to one permanent backend for all stages of the project.
+Ferox should use a phased backend strategy rather than committing immediately to one permanent backend for all stages of the project.
 
 Core rule:
 
@@ -295,7 +295,7 @@ Rationale:
 * simpler integration than LLVM
 * faster bring-up for a new language
 * good fit for early compiler iteration and reasonable native performance
-* aligns with Orbis's current need to validate frontend and compiler architecture before chasing maximum optimization
+* aligns with Ferox's current need to validate frontend and compiler architecture before chasing maximum optimization
 
 ### Phase 3: Long-Term Optimization Options
 
@@ -309,7 +309,7 @@ Initial direction:
 
 ### Design Intent
 
-The backend strategy should keep Orbis from front-loading complexity that does not yet help the language prove itself.
+The backend strategy should keep Ferox from front-loading complexity that does not yet help the language prove itself.
 
 Goals:
 

@@ -1,4 +1,4 @@
-# Orbis Memory Model Research
+# Ferox Memory Model Research
 
 This document captures research and design guidance for the upcoming memory-model tasks:
 
@@ -9,7 +9,7 @@ This document captures research and design guidance for the upcoming memory-mode
 * `T011` region escape rules
 * `T012` shared ownership primitives
 
-The goal is not to copy Rust or Cyclone. The goal is to identify what they got right, where they became costly, and what Orbis should do differently.
+The goal is not to copy Rust or Cyclone. The goal is to identify what they got right, where they became costly, and what Ferox should do differently.
 
 ## Sources
 
@@ -40,7 +40,7 @@ Rust's strongest rule is simple:
 
 That rule is powerful because users can usually predict it before they read the compiler error.
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * keep the default ownership rule extremely small
 * make moves the default for non-copy values
@@ -55,7 +55,7 @@ The most important practical lesson from Rust is not lifetime syntax. It is the 
 
 That is the rule surfaced by the Rust error documentation and reference docs. The complexity comes later when the compiler must prove when borrows start and end.
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * specify the aliasing rule first
 * specify borrow duration second
@@ -69,13 +69,13 @@ Rust's borrow checker prevents real bugs, but the official examples also show wh
 * container APIs often expose lifetime friction
 * lifetime relationships leak into user-visible signatures
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * accept less expressiveness in exchange for a smaller mental model
 * prefer shorter, more local borrows
 * reject complicated long-distance borrowing patterns instead of trying to prove all of them
 
-This supports the original Orbis goal of being smaller than Rust.
+This supports the original Ferox goal of being smaller than Rust.
 
 ### 4. Cyclone shows that regions are powerful but dangerous to overexpose
 
@@ -87,7 +87,7 @@ Cyclone demonstrates that regions can give explicit control over allocation and 
 
 Cyclone exposes stack regions, lexical regions, heap, unique regions, and reference-counted regions. That is powerful, but it is a lot.
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * do not expose many region classes in v1
 * start with one explicit growable lexical arena construct
@@ -104,7 +104,7 @@ Rust's `Rc<T>` makes the tradeoff clear:
 
 The Send/Sync material also shows that shared ownership and concurrency interact dangerously when synchronization is not explicit.
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * shared ownership should never be the default
 * v1 should use explicit library or standard types for shared ownership
@@ -117,17 +117,17 @@ Rust's unsafe/raw-pointer split is useful:
 * safe references carry guarantees
 * raw pointers and unchecked aliasing are moved into `unsafe`
 
-Recommendation for Orbis:
+Recommendation for Ferox:
 
 * keep safe references strong
 * move raw pointer-style operations into explicit `unsafe`
 * use `unsafe` to build safe abstractions, not to create an alternate programming style
 
-## Recommendations For Orbis
+## Recommendations For Ferox
 
 ## Recommended v1 memory model shape
 
-Orbis v1 should aim for the following:
+Ferox v1 should aim for the following:
 
 * one owner for non-copy values
 * move by default
@@ -154,7 +154,7 @@ Why:
 
 * it is teachable
 * it makes ownership visible
-* it aligns with Orbis's performance transparency goals
+* it aligns with Ferox's performance transparency goals
 
 ### T008: Copy-safe types
 
@@ -228,7 +228,7 @@ Why:
 * it makes the cost and synchronization story visible
 * it avoids unsound or confusing overlap between aliasing and ownership
 
-## Design Choices Orbis Should Probably Avoid
+## Design Choices Ferox Should Probably Avoid
 
 These are the main traps suggested by the research:
 
@@ -240,7 +240,7 @@ These are the main traps suggested by the research:
 
 ## Proposed Draft Policy
 
-If Orbis wants to stay bold but coherent, the draft policy should be:
+If Ferox wants to stay bold but coherent, the draft policy should be:
 
 * Be bold in ownership and explicitness
 * Be conservative in borrow expressiveness
@@ -252,13 +252,13 @@ If Orbis wants to stay bold but coherent, the draft policy should be:
 
 Before writing the actual `T007` to `T012` sections, the most important design decision to lock is:
 
-* whether Orbis wants a strictly lexical borrowing model in v1
+* whether Ferox wants a strictly lexical borrowing model in v1
 
 My recommendation is yes.
 
 That would mean:
 
 * borrow scopes are intentionally local and predictable
-* some valid-but-complex Rust patterns are rejected in Orbis
+* some valid-but-complex Rust patterns are rejected in Ferox
 * arenas remain structured and block-scoped
 * the language stays closer to its "smaller than Rust" promise

@@ -1,30 +1,30 @@
-# Orbis Tooling And Packages
+# Ferox Tooling And Packages
 
 ## Formatting Policy
 
-Orbis defines a **single canonical source format**.
+Ferox defines a **single canonical source format**.
 
 Canonical formatting is part of the standard workflow, but formatting is not a prerequisite for executing otherwise valid code.
 
 If a file is syntactically valid but **not canonically formatted**:
 
-* `orb build`
-* `orb run`
-* `orb test`
+* `ferox build`
+* `ferox run`
+* `ferox test`
 
 must still operate on the program normally.
 
 Formatting compliance is enforced by:
 
-* `orb fmt`
-* `orb fmt --check`
+* `ferox fmt`
+* `ferox fmt --check`
 * lint or CI policy
 
 Formatting is enforced by the official formatter, not by making ordinary execution commands reject valid code.
 
 Example command:
 
-orb fmt
+ferox fmt
 
 Goals:
 
@@ -36,7 +36,7 @@ Goals:
 
 ## Canonical Formatting Rules
 
-Orbis has one official formatter and one canonical formatting outcome for any supported source form.
+Ferox has one official formatter and one canonical formatting outcome for any supported source form.
 
 Core rule:
 
@@ -55,7 +55,7 @@ Initial canonical rules:
 
 Example intent:
 
-```orb
+```ferox
 fn add(a: Int, b: Int) -> Int {
     a + b
 }
@@ -68,7 +68,7 @@ let result = match value {
 
 ### Design Intent
 
-Canonical formatting should make Orbis source predictable to read and cheap to rewrite automatically.
+Canonical formatting should make Ferox source predictable to read and cheap to rewrite automatically.
 
 Goals:
 
@@ -97,7 +97,7 @@ Initial rules:
 
 Examples:
 
-```orb
+```ferox
 use core.hash.HashMap as Map;
 use core.io.Writer;
 use net.http;
@@ -148,7 +148,7 @@ Initial direction:
 
 Example intent:
 
-```orb
+```ferox
 fn build(
     host: String,
     port: Int,
@@ -172,7 +172,7 @@ Rules:
 
 ### Design Intent
 
-These rules should make multiline Orbis code predictable before any sophisticated width-based formatting policy exists.
+These rules should make multiline Ferox code predictable before any sophisticated width-based formatting policy exists.
 
 Goals:
 
@@ -187,7 +187,7 @@ The formatter may attempt limited recovery on partially invalid files, but corre
 
 Core rule:
 
-* `orb fmt` must not silently rewrite a file when the parser cannot establish a sufficiently reliable structural understanding of the source
+* `ferox fmt` must not silently rewrite a file when the parser cannot establish a sufficiently reliable structural understanding of the source
 
 Initial direction:
 
@@ -242,7 +242,7 @@ Rules:
 * formatting changes that would rewrite large volumes of existing code should not appear silently in ordinary maintenance updates
 * newly introduced syntax may define new canonical formatting without violating stability for older syntax
 * formatter changes tied to language-edition boundaries may be allowed when explicitly documented
-* `orb fmt --check` should remain a reliable CI signal across a pinned toolchain version
+* `ferox fmt --check` should remain a reliable CI signal across a pinned toolchain version
 
 ### Design Intent
 
@@ -263,7 +263,7 @@ A single official toolchain exists.
 
 CLI:
 
-orb
+ferox
 
 Responsibilities:
 
@@ -286,9 +286,9 @@ Goals:
 
 ## Package Manifest Format
 
-Each package is described by a manifest file named `orb.toml`.
+Each package is described by a manifest file named `ferox.toml`.
 
-Orbis v1 uses TOML as the manifest format.
+Ferox v1 uses TOML as the manifest format.
 
 Rationale:
 
@@ -300,7 +300,7 @@ Rationale:
 
 Initial direction:
 
-* a package root contains one `orb.toml`
+* a package root contains one `ferox.toml`
 * the manifest contains a required `[package]` table
 * dependency declarations live under `[dependencies]`
 * target declarations use dedicated target tables such as `[lib]` and `[[bin]]`
@@ -318,11 +318,11 @@ net = "0.3"
 json = { version = "1.2" }
 
 [lib]
-path = "src/lib.orb"
+path = "src/lib.ferox"
 
 [[bin]]
 name = "server"
-path = "src/main.orb"
+path = "src/main.ferox"
 ```
 
 ### Package Table
@@ -386,7 +386,7 @@ Rules:
 
 ### Dependency Resolution
 
-Orbis uses deterministic dependency resolution in v1.
+Ferox uses deterministic dependency resolution in v1.
 
 Core rule:
 
@@ -406,7 +406,7 @@ Resolution results should be reproducible.
 
 Initial direction:
 
-* the toolchain may generate a lockfile such as `orb.lock`
+* the toolchain may generate a lockfile such as `ferox.lock`
 * normal application builds should use the locked resolution when present
 * updating dependency selections should be an explicit tool action rather than an accidental side effect of ordinary builds
 
@@ -434,13 +434,13 @@ These are deferred to later package-system tasks so the base manifest format sta
 
 ## Workspace Layout
 
-Orbis supports multi-package repositories through an explicit root workspace manifest.
+Ferox supports multi-package repositories through an explicit root workspace manifest.
 
 Initial direction:
 
-* a workspace root contains an `orb.toml` with a `[workspace]` table
+* a workspace root contains an `ferox.toml` with a `[workspace]` table
 * the workspace explicitly lists member package directories
-* each member package keeps its own package-local `orb.toml`
+* each member package keeps its own package-local `ferox.toml`
 * package paths are relative to the workspace root
 
 Example:
@@ -469,21 +469,21 @@ Example intent:
 
 ```text
 repo/
-  orb.toml
+  ferox.toml
   libs/
     core/
-      orb.toml
+      ferox.toml
       src/
-        lib.orb
+        lib.ferox
     net/
-      orb.toml
+      ferox.toml
       src/
-        lib.orb
+        lib.ferox
   apps/
     server/
-      orb.toml
+      ferox.toml
       src/
-        main.orb
+        main.ferox
 ```
 
 ### Initial Non-Goals
@@ -499,7 +499,7 @@ This keeps repository structure explicit and easy for both humans and tools to i
 
 ## Registry And Publishing Strategy
 
-Orbis v1 uses one default official package registry.
+Ferox v1 uses one default official package registry.
 
 Core rule:
 
@@ -510,7 +510,7 @@ Initial direction:
 * the ecosystem has one canonical public registry for publishable packages
 * package names are globally unique within that registry
 * published package versions are immutable once accepted
-* packages are published explicitly with `orb publish`
+* packages are published explicitly with `ferox publish`
 
 ### Published Package Contents
 
@@ -518,7 +518,7 @@ Publishing produces a source package plus registry metadata.
 
 Initial direction:
 
-* a published package includes its `orb.toml`, source files, and lockfile or dependency metadata as required for reproducible builds
+* a published package includes its `ferox.toml`, source files, and lockfile or dependency metadata as required for reproducible builds
 * published content should be deterministic so the same source tree produces the same package artifact
 * generated local build artifacts are not part of the published package
 
@@ -570,8 +570,8 @@ Documentation generation is an official toolchain feature.
 
 Primary commands:
 
-* `orb doc`
-* `orb doc --open` may later open the generated documentation locally, but opening behavior is not required for the initial design
+* `ferox doc`
+* `ferox doc --open` may later open the generated documentation locally, but opening behavior is not required for the initial design
 
 ### Documentation Scope
 
@@ -588,7 +588,7 @@ Rules:
 
 Initial direction:
 
-* `orb doc` generates static HTML documentation by default
+* `ferox doc` generates static HTML documentation by default
 * the output is deterministic for a given source tree and toolchain version
 * generated docs should preserve package, module, and declaration hierarchy
 * cross-links between documented declarations should be generated automatically where the target is known
@@ -597,8 +597,8 @@ Initial direction:
 
 Rules:
 
-* running `orb doc` in a package generates documentation for that package
-* running `orb doc` at a workspace root may generate an aggregated documentation site for workspace members
+* running `ferox doc` in a package generates documentation for that package
+* running `ferox doc` at a workspace root may generate an aggregated documentation site for workspace members
 * workspace documentation should keep package boundaries visible rather than flattening all declarations into one undifferentiated namespace
 
 ### Design Intent
@@ -636,7 +636,7 @@ Compiler and checker diagnostics should be available as structured data.
 
 Initial direction:
 
-* commands such as `orb build`, `orb check`, and `orb test` may support a flag such as `--output json`
+* commands such as `ferox build`, `ferox check`, and `ferox test` may support a flag such as `--output json`
 * structured diagnostics include at least severity, message, file path, span information, and diagnostic code when available
 * related notes and secondary spans should be represented explicitly rather than embedded only in plain text
 

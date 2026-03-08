@@ -1,14 +1,14 @@
-# Orbis Vision
+# Ferox Vision
 
 ## Language Name
 
-The language is called **Orbis**.
+The language is called **Ferox**.
 
 Status:
 
 * selected as the public language name
-* official CLI binary is `orb`
-* official source file extension is `.orb`
+* official CLI binary is `ferox`
+* official source file extension is `.ferox`
 * domain and legal follow-up review remain advisable before public launch
 
 The name is treated as a standalone project name.
@@ -22,14 +22,14 @@ This reflects the philosophy of the language:
 
 Example CLI:
 
-orb build
-orb run
-orb fmt
-orb test
+ferox build
+ferox run
+ferox fmt
+ferox test
 
 Official file extension:
 
-`.orb`
+`.ferox`
 
 Status:
 
@@ -39,16 +39,16 @@ Status:
 
 Follow-up checks still recommended:
 
-* trademark search in target jurisdictions for `Orbis` and `orb`
+* trademark search in target jurisdictions for `Ferox` and `ferox`
 * product and company-name conflict review in developer tools and software markets
-* domain acquisition plan for the preferred compound `orbis` domain and any optional redirects
+* domain strategy review for `Ferox` and `ferox.*`
 * source file extension review, including collision risk, searchability, editor support, and confusion with internet domains
 
 ---
 
 ## Vision
 
-Orbis is a compiled programming language designed for **high-trust software** where correctness, analyzability, and predictable performance are prioritized over convenience.
+Ferox is a compiled programming language designed for **high-trust software** where correctness, analyzability, and predictable performance are prioritized over convenience.
 
 The language is optimized for **both humans and coding agents** to read, reason about, and safely evolve codebases.
 
@@ -75,7 +75,7 @@ Secondary rule:
 
 ## Core Identity
 
-Orbis is:
+Ferox is:
 
 * Compiled
 * Statically typed
@@ -107,7 +107,7 @@ Non-goals:
 
 ## Functional Programming Influence
 
-Functional programming influences Orbis, but it is **not a purely functional language**.
+Functional programming influences Ferox, but it is **not a purely functional language**.
 
 Included FP ideas:
 
@@ -135,7 +135,7 @@ Philosophy:
 
 ## Performance Philosophy
 
-Orbis favors **predictable performance**.
+Ferox favors **predictable performance**.
 
 Design principles:
 
@@ -156,7 +156,7 @@ Performance model goals:
 
 ## Agentic Design Principles
 
-Orbis is designed to be **machine-friendly**.
+Ferox is designed to be **machine-friendly**.
 
 Key design goals:
 
@@ -180,7 +180,7 @@ The language should be easy for agents to:
 
 ## Strategic Positioning
 
-Orbis aims to occupy a space between:
+Ferox aims to occupy a space between:
 
 **Go and Rust**
 

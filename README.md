@@ -1,6 +1,6 @@
-# Orbis
+# Ferox
 
-Orbis is a language design project for a compiled, ownership-based programming language aimed at high-trust software.
+Ferox is a language design project for a compiled, ownership-based programming language aimed at high-trust software.
 
 The current direction is:
 
@@ -41,11 +41,11 @@ Current planned characteristics:
 * performance-transparent
 * tooling-first
 
-The public language name is **Orbis**.
+The public language name is **Ferox**.
 
-The official CLI binary is `orb`.
+The official CLI binary is `ferox`.
 
-The official source file extension is `.orb`.
+The official source file extension is `.ferox`.
 
 ## Repository Guide
 
@@ -58,7 +58,8 @@ The main documents are:
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
-* [DOMAIN_STRATEGY.md](./DOMAIN_STRATEGY.md): domain strategy review for `Orbis` and `orb`
+* [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
+* [FEROX_SOFTWARE_BRAND_REVIEW.md](./FEROX_SOFTWARE_BRAND_REVIEW.md): first-pass software and developer-brand review for `Ferox`
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): research notes for the ownership and borrowing design
@@ -99,7 +100,7 @@ The next core design work is focused on:
 
 ## Principle
 
-Orbis is trying to be bold selectively:
+Ferox is trying to be bold selectively:
 
 * bold in ownership, explicitness, and analyzability
 * conservative where extra semantic novelty would make the system harder to reason about

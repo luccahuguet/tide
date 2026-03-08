@@ -1,12 +1,12 @@
-# Orbis Governance
+# Ferox Governance
 
 ## Development Rule - Agent-Produced Code
 
-Orbis development follows an **agent-produced code rule**.
+Ferox development follows an **agent-produced code rule**.
 
 Primary rule:
 
-> No production Orbis code should originate from direct human coding.
+> No production Ferox code should originate from direct human coding.
 
 Human responsibilities:
 
@@ -31,4 +31,4 @@ Philosophy:
 > Humans define the system.
 > Agents produce the code.
 
-This rule is project governance, not part of the Orbis language specification.
+This rule is project governance, not part of the Ferox language specification.

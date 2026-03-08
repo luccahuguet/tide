@@ -1,5 +1,10 @@
 # Orbis Domain Strategy Review
 
+Historical note:
+
+* this document records the domain strategy review for the earlier `Orbis` candidate
+* `Ferox` is now the selected public name, so this document is retained only as naming-history context
+
 This document records the first-pass domain strategy review for the public name **Orbis** and the CLI name `orb`.
 
 This is **not legal clearance** and **not a registrar availability confirmation**.

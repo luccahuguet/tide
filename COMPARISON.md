@@ -1,16 +1,16 @@
-# Orbis vs Rust, Zig, and Go
+# Ferox vs Rust, Zig, and Go
 
-This document explains Orbis's intended position relative to Rust, Zig, and Go.
+This document explains Ferox's intended position relative to Rust, Zig, and Go.
 
 Important constraint:
 
-* Orbis is still a design-stage language
+* Ferox is still a design-stage language
 * some comparisons are about intended direction, not implemented reality
 * if the spec changes, this document should change with it
 
 ## Short Version
 
-Orbis is aiming for this space:
+Ferox is aiming for this space:
 
 * safer than Go
 * simpler than Rust
@@ -26,13 +26,13 @@ Score meaning:
 
 These scores are directional, not scientific.
 
-| Dimension | Orbis | Rust | Zig | Go |
+| Dimension | Ferox | Rust | Zig | Go |
 |---|---|---|---|---|
 | Safety model | `9/10` Safe by default with ownership and simplified borrowing | `10/10` Safe by default with full borrow checker | `5/10` Lower-level manual control with fewer default safety guarantees | `6/10` GC-based safety with fewer compile-time correctness guarantees |
 | Memory management | `9/10` Deterministic, no GC, ownership plus lexical borrowing plus arenas/regions | `10/10` Deterministic, no GC, ownership plus borrowing | `9/10` Manual allocators and explicit memory management | `4/10` Garbage collection |
 | Borrowing power | `7/10` Intentionally smaller than Rust, but still ownership-based | `10/10` Highest expressiveness and maturity in this group | `1/10` No borrow checker | `1/10` No borrow checker |
 | Raw runtime performance | `9/10` Intended to be near-native and systems-grade | `10/10` Mature, high-performance systems language | `10/10` Extremely strong low-level performance profile | `7/10` Good, but GC and runtime tradeoffs remain |
-| Performance transparency | `9/10` Core design goal | `9/10` Strong | `10/10` Strong | `5/10` More hidden runtime costs than Orbis intends |
+| Performance transparency | `9/10` Core design goal | `9/10` Strong | `10/10` Strong | `5/10` More hidden runtime costs than Ferox intends |
 | Predictability of runtime cost | `9/10` Explicit-cost design is a core goal | `9/10` Strong and mature | `10/10` Best-in-class explicitness | `5/10` Runtime behavior is less explicit |
 | Allocation visibility | `9/10` Intended to keep allocation decisions visible | `8/10` Strong, though abstractions can hide details | `10/10` Very explicit allocation model | `4/10` Allocation costs are less visible by design |
 | Low-level control | `8/10` Strong, but not trying to beat Zig at raw control | `9/10` Strong with safety machinery | `10/10` Primary strength | `4/10` Lower-level control is not a main design goal |
@@ -50,11 +50,11 @@ These scores are directional, not scientific.
 | Target feeling | `9/10` High-trust systems with smaller mental model than Rust | `10/10` Maximal safety and control with higher complexity | `8/10` Explicit systems programming with manual sharp edges | `8/10` Productive backend engineering with weaker low-level guarantees |
 | Average score | `8.9/10` | `8.5/10` | `7.0/10` | `6.4/10` |
 
-## Orbis vs Rust
+## Ferox vs Rust
 
-Rust is the closest reference point for Orbis.
+Rust is the closest reference point for Ferox.
 
-What Orbis wants from Rust:
+What Ferox wants from Rust:
 
 * ownership
 * deterministic memory management
@@ -62,7 +62,7 @@ What Orbis wants from Rust:
 * strong compile-time safety
 * good tooling
 
-What Orbis is trying to change:
+What Ferox is trying to change:
 
 * smaller borrowing model
 * fewer advanced type-system features early on
@@ -72,27 +72,27 @@ What Orbis is trying to change:
 Current intended tradeoff:
 
 * Rust is likely to remain more expressive
-* Orbis aims to be easier to predict and easier to maintain
+* Ferox aims to be easier to predict and easier to maintain
 
-Orbis should win over Rust only if it actually achieves:
+Ferox should win over Rust only if it actually achieves:
 
 * a meaningfully smaller mental model
 * strong enough safety without collapsing into manual memory pain
 
 If it fails there, users should just use Rust.
 
-## Orbis vs Zig
+## Ferox vs Zig
 
 Zig is the closest reference for explicitness and performance transparency.
 
-What Orbis wants from Zig:
+What Ferox wants from Zig:
 
 * visible costs
 * low magic
 * explicit behavior
 * systems-language seriousness
 
-What Orbis is trying to change:
+What Ferox is trying to change:
 
 * stronger compile-time safety in safe code
 * stronger invalid-state prevention
@@ -102,22 +102,22 @@ What Orbis is trying to change:
 Current intended tradeoff:
 
 * Zig gives more direct low-level control
-* Orbis aims to give stronger correctness guarantees and more structured long-term maintenance
+* Ferox aims to give stronger correctness guarantees and more structured long-term maintenance
 
-Orbis should not try to beat Zig at "closest to the metal." That is not the right fight.
+Ferox should not try to beat Zig at "closest to the metal." That is not the right fight.
 
-## Orbis vs Go
+## Ferox vs Go
 
 Go is the main reference for simplicity, operational clarity, and backend adoption.
 
-What Orbis wants from Go:
+What Ferox wants from Go:
 
 * a small language
 * practical focus
 * strong standard tooling story
 * suitability for backends and services
 
-What Orbis is trying to change:
+What Ferox is trying to change:
 
 * eliminate garbage collection as a default requirement
 * provide stronger compile-time guarantees
@@ -127,9 +127,9 @@ What Orbis is trying to change:
 Current intended tradeoff:
 
 * Go remains easier for broad teams and faster to teach
-* Orbis aims to support higher-trust and more performance-sensitive systems with stronger compiler help
+* Ferox aims to support higher-trust and more performance-sensitive systems with stronger compiler help
 
-Orbis should win over Go only in cases where:
+Ferox should win over Go only in cases where:
 
 * correctness pressure is high
 * memory/runtime behavior matters
@@ -137,9 +137,9 @@ Orbis should win over Go only in cases where:
 
 If the project target is simple CRUD or low-risk services, Go may still be the better choice.
 
-## Where Orbis Should Be Careful
+## Where Ferox Should Be Careful
 
-The positioning only works if Orbis avoids these traps:
+The positioning only works if Ferox avoids these traps:
 
 * becoming Rust-level complex without Rust-level payoff
 * becoming Zig-level manual without Zig-level control benefits
@@ -172,7 +172,7 @@ Use Go if you want:
 * simple backend development
 * a mature productivity-oriented server language
 
-Use Orbis, if it succeeds, when you want:
+Use Ferox, if it succeeds, when you want:
 
 * Rust-like seriousness about safety
 * Zig-like explicitness about cost
