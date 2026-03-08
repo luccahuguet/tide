@@ -1,13 +1,15 @@
-# Tark Vision
+# Orbis Vision
 
 ## Language Name
 
-The language is called **Tark**.
+The language is called **Orbis**.
 
 Status:
 
-* selected as the project name
-* should still pass trademark and brand-conflict review before becoming final for public release
+* selected as the public language name
+* official CLI binary is `orb`
+* official source file extension is `.orb`
+* domain and legal follow-up review remain advisable before public launch
 
 The name is treated as a standalone project name.
 
@@ -20,34 +22,33 @@ This reflects the philosophy of the language:
 
 Example CLI:
 
-tark build
-tark run
-tark fmt
-tark test
+orb build
+orb run
+orb fmt
+orb test
 
-Tentative file extension:
+Official file extension:
 
-`.tark`
+`.orb`
 
 Status:
 
-* **Not yet approved as a final decision**
-* `.ax` was rejected as the preferred extension
-* `.tark` is the current preferred extension because it is explicit and low-ambiguity
-* avoid short extensions that are likely to create domain or file-format confusion
+* selected as the current official source-file extension
+* `.ax` was rejected earlier in the naming process
+* short extensions still need practical review for searchability, editor support, and ecosystem collisions
 
-Pre-finalization checks required:
+Follow-up checks still recommended:
 
-* trademark search in target jurisdictions
+* trademark search in target jurisdictions for `Orbis` and `orb`
 * product and company-name conflict review in developer tools and software markets
-* domain strategy review for `tark.*`
+* domain strategy review for `orbis.*` and `orb.*`
 * source file extension review, including collision risk, searchability, editor support, and confusion with internet domains
 
 ---
 
 ## Vision
 
-Tark is a compiled programming language designed for **high-trust software** where correctness, analyzability, and predictable performance are prioritized over convenience.
+Orbis is a compiled programming language designed for **high-trust software** where correctness, analyzability, and predictable performance are prioritized over convenience.
 
 The language is optimized for **both humans and coding agents** to read, reason about, and safely evolve codebases.
 
@@ -74,7 +75,7 @@ Secondary rule:
 
 ## Core Identity
 
-Tark is:
+Orbis is:
 
 * Compiled
 * Statically typed
@@ -106,7 +107,7 @@ Non-goals:
 
 ## Functional Programming Influence
 
-Functional programming influences Tark, but it is **not a purely functional language**.
+Functional programming influences Orbis, but it is **not a purely functional language**.
 
 Included FP ideas:
 
@@ -134,7 +135,7 @@ Philosophy:
 
 ## Performance Philosophy
 
-Tark favors **predictable performance**.
+Orbis favors **predictable performance**.
 
 Design principles:
 
@@ -155,7 +156,7 @@ Performance model goals:
 
 ## Agentic Design Principles
 
-Tark is designed to be **machine-friendly**.
+Orbis is designed to be **machine-friendly**.
 
 Key design goals:
 
@@ -179,7 +180,7 @@ The language should be easy for agents to:
 
 ## Strategic Positioning
 
-Tark aims to occupy a space between:
+Orbis aims to occupy a space between:
 
 **Go and Rust**
 

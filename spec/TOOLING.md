@@ -1,30 +1,30 @@
-# Tark Tooling And Packages
+# Orbis Tooling And Packages
 
 ## Formatting Policy
 
-Tark defines a **single canonical source format**.
+Orbis defines a **single canonical source format**.
 
 Canonical formatting is part of the standard workflow, but formatting is not a prerequisite for executing otherwise valid code.
 
 If a file is syntactically valid but **not canonically formatted**:
 
-* `tark build`
-* `tark run`
-* `tark test`
+* `orb build`
+* `orb run`
+* `orb test`
 
 must still operate on the program normally.
 
 Formatting compliance is enforced by:
 
-* `tark fmt`
-* `tark fmt --check`
+* `orb fmt`
+* `orb fmt --check`
 * lint or CI policy
 
 Formatting is enforced by the official formatter, not by making ordinary execution commands reject valid code.
 
 Example command:
 
-tark fmt
+orb fmt
 
 Goals:
 
@@ -34,6 +34,227 @@ Goals:
 * stabilize refactoring and code generation
 * ensure uniform codebases
 
+## Canonical Formatting Rules
+
+Orbis has one official formatter and one canonical formatting outcome for any supported source form.
+
+Core rule:
+
+* if two source files have the same syntax tree and both are fully formatable, the official formatter should produce the same formatted result
+
+Initial canonical rules:
+
+* declarations appear in a normalized block-based layout rather than a compact one-line style for multi-part constructs
+* opening braces stay on the same line as the declaration or control form they belong to
+* closing braces appear on their own line aligned with the start of the construct
+* statements end with `;` where required by the language and are emitted one per line
+* a single ASCII space is used around infix operators and after commas
+* there is no alignment-by-columns formatting
+* unnecessary blank lines are removed, while top-level items are separated clearly
+* the formatter prefers stable readability over preserving user-written local spacing quirks
+
+Example intent:
+
+```orb
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+let result = match value {
+    some(inner) => inner,
+    none => fallback,
+};
+```
+
+### Design Intent
+
+Canonical formatting should make Orbis source predictable to read and cheap to rewrite automatically.
+
+Goals:
+
+* produce one obvious formatting result
+* keep declarations and control flow visually regular
+* avoid style choices that depend on manual alignment
+* support formatter-driven refactors and code generation
+
+### Deferred Detail
+
+The following remain defined in later formatting tasks:
+
+* formatter stability guarantees across toolchain versions
+
+## Import Ordering And Grouping
+
+Imports have one canonical ordering and grouping style.
+
+Initial rules:
+
+* all `use` declarations in a file are kept in one contiguous import block near the top of the file after any file-level doc comments
+* import declarations are sorted lexicographically by their full canonical path
+* grouped imports are sorted lexicographically inside their braces
+* aliased imports are ordered by their underlying import path, not by the alias
+* the formatter does not create semantic subgroups separated by blank lines in v1
+
+Examples:
+
+```orb
+use core.hash.HashMap as Map;
+use core.io.Writer;
+use net.http;
+use net.http.{Client, Request, Response};
+```
+
+### Canonical Grouping
+
+Rules:
+
+* grouped imports are preferred when multiple items are imported from the same module path
+* duplicate imports are collapsed into one canonical form where possible
+* wildcard imports remain forbidden and therefore never appear in formatted output
+* the formatter may normalize repeated imports from the same module into a grouped import when that does not change meaning
+
+### Design Intent
+
+Import layout should be deterministic without requiring style debates or semantic guesswork.
+
+Goals:
+
+* make import diffs stable
+* keep import scanning fast for humans and tools
+* avoid subjective grouping conventions in v1
+* preserve a single obvious formatter result
+
+## Line Breaking, Indentation, And Trailing Commas
+
+The formatter uses a small set of fixed layout rules for multiline constructs.
+
+### Indentation
+
+Initial rules:
+
+* one indentation level is `4` spaces
+* tabs are not used for indentation in canonical output
+* nested blocks and multiline constructs increase indentation by exactly one level
+
+### Line Breaking
+
+Initial direction:
+
+* short single-line constructs may remain on one line when they fit the formatter's basic readability rules
+* multiline blocks place each contained statement or arm on its own line
+* multiline parameter lists, argument lists, tuple literals, array literals, map literals, and grouped imports place one item per line
+* closing delimiters align with the start of the construct that opened them
+* line breaking is structure-driven rather than dependent on manual alignment choices
+
+Example intent:
+
+```orb
+fn build(
+    host: String,
+    port: Int,
+    secure: Bool,
+) -> Config {
+    Config {
+        host: host,
+        port: port,
+        secure: secure,
+    }
+}
+```
+
+### Trailing Commas
+
+Rules:
+
+* multiline comma-separated constructs use trailing commas
+* single-line comma-separated constructs do not use trailing commas unless required by the syntax of a singleton tuple or similar construct
+* trailing commas are part of the canonical formatter output for multiline lists because they stabilize diffs and simplify automated rewriting
+
+### Design Intent
+
+These rules should make multiline Orbis code predictable before any sophisticated width-based formatting policy exists.
+
+Goals:
+
+* produce stable diffs for lists and blocks
+* keep indentation mechanical and easy to parse
+* favor structure over clever width-sensitive layout
+* support code generation and refactoring tools without custom style logic
+
+## Formatter Behavior For Partially Invalid Files
+
+The formatter may attempt limited recovery on partially invalid files, but correctness and trust take priority over aggressive rewriting.
+
+Core rule:
+
+* `orb fmt` must not silently rewrite a file when the parser cannot establish a sufficiently reliable structural understanding of the source
+
+Initial direction:
+
+* if a file is fully parseable, the formatter produces canonical output
+* if a file has minor recoverable syntax damage, the formatter may format only the confidently parsed regions and emit diagnostics for the invalid regions
+* if structural recovery is too uncertain, the formatter fails with diagnostics and leaves the file unchanged
+
+### Recovery Expectations
+
+Examples of potentially recoverable situations:
+
+* an incomplete trailing expression at end of file
+* a missing closing delimiter in a region where the parser can still identify surrounding top-level structure
+* a damaged statement inside an otherwise recognizable block
+
+Rules:
+
+* recovery should be local and conservative
+* the formatter must not invent or guess missing code
+* any partially formatted result must preserve the original source for regions the formatter could not confidently normalize
+* diagnostics should identify why full formatting was not possible
+
+### Design Intent
+
+The formatter should still be useful during editing without becoming untrustworthy.
+
+Goals:
+
+* support editor workflows on in-progress files
+* preserve confidence that formatted code still reflects the user's program
+* avoid destructive rewrites when syntax is badly damaged
+* keep formatting failure modes explicit and diagnosable
+
+## Formatter Stability Guarantees
+
+The formatter is part of the compatibility surface of the official toolchain.
+
+Core rule:
+
+* formatter output should not change arbitrarily between routine toolchain updates
+
+Initial stability policy:
+
+* patch releases must not intentionally change canonical formatting for already supported syntax
+* minor releases should avoid formatter churn unless the change fixes a correctness issue, supports newly added syntax, or resolves a clearly justified formatting defect
+* large formatting changes should be rare and explicitly called out in release notes
+
+### Compatibility Expectations
+
+Rules:
+
+* formatting changes that would rewrite large volumes of existing code should not appear silently in ordinary maintenance updates
+* newly introduced syntax may define new canonical formatting without violating stability for older syntax
+* formatter changes tied to language-edition boundaries may be allowed when explicitly documented
+* `orb fmt --check` should remain a reliable CI signal across a pinned toolchain version
+
+### Design Intent
+
+Formatter stability should reduce repository churn and make the official style a dependable automation target.
+
+Goals:
+
+* keep formatting predictable across upgrades
+* avoid unnecessary mass rewrites
+* preserve trust in formatter-driven workflows and CI
+* allow carefully justified evolution without treating formatting as frozen forever
+
 ---
 
 ## Tooling Philosophy
@@ -42,7 +263,7 @@ A single official toolchain exists.
 
 CLI:
 
-tark
+orb
 
 Responsibilities:
 
@@ -65,9 +286,9 @@ Goals:
 
 ## Package Manifest Format
 
-Each package is described by a manifest file named `tark.toml`.
+Each package is described by a manifest file named `orb.toml`.
 
-Tark v1 uses TOML as the manifest format.
+Orbis v1 uses TOML as the manifest format.
 
 Rationale:
 
@@ -79,7 +300,7 @@ Rationale:
 
 Initial direction:
 
-* a package root contains one `tark.toml`
+* a package root contains one `orb.toml`
 * the manifest contains a required `[package]` table
 * dependency declarations live under `[dependencies]`
 * target declarations use dedicated target tables such as `[lib]` and `[[bin]]`
@@ -97,11 +318,11 @@ net = "0.3"
 json = { version = "1.2" }
 
 [lib]
-path = "src/lib.tark"
+path = "src/lib.orb"
 
 [[bin]]
 name = "server"
-path = "src/main.tark"
+path = "src/main.orb"
 ```
 
 ### Package Table
@@ -165,7 +386,7 @@ Rules:
 
 ### Dependency Resolution
 
-Tark uses deterministic dependency resolution in v1.
+Orbis uses deterministic dependency resolution in v1.
 
 Core rule:
 
@@ -185,7 +406,7 @@ Resolution results should be reproducible.
 
 Initial direction:
 
-* the toolchain may generate a lockfile such as `tark.lock`
+* the toolchain may generate a lockfile such as `orb.lock`
 * normal application builds should use the locked resolution when present
 * updating dependency selections should be an explicit tool action rather than an accidental side effect of ordinary builds
 
@@ -213,13 +434,13 @@ These are deferred to later package-system tasks so the base manifest format sta
 
 ## Workspace Layout
 
-Tark supports multi-package repositories through an explicit root workspace manifest.
+Orbis supports multi-package repositories through an explicit root workspace manifest.
 
 Initial direction:
 
-* a workspace root contains a `tark.toml` with a `[workspace]` table
+* a workspace root contains an `orb.toml` with a `[workspace]` table
 * the workspace explicitly lists member package directories
-* each member package keeps its own package-local `tark.toml`
+* each member package keeps its own package-local `orb.toml`
 * package paths are relative to the workspace root
 
 Example:
@@ -248,21 +469,21 @@ Example intent:
 
 ```text
 repo/
-  tark.toml
+  orb.toml
   libs/
     core/
-      tark.toml
+      orb.toml
       src/
-        lib.tark
+        lib.orb
     net/
-      tark.toml
+      orb.toml
       src/
-        lib.tark
+        lib.orb
   apps/
     server/
-      tark.toml
+      orb.toml
       src/
-        main.tark
+        main.orb
 ```
 
 ### Initial Non-Goals
@@ -275,3 +496,183 @@ The initial workspace model does not include:
 * treating one repository as a single giant package by default
 
 This keeps repository structure explicit and easy for both humans and tools to inspect.
+
+## Registry And Publishing Strategy
+
+Orbis v1 uses one default official package registry.
+
+Core rule:
+
+* ordinary versioned dependencies are resolved from the default official registry unless the manifest uses an explicit local path dependency
+
+Initial direction:
+
+* the ecosystem has one canonical public registry for publishable packages
+* package names are globally unique within that registry
+* published package versions are immutable once accepted
+* packages are published explicitly with `orb publish`
+
+### Published Package Contents
+
+Publishing produces a source package plus registry metadata.
+
+Initial direction:
+
+* a published package includes its `orb.toml`, source files, and lockfile or dependency metadata as required for reproducible builds
+* published content should be deterministic so the same source tree produces the same package artifact
+* generated local build artifacts are not part of the published package
+
+### Versioning And Immutability
+
+Registry versions are append-only in normal operation.
+
+Rules:
+
+* a given `(package name, version)` pair may be published at most once
+* overwriting an existing published version is not allowed
+* if a version must be withdrawn from normal selection, the registry may support yanking without deleting historical artifacts
+* publishing requires the package manifest to contain a concrete `name` and `version`
+
+### Default Source Model
+
+The default source model stays intentionally small in v1.
+
+Rules:
+
+* path dependencies are for local development and workspace composition
+* published dependencies should resolve through the official registry rather than through ad hoc source locations
+* alternate registries or per-dependency source overrides are deferred
+* package publishing and dependency fetching are official toolchain responsibilities, not separate third-party workflow assumptions
+
+### Design Intent
+
+The registry model should make the ecosystem easy to reason about before it becomes highly customizable.
+
+Goals:
+
+* keep package identity global and unambiguous
+* make published builds reproducible
+* avoid hidden source-selection complexity in v1
+* preserve room for more advanced registry features later if the ecosystem justifies them
+
+### Initial Non-Goals
+
+The initial registry model does not include:
+
+* multiple first-class public registries in ordinary manifests
+* per-dependency registry overrides
+* mutable published versions
+* mandatory build scripts as part of package publication
+
+## Documentation Generation
+
+Documentation generation is an official toolchain feature.
+
+Primary commands:
+
+* `orb doc`
+* `orb doc --open` may later open the generated documentation locally, but opening behavior is not required for the initial design
+
+### Documentation Scope
+
+The initial documentation model is API-oriented.
+
+Rules:
+
+* generated documentation is derived from package source and public declarations
+* `pub` items form the primary visible surface in generated package docs
+* doc comments attached to declarations become the source text for generated API documentation
+* documentation generation should understand modules, public functions, public types, and public traits directly from the language structure
+
+### Output Format
+
+Initial direction:
+
+* `orb doc` generates static HTML documentation by default
+* the output is deterministic for a given source tree and toolchain version
+* generated docs should preserve package, module, and declaration hierarchy
+* cross-links between documented declarations should be generated automatically where the target is known
+
+### Package And Workspace Behavior
+
+Rules:
+
+* running `orb doc` in a package generates documentation for that package
+* running `orb doc` at a workspace root may generate an aggregated documentation site for workspace members
+* workspace documentation should keep package boundaries visible rather than flattening all declarations into one undifferentiated namespace
+
+### Design Intent
+
+Documentation should come from the same explicit source structure the compiler and tooling already understand.
+
+Goals:
+
+* make public APIs easy to browse
+* keep documentation generation deterministic and toolchain-native
+* avoid hidden documentation configuration as the primary model
+* support package and workspace-scale browsing with minimal extra ceremony
+
+### Initial Non-Goals
+
+The initial documentation model does not include:
+
+* multiple official output formats beyond the default static HTML site
+* arbitrary user-programmable documentation pipelines
+* documentation visibility rules separate from the language's `pub` model
+
+## Machine-Readable Tooling Output
+
+Machine-readable output is an official part of the toolchain contract.
+
+Primary direction:
+
+* human-oriented output remains the default for terminal use
+* commands that support structured output should also support an explicit machine-readable mode
+* JSON is the initial official machine-readable format
+
+### Diagnostics Output
+
+Compiler and checker diagnostics should be available as structured data.
+
+Initial direction:
+
+* commands such as `orb build`, `orb check`, and `orb test` may support a flag such as `--output json`
+* structured diagnostics include at least severity, message, file path, span information, and diagnostic code when available
+* related notes and secondary spans should be represented explicitly rather than embedded only in plain text
+
+### Build And Tool Events
+
+Structured output is not limited to errors.
+
+Initial direction:
+
+* machine-readable mode may report build status, test events, and other tool results in JSON records or JSON documents
+* structured output should distinguish diagnostics from ordinary tool progress
+* file paths and target identifiers should be emitted in stable machine-usable form
+
+### Stability Expectations
+
+Rules:
+
+* the JSON schema should be versioned or otherwise evolve in a controlled compatible way
+* human-readable terminal formatting may change more freely than machine-readable output
+* machine-readable output should not require scraping styled terminal text
+
+### Design Intent
+
+The official toolchain should be scriptable and integration-friendly by design.
+
+Goals:
+
+* support editors, CI systems, and agent workflows directly
+* eliminate brittle terminal-text scraping as the primary automation path
+* keep structured output explicit rather than always-on
+* preserve good human CLI output while still offering a stable automation surface
+
+### Initial Non-Goals
+
+The initial machine-readable output model does not include:
+
+* multiple official structured formats beyond JSON
+* exposing every internal compiler data structure as public output
+* guaranteeing that ordinary human terminal output is stable for parsers

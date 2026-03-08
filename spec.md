@@ -1,17 +1,17 @@
-# Tark Spec Index
+# Orbis Spec Index
 
 This repository now splits the specification into focused documents instead of keeping all language, tooling, and strategy material in one file.
 
 ## Current Status
 
-The language is called **Tark**.
+The language is called **Orbis**.
 
 Current status:
 
-* selected as the project name
-* should still pass trademark and brand-conflict review before becoming final for public release
-* `.tark` is the current preferred source file extension
-* extension and branding still require final release-readiness review
+* public language name selected as **Orbis**
+* official CLI binary selected as `orb`
+* official source file extension selected as `.orb`
+* domain and legal follow-up review remain advisable before public launch
 
 ## Main Documents
 
@@ -23,6 +23,7 @@ Current status:
 ## Supporting Documents
 
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
+* [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): ownership and borrowing research notes

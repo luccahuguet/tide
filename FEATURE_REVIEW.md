@@ -1,4 +1,4 @@
-# Tark Feature Review
+# Orbis Feature Review
 
 This document reviews the distinct goals and feature bets currently stated across `spec/VISION.md`, `spec/LANGUAGE.md`, `spec/TOOLING.md`, and `GOVERNANCE.md`.
 
@@ -30,7 +30,7 @@ Recommendation labels:
 
 ## Strategic Summary
 
-Tark has one very strong core bet:
+Orbis has one very strong core bet:
 
 * a smaller, safer, more analyzable systems language centered on explicitness, long-term maintainability, and agent-friendly tooling
 
@@ -57,7 +57,7 @@ The best path is:
 | F05 | Compiled language | 4 | 4 | 1 | 3 | 4 | Keep | Necessary for the performance and tooling story you want. |
 | F06 | Static typing | 3 | 5 | 1 | 3 | 4 | Keep | Non-negotiable for the guarantees and refactoring goals. |
 | F07 | Ownership-based design | 5 | 5 | 4 | 5 | 5 | Keep | This is the strongest differentiator, but it is also the hardest subsystem. This should be the primary innovation focus. |
-| F08 | Safe by default | 4 | 5 | 2 | 4 | 5 | Keep | Essential if Tark wants to sit between Go and Rust in a meaningful way. |
+| F08 | Safe by default | 4 | 5 | 2 | 4 | 5 | Keep | Essential if Orbis wants to sit between Go and Rust in a meaningful way. |
 | F09 | Performance-transparent model | 4 | 5 | 2 | 4 | 5 | Keep | Very good positioning. Explicit costs are a real advantage for both humans and agents. |
 | F10 | Tooling-first language | 4 | 4 | 2 | 3 | 5 | Keep | Worth keeping, but implement conservatively. Tooling-first does not require language novelty everywhere. |
 
@@ -65,7 +65,7 @@ The best path is:
 
 | ID | Item | Cost | Benefit | Danger | Complexity | Potential | Recommendation | Notes |
 |---|---|---:|---:|---:|---:|---:|---|---|
-| F11 | Ownership + simplified borrowing + regions | 5 | 5 | 5 | 5 | 5 | Keep | This is the big bet. It can make Tark real, or it can consume the entire project. Prioritize this above everything else. |
+| F11 | Ownership + simplified borrowing + regions | 5 | 5 | 5 | 5 | 5 | Keep | This is the big bet. It can make Orbis real, or it can consume the entire project. Prioritize this above everything else. |
 | F12 | Deterministic memory management without GC | 5 | 5 | 3 | 5 | 5 | Keep | Necessary if you want predictable performance and a serious systems-language identity. |
 | F13 | Explicit move/copy model | 4 | 5 | 2 | 4 | 5 | Keep | Strong payoff for clarity and performance. It reinforces the ownership story. |
 | F14 | First-class regions/arenas | 5 | 4 | 4 | 5 | 5 | Keep/Simplify | Valuable, but dangerous if over-designed early. Start with one minimal region model. |
@@ -78,7 +78,7 @@ The best path is:
 | ID | Item | Cost | Benefit | Danger | Complexity | Potential | Recommendation | Notes |
 |---|---|---:|---:|---:|---:|---:|---|---|
 | F18 | Strong local inference with explicit public API types | 3 | 5 | 1 | 3 | 4 | Keep | Excellent balance. This is a practical and proven compromise. |
-| F19 | ADTs / enums / exhaustive matching | 4 | 5 | 2 | 4 | 5 | Keep | High payoff for correctness and reasoning. Strong fit for Tark. |
+| F19 | ADTs / enums / exhaustive matching | 4 | 5 | 2 | 4 | 5 | Keep | High payoff for correctness and reasoning. Strong fit for Orbis. |
 | F20 | Traits / protocols instead of inheritance | 4 | 4 | 2 | 4 | 4 | Keep/Simplify | Good choice, but keep the trait model small in v1. |
 | F21 | No implicit conversions | 2 | 4 | 1 | 2 | 3 | Keep | Cheap and useful. Good for analyzability. |
 | F22 | No null values | 3 | 5 | 1 | 3 | 4 | Keep | Worth it. The ecosystem will be cleaner for it. |
@@ -117,7 +117,7 @@ The best path is:
 
 | ID | Item | Cost | Benefit | Danger | Complexity | Potential | Recommendation | Notes |
 |---|---|---:|---:|---:|---:|---:|---|---|
-| F38 | Small grammar / low ambiguity / regular syntax / predictable AST | 4 | 5 | 2 | 4 | 5 | Keep | This is one of Tark's strongest and most realistic differentiators. |
+| F38 | Small grammar / low ambiguity / regular syntax / predictable AST | 4 | 5 | 2 | 4 | 5 | Keep | This is one of Orbis's strongest and most realistic differentiators. |
 | F39 | Explicit imports and exports | 2 | 4 | 1 | 2 | 4 | Keep | Cheap win for tooling and readability. |
 | F40 | Machine-readable diagnostics | 4 | 5 | 1 | 3 | 5 | Keep | High leverage. Very strong fit for the agent-friendly vision. |
 | F41 | Single canonical formatter | 3 | 4 | 2 | 3 | 4 | Keep | Worth keeping, especially for machine-assisted work. |

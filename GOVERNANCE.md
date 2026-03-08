@@ -1,12 +1,12 @@
-# Tark Governance
+# Orbis Governance
 
 ## Development Rule - Agent-Produced Code
 
-Tark development follows an **agent-produced code rule**.
+Orbis development follows an **agent-produced code rule**.
 
 Primary rule:
 
-> No production Tark code should originate from direct human coding.
+> No production Orbis code should originate from direct human coding.
 
 Human responsibilities:
 
@@ -31,4 +31,4 @@ Philosophy:
 > Humans define the system.
 > Agents produce the code.
 
-This rule is project governance, not part of the Tark language specification.
+This rule is project governance, not part of the Orbis language specification.

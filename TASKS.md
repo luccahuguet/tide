@@ -1,4 +1,4 @@
-# Tark Task List
+# Orbis Task List
 
 ## Core Language Design
 
@@ -56,28 +56,33 @@
 - [x] T034 Define the package manifest format
 - [x] T035 Define workspace layout and multi-package project structure
 - [x] T036 Define dependency declaration and dependency resolution rules
-- [ ] T037 Define registry and package publishing strategy
-- [ ] T038 Define documentation generation format and commands
-- [ ] T039 Define machine-readable compiler and tooling output formats
+- [x] T037 Define registry and package publishing strategy
+- [x] T038 Define documentation generation format and commands
+- [x] T039 Define machine-readable compiler and tooling output formats
 
 ## Formatting and Style
 
-- [ ] T040 Define canonical formatting rules
-- [ ] T041 Define import ordering and grouping rules
-- [ ] T042 Define line breaking, indentation, and trailing comma rules
-- [ ] T043 Define formatter behavior for partially invalid files
-- [ ] T044 Define formatter stability guarantees across toolchain versions
+- [x] T040 Define canonical formatting rules
+- [x] T041 Define import ordering and grouping rules
+- [x] T042 Define line breaking, indentation, and trailing comma rules
+- [x] T043 Define formatter behavior for partially invalid files
+- [x] T044 Define formatter stability guarantees across toolchain versions
 
 ## Implementation Strategy
 
-- [ ] T045 Define the Rust bootstrap architecture
-- [ ] T046 Define the order of implementation for parser, formatter, type checker, and compiler stages
-- [ ] T047 Define the self-hosting transition criteria
-- [ ] T048 Define which infrastructure may remain in Rust long-term
+- [x] T045 Define the Rust bootstrap architecture
+- [x] T046 Define the order of implementation for parser, formatter, type checker, and compiler stages
+- [x] T047 Define the self-hosting transition criteria
+- [x] T048 Define which infrastructure may remain in Rust long-term
+
+## Code Generation and Backend Strategy
+
+- [x] T053 Define the phased code generation and backend strategy, including early bring-up path and long-term backend direction
 
 ## Naming and Release Readiness
 
-- [ ] T049 Run trademark review for `Tark` in target jurisdictions
-- [ ] T050 Run software and developer-tool brand conflict review for `Tark`
-- [ ] T051 Review domain strategy for `tark.*`
-- [ ] T052 Finalize whether `.tark` is the official source file extension
+- [x] T049 Run trademark review for `Tark` in target jurisdictions
+- [x] T050 Run software and developer-tool brand conflict review for `Tark`
+- [x] T054 Find and screen a replacement public name for the language
+- [ ] T051 Review domain strategy for `orbis.*` and `orb.*`
+- [x] T052 Finalize whether `.orb` is the official source file extension

@@ -1,6 +1,6 @@
-# Tark Language Specification (v0.3)
+# Orbis Language Specification (v0.3)
 
-This document contains the language-level rules for Tark.
+This document contains the language-level rules for Orbis.
 
 Related documents:
 
@@ -12,7 +12,7 @@ Related documents:
 
 ## Memory Model
 
-Tark uses:
+Orbis uses:
 
 **Ownership + simplified borrowing + regions**
 
@@ -41,19 +41,19 @@ Key characteristics:
 
 ## Borrowing Scope Policy
 
-Tark uses a strictly lexical borrowing model in v1.
+Orbis uses a strictly lexical borrowing model in v1.
 
 This means:
 
 * borrow scopes are intentionally local and predictable
 * some valid-but-complex Rust borrowing patterns may be rejected
-* Tark prefers simpler user reasoning over maximum borrow expressiveness
+* Orbis prefers simpler user reasoning over maximum borrow expressiveness
 
 Rationale:
 
 * keeps the memory model smaller than Rust
 * makes compiler behavior easier to predict
-* supports Tark's explicitness and analyzability goals
+* supports Orbis's explicitness and analyzability goals
 
 ## Move Semantics
 
@@ -61,7 +61,7 @@ For non-copy types, assignment, argument passing, and return move ownership by d
 
 Examples:
 
-```tark
+```orb
 let a = user;
 let b = a;
 ```
@@ -70,7 +70,7 @@ After the move into `b`, `a` may no longer be used unless the type is copy-safe.
 
 Argument passing also moves by default:
 
-```tark
+```orb
 fn save(user: User) -> Unit {
     persist(user);
 }
@@ -114,7 +114,7 @@ User-defined types are copy-safe only when they are explicitly declared as copy-
 
 Example:
 
-```tark
+```orb
 copy struct Point {
     x: Int,
     y: Int,
@@ -123,7 +123,7 @@ copy struct Point {
 
 This means:
 
-```tark
+```orb
 let a = Point { x: 1, y: 2 };
 let b = a;
 ```
@@ -158,7 +158,7 @@ Initial design direction:
 
 Example intent:
 
-```tark
+```orb
 let b = clone(a);
 ```
 
@@ -173,14 +173,14 @@ Goals:
 
 ## Borrowing Model
 
-Tark defines two safe borrow forms in v1:
+Orbis defines two safe borrow forms in v1:
 
 * shared borrow
 * exclusive mutable borrow
 
 Borrow syntax:
 
-```tark
+```orb
 let r = &value;
 let w = &mut value;
 ```
@@ -189,7 +189,7 @@ Shared borrows allow read access without taking ownership.
 
 Example:
 
-```tark
+```orb
 let user = load_user();
 let r1 = &user;
 let r2 = &user;
@@ -201,7 +201,7 @@ Exclusive mutable borrows allow mutation without transferring ownership.
 
 Example:
 
-```tark
+```orb
 let mut user = load_user();
 let w = &mut user;
 rename(w, "new-name");
@@ -225,21 +225,21 @@ Examples:
 
 Allowed:
 
-```tark
+```orb
 let r1 = &user;
 let r2 = &user;
 ```
 
 Rejected:
 
-```tark
+```orb
 let r = &user;
 let w = &mut user;
 ```
 
 Rejected:
 
-```tark
+```orb
 let w1 = &mut user;
 let w2 = &mut user;
 ```
@@ -250,7 +250,7 @@ Borrow scopes are lexical in v1.
 
 Example:
 
-```tark
+```orb
 let mut user = load_user();
 
 {
@@ -267,7 +267,7 @@ Rules:
 
 * a borrow begins where the borrow expression is created
 * a borrow ends at the end of its enclosing lexical scope
-* Tark does not attempt to accept every valid non-lexical borrowing pattern in v1
+* Orbis does not attempt to accept every valid non-lexical borrowing pattern in v1
 * shorter explicit scopes are the primary way to end borrows earlier
 
 ## Design Intent
@@ -283,7 +283,7 @@ Goals:
 
 ## Arenas
 
-Tark provides one explicit grouped-allocation construct in v1:
+Orbis provides one explicit grouped-allocation construct in v1:
 
 * `arena`
 
@@ -291,7 +291,7 @@ An arena is a lexical allocation scope with block-bounded lifetime.
 
 Example:
 
-```tark
+```orb
 arena scratch {
     let user = alloc scratch User {
         id: 1,
@@ -312,7 +312,7 @@ In this example, `scratch` exists only for the duration of its block.
 
 Arena creation uses the form:
 
-```tark
+```orb
 arena name {
     ...
 }
@@ -331,13 +331,13 @@ Values may be allocated into a named arena using explicit arena allocation.
 
 Initial syntax shape:
 
-```tark
+```orb
 let value = alloc scratch Expression;
 ```
 
 Examples:
 
-```tark
+```orb
 let node = alloc scratch Node { value: 1 };
 let buffer = alloc scratch Buffer::new(1024);
 ```
@@ -371,7 +371,7 @@ Arena destruction happens automatically at the end of the arena's lexical scope.
 
 Example:
 
-```tark
+```orb
 arena scratch {
     let node = alloc scratch Node::new();
     visit(&node);
@@ -401,7 +401,7 @@ Rejected patterns include:
 
 Rejected example:
 
-```tark
+```orb
 fn make_user_ref() -> &User {
     arena scratch {
         let user = alloc scratch User::new();
@@ -414,7 +414,7 @@ This is rejected because the returned reference would outlive `scratch`.
 
 Rejected example:
 
-```tark
+```orb
 let mut saved = none();
 
 arena scratch {
@@ -427,7 +427,7 @@ This is rejected because `saved` would outlive the arena reference stored inside
 
 Allowed pattern:
 
-```tark
+```orb
 arena scratch {
     let user = alloc scratch User::new();
     inspect(&user);
@@ -442,7 +442,7 @@ Rules:
 * returning an arena-backed reference from the arena scope is rejected
 * storing an arena-backed reference into a longer-lived binding, field, or container is rejected
 * passing an arena-backed reference is allowed only when the compiler can prove the callee use remains within the arena lifetime
-* Tark does not attempt region polymorphism or complex arena-lifetime abstraction in v1
+* Orbis does not attempt region polymorphism or complex arena-lifetime abstraction in v1
 
 Design intent:
 
@@ -452,7 +452,7 @@ Design intent:
 
 ## Shared Ownership
 
-Tark allows shared ownership only through explicit standard-library primitives.
+Orbis allows shared ownership only through explicit standard-library primitives.
 
 Shared ownership is not ordinary borrowing and is not the default ownership mode.
 
@@ -470,7 +470,7 @@ Design rules:
 
 Example:
 
-```tark
+```orb
 let a = Shared::new(Config::load());
 let b = a.share();
 let c = a.share();
@@ -498,11 +498,11 @@ Rules:
 * synchronized shared ownership must be explicit in the type
 * synchronization cost must not be hidden behind ordinary ownership or borrowing syntax
 * concurrent mutable access requires explicit synchronization constructs
-* Tark does not treat synchronized sharing as equivalent to ordinary local ownership
+* Orbis does not treat synchronized sharing as equivalent to ordinary local ownership
 
 Example intent:
 
-```tark
+```orb
 let state = SyncShared::new(State::new());
 ```
 
@@ -538,13 +538,13 @@ The initial arena model does not include:
 * manual free of individual arena allocations in safe code
 * treating every value as implicitly arena-allocated
 
-This keeps the arena design small enough to support Tark's "smaller than Rust" goal instead of becoming its own full sublanguage.
+This keeps the arena design small enough to support Orbis's "smaller than Rust" goal instead of becoming its own full sublanguage.
 
 ---
 
 ## Safety Guarantees
 
-Safe Tark code is intended to guarantee the following within the boundaries of the safe language subset:
+Safe Orbis code is intended to guarantee the following within the boundaries of the safe language subset:
 
 * Use-after-free
 * Double free
@@ -563,7 +563,7 @@ This section does not claim:
 
 Principle:
 
-> If safe Tark code compiles, it should satisfy a small, explicit, and mechanically enforced set of structural safety guarantees.
+> If safe Orbis code compiles, it should satisfy a small, explicit, and mechanically enforced set of structural safety guarantees.
 
 Unsafe code exists but must be explicit and isolated.
 
@@ -571,7 +571,7 @@ Unsafe code exists but must be explicit and isolated.
 
 ## Type System
 
-Tark uses:
+Orbis uses:
 
 * Static typing
 * Strong type inference for local variables
@@ -596,7 +596,7 @@ Goals:
 
 ## Inference Boundaries
 
-Tark uses strong local inference, but inference is intentionally bounded.
+Orbis uses strong local inference, but inference is intentionally bounded.
 
 Design rules:
 
@@ -610,7 +610,7 @@ Local bindings may omit an explicit type when the compiler can infer it from the
 
 Examples:
 
-```tark
+```orb
 let count = 42;
 let name = "ana";
 let pair = (1, true);
@@ -620,7 +620,7 @@ This is allowed because the initializer provides the type information directly.
 
 Local bindings may also use explicit annotations:
 
-```tark
+```orb
 let retries: Int = 3;
 ```
 
@@ -639,7 +639,7 @@ Return types in function declarations are also explicit in the initial design.
 
 Example:
 
-```tark
+```orb
 fn add(a: Int, b: Int) -> Int {
     a + b
 }
@@ -650,7 +650,7 @@ Rules:
 * parameter types are always explicit
 * declared function return types are explicit
 * the function body is checked against the declared return type
-* Tark does not use inferred parameter types in function declarations
+* Orbis does not use inferred parameter types in function declarations
 
 ### Public APIs
 
@@ -665,7 +665,7 @@ Examples of public API surface:
 
 Example:
 
-```tark
+```orb
 pub fn parse(text: String) -> Result[Config, ParseError] {
     parse_config(text)
 }
@@ -675,7 +675,7 @@ Rules:
 
 * public signatures must not rely on inferred parameter or return types
 * public API types should remain stable and visible in source
-* Tark prefers explicitness at module boundaries over shorter declarations
+* Orbis prefers explicitness at module boundaries over shorter declarations
 
 ### Design Intent
 
@@ -690,7 +690,7 @@ Goals:
 
 ## ADTs and Enum Layout
 
-Tark uses `struct` and `enum` as the primary algebraic data type forms in v1.
+Orbis uses `struct` and `enum` as the primary algebraic data type forms in v1.
 
 Design rules:
 
@@ -705,7 +705,7 @@ Structs define product types with named fields.
 
 Example:
 
-```tark
+```orb
 struct User {
     id: Int,
     name: String,
@@ -725,7 +725,7 @@ Enums define tagged sum types.
 
 Example:
 
-```tark
+```orb
 enum Token {
     number(Int),
     text(String),
@@ -750,7 +750,7 @@ The initial enum model supports:
 
 Unit-like variant:
 
-```tark
+```orb
 enum Mode {
     read,
     write,
@@ -759,7 +759,7 @@ enum Mode {
 
 Tuple-like variant:
 
-```tark
+```orb
 enum Message {
     text(String),
     binary(Bytes),
@@ -768,7 +768,7 @@ enum Message {
 
 Named-field variant:
 
-```tark
+```orb
 enum Event {
     connected { user: User, at: Time },
     disconnected { user: User, at: Time },
@@ -787,7 +787,7 @@ Rules:
 
 Canonical forms:
 
-```tark
+```orb
 some(value)
 none
 ok(value)
@@ -809,7 +809,7 @@ This means:
 
 ### Design Intent
 
-Tark's ADT model should make invalid states hard or impossible to represent while staying easy to inspect and transform.
+Orbis's ADT model should make invalid states hard or impossible to represent while staying easy to inspect and transform.
 
 Goals:
 
@@ -820,7 +820,7 @@ Goals:
 
 ## Pattern Destructuring
 
-Tark supports destructuring patterns for structs, enums, tuples, `Option`, and `Result`.
+Orbis supports destructuring patterns for structs, enums, tuples, `Option`, and `Result`.
 
 Design rules:
 
@@ -835,7 +835,7 @@ Tuple values are destructured positionally.
 
 Example:
 
-```tark
+```orb
 match pair {
     (left, right) => left + right,
 }
@@ -849,7 +849,7 @@ Rules:
 
 Example:
 
-```tark
+```orb
 match pair {
     (left, _) => left,
 }
@@ -861,7 +861,7 @@ Struct values are destructured by field name.
 
 Example:
 
-```tark
+```orb
 match user {
     User { id, name } => name,
 }
@@ -876,7 +876,7 @@ Rules:
 
 Example:
 
-```tark
+```orb
 match user {
     User { id, name: username } => username,
 }
@@ -888,7 +888,7 @@ Enum values are destructured according to their variant form.
 
 Tuple-like variant:
 
-```tark
+```orb
 match message {
     text(value) => value,
     binary(bytes) => decode(bytes),
@@ -897,7 +897,7 @@ match message {
 
 Named-field variant:
 
-```tark
+```orb
 match event {
     connected { user, at } => user.name,
     disconnected { user, at } => user.name,
@@ -906,7 +906,7 @@ match event {
 
 Unit-like variant:
 
-```tark
+```orb
 match mode {
     read => open_read(),
     write => open_write(),
@@ -926,14 +926,14 @@ Rules:
 
 Examples:
 
-```tark
+```orb
 match value {
     some(inner) => inner,
     none => fallback,
 }
 ```
 
-```tark
+```orb
 match result {
     ok(value) => value,
     err(error) => handle(error),
@@ -952,7 +952,7 @@ Patterns may nest when the inner structure is explicit.
 
 Example:
 
-```tark
+```orb
 match response {
     ok(some(User { name, id })) => name,
     ok(none) => "missing",
@@ -993,7 +993,7 @@ Local mutation is declared with `mut`.
 
 Example:
 
-```tark
+```orb
 let mut total = 0;
 total = total + 1;
 ```
@@ -1011,7 +1011,7 @@ Assignment is the basic mutation form for mutable bindings.
 
 Example:
 
-```tark
+```orb
 let mut retries = 3;
 retries = retries - 1;
 ```
@@ -1024,7 +1024,7 @@ Mutation of an existing owned value should normally happen through exclusive mut
 
 Example:
 
-```tark
+```orb
 let mut user = load_user();
 let writer = &mut user;
 rename(writer, "new-name");
@@ -1059,11 +1059,11 @@ Concretely:
 * creating `&mut value` blocks any overlapping shared or mutable borrow of that same value
 * while an exclusive mutable access path is active, the original binding may not be read, written, or moved directly
 * exclusivity is tracked lexically and ends when the mutable borrow's scope ends
-* Tark v1 does not attempt fine-grained safe-code borrow splitting for separate fields or elements of the same root value
+* Orbis v1 does not attempt fine-grained safe-code borrow splitting for separate fields or elements of the same root value
 
 Rejected intent:
 
-```tark
+```orb
 let mut pair = Pair { left: 1, right: 2 };
 let a = &mut pair.left;
 let b = &mut pair.right;
@@ -1073,7 +1073,7 @@ In v1 this is rejected, even though the fields are intuitively distinct, because
 
 Allowed intent:
 
-```tark
+```orb
 let mut left = 1;
 let mut right = 2;
 let a = &mut left;
@@ -1110,12 +1110,12 @@ Initial standard-library direction:
 
 Examples of intended use:
 
-```tark
+```orb
 let counter = Shared::new(Cell::new(0));
 counter.set(counter.get() + 1);
 ```
 
-```tark
+```orb
 let state = SyncShared::new(Mutex::new(State::new()));
 
 let guard = state.lock();
@@ -1150,7 +1150,7 @@ Initial direction:
 * `Mutex[T]` provides one writer at a time
 * `RwLock[T]` provides many readers or one writer under explicit synchronization
 * synchronized access produces scoped guard values rather than raw unsynchronized aliases
-* safe Tark does not permit concurrent mutable access to ordinary owned values or plain shared owners without synchronization
+* safe Orbis does not permit concurrent mutable access to ordinary owned values or plain shared owners without synchronization
 
 ### Initial Non-Goals
 
@@ -1163,7 +1163,7 @@ The initial shared-mutation model does not include:
 
 ## Unsafe Capabilities
 
-`unsafe` exists for operations that cannot be verified by the safe Tark rules but are still necessary for systems programming and runtime implementation work.
+`unsafe` exists for operations that cannot be verified by the safe Orbis rules but are still necessary for systems programming and runtime implementation work.
 
 Core rule:
 
@@ -1181,7 +1181,7 @@ Initial operations permitted only in `unsafe` code:
 
 Example intent:
 
-```tark
+```orb
 unsafe {
     let p = raw_ptr(buffer);
     let q = p.offset(1);
@@ -1192,9 +1192,9 @@ unsafe {
 Rules:
 
 * entering `unsafe` does not make ordinary ownership and borrowing rules irrelevant; it only permits a defined escape hatch set
-* values produced through `unsafe` may be used by safe code only if the unsafe code upholds Tark's safety invariants
+* values produced through `unsafe` may be used by safe code only if the unsafe code upholds Orbis's safety invariants
 * `unsafe` is for low-level capability, not for bypassing ordinary API design constraints
-* code that can be expressed with ordinary ownership, borrowing, arenas, or synchronized wrappers should stay in safe Tark
+* code that can be expressed with ordinary ownership, borrowing, arenas, or synchronized wrappers should stay in safe Orbis
 
 ### Initial Non-Goals
 
@@ -1213,7 +1213,7 @@ Initial forms:
 
 * `unsafe { ... }` for a local unsafe block
 * `unsafe fn` for a function with an explicit caller-side safety contract
-* modules may contain unsafe code, but Tark v1 does not provide a module-wide "everything here is unsafe" mode
+* modules may contain unsafe code, but Orbis v1 does not provide a module-wide "everything here is unsafe" mode
 
 ### Unsafe Blocks
 
@@ -1227,7 +1227,7 @@ Rules:
 
 Example intent:
 
-```tark
+```orb
 fn read_header(bytes: &[Byte]) -> Header {
     unsafe {
         parse_header_unchecked(bytes)
@@ -1256,7 +1256,7 @@ Rules:
 
 * a module containing unsafe code remains an ordinary module for parsing, visibility, and import purposes
 * unsafe code inside a module must still appear in explicit unsafe blocks or unsafe function signatures
-* Tark v1 does not allow a whole file or module to become implicitly unsafe
+* Orbis v1 does not allow a whole file or module to become implicitly unsafe
 * review tooling should be able to identify unsafe blocks and unsafe functions by direct syntax search
 
 ### Audit Expectations
@@ -1309,7 +1309,7 @@ Core rule:
 
 * every expression, block, and callable body has an effect set determined by the operations it may perform
 
-This means Tark tracks effects as part of executable behavior rather than as a property of data types themselves.
+This means Orbis tracks effects as part of executable behavior rather than as a property of data types themselves.
 
 Initial model:
 
@@ -1320,7 +1320,7 @@ Initial model:
 
 ### Effect Sets
 
-Tark models effects as a small explicit set of named effect kinds attached to computations.
+Orbis models effects as a small explicit set of named effect kinds attached to computations.
 
 Initial direction:
 
@@ -1329,7 +1329,7 @@ Initial direction:
 * a computation that performs `io` and `async` is considered to have both effects
 * an empty effect set represents a computation that is effect-free in the safe-language sense
 
-This gives Tark a representation that is easy for compilers, formatters, and refactoring tools to inspect mechanically.
+This gives Orbis a representation that is easy for compilers, formatters, and refactoring tools to inspect mechanically.
 
 ### Propagation
 
@@ -1353,15 +1353,15 @@ Initial non-goals:
 * implicit effect inference across public API boundaries
 * treating every runtime capability as a distinct new effect kind from day one
 
-This keeps the model analyzable and compatible with Tark's broader goal of a smaller reasoning surface than Rust.
+This keeps the model analyzable and compatible with Orbis's broader goal of a smaller reasoning surface than Rust.
 
 ## Effect Surface Form
 
-Tark uses explicit effect annotations on callable signatures in v1.
+Orbis uses explicit effect annotations on callable signatures in v1.
 
 Initial syntax direction:
 
-```tark
+```orb
 fn read(path: String) -> String ![io] {
     ...
 }
@@ -1381,11 +1381,11 @@ Rules:
 
 ### Chosen Direction
 
-Tark v1 chooses:
+Orbis v1 chooses:
 
 * annotations on signatures as the primary effect surface
 
-Tark v1 does not choose:
+Orbis v1 does not choose:
 
 * capability-passing as the default effect model
 * first-class effect types as ordinary user-visible types
@@ -1428,7 +1428,7 @@ Rules:
 
 Examples:
 
-```tark
+```orb
 fn read_file(path: String) -> String ![io] {
     ...
 }
@@ -1472,12 +1472,12 @@ Core rule:
 Initial direction:
 
 * functions that may suspend declare `async` in their effect set using `![async]` or combined sets such as `![io, async]`
-* async functions use ordinary `fn` declarations; Tark does not introduce a separate `async fn` signature form in v1
+* async functions use ordinary `fn` declarations; Orbis does not introduce a separate `async fn` signature form in v1
 * the result type in the signature remains the logical result type of the computation, not a user-written future wrapper
 
 Examples:
 
-```tark
+```orb
 fn fetch(url: String) -> Response ![io, async] {
     ...
 }
@@ -1492,7 +1492,7 @@ Here `fetch` may suspend, and `await` marks the suspension point at the call sit
 
 ### Await Syntax
 
-Tark uses `await expr` as the suspension-point syntax.
+Orbis uses `await expr` as the suspension-point syntax.
 
 Rules:
 
@@ -1534,7 +1534,7 @@ Goals:
 
 ## Structured Concurrency
 
-Tark uses structured concurrency in v1.
+Orbis uses structured concurrency in v1.
 
 Core rule:
 
@@ -1544,14 +1544,14 @@ This means child tasks are created inside an enclosing async computation and do 
 
 ### Initial Primitives
 
-Tark v1 uses two structured-concurrency forms:
+Orbis v1 uses two structured-concurrency forms:
 
 * `async let` for a small fixed set of child computations
 * `task group` for dynamic fan-out within a lexical scope
 
 Example intent:
 
-```tark
+```orb
 fn load_page(url: String) -> Page ![io, async] {
     async let profile = fetch_profile(url);
     async let posts = fetch_posts(url);
@@ -1565,7 +1565,7 @@ fn load_page(url: String) -> Page ![io, async] {
 
 Example intent:
 
-```tark
+```orb
 fn load_all(urls: [String]) -> [Page] ![io, async] {
     task group group {
         for url in urls {
@@ -1596,11 +1596,11 @@ The initial structured-concurrency model does not include:
 * unscoped background task spawning
 * implicit task creation from every async call
 
-This keeps concurrency visible, bounded, and compatible with Tark's long-term maintainability goals.
+This keeps concurrency visible, bounded, and compatible with Orbis's long-term maintainability goals.
 
 ## Cancellation Semantics
 
-Cancellation in Tark is cooperative and structured.
+Cancellation in Orbis is cooperative and structured.
 
 Core rule:
 
@@ -1663,7 +1663,7 @@ Rules:
 
 Example:
 
-```tark
+```orb
 async let profile = fetch_profile(user_id);
 let data = await profile;
 ```
@@ -1681,7 +1681,7 @@ Initial direction:
 
 Example intent:
 
-```tark
+```orb
 task group group {
     for url in urls {
         group.spawn(fetch_page(url));
@@ -1733,11 +1733,11 @@ panic / crash
 
 ## Option and Result Usage
 
-Tark uses `Option[T]` for presence or absence and `Result[T, E]` for recoverable success or failure.
+Orbis uses `Option[T]` for presence or absence and `Result[T, E]` for recoverable success or failure.
 
 Canonical construction forms:
 
-```tark
+```orb
 let user = some(current_user);
 let missing = none;
 
@@ -1757,14 +1757,14 @@ The primary control-flow form for `Option` and `Result` is `match`.
 
 Examples:
 
-```tark
+```orb
 match user {
     some(value) => render(value),
     none => render_missing(),
 }
 ```
 
-```tark
+```orb
 match parsed {
     ok(value) => use_config(value),
     err(error) => report(error),
@@ -1779,11 +1779,11 @@ Rules:
 
 ### Conditional Pattern Forms
 
-Tark supports `if let` and `while let` as focused pattern-driven control flow for common `Option` and `Result` usage.
+Orbis supports `if let` and `while let` as focused pattern-driven control flow for common `Option` and `Result` usage.
 
 Examples:
 
-```tark
+```orb
 if let some(value) = maybe_user {
     show(value);
 } else {
@@ -1791,13 +1791,13 @@ if let some(value) = maybe_user {
 }
 ```
 
-```tark
+```orb
 while let some(item) = next_item() {
     process(item);
 }
 ```
 
-```tark
+```orb
 if let ok(config) = parse(text) {
     use_config(config);
 }
@@ -1822,11 +1822,11 @@ Goals:
 
 ## Error Propagation
 
-Tark uses postfix `?` for concise propagation of `Result` and `Option`.
+Orbis uses postfix `?` for concise propagation of `Result` and `Option`.
 
 Examples:
 
-```tark
+```orb
 fn load_config(path: String) -> Result[Config, ConfigError] ![io] {
     let text = read_file(path)?;
     let config = parse_config(text)?;
@@ -1834,7 +1834,7 @@ fn load_config(path: String) -> Result[Config, ConfigError] ![io] {
 }
 ```
 
-```tark
+```orb
 fn current_name(user: Option[User]) -> Option[String] {
     let value = user?;
     some(value.name)
@@ -1871,11 +1871,11 @@ Goals:
 
 ## Panic Semantics
 
-Tark provides `panic(...)` for unexpected fatal conditions that should immediately abandon normal local error handling.
+Orbis provides `panic(...)` for unexpected fatal conditions that should immediately abandon normal local error handling.
 
 Example:
 
-```tark
+```orb
 fn expect_header(bytes: Bytes) -> Header {
     if bytes.len() < HEADER_SIZE {
         panic("header too short");
@@ -1890,7 +1890,7 @@ Rules:
 * `panic(message)` is an explicit fatal operation
 * panic is not a recoverable `Result` path and is not represented by `Option`
 * panic should be rare in ordinary application logic
-* safe Tark code may still panic when an explicit panic path is executed or when the standard library detects a fatal violated precondition
+* safe Orbis code may still panic when an explicit panic path is executed or when the standard library detects a fatal violated precondition
 
 ### Acceptable Uses
 
@@ -1925,7 +1925,7 @@ Goals:
 
 ## Error Traits and Protocols
 
-Tark v1 does not require a built-in universal error trait or protocol for all recoverable errors.
+Orbis v1 does not require a built-in universal error trait or protocol for all recoverable errors.
 
 Decision:
 
@@ -2006,7 +2006,7 @@ Function declarations use `fn`.
 
 Syntax shape:
 
-```tark
+```orb
 fn name(param: Type, param: Type) -> Type {
     expression
 }
@@ -2014,7 +2014,7 @@ fn name(param: Type, param: Type) -> Type {
 
 Examples:
 
-```tark
+```orb
 fn add(a: Int, b: Int) -> Int {
     a + b
 }
@@ -2038,13 +2038,13 @@ Bindings use `let`.
 
 Immutable binding:
 
-```tark
+```orb
 let port = 8080;
 ```
 
 Mutable binding:
 
-```tark
+```orb
 let mut total = 0;
 ```
 
@@ -2058,7 +2058,7 @@ Rules:
 
 Typed local binding:
 
-```tark
+```orb
 let retries: Int = 3;
 ```
 
@@ -2068,7 +2068,7 @@ Blocks use braces and may contain zero or more statements followed by an optiona
 
 Example:
 
-```tark
+```orb
 let result = {
     let base = 40;
     let extra = 2;
@@ -2098,7 +2098,7 @@ Initial core expression forms:
 
 Examples:
 
-```tark
+```orb
 42
 ready
 (a + b)
@@ -2121,7 +2121,7 @@ Initial core statement forms:
 
 Examples:
 
-```tark
+```orb
 let value = 1;
 total = total + value;
 log(total);
@@ -2141,7 +2141,7 @@ Rules:
 
 Example:
 
-```tark
+```orb
 let label = if score >= 90 {
     "great"
 } else {
@@ -2157,13 +2157,13 @@ Rules:
 
 ## Match Expressions
 
-Tark uses `match` for pattern matching.
+Orbis uses `match` for pattern matching.
 
 `match` is an expression.
 
 Basic shape:
 
-```tark
+```orb
 match value {
     pattern => expression,
     pattern => expression,
@@ -2172,7 +2172,7 @@ match value {
 
 Block arms are also allowed:
 
-```tark
+```orb
 match value {
     pattern => {
         statement;
@@ -2202,21 +2202,21 @@ The initial pattern set includes:
 
 Examples:
 
-```tark
+```orb
 match result {
     ok(value) => value,
     err(error) => handle(error),
 }
 ```
 
-```tark
+```orb
 match option {
     some(value) => value,
     none => default_value,
 }
 ```
 
-```tark
+```orb
 match pair {
     (left, right) => left + right,
 }
@@ -2228,7 +2228,7 @@ Patterns may introduce new bindings.
 
 Example:
 
-```tark
+```orb
 let message = match event {
     connected(user) => user.name,
     disconnected(user) => user.name,
@@ -2243,7 +2243,7 @@ Match expressions must cover all possible cases.
 
 Examples:
 
-```tark
+```orb
 match option {
     some(value) => value,
     none => fallback,
@@ -2252,7 +2252,7 @@ match option {
 
 This is exhaustive.
 
-```tark
+```orb
 match option {
     some(value) => value,
 }
@@ -2262,7 +2262,7 @@ This is rejected because `none` is not covered.
 
 Wildcard arms may be used to make a match exhaustive:
 
-```tark
+```orb
 match token {
     number(value) => value,
     _ => 0,
@@ -2281,7 +2281,7 @@ Rules:
 
 ### Design Intent
 
-Pattern matching is part of Tark's invalid-state modeling story.
+Pattern matching is part of Orbis's invalid-state modeling story.
 
 Goals:
 
@@ -2292,7 +2292,7 @@ Goals:
 
 ## Literal Syntax
 
-Tark defines a small and regular set of literal forms in v1.
+Orbis defines a small and regular set of literal forms in v1.
 
 Initial literal categories:
 
@@ -2309,7 +2309,7 @@ Initial literal categories:
 
 Basic decimal integers:
 
-```tark
+```orb
 0
 1
 42
@@ -2318,7 +2318,7 @@ Basic decimal integers:
 
 Readable separators are allowed:
 
-```tark
+```orb
 1_000_000
 ```
 
@@ -2326,7 +2326,7 @@ Readable separators are allowed:
 
 Examples:
 
-```tark
+```orb
 0.0
 3.14
 10.5
@@ -2337,7 +2337,7 @@ Examples:
 
 Boolean literals are:
 
-```tark
+```orb
 true
 false
 ```
@@ -2346,7 +2346,7 @@ false
 
 Double-quoted strings:
 
-```tark
+```orb
 "hello"
 "config.toml"
 "line\nbreak"
@@ -2362,7 +2362,7 @@ Initial rules:
 
 Examples:
 
-```tark
+```orb
 (1, 2)
 ("x", 10, true)
 ```
@@ -2376,7 +2376,7 @@ Rules:
 
 Examples:
 
-```tark
+```orb
 []
 [1, 2, 3]
 ["a", "b", "c"]
@@ -2392,7 +2392,7 @@ Rules:
 
 Examples:
 
-```tark
+```orb
 {}
 {"host": "localhost", "port": 5432}
 ```
@@ -2410,7 +2410,7 @@ Enum variants are constructed by naming the variant directly.
 
 Examples:
 
-```tark
+```orb
 some(42)
 none
 ok(value)
@@ -2438,7 +2438,7 @@ Goals:
 
 Semicolons determine whether a construct contributes a value.
 
-```tark
+```orb
 fn answer() -> Int {
     42
 }
@@ -2453,11 +2453,11 @@ Interpretation:
 * `42` without `;` is the return value of the block
 * `42;` is a statement whose value is discarded
 
-This rule is part of Tark's core readability and analyzability model.
+This rule is part of Orbis's core readability and analyzability model.
 
 ## Modules, Imports, Exports, and Visibility
 
-Tark uses a file-and-module model with explicit imports and explicit public exports.
+Orbis uses a file-and-module model with explicit imports and explicit public exports.
 
 Design rules:
 
@@ -2473,11 +2473,11 @@ A source file corresponds to a module named from its file.
 
 Examples:
 
-* `math.tark` defines module `math`
-* `net/http.tark` defines module `net.http`
-* `main.tark` may define the entry module for an executable package
+* `math.orb` defines module `math`
+* `net/http.orb` defines module `net.http`
+* `main.orb` may define the entry module for an executable package
 
-Tark does not require a `module` declaration in the file in the initial design.
+Orbis does not require a `module` declaration in the file in the initial design.
 
 Rationale:
 
@@ -2491,25 +2491,25 @@ Imports use `use`.
 
 Import a single item:
 
-```tark
+```orb
 use net.http.Client;
 ```
 
 Import a module namespace:
 
-```tark
+```orb
 use net.http;
 ```
 
 Import with alias:
 
-```tark
+```orb
 use net.http.Client as HttpClient;
 ```
 
 Grouped import:
 
-```tark
+```orb
 use net.http.{Client, Request, Response};
 ```
 
@@ -2527,7 +2527,7 @@ Public symbols are exported by marking their declarations with `pub`.
 
 Examples:
 
-```tark
+```orb
 pub fn parse(input: String) -> Result<Value, ParseError> {
     parse_impl(input)
 }
@@ -2553,7 +2553,7 @@ Initial visibility levels:
 
 Private declaration:
 
-```tark
+```orb
 fn normalize(value: String) -> String {
     value
 }
@@ -2561,7 +2561,7 @@ fn normalize(value: String) -> String {
 
 Public declaration:
 
-```tark
+```orb
 pub fn parse_config(text: String) -> Result<Config, ConfigError> {
     build_config(text)
 }
@@ -2579,7 +2579,7 @@ Imported names are referenced directly by their local imported name.
 
 Examples:
 
-```tark
+```orb
 use core.io.Writer;
 use core.hash.HashMap as Map;
 
@@ -2590,7 +2590,7 @@ fn write_all(writer: Writer, values: Map<String, Int>) -> Unit {
 
 Module-qualified references are also allowed when importing a namespace:
 
-```tark
+```orb
 use net.http;
 
 fn new_client() -> http.Client {
@@ -2610,7 +2610,7 @@ The initial module system does not include:
 
 ## Traits and Implementations
 
-Tark uses `trait` as the initial surface syntax for protocol-like behavior.
+Orbis uses `trait` as the initial surface syntax for protocol-like behavior.
 
 Design rules:
 
@@ -2626,7 +2626,7 @@ Traits use the `trait` keyword.
 
 Example:
 
-```tark
+```orb
 pub trait Display {
     fn render(self) -> String;
 }
@@ -2634,7 +2634,7 @@ pub trait Display {
 
 Traits may also provide default method bodies.
 
-```tark
+```orb
 pub trait Named {
     fn name(self) -> String;
 
@@ -2658,7 +2658,7 @@ Trait implementations use `impl Trait for Type`.
 
 Example:
 
-```tark
+```orb
 impl Display for User {
     fn render(self) -> String {
         self.username
@@ -2679,7 +2679,7 @@ The initial syntax reserves `self` as the receiver parameter in trait and impl m
 
 Example:
 
-```tark
+```orb
 trait Len {
     fn len(self) -> Int;
 }
@@ -2697,7 +2697,7 @@ Traits may declare functions that do not take `self`.
 
 Example:
 
-```tark
+```orb
 trait Parser {
     fn parse(input: String) -> Result<Value, ParseError>;
 }
@@ -2707,17 +2707,17 @@ These are associated functions, not instance methods.
 
 ### Associated Types
 
-Associated types are **not supported** in the initial version of Tark.
+Associated types are **not supported** in the initial version of Orbis.
 
 Decision:
 
-* initial Tark traits do not declare associated types
-* initial Tark impls do not define associated type bindings
+* initial Orbis traits do not declare associated types
+* initial Orbis impls do not define associated type bindings
 * generic parameters should be used instead where a relationship must be expressed in v1
 
 Example of the preferred v1 style:
 
-```tark
+```orb
 trait Parser[T] {
     fn parse(input: String) -> Result[T, ParseError>;
 }
@@ -2725,7 +2725,7 @@ trait Parser[T] {
 
 instead of an associated-type style such as:
 
-```tark
+```orb
 trait Parser {
     type Output;
     fn parse(input: String) -> Result[Output, ParseError>;
@@ -2737,7 +2737,7 @@ Rationale:
 * keeps the trait model smaller
 * avoids adding another layer of generic reasoning in v1
 * reduces interaction complexity between traits, bounds, and inference
-* fits Tark's goal of staying smaller and more predictable than Rust
+* fits Orbis's goal of staying smaller and more predictable than Rust
 
 ### Visibility
 
@@ -2745,7 +2745,7 @@ Traits and impl methods follow normal declaration visibility rules.
 
 Examples:
 
-```tark
+```orb
 pub trait Write {
     fn write(self, bytes: Bytes) -> Result<Unit, IoError>;
 }
@@ -2779,7 +2779,7 @@ These may be considered later, but they are intentionally excluded from the init
 
 ## Generic Types and Generic Functions
 
-Tark uses square brackets for generic parameter lists and generic type arguments.
+Orbis uses square brackets for generic parameter lists and generic type arguments.
 
 Design rules:
 
@@ -2794,7 +2794,7 @@ Generic functions place type parameters after the function name.
 
 Example:
 
-```tark
+```orb
 fn identity[T](value: T) -> T {
     value
 }
@@ -2813,7 +2813,7 @@ Rules:
 
 Examples:
 
-```tark
+```orb
 let a = identity(1);
 let b = identity[Int](1);
 ```
@@ -2824,7 +2824,7 @@ Generic type declarations place type parameters after the type name using the sa
 
 Example:
 
-```tark
+```orb
 struct Pair[A, B] {
     left: A,
     right: B,
@@ -2833,7 +2833,7 @@ struct Pair[A, B] {
 
 Type application uses the same form:
 
-```tark
+```orb
 let item: Pair[String, Int] = Pair::new("x", 1);
 ```
 
@@ -2845,7 +2845,7 @@ Rules:
 
 Example:
 
-```tark
+```orb
 let result: Result[Option[String], ParseError];
 ```
 
@@ -2855,7 +2855,7 @@ Generic `impl` blocks place type parameters after `impl`.
 
 Example:
 
-```tark
+```orb
 impl[T] Display for Box[T] {
     fn render(self) -> String {
         format_box(self)
@@ -2870,11 +2870,11 @@ Rules:
 
 ### Trait Bounds and Constraints
 
-Tark uses inline trait bounds in generic parameter lists.
+Orbis uses inline trait bounds in generic parameter lists.
 
 Basic shape:
 
-```tark
+```orb
 fn name[T: Trait](value: T) -> T {
     value
 }
@@ -2882,7 +2882,7 @@ fn name[T: Trait](value: T) -> T {
 
 Multiple bounds use `+`:
 
-```tark
+```orb
 fn render[T: Display + Debug](value: T) -> String {
     value.render()
 }
@@ -2899,7 +2899,7 @@ Design rules:
 
 Example:
 
-```tark
+```orb
 fn max[T: Ord](left: T, right: T) -> T {
     if left >= right { left } else { right }
 }
@@ -2917,7 +2917,7 @@ Type declarations may also constrain their parameters inline.
 
 Example:
 
-```tark
+```orb
 struct SortedSet[T: Ord] {
     values: List[T],
 }
@@ -2934,7 +2934,7 @@ Bounds may appear on generic `impl` blocks.
 
 Example:
 
-```tark
+```orb
 impl[T: Display] Display for Box[T] {
     fn render(self) -> String {
         self.value.render()
@@ -2946,7 +2946,7 @@ Rules:
 
 * impl bounds restrict when the implementation applies
 * bounds must be explicit in the impl header
-* Tark does not use implicit blanket applicability without stated constraints
+* Orbis does not use implicit blanket applicability without stated constraints
 
 ### Design Intent
 
@@ -2960,7 +2960,7 @@ Goals:
 
 ### Generic Argument Inference
 
-Tark allows generic argument inference when the compiler can determine the type arguments from:
+Orbis allows generic argument inference when the compiler can determine the type arguments from:
 
 * function arguments
 * expected result types
