@@ -32,3 +32,38 @@ Philosophy:
 > Agents produce the code.
 
 This rule is project governance, not part of the Ferox language specification.
+
+## Merge Rule - AI Supervisor Pass
+
+Ferox also follows an **AI supervisor merge rule**.
+
+Primary rule:
+
+> No PR should be merged without an AI supervisor pass.
+
+Current operating model:
+
+* one OpenAI supervisor per PR
+* `xhigh` effort for core compiler, semantics, parser, type checker, ownership, effects, runtime, or spec-shaping changes
+* `high` effort for normal tooling, tests, infrastructure, docs, and maintenance PRs
+* human maintainer remains final merge authority
+
+The supervisor reviews proposed changes against:
+
+* the existing codebase
+* the relevant Ferox specs
+* surrounding architecture
+* project simplicity and correctness standards
+
+Required verdicts:
+
+* `reject`
+* `request_changes`
+* `approve_with_alternatives`
+* `approve`
+
+The supervisor should block on correctness, spec mismatch, regression risk, architecture damage, and unnecessary complexity.
+
+The supervisor should not block on style-only preferences or speculative abstractions.
+
+Detailed workflow and prompt guidance live in [AI_SUPERVISOR.md](./AI_SUPERVISOR.md).

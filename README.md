@@ -60,6 +60,7 @@ The main documents are:
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
 * [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
 * [FEROX_SOFTWARE_BRAND_REVIEW.md](./FEROX_SOFTWARE_BRAND_REVIEW.md): first-pass software and developer-brand review for `Ferox`
+* [AI_SUPERVISOR.md](./AI_SUPERVISOR.md): mandatory AI supervisor review policy and prompt template
 * [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
 * [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
 * [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): research notes for the ownership and borrowing design
