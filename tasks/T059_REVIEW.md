@@ -6,21 +6,21 @@ Review date:
 
 Status:
 
-* in progress
-* this is the first adversarial pass
-* focus so far: vision, irreversible semantics, effects, concurrency, and bootstrap realism
+* completed
+* this was the first adversarial pass
+* the main follow-up decisions were carried into `T060` to `T064` and reflected into the live spec
 
 ## Current Recommendation
 
-Do **not** start full language implementation yet.
+Do **not** start full semantic implementation yet.
 
-A narrow parser-and-formatter bootstrap could still be defensible, but the language-level semantics are not yet stable enough for confident type-checker or compiler work.
+A narrow parser-and-formatter bootstrap could still be defensible, but the main value of this review was forcing v1 cuts before deeper implementation.
 
 Current recommendation:
 
-* keep reviewing before implementation of core semantics
-* narrow or defer the highest-risk subsystems first
-* only start deeper implementation once the semantic surface is smaller and more coherent
+* keep the narrowed v1 core small
+* avoid reintroducing deferred systems back into v1 casually
+* start deeper implementation only against the reduced semantic surface
 
 ## Blocking Concerns
 
@@ -173,11 +173,12 @@ Current recommendation:
   * effect checker
   * async runtime or concurrency implementation
 
-## Next Review Pass
+## Outcome
 
-Next pass should focus on:
+The first adversarial pass produced these concrete changes:
 
-* method receiver model
-* exact trait/generic complexity budget
-* whether arenas belong in v1 at all
-* whether effect sets should be removed from the initial language plan
+* general effect sets removed from the v1 core direction
+* async and concurrency narrowed substantially
+* arenas deferred from the v1 core
+* method receivers settled as `self`, `&self`, and `&mut self`
+* vision and comparison docs narrowed to match actual confidence

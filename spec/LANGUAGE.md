@@ -14,7 +14,7 @@ Related documents:
 
 Ferox uses:
 
-**Ownership + simplified borrowing + regions**
+**Ownership + simplified borrowing**
 
 instead of a full Rust-style borrow checker.
 
@@ -35,9 +35,7 @@ Key characteristics:
 * Borrowing is allowed but simplified
 * Borrowing is strictly lexical in v1
 * Complex long-distance borrowing patterns are discouraged
-* **Regions / arenas** exist as first-class constructs for grouped allocation
-* References tied to a region cannot escape it unsafely
-* Shared ownership must be explicit
+* Shared ownership must be explicit and secondary to the primary ownership path
 
 ## Borrowing Scope Policy
 
@@ -134,7 +132,6 @@ Non-copy examples in the initial model:
 
 * strings
 * heap-owning containers
-* region-owned values
 * shared ownership types
 * types with explicit destruction behavior
 
@@ -281,180 +278,30 @@ Goals:
 * reduce hidden lifetime reasoning
 * support safe mutation without full Rust-level borrow complexity
 
-## Arenas
+## Arenas And Regions
 
-Ferox provides one explicit grouped-allocation construct in v1:
+Language-level arenas and broader region constructs are **deferred from the v1 core**.
 
-* `arena`
+Current v1 direction:
 
-An arena is a lexical allocation scope with block-bounded lifetime.
+* Ferox should rely on ordinary ownership and lexical borrowing as the primary lifetime-management model
+* Ferox should avoid adding a second first-class lifetime-management sublanguage unless later evidence proves it is necessary
 
-Example:
+Reason:
 
-```ferox
-arena scratch {
-    let user = alloc scratch User {
-        id: 1,
-        name: "ana",
-    };
+* arenas are useful, but they are not a small add-on
+* once they exist, many later features must answer how they interact with arena-backed values and arena lifetimes
+* deferring them keeps the v1 ownership story smaller and easier to reason about
 
-    let task = alloc scratch Task {
-        id: 7,
-    };
-
-    process(&user, &task);
-}
-```
-
-In this example, `scratch` exists only for the duration of its block.
-
-## Arena Creation
-
-Arena creation uses the form:
-
-```ferox
-arena name {
-    ...
-}
-```
-
-Rules:
-
-* an arena introduces a new lexical scope
-* the arena name is available only inside that scope
-* arenas are explicit; ordinary local values do not require an arena
-* arenas are the only first-class region-like construct in v1
-
-## Arena Allocation
-
-Values may be allocated into a named arena using explicit arena allocation.
-
-Initial syntax shape:
-
-```ferox
-let value = alloc scratch Expression;
-```
-
-Examples:
-
-```ferox
-let node = alloc scratch Node { value: 1 };
-let buffer = alloc scratch Buffer::new(1024);
-```
-
-Rules:
-
-* arena allocation is explicit in source
-* the target arena is named directly
-* values allocated into an arena are associated with that arena for their lifetime
-* arena allocation is intended for grouped lifetime management, not as the default allocation mechanism for all values
-
-## Arena Ownership
-
-The arena is the lifetime owner of values allocated within it.
-
-This means:
-
-* the arena controls the storage lifetime of arena-allocated values
-* local bindings may refer to arena-allocated values, but they do not individually control deallocation
-* moving a binding that refers to an arena-allocated value does not move the arena itself
-
-Design intent:
-
-* ordinary ownership rules remain the default model
-* arenas are an explicit alternative for grouped lifetimes
-* arena use should remain local and structured
-
-## Arena Destruction
-
-Arena destruction happens automatically at the end of the arena's lexical scope.
-
-Example:
-
-```ferox
-arena scratch {
-    let node = alloc scratch Node::new();
-    visit(&node);
-}
-
-// `scratch` is destroyed here
-```
-
-Rules:
-
-* all storage associated with an arena is reclaimed when the arena scope ends
-* arena destruction is deterministic
-* individual arena allocations are not freed manually in safe code
-* nested arenas are destroyed from inner scope to outer scope
-
-## Arena Escape Rules
-
-References into an arena may not escape that arena's lexical lifetime.
-
-This is a core v1 safety rule.
-
-Rejected patterns include:
-
-* returning a reference to an arena-allocated value from outside the arena scope
-* storing a reference to an arena-allocated value into a longer-lived object
-* moving an arena-scoped reference into a location that may outlive the arena
-
-Rejected example:
-
-```ferox
-fn make_user_ref() -> &User {
-    arena scratch {
-        let user = alloc scratch User::new();
-        &user
-    }
-}
-```
-
-This is rejected because the returned reference would outlive `scratch`.
-
-Rejected example:
-
-```ferox
-let mut saved = none();
-
-arena scratch {
-    let user = alloc scratch User::new();
-    saved = some(&user);
-}
-```
-
-This is rejected because `saved` would outlive the arena reference stored inside it.
-
-Allowed pattern:
-
-```ferox
-arena scratch {
-    let user = alloc scratch User::new();
-    inspect(&user);
-}
-```
-
-This is allowed because the reference stays within the arena scope.
-
-Rules:
-
-* references to arena-allocated values must not outlive the arena that owns them
-* returning an arena-backed reference from the arena scope is rejected
-* storing an arena-backed reference into a longer-lived binding, field, or container is rejected
-* passing an arena-backed reference is allowed only when the compiler can prove the callee use remains within the arena lifetime
-* Ferox does not attempt region polymorphism or complex arena-lifetime abstraction in v1
-
-Design intent:
-
-* keep arena safety rules mechanical
-* avoid subtle lifetime inference
-* preserve the "smaller than Rust" promise by rejecting complex edge cases early
+This does not rule arenas out forever. It only removes them from the current v1 semantic core.
 
 ## Shared Ownership
 
 Ferox allows shared ownership only through explicit standard-library primitives.
 
 Shared ownership is not ordinary borrowing and is not the default ownership mode.
+
+In v1, shared ownership should be treated as an explicit library-level escape hatch rather than as a co-equal primary ownership path.
 
 Initial shared ownership primitives:
 
@@ -528,18 +375,6 @@ The initial shared ownership model does not include:
 
 This keeps shared ownership explicit, visible, and distinct from the normal ownership fast path.
 
-## Initial Non-Goals
-
-The initial arena model does not include:
-
-* multiple user-visible arena classes
-* region inference
-* region polymorphism
-* manual free of individual arena allocations in safe code
-* treating every value as implicitly arena-allocated
-
-This keeps the arena design small enough to support Ferox's "smaller than Rust" goal instead of becoming its own full sublanguage.
-
 ---
 
 ## Safety Guarantees
@@ -553,7 +388,7 @@ Safe Ferox code is intended to guarantee the following within the boundaries of 
 * Uninitialized reads
 * Invalid enum states created through safe construction paths
 
-These guarantees apply only after the ownership, borrowing, mutation, and effects rules are fully specified and implemented.
+These guarantees apply only after the ownership, borrowing, mutation, and concurrency rules are fully specified and implemented.
 
 This section does not claim:
 
@@ -1283,132 +1118,45 @@ Goals:
 
 ---
 
-## Effects Model
+## Operational Explicitness
 
-Side effects should be **visible and explicit**.
+Ferox still wants operations with real behavioral cost to be **visible and explicit** in v1.
 
-Examples of effects:
+However, Ferox v1 does **not** use a general effect-set system.
 
-* IO
-* Async operations
-* Unsafe operations
-* Global/state mutation
+Instead, explicitness comes from ordinary language constructs:
 
-Goals:
-
-* Improve reasoning
-* Improve testing
-* Improve compiler analysis
-* Improve agentic refactoring
-
-## Effects as Computation Properties
-
-Effects belong to computations, not to plain values.
-
-Core rule:
-
-* every expression, block, and callable body has an effect set determined by the operations it may perform
-
-This means Ferox tracks effects as part of executable behavior rather than as a property of data types themselves.
-
-Initial model:
-
-* pure expressions have an empty effect set
-* effectful operations contribute named effects to the surrounding computation
-* calling an effectful function contributes that function's declared effects to the caller
-* branching and block composition combine effects conservatively by set union
-
-### Effect Sets
-
-Ferox models effects as a small explicit set of named effect kinds attached to computations.
-
-Initial direction:
-
-* effect information is part of function and method signatures
-* local blocks and expressions are checked against the effects they introduce
-* a computation that performs `io` and `async` is considered to have both effects
-* an empty effect set represents a computation that is effect-free in the safe-language sense
-
-This gives Ferox a representation that is easy for compilers, formatters, and refactoring tools to inspect mechanically.
-
-### Propagation
-
-Effects propagate outward unless they are explicitly transformed by language constructs that define effect boundaries.
+* `async fn` and `await` for suspension
+* `unsafe` blocks and `unsafe fn` for unsafe capability
+* `Result` and `Option` for recoverable failure and absence
+* `mut`, `&mut`, and synchronization wrappers for mutation and sharing boundaries
+* standard-library API boundaries for external interaction
 
 Rules:
 
-* calling a computation with effects requires the enclosing computation to account for those effects
-* effect-free code may call only effect-free operations directly
-* effects are tracked conservatively across control flow; if one branch performs an effect, the enclosing expression carries that effect
-* effect information is part of the callable contract, not hidden implementation detail
-
-### Initial Scope
-
-The initial effects model is intentionally smaller than a full algebraic-effects system.
-
-Initial non-goals:
-
-* user-defined effect handlers in v1
-* higher-order effect polymorphism in v1
-* implicit effect inference across public API boundaries
-* treating every runtime capability as a distinct new effect kind from day one
-
-This keeps the model analyzable and compatible with Ferox's broader goal of a smaller reasoning surface than Rust.
-
-## Effect Surface Form
-
-Ferox uses explicit effect annotations on callable signatures in v1.
-
-Initial syntax direction:
-
-```ferox
-fn read(path: String) -> String ![io] {
-    ...
-}
-
-fn fetch(path: String) -> Response ![io, async] {
-    ...
-}
-```
-
-Rules:
-
-* effect information is written as an annotation after the return type
-* the annotation is a small named effect set written as `![...]`
-* pure functions omit the effect annotation entirely
-* functions and methods use the same surface form
-* public callable signatures must declare effects explicitly
-
-### Chosen Direction
-
-Ferox v1 chooses:
-
-* annotations on signatures as the primary effect surface
-
-Ferox v1 does not choose:
-
-* capability-passing as the default effect model
-* first-class effect types as ordinary user-visible types
-* dedicated per-effect keywords such as separate `async`, `throws`, or `io` signature forms for every effect kind
-
-This keeps the syntax uniform across effect kinds and avoids fragmenting the language into multiple unrelated effect notations.
+* v1 does not attach general effect sets to expressions, blocks, or callable signatures
+* v1 does not use a separate effect-propagation checker as part of the core language model
+* external interaction should remain obvious in APIs even without a dedicated `io` effect annotation
+* richer effect systems remain a post-v1 consideration
 
 ### Design Intent
 
-The effect surface should be explicit without turning every function declaration into a mini type-theory exercise.
+The v1 language should preserve explicitness without adding a second major semantic subsystem on top of ownership.
 
 Goals:
 
-* make effect contracts visible at a glance
-* keep syntax regular across all effect kinds
-* avoid capability plumbing in ordinary application code
-* leave room for richer effect machinery later without breaking the basic callable shape
+* keep behavioral boundaries visible in source
+* keep the semantic model smaller than a general effect calculus
+* avoid duplicating explicitness that Ferox already gets through other constructs
+* leave room for later effect-system research without making it part of the v1 core
 
-## IO Boundaries
+## External Interaction
 
-The `io` effect marks operations that interact with the outside world or with ambient process state.
+Ferox does not treat IO as a checked language-level effect in v1.
 
-Initial `io` categories:
+Instead, external interaction remains explicit through library APIs, module boundaries, naming, and return types.
+
+Examples of external interaction:
 
 * filesystem reads and writes
 * network communication
@@ -1421,68 +1169,41 @@ Initial `io` categories:
 
 Rules:
 
-* any function that may perform one of these operations must declare `![io]` in its effect set
-* calling a function marked with `io` propagates `io` to the caller unless a later effect-boundary construct explicitly handles or defers it
-* standard-library modules that touch the operating system should expose effectful entry points explicitly rather than hiding IO behind apparently pure APIs
-* pure data transformation performed on already-available values does not require `io`
-
-Examples:
-
-```ferox
-fn read_file(path: String) -> String ![io] {
-    ...
-}
-
-fn parse_config(text: String) -> Config {
-    ...
-}
-```
-
-Here `read_file` is effectful because it touches external state, while `parse_config` remains pure because it only transforms an in-memory string.
-
-### Marking Effectful Operations
-
-Effectful operations are marked through the callable signatures that expose them.
-
-Initial direction:
-
-* public functions and methods that may perform IO must declare `![io]`
-* local helper functions should also declare `![io]` when they perform IO directly
-* importing an IO-capable module does not itself create an effect; performing an IO operation does
-* ordinary expressions such as arithmetic, matching, allocation, and pure collection transformation do not imply `io`
+* standard-library modules that touch external state should expose that fact clearly in their APIs
+* importing an IO-capable module does not itself perform IO
+* pure data transformation on already-available values remains ordinary non-async code
+* v1 does not require a dedicated signature annotation for IO
 
 ### Initial Non-Goals
 
-The initial IO model does not include:
+The initial external-interaction model does not include:
 
-* a separate checked distinction between individual IO subcategories such as `fs`, `net`, or `clock`
-* capability-token plumbing for ordinary filesystem or network access in v1
-* treating allocation or local mutation as `io`
-
-This keeps the first effect boundary broad enough to be useful while still making external interaction visible in signatures.
+* checked `io` annotations in every signature
+* checked distinctions between subcategories such as `fs`, `net`, or `clock`
+* capability-token plumbing for ordinary IO in v1
 
 ## Async Model
 
-The `async` effect marks computations that may suspend and later resume.
+Ferox uses explicit async syntax in v1.
 
 Core rule:
 
-* `async` means suspendable execution, not automatic parallel execution
+* `async fn` marks a function whose execution may suspend and later resume
+* async does not imply automatic parallel execution
 
 Initial direction:
 
-* functions that may suspend declare `async` in their effect set using `![async]` or combined sets such as `![io, async]`
-* async functions use ordinary `fn` declarations; Ferox does not introduce a separate `async fn` signature form in v1
+* async functions use `async fn`
 * the result type in the signature remains the logical result type of the computation, not a user-written future wrapper
 
 Examples:
 
 ```ferox
-fn fetch(url: String) -> Response ![io, async] {
+async fn fetch(url: String) -> Response {
     ...
 }
 
-fn render_page(url: String) -> Html ![io, async] {
+async fn render_page(url: String) -> Html {
     let response = await fetch(url);
     render(response)
 }
@@ -1496,9 +1217,9 @@ Ferox uses `await expr` as the suspension-point syntax.
 
 Rules:
 
-* `await` may be used only inside a computation whose effect set includes `async`
+* `await` may be used only inside an async context
 * awaiting an async computation yields its logical result value
-* calling an async function in a value position requires `await` unless a later concurrency construct explicitly captures the computation for concurrent execution
+* calling an async function in a value position requires `await` unless an explicit concurrency construct captures the computation as child work
 * `await` marks a possible suspension point and is therefore always explicit in source
 
 ### Model Boundaries
@@ -1510,7 +1231,7 @@ Rules:
 * async controls suspension and resumption semantics
 * concurrency primitives that create independent tasks are specified separately
 * pure synchronous functions may be called freely from async code
-* async functions propagate the `async` effect to their callers
+* v1 does not express async through a general effect-set system
 
 ### Initial Non-Goals
 
@@ -1530,7 +1251,6 @@ Goals:
 * Structured concurrency
 * No data races in safe code
 * Explicit async behavior
-* Cancellation-friendly execution model
 
 ## Structured Concurrency
 
@@ -1542,37 +1262,22 @@ Core rule:
 
 This means child tasks are created inside an enclosing async computation and do not outlive that computation unless a later explicit detached model is added.
 
-### Initial Primitives
+### Initial Primitive
 
-Ferox v1 uses two structured-concurrency forms:
+Ferox v1 uses one built-in structured-concurrency form:
 
 * `async let` for a small fixed set of child computations
-* `task group` for dynamic fan-out within a lexical scope
 
 Example intent:
 
 ```ferox
-fn load_page(url: String) -> Page ![io, async] {
+async fn load_page(url: String) -> Page {
     async let profile = fetch_profile(url);
     async let posts = fetch_posts(url);
 
     Page {
         profile: await profile,
         posts: await posts,
-    }
-}
-```
-
-Example intent:
-
-```ferox
-fn load_all(urls: [String]) -> [Page] ![io, async] {
-    task group group {
-        for url in urls {
-            group.spawn(fetch_page(url));
-        }
-
-        collect_pages(group)
     }
 }
 ```
@@ -1584,7 +1289,7 @@ Structured concurrency is governed by parent-child lifetime rules.
 Rules:
 
 * child tasks begin within a lexical parent scope
-* the parent scope is responsible for awaiting, collecting, or otherwise concluding all child tasks before exit
+* the parent scope is responsible for awaiting or otherwise concluding all child tasks before ordinary successful exit
 * leaving a scope with unfinished child tasks is not allowed to silently detach them
 * child tasks inherit the enclosing async context rather than creating an unrelated global execution context
 
@@ -1595,51 +1300,32 @@ The initial structured-concurrency model does not include:
 * detached tasks as a default primitive
 * unscoped background task spawning
 * implicit task creation from every async call
+* dynamic task-group constructs in v1
 
 This keeps concurrency visible, bounded, and compatible with Ferox's long-term maintainability goals.
 
-## Cancellation Semantics
+## Early Scope Exit And Unfinished Child Tasks
 
-Cancellation in Ferox is cooperative and structured.
+Ferox v1 does not define a rich general cancellation system.
 
 Core rule:
 
-* cancellation requests propagate through the parent-child task tree, but running code must reach an observation point to stop cooperatively
+* unfinished child tasks must not silently detach from their lexical parent scope
 
 Initial direction:
 
-* cancelling a parent task requests cancellation of its unfinished child tasks
-* child-task failure or early scope exit may also trigger cancellation of sibling tasks when the enclosing construct requires coordinated completion
-* cancellation is observed at `await` points and at explicit cancellation checks in long-running computations
-
-### Observation and Propagation
-
-Rules:
-
-* `await` is a cancellation observation point
-* blocking or suspending standard-library async operations must be cancellation-aware where practical
-* long-running CPU-bound async work should use explicit cancellation checks rather than relying only on suspension points
-* cancellation does not imply immediate forceful termination of arbitrary code in the middle of ordinary execution
-
-### Scope Behavior
-
-Cancellation is tied to lexical task structure.
-
-Rules:
-
-* if a structured-concurrency scope exits early, unfinished child tasks are cancelled rather than detached
-* parent scopes remain responsible for driving children to cancellation completion before the scope fully ends
-* cancellation should preserve the same structured cleanup expectations as ordinary scope exit
+* successful scope completion should not leave unfinished `async let` bindings behind
+* early scope exit through `return`, `?`, or other control flow must still preserve structured cleanup rather than detaching child work
+* the exact broader cancellation protocol is deferred
 
 ### Initial Non-Goals
 
-The initial cancellation model does not include:
+Ferox v1 does not specify:
 
-* asynchronous preemptive task killing at arbitrary instruction boundaries
-* unstructured global cancellation signals as the primary model
-* hidden cancellation behavior that occurs without an explicit task relationship
-
-This keeps cancellation predictable and compatible with safe resource cleanup.
+* a general cancellation API
+* rich cancellation observation rules beyond explicit async suspension points
+* sibling-cancellation policy for more advanced task structures
+* cancellation-completion protocols for dynamic task groups
 
 ## Task Spawning and Synchronization
 
@@ -1659,7 +1345,8 @@ Rules:
 * the bound name represents the eventual result of that child task
 * `await name` synchronizes with the child task and yields its result
 * using the bound value without `await` is rejected
-* normal scope completion with an unfinished `async let` binding is rejected unless the scope is already leaving through cancellation or another control-flow path that triggers structured cancellation
+* normal successful scope completion with an unfinished `async let` binding is rejected
+* early scope exit must still preserve structured cleanup rather than silently detaching the child task
 
 Example:
 
@@ -1668,40 +1355,14 @@ async let profile = fetch_profile(user_id);
 let data = await profile;
 ```
 
-### `task group`
-
-`task group` supports dynamic child-task creation inside a lexical scope.
-
-Initial direction:
-
-* `group.spawn(expr)` starts a child task within that specific group
-* group results are synchronized through explicit group operations such as awaiting the next completed child or finishing the group as a whole
-* a group may not outlive its lexical scope
-* spawned tasks belong to the group, not to an ambient global scheduler handle visible in source
-
-Example intent:
-
-```ferox
-task group group {
-    for url in urls {
-        group.spawn(fetch_page(url));
-    }
-
-    while let some(page) = await group.next() {
-        pages.push(page);
-    }
-}
-```
-
 ### Synchronization Rules
 
 Rules:
 
-* every spawned child task must be joined, collected, cancelled, or otherwise concluded before its parent scope ends
-* synchronization points are explicit: `await name`, `await group.next()`, `await group.finish()`, or scope cancellation
+* every `async let` child task must be explicitly awaited or otherwise structurally concluded before ordinary successful scope completion
+* synchronization points are explicit: `await name` and structured early-scope cleanup
 * the language does not implicitly detach unfinished child tasks on successful scope exit
 * child-task results become available only through explicit synchronization operations
-* synchronization preserves structured cleanup: parent scope exit is complete only after children have reached completion or cancellation completion
 
 ### Initial Non-Goals
 
@@ -1710,6 +1371,7 @@ The initial task-spawning model does not include:
 * fire-and-forget task spawning in ordinary safe code
 * implicit join on successful scope exit without visible synchronization in source
 * exposing raw scheduler handles as the default user model
+* dynamic task-group constructs in v1
 
 This keeps concurrency mechanics explicit and makes spawned work visible to both humans and tools.
 
@@ -1827,7 +1489,7 @@ Ferox uses postfix `?` for concise propagation of `Result` and `Option`.
 Examples:
 
 ```ferox
-fn load_config(path: String) -> Result[Config, ConfigError] ![io] {
+fn load_config(path: String) -> Result[Config, ConfigError] {
     let text = read_file(path)?;
     let config = parse_config(text)?;
     ok(config)
@@ -1856,7 +1518,7 @@ Rules:
 * `?` does not cross incompatible return types automatically
 * conversions between error types are not implicit in v1
 * if an error must be transformed, the program should use `match` or an explicit conversion operation before propagation
-* `?` may be used together with effect annotations, but it propagates typed failure, not effects
+* `?` propagates typed failure, not async behavior or any other separate semantic system
 
 ### Design Intent
 
@@ -2004,6 +1666,8 @@ Design rules:
 
 Function declarations use `fn`.
 
+Suspendable functions use `async fn`.
+
 Syntax shape:
 
 ```ferox
@@ -2022,6 +1686,10 @@ fn add(a: Int, b: Int) -> Int {
 fn is_even(value: Int) -> Bool {
     value % 2 == 0
 }
+
+async fn fetch(url: String) -> Response {
+    ...
+}
 ```
 
 Rules:
@@ -2031,6 +1699,7 @@ Rules:
 * Return types use `->`
 * A function body is always a block
 * The final expression is the return value unless `return` is used explicitly
+* `async fn` uses the same basic declaration shape as `fn`, but marks a suspendable function
 
 ## Bindings
 
@@ -2628,7 +2297,7 @@ Example:
 
 ```ferox
 pub trait Display {
-    fn render(self) -> String;
+    fn render(&self) -> String;
 }
 ```
 
@@ -2636,9 +2305,9 @@ Traits may also provide default method bodies.
 
 ```ferox
 pub trait Named {
-    fn name(self) -> String;
+    fn name(&self) -> String;
 
-    fn is_empty(self) -> Bool {
+    fn is_empty(&self) -> Bool {
         self.name() == ""
     }
 }
@@ -2660,7 +2329,7 @@ Example:
 
 ```ferox
 impl Display for User {
-    fn render(self) -> String {
+    fn render(&self) -> String {
         self.username
     }
 }
@@ -2675,21 +2344,24 @@ Rules:
 
 ### Receiver Syntax
 
-The initial syntax reserves `self` as the receiver parameter in trait and impl methods.
+Ferox v1 supports exactly three method receiver forms.
 
 Example:
 
 ```ferox
 trait Len {
-    fn len(self) -> Int;
+    fn len(&self) -> Int;
 }
 ```
 
 Rules:
 
-* `self` may appear as the first parameter of a trait method or trait implementation method
-* Receiver ownership and borrowing variants will be refined in the memory model sections
-* The surface syntax keeps method declarations compact while deferring exact receiver semantics
+* the first parameter of a trait or impl method may be `self`, `&self`, or `&mut self`
+* `self` consumes ownership of the receiver
+* `&self` provides shared borrowed access to the receiver
+* `&mut self` provides exclusive mutable access to the receiver
+* trait methods and impl methods must match receiver form exactly
+* v1 does not support additional receiver forms or receiver polymorphism
 
 ### Associated Functions
 
@@ -2747,11 +2419,11 @@ Examples:
 
 ```ferox
 pub trait Write {
-    fn write(self, bytes: Bytes) -> Result<Unit, IoError>;
+    fn write(&mut self, bytes: Bytes) -> Result<Unit, IoError>;
 }
 
 impl Write for File {
-    fn write(self, bytes: Bytes) -> Result<Unit, IoError> {
+    fn write(&mut self, bytes: Bytes) -> Result<Unit, IoError> {
         write_file(self, bytes)
     }
 }
@@ -2774,6 +2446,7 @@ The initial trait system does not include:
 * associated types
 * operator overloading via traits as a design priority
 * structural typing as the default conformance model
+* receiver forms beyond `self`, `&self`, and `&mut self`
 
 These may be considered later, but they are intentionally excluded from the initial design to keep the trait model small and analyzable.
 

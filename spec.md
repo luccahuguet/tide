@@ -12,17 +12,25 @@ Current status:
 * official CLI binary selected as `ferox`
 * official source file extension selected as `.ferox`
 * domain and legal follow-up review remain advisable before public launch
+* adversarial v1 scope-narrowing first pass is complete
+* first implementation-readiness review is complete
+* current recommendation is to start a narrow Rust bootstrap, not a maximal semantic implementation
 
 ## Main Documents
 
 * [spec/VISION.md](./spec/VISION.md): project vision, priorities, positioning, and high-level design principles
-* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language rules, semantics, syntax, effects, concurrency, and error handling
+* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language rules, semantics, syntax, ownership, async, concurrency, and error handling
 * [spec/TOOLING.md](./spec/TOOLING.md): formatter, CLI, manifests, workspaces, and package-system design
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 
 ## Supporting Documents
 
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
+* [V1_DIRECTION.md](./V1_DIRECTION.md): current narrowed v1 direction after the review passes
+* [ROADMAP.md](./ROADMAP.md): version roadmap and implementation-path summary
+* [V2_BACKLOG.md](./V2_BACKLOG.md): post-v1 candidate backlog
+* [V3_BACKLOG.md](./V3_BACKLOG.md): long-horizon backlog
+* [tasks/T071_REVIEW.md](./tasks/T071_REVIEW.md): current implementation go / no-go verdict
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
 * [FEROX_DOMAIN_STRATEGY.md](./FEROX_DOMAIN_STRATEGY.md): first-pass domain strategy for `Ferox`
 * [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`

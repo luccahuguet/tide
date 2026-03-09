@@ -83,18 +83,48 @@ Task-list convention:
 ## Code Generation and Backend Strategy
 
 - [x] T053 Define the phased code generation and backend strategy, including early bring-up path and long-term backend direction
-- [ ] T059 Run an adversarial spec review to pressure-test the current design before implementation starts
+- [x] T059 Run an adversarial spec review to pressure-test the current design before implementation starts
   See `tasks/T059.md`.
-- [ ] T060 Decide whether the general effect-set model belongs in Ferox v1
+- [x] T060 Decide whether the general effect-set model belongs in Ferox v1
   See `tasks/T060.md`.
-- [ ] T061 Narrow the ownership model to a smaller v1 surface
+- [x] T061 Narrow the ownership model to a smaller v1 surface
   See `tasks/T061.md`.
-- [ ] T062 Settle trait and method receiver semantics for v1
+- [x] T062 Settle trait and method receiver semantics for v1
   See `tasks/T062.md`.
-- [ ] T063 Ground async, structured concurrency, and cancellation in a smaller executable v1 model
+- [x] T063 Ground async, structured concurrency, and cancellation in a smaller executable v1 model
   See `tasks/T063.md`.
-- [ ] T064 Rewrite vision and comparison claims to match the actual confidence level of the spec
+- [x] T064 Rewrite vision and comparison claims to match the actual confidence level of the spec
   See `tasks/T064.md`.
+- [x] T065 Research high-value language and compiler ideas from existing work that Ferox may be able to adopt selectively
+  See `tasks/T065.md`.
+- [x] T066 Analyze whether Bosque-style regularization and reasoning-oriented IR should influence Ferox
+  See `tasks/T066.md`.
+- [x] T067 Analyze whether Perceus-style reuse and in-place compilation ideas should influence Ferox
+  See `tasks/T067.md`.
+- [x] T068 Analyze whether narrow typestate or protocol-checking ideas should influence Ferox
+  See `tasks/T068.md`.
+- [x] T069 Analyze what Ferox should learn from Pony and Verona concurrency ideas without importing full capability machinery
+  See `tasks/T069.md`.
+- [x] T070 Analyze whether effect handlers or richer effect systems belong only in a much later Ferox v2+ wave
+  See `tasks/T070.md`.
+
+## Implementation Readiness
+
+- [x] T071 Run an implementation go / no-go review against the narrowed v1 direction
+  See `tasks/T071.md`.
+
+## Rust Bootstrap
+
+- [ ] T072 Create the Rust workspace skeleton and initial bootstrap crate boundaries
+  See `tasks/T072.md`.
+- [ ] T073 Implement source handling, spans, tokens, diagnostics core, and syntax scaffolding
+  See `tasks/T073.md`.
+- [ ] T074 Parse a small Ferox subset and emit structured diagnostics
+  See `tasks/T074.md`.
+- [ ] T075 Build the first formatter on top of parsed syntax and source mapping
+  See `tasks/T075.md`.
+- [ ] T076 Add the first `ferox fmt` and `ferox check` bootstrap driver commands
+  See `tasks/T076.md`.
 
 ## Naming and Release Readiness
 

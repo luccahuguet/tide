@@ -40,6 +40,7 @@ The best path is:
 
 * keep the boldness in ownership, explicitness, and machine-friendly regularity
 * simplify or defer the rest until the core model proves coherent
+* prefer one primary way to do something, with at most one explicit escape hatch
 
 ## Product and Language Direction
 
@@ -65,10 +66,10 @@ The best path is:
 
 | ID | Item | Cost | Benefit | Danger | Complexity | Potential | Recommendation | Notes |
 |---|---|---:|---:|---:|---:|---:|---|---|
-| F11 | Ownership + simplified borrowing + regions | 5 | 5 | 5 | 5 | 5 | Keep | This is the big bet. It can make Ferox real, or it can consume the entire project. Prioritize this above everything else. |
+| F11 | Ownership + simplified borrowing | 5 | 5 | 5 | 5 | 5 | Keep | This is the big bet. It can make Ferox real, or it can consume the entire project. Prioritize this above everything else. |
 | F12 | Deterministic memory management without GC | 5 | 5 | 3 | 5 | 5 | Keep | Necessary if you want predictable performance and a serious systems-language identity. |
 | F13 | Explicit move/copy model | 4 | 5 | 2 | 4 | 5 | Keep | Strong payoff for clarity and performance. It reinforces the ownership story. |
-| F14 | First-class regions/arenas | 5 | 4 | 4 | 5 | 5 | Keep/Simplify | Valuable, but dangerous if over-designed early. Start with one minimal region model. |
+| F14 | First-class regions/arenas | 5 | 4 | 5 | 5 | 5 | Defer | Valuable in some designs, but too costly for the v1 core unless real pressure later proves they are necessary. |
 | F15 | Explicit shared ownership | 4 | 4 | 3 | 4 | 4 | Keep/Simplify | Necessary, but keep the initial surface very small. |
 | F16 | Explicit and isolated `unsafe` | 3 | 5 | 2 | 3 | 4 | Keep | Mandatory for a safe systems language. |
 | F17 | Structural safety guarantees in safe code | 4 | 5 | 3 | 4 | 5 | Keep | Good goal. The wording should stay narrow and mechanical, not grandiose. |
@@ -160,7 +161,7 @@ These are the ideas with the best benefit/potential relative to danger:
 
 These are the ideas most likely to blow up scope or coherence if handled aggressively:
 
-* F11 Ownership + simplified borrowing + regions
+* F11 Ownership + simplified borrowing
 * F14 First-class regions / arenas
 * F30 Explicit effects model
 * F32 Structured concurrency
@@ -168,11 +169,17 @@ These are the ideas most likely to blow up scope or coherence if handled aggress
 * F36 No hidden runtime costs of any kind
 * F43 One official toolchain covering everything from day one
 
+Coherence reminder:
+
+* the risk is not only that each subsystem is hard
+* the risk is also that Ferox accumulates multiple overlapping ways to solve the same problem
+* the right v1 bias is one dominant model plus a small explicit escape hatch, not parallel first-class approaches
+
 ## Recommended v1 Shape
 
 For a coherent first version, the recommended profile is:
 
 * Keep: ownership, explicitness, ADTs, exhaustive matching, `Option`/`Result`, regular syntax, machine-readable diagnostics, canonical formatting, explicit modules, Rust bootstrap
-* Simplify: regions, shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises
-* Defer: rich effects system, advanced cancellation semantics, broad self-hosting milestones
+* Simplify: shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises
+* Defer: arenas/regions, rich effects system, advanced cancellation semantics, broad self-hosting milestones
 * Move Out: agent-production rule as governance rather than language design

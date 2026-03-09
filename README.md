@@ -21,6 +21,7 @@ There is no compiler implementation yet. The current work is focused on:
 * memory model decisions
 * design tradeoff review
 * implementation planning
+* narrowing the v1 scope before implementation
 
 ## Current Language Direction
 
@@ -47,6 +48,13 @@ The official CLI binary is `ferox`.
 
 The official source file extension is `.ferox`.
 
+The v1 semantic core has recently been narrowed through an adversarial review pass.
+
+Current implementation verdict:
+
+* start a narrow Rust bootstrap now
+* keep deeper semantic ambition staged and architecture-first
+
 ## Repository Guide
 
 The main documents are:
@@ -57,6 +65,10 @@ The main documents are:
 * [spec/TOOLING.md](./spec/TOOLING.md): tooling, manifests, workspaces, and package design
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 * [TASKS.md](./TASKS.md): indexed design and implementation tasks
+* [V1_DIRECTION.md](./V1_DIRECTION.md): current narrowed v1 direction after the adversarial review
+* [ROADMAP.md](./ROADMAP.md): version roadmap and implementation-path summary
+* [V2_BACKLOG.md](./V2_BACKLOG.md): post-v1 candidate backlog
+* [V3_BACKLOG.md](./V3_BACKLOG.md): long-horizon backlog
 * [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
 * [FEROX_DOMAIN_STRATEGY.md](./FEROX_DOMAIN_STRATEGY.md): first-pass domain strategy for `Ferox`
 * [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
@@ -78,27 +90,31 @@ Already specified:
 * move semantics
 * copy-safe type rules
 * basic borrowing model with lexical borrow scopes
-* arenas, arena escape rules, and shared ownership primitives
-* effects, async, structured concurrency, and cancellation
+* shared ownership primitives as explicit escape hatches
+* explicit async syntax and a first-pass concurrency model
 * error handling with `Option`, `Result`, `?`, and `panic`
 * package manifests, workspaces, and dependency resolution
+* registry and publishing strategy
+* documentation generation and machine-readable tooling output
+* canonical formatting rules
+* implementation sequencing and self-hosting criteria
+
+Under active v1 review and still subject to cuts or deferral:
+
+* semantic edge cases that may still surface once ownership and async checks are implemented
 
 Still in progress:
 
-* registry and publishing strategy
-* documentation generation and machine-readable tooling output
-* canonical formatting details
-* implementation sequencing and self-hosting criteria
+* architecture-first Rust bootstrap planning against the narrowed v1
 
 ## Near-Term Priorities
 
 The next core design work is focused on:
 
-* registry and publishing strategy
-* documentation generation
-* machine-readable tooling output
-* formatting rules
-* implementation sequencing
+* keeping the v1 core narrow and coherent
+* starting implementation without reintroducing deferred systems
+* later-version backlog discipline
+* validating the narrowed spec through a real bootstrap path
 
 ## Principle
 

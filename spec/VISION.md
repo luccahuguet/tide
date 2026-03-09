@@ -74,6 +74,38 @@ Secondary rule:
 
 ---
 
+## Coherence Rule
+
+Ferox should avoid multiple overlapping ways to do the same job.
+
+Primary rule:
+
+> Prefer one primary way to do something, with at most one explicit escape hatch.
+
+This is especially important for:
+
+* memory handling
+* mutation
+* concurrency
+* error handling
+* package and tooling workflows
+
+Design guidance:
+
+* multiple mechanisms are acceptable when they solve genuinely different problems
+* multiple mechanisms are bad when they are mostly different ways to reach the same result
+* if two features overlap heavily, v1 should usually pick one and defer the other
+* restrictions are often better than overlapping escape hatches in an early language
+
+Reason:
+
+* this keeps the language easier to learn
+* this keeps the compiler and diagnostics smaller
+* this keeps the mental model more coherent for both humans and coding agents
+* this makes "smaller than Rust" a real constraint instead of a slogan
+
+---
+
 ## Core Identity
 
 Ferox is:
@@ -118,7 +150,7 @@ Included FP ideas:
 * Pattern matching
 * Expression-oriented constructs
 * Exhaustive match checking
-* Explicit effect boundaries
+* Explicit async and unsafe boundaries
 
 Not adopted from FP:
 
@@ -177,25 +209,31 @@ The language should be easy for agents to:
 * Verify
 * Repair
 
+Ferox should therefore prefer:
+
+* fewer overlapping abstractions
+* more explicit default paths
+* smaller semantic surface area
+* one dominant model where possible instead of several partially competing ones
+
 ---
 
 ## Strategic Positioning
 
-Ferox aims to occupy a space between:
+Ferox is trying to occupy a narrow space between Rust, Zig, and Go without copying any of them directly.
 
-**Go and Rust**
+Current aspiration:
 
-and between:
+* ownership-based and safety-oriented like Rust
+* explicit about runtime cost like Zig
+* practical about tooling and backend use like Go
 
-**Zig and Rust**
+Current caution:
 
-Positioning:
-
-* Safer and more correct than Go
-* Simpler and more coherent than Rust
-* More maintainable and structured than Zig
-* Better suited for agent-assisted development than all three
+* Ferox has not earned broad claims of being better than mature languages
+* the language is still narrowing its v1 core
+* comparative claims should stay conditional until the design proves coherent
 
 Core promise:
 
-> Fast software with strong correctness guarantees that both humans and agents can evolve safely.
+> Build a smaller, more analyzable ownership-based language for high-trust software.

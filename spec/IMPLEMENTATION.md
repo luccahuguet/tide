@@ -44,6 +44,26 @@ Principle:
 > Rust brings Ferox into existence.
 > Ferox proves it deserves to exist.
 
+## Version Roadmap Alignment
+
+Implementation phases and language versions are related, but they are not the same thing.
+
+Core rule:
+
+* rewriting toolchain components in Ferox is part of the implementation path around the v1 language era, not automatically a v2 language event
+
+Current roadmap:
+
+* v1: narrow language core plus Rust bootstrap
+* later v1-era implementation maturity: selected Ferox rewrites and self-hosting transition
+* v2 and v3: only for deferred language expansion after real pressure justifies it
+
+See:
+
+* [ROADMAP.md](../ROADMAP.md)
+* [V2_BACKLOG.md](../V2_BACKLOG.md)
+* [V3_BACKLOG.md](../V3_BACKLOG.md)
+
 ## Rust Bootstrap Architecture
 
 The initial implementation should use a modular Rust workspace rather than a single monolithic binary crate.
@@ -62,7 +82,7 @@ Initial bootstrap components:
 * `ferox_syntax`: tokens, concrete syntax tree, parser, and source span handling
 * `ferox_ast`: normalized language AST where needed beyond the syntax tree
 * `ferox_fmt`: formatter built on syntax and source mapping
-* `ferox_sem`: name resolution, type checking, effect checking, and other semantic analysis
+* `ferox_sem`: name resolution, type checking, ownership and async-related analysis, and other semantic analysis
 * `ferox_diag`: diagnostics data model and rendering
 * `ferox_driver`: build orchestration, package loading, and pipeline coordination
 
@@ -132,7 +152,7 @@ Initial scope:
 * visibility checking
 * type checking
 * trait and generic validation
-* ownership-, mutation-, and effect-related analysis as those rules become implementable
+* ownership-, mutation-, and async-related analysis as those rules become implementable
 
 #### 4. Driver Integration Fourth
 
@@ -149,6 +169,27 @@ Rationale:
 * frontend correctness is the larger risk for Ferox right now
 * code generation strategy is a separate decision area and should not force premature architecture choices
 * a stable checked intermediate form should exist before backend work becomes the main focus
+
+### Checked IR Direction
+
+The checked intermediate form should not be a thin dump of surface syntax.
+
+Current direction:
+
+* Ferox should prefer a **regularized checked IR** for semantic reasoning, diagnostics, later optimization work, and backend lowering
+
+This means:
+
+* lower multiple surface forms into a smaller set of semantic forms where practical
+* make ownership-relevant operations explicit in the checked IR
+* make control-flow and async structure more explicit than they are in the parsed syntax
+* keep the IR predictable enough that later tooling and static analyses do not need to reverse-engineer meaning from raw source syntax
+
+Non-goal:
+
+* redesign the source language around Bosque-style radical source restrictions just to simplify the IR
+
+The point is to make compiler reasoning smaller and more regular without widening the user-facing language core.
 
 ### Design Intent
 
@@ -306,6 +347,7 @@ Initial direction:
 * `LLVM` remains a possible later backend for stronger optimization or broader low-level targeting needs
 * the project may ultimately support more than one backend if the engineering cost is justified
 * backend plurality is a later optimization decision, not a requirement for the first working compiler
+* reuse and in-place-update analysis inspired by work such as Perceus may be worth exploring later, but only after the checked IR and first backend are already credible
 
 ### Design Intent
 
