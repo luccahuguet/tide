@@ -2,7 +2,7 @@
 
 This document reviews the distinct goals and feature bets currently stated across `spec/VISION.md`, `spec/LANGUAGE.md`, `spec/TOOLING.md`, and `GOVERNANCE.md`.
 
-It does **not** treat every task in `TASKS.md` as a separate feature. The task list is implementation decomposition; this file is a strategic review of the underlying ideas.
+It does **not** treat every numbered task or `br` issue as a separate feature. The task system is implementation decomposition; this file is a strategic review of the underlying ideas.
 
 ## Rating Scale
 

@@ -110,6 +110,6 @@ Examples:
 
 These should be researched separately before they are added to any version backlog.
 
-Current research tasks:
+Completed research tasks:
 
-* `T065` to `T070` in [TASKS.md](./TASKS.md)
+* the completed `T065` to `T070` analysis set in `tasks/`

@@ -25,7 +25,8 @@ Current status:
 
 ## Supporting Documents
 
-* [TASKS.md](./TASKS.md): indexed design and implementation tasks
+* [TASKS.md](./TASKS.md): completed-task archive
+* [BR_WORKFLOW.md](./BR_WORKFLOW.md): open-task tracking rules and `br` workflow
 * [V1_DIRECTION.md](./V1_DIRECTION.md): current narrowed v1 direction after the review passes
 * [ROADMAP.md](./ROADMAP.md): version roadmap and implementation-path summary
 * [V2_BACKLOG.md](./V2_BACKLOG.md): post-v1 candidate backlog

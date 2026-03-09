@@ -94,8 +94,8 @@ Why deferred this far:
 
 ## Research Connection
 
-Some v3 candidates are already being researched through:
+Some v3 candidates were already researched through:
 
-* `T065` to `T070` in [TASKS.md](./TASKS.md)
+* the completed `T065` to `T070` analysis set in `tasks/`
 
-Those research tasks should decide whether an idea eventually deserves a place in the language roadmap at all.
+Those completed analyses should help decide whether an idea eventually deserves a place in the language roadmap at all.
