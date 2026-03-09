@@ -67,3 +67,13 @@ The supervisor should block on correctness, spec mismatch, regression risk, arch
 The supervisor should not block on style-only preferences or speculative abstractions.
 
 Detailed workflow and prompt guidance live in [AI_SUPERVISOR.md](./AI_SUPERVISOR.md).
+
+## Operational Work Tracking
+
+Ferox uses `br` as the canonical tracker for open work.
+
+Canonical open-task state lives in the committed `.beads/issues.jsonl` ledger and its associated `br` metadata.
+
+Canonical task meaning and completed-task archive still live in [TASKS.md](./TASKS.md) and `tasks/T###.md`.
+
+The detailed `br` workflow is documented in [BR_WORKFLOW.md](./BR_WORKFLOW.md).

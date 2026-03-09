@@ -14,9 +14,9 @@ Ferox is still in the design stage.
 
 Current work:
 
-* adversarial review of the spec
-* narrowing the v1 semantic core
-* cutting overlapping models and deferring risky subsystems
+* first adversarial narrowing pass completed
+* version backlog and external-ideas research completed for the first pass
+* preparing the architecture-first Rust bootstrap against the narrowed v1
 
 Current rule:
 

@@ -21,7 +21,8 @@ There is no compiler implementation yet. The current work is focused on:
 * memory model decisions
 * design tradeoff review
 * implementation planning
-* narrowing the v1 scope before implementation
+* narrowing the v1 scope
+* preparing the narrow Rust bootstrap
 
 ## Current Language Direction
 
@@ -64,7 +65,8 @@ The main documents are:
 * [spec/VISION.md](./spec/VISION.md): project vision, priorities, and positioning
 * [spec/TOOLING.md](./spec/TOOLING.md): tooling, manifests, workspaces, and package design
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
-* [TASKS.md](./TASKS.md): indexed design and implementation tasks
+* [TASKS.md](./TASKS.md): completed-task archive
+* [BR_WORKFLOW.md](./BR_WORKFLOW.md): `br` workflow and open-task tracking rules
 * [V1_DIRECTION.md](./V1_DIRECTION.md): current narrowed v1 direction after the adversarial review
 * [ROADMAP.md](./ROADMAP.md): version roadmap and implementation-path summary
 * [V2_BACKLOG.md](./V2_BACKLOG.md): post-v1 candidate backlog
@@ -105,7 +107,8 @@ Under active v1 review and still subject to cuts or deferral:
 
 Still in progress:
 
-* architecture-first Rust bootstrap planning against the narrowed v1
+* architecture-first Rust bootstrap work against the narrowed v1
+* `br`-tracked open work for the first bootstrap queue
 
 ## Near-Term Priorities
 

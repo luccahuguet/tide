@@ -1029,7 +1029,7 @@ Rules:
 * entering `unsafe` does not make ordinary ownership and borrowing rules irrelevant; it only permits a defined escape hatch set
 * values produced through `unsafe` may be used by safe code only if the unsafe code upholds Ferox's safety invariants
 * `unsafe` is for low-level capability, not for bypassing ordinary API design constraints
-* code that can be expressed with ordinary ownership, borrowing, arenas, or synchronized wrappers should stay in safe Ferox
+* code that can be expressed with ordinary ownership, borrowing, or synchronized wrappers should stay in safe Ferox
 
 ### Initial Non-Goals
 

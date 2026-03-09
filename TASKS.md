@@ -2,8 +2,21 @@
 
 Task-list convention:
 
-* keep entries in this file short
+* this file archives completed work
+* open tasks live in `br` and are committed through `.beads/issues.jsonl`
 * put detailed task bodies in `tasks/T###.md` when a task needs more context
+
+## Open Work
+
+Open tasks are tracked in `br`, not in this file.
+
+Use:
+
+* `br ready`
+* `br list --pretty`
+* `br show <id>`
+
+See `BR_WORKFLOW.md` for the workflow rules.
 
 ## Core Language Design
 
@@ -113,18 +126,12 @@ Task-list convention:
 - [x] T071 Run an implementation go / no-go review against the narrowed v1 direction
   See `tasks/T071.md`.
 
-## Rust Bootstrap
+## Workflow
 
-- [ ] T072 Create the Rust workspace skeleton and initial bootstrap crate boundaries
-  See `tasks/T072.md`.
-- [ ] T073 Implement source handling, spans, tokens, diagnostics core, and syntax scaffolding
-  See `tasks/T073.md`.
-- [ ] T074 Parse a small Ferox subset and emit structured diagnostics
-  See `tasks/T074.md`.
-- [ ] T075 Build the first formatter on top of parsed syntax and source mapping
-  See `tasks/T075.md`.
-- [ ] T076 Add the first `ferox fmt` and `ferox check` bootstrap driver commands
-  See `tasks/T076.md`.
+- [x] T078 Set up the initial `br` pilot workflow for active Ferox work
+  See `tasks/T078.md`.
+- [x] T079 Make `br` the canonical tracker for open Ferox work and keep `TASKS.md` as the completed-task archive
+  See `tasks/T079.md`.
 
 ## Naming and Release Readiness
 

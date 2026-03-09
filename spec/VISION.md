@@ -64,7 +64,7 @@ Core idea:
 When tradeoffs occur, the language prioritizes:
 
 1. **Safety > fewer lines of code**
-2. **Agentic-use > human readability**
+2. **Tool and agent analyzability > local terseness**
 3. **Performance > elegance**
 4. **Compiler guarantees > ease of learning**
 
@@ -231,7 +231,7 @@ Current aspiration:
 Current caution:
 
 * Ferox has not earned broad claims of being better than mature languages
-* the language is still narrowing its v1 core
+* the language has recently narrowed its v1 core and is only now entering a narrow Rust bootstrap
 * comparative claims should stay conditional until the design proves coherent
 
 Core promise:

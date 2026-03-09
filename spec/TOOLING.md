@@ -77,12 +77,6 @@ Goals:
 * avoid style choices that depend on manual alignment
 * support formatter-driven refactors and code generation
 
-### Deferred Detail
-
-The following remain defined in later formatting tasks:
-
-* formatter stability guarantees across toolchain versions
-
 ## Import Ordering And Grouping
 
 Imports have one canonical ordering and grouping style.
