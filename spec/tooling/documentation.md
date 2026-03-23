@@ -19,8 +19,15 @@ Rules:
 
 * generated documentation is derived from package source and public declarations
 * `pub` items form the primary visible surface in generated package docs
-* doc comments attached to declarations become the source text for generated API documentation
+* `///` doc comments attached to declarations become the source text for generated API documentation
+* top-of-file `////` doc comments become the primary file or module description when present
 * documentation generation should understand modules, public functions, public types, and public traits directly from the language structure
+* doc comments should come from the same full-fidelity syntax model used by parser and formatter work rather than from a separate documentation-only source pass
+
+Initial documentation non-goals:
+
+* supporting multiple parallel doc-comment attachment systems in v1
+* requiring documentation generation to reinterpret ordinary `//` comments as API docs
 
 ### Output Format
 

@@ -87,7 +87,7 @@ Imports have one canonical ordering and grouping style.
 
 Initial rules:
 
-* all `use` declarations in a file are kept in one contiguous import block near the top of the file after any file-level doc comments
+* all `use` declarations in a file are kept in one contiguous import block near the top of the file after any file-level `////` doc comments
 * import declarations are sorted lexicographically by their full canonical path
 * grouped imports are sorted lexicographically inside their braces
 * aliased imports are ordered by their underlying import path, not by the alias
@@ -207,6 +207,9 @@ Rules:
 * the formatter must not invent or guess missing code
 * any partially formatted result must preserve the original source for regions the formatter could not confidently normalize
 * diagnostics should identify why full formatting was not possible
+* comments, doc comments, and trivia that fall inside unformatted or uncertain regions must be preserved from the original source rather than reinterpreted through formatter-only heuristics
+* declaration doc comments using `///` stay attached to the following declaration during formatting
+* file-level `////` doc comments remain above the import block and are not rewritten into declaration docs
 
 ### Design Intent
 

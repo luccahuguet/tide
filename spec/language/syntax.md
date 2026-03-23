@@ -183,6 +183,59 @@ Rules:
 * `return` exits the current function immediately
 * Assignment is a statement, not an expression
 
+## Comments And Doc Comments
+
+Ferox should keep comments and documentation comments explicit, regular, and small in v1.
+
+Initial comment forms:
+
+* `//` for ordinary line comments
+* `///` for declaration doc comments
+* `////` for file-level doc comments
+
+Ordinary line comments:
+
+```ferox
+// local implementation note
+let value = 1;
+```
+
+Declaration doc comments:
+
+```ferox
+/// Returns the current user profile.
+pub fn load_profile(id: UserId) -> Result[Profile, LoadError] {
+    ...
+}
+```
+
+File-level doc comments:
+
+```ferox
+//// Utilities for parsing and validating package manifests.
+
+use pkg.manifest;
+```
+
+Attachment rules:
+
+* `///` attaches to the next declaration when no blank-line-separated unrelated construct intervenes
+* `////` at the top of a file attaches to the file or module represented by that file
+* ordinary `//` comments are preserved in the CST but do not become API documentation
+* doc comments are part of the full-fidelity syntax surface and should not require a separate documentation-only parsing path
+
+Initial non-goals:
+
+* Rust-style inner doc comments as a separate parallel system
+* block comments as a required v1 feature
+* multiple doc-comment forms that express subtly different attachment semantics
+
+Design intent:
+
+* keep documentation syntax easy to read and easy to attach deterministically
+* avoid a comment surface large enough to complicate parser recovery and formatting
+* preserve one obvious distinction between ordinary comments, declaration docs, and file-level docs
+
 ## If Expressions
 
 `if` is an expression, not only a statement.

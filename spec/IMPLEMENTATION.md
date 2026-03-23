@@ -300,6 +300,27 @@ Reasons:
 * syntax work exposes grammar problems early while the language is still changing quickly
 * full-fidelity syntax and local recovery are prerequisites for trustworthy formatting, refactors, and agent workflows
 
+### Full-Fidelity CST Expectations
+
+The concrete syntax tree should be lossless enough that the original file can be reconstructed from syntax tokens plus trivia.
+
+Core direction:
+
+* comments, doc comments, whitespace, and other trivia should remain represented in the full-fidelity syntax layer rather than being discarded into ad hoc side tables
+* the CST should preserve source order exactly, including damaged regions the parser can still localize
+* AST or lowered views may omit trivia, but they should derive from the CST rather than replacing it
+* formatter, documentation generation, and later structural rewrites should all rely on the same trivia-preserving source model
+
+Recommended invariant:
+
+* source text -> tokens plus trivia -> CST -> reproduced source should be identity-preserving when no formatting or rewriting step is applied
+
+Initial non-goals:
+
+* building a second formatter-specific comment model outside the CST
+* attaching comments to semantic nodes only after parsing as the primary source of truth
+* losing damaged or unclassified source regions merely because they are not yet fully parseable
+
 #### 2. Formatter Second
 
 The formatter should come before the full type checker.
