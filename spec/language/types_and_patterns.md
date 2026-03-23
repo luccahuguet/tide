@@ -251,6 +251,29 @@ Goals:
 * support exhaustive matching cleanly
 * preserve room for compiler optimization without exposing layout tricks as source-level complexity
 
+### Public-Data Modeling Guidance
+
+Ferox should encourage public APIs to model real domain states directly in the type system.
+
+Preferred modeling style:
+
+* use enums or other explicit ADTs when a value can be in one of several meaningful states
+* use `Option[T]` when a value is genuinely optional
+* use `Result[T, E]` when an operation can fail recoverably
+* use named-field variants or structs when field meaning matters to readers and tools
+
+Discouraged modeling style:
+
+* clusters of booleans that encode hidden state machines
+* sentinel primitive values standing in for absence, failure, or special modes
+* loosely related primitive fields that require prose to explain which combinations are valid
+
+Reason:
+
+* explicit state modeling makes invariants more visible
+* it improves compiler-assisted refactoring
+* it fits Ferox's safe-change and low-entropy goals better than convention-heavy API design
+
 ## Pattern Destructuring
 
 Ferox supports destructuring patterns for structs, enums, tuples, `Option`, and `Result`.

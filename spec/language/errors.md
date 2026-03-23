@@ -107,6 +107,12 @@ Goals:
 * preserve `match` as the general control-flow form
 * avoid exception-like hidden control flow
 
+Public API guidance:
+
+* use `Option[T]` when absence is part of the honest domain model
+* use `Result[T, E]` when recoverable failure is part of the honest operation model
+* do not encode absence or recoverable failure through sentinel primitives or loosely documented flag combinations when a typed representation is clearer
+
 ## Error Propagation
 
 Ferox uses postfix `?` for concise propagation of `Result` and `Option`.

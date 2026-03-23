@@ -771,6 +771,7 @@ Suggested accepted-form buckets:
 * small helper-function transformations written as ordinary nested calls or explicit named steps
 * explicit `Option` / `Result` transformation flows using `match`, `if let`, `while let`, and `?`
 * nested destructuring that stays within the explicitly supported pattern forms
+* public API examples that use explicit enums, `Option`, and `Result` rather than sentinel or flag-driven state encoding
 
 Suggested rejection or non-goal buckets:
 
@@ -778,6 +779,7 @@ Suggested rejection or non-goal buckets:
 * syntax or diagnostics that would imply multiple equivalent FP composition styles for ordinary code
 * unsupported advanced type-level abstractions that Ferox deliberately keeps out of scope
 * unsupported pattern-surface growth such as guards, or-patterns, alias patterns, ranges, or collection-spread patterns
+* public-modeling examples that hide meaningful states behind primitive flags or sentinel values when typed alternatives are clearer
 
 Expected validation layers:
 
@@ -795,6 +797,7 @@ Suggested early corpus examples:
 * nested `Option` / `Result` destructuring
 * multiline expression-oriented block formatting
 * rejected guard, or-pattern, and range-pattern examples with explicit diagnostics
+* public API examples contrasting explicit enum modeling against rejected or discouraged flag/sentinel encoding
 
 Logging and tracing expectation:
 

@@ -50,6 +50,10 @@ Core FP choices for v1:
 * ADTs and exhaustive `match` as the normal invalid-state and branching tools
 * expression-oriented code with small transformation-focused helper functions where that improves readability
 
+Public-data modeling preference:
+
+* prefer explicit ADTs, `Option`, and `Result` over flag combinations, sentinel values, or loosely encoded state conventions in public APIs
+
 Clarification:
 
 * Ferox v1 does not treat purity here as a checked effect contract; this is a style and API-shaping preference, not a second semantic system
@@ -72,6 +76,7 @@ The target feel is:
 * explicit
 * regular
 * easy to lower, format, and rewrite
+* strongly typed at API boundaries in ways that expose meaningful state directly
 
 not:
 

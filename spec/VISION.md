@@ -195,6 +195,29 @@ Core clarification:
 
 * Ferox v1 does not treat helper-function purity as a checked language effect; this is a source-style preference, not a parallel effect system
 
+### Public-Data Modeling Doctrine
+
+Ferox should push strongly toward explicit type-shaped domain modeling.
+
+Preferred direction:
+
+* represent meaningful state alternatives with small enums or other explicit ADTs
+* use `Option[T]` for real presence/absence
+* use `Result[T, E]` for recoverable failure
+* prefer explicit constructors and named variants over flag-driven or sentinel-driven state encoding
+
+The goal is:
+
+* make important states visible in the type surface
+* reduce invalid-state pressure in public APIs
+* make refactors safer because data shape changes become explicit compiler-visible changes
+
+Anti-pattern direction:
+
+* boolean flag clusters that encode hidden state machines
+* sentinel values that stand in for absence or failure
+* public APIs that collapse materially different states into loosely documented primitive combinations
+
 ### Useful But Secondary FP Ideas
 
 These may be adopted, but only if they remain narrow and regular:
