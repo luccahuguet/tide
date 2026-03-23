@@ -247,6 +247,7 @@ The initial pattern set includes:
 * literal pattern
 * enum/variant pattern
 * tuple pattern
+* struct pattern by explicit field name
 
 Examples:
 
@@ -327,6 +328,31 @@ Rules:
 * unreachable arms should be diagnosed by the compiler
 * wildcard arms should normally appear last
 
+### Pattern Surface Boundaries
+
+Ferox v1 should keep pattern matching deliberately small.
+
+Rules:
+
+* the core pattern surface is the one explicitly listed in this document and in the type/destructuring reference
+* pattern matching should stay shape-driven rather than turning into a broad logic sublanguage
+* unsupported pattern forms should be rejected clearly rather than added implicitly through parser permissiveness
+
+Initial non-goals for v1 patterns:
+
+* or-patterns
+* pattern guards
+* range patterns
+* alias or `as`-style binding patterns
+* slice, array-spread, or rest patterns beyond the explicitly listed tuple and struct forms
+* destructuring in function parameter position as a separate pattern system
+* broad irrefutable destructuring forms in ordinary `let` bindings beyond what the language later explicitly adopts
+
+Reason:
+
+* these forms add expressive power, but they also widen parsing, lowering, formatting, diagnostics, and exhaustiveness behavior all at once
+* Ferox should prefer explicit branching and named intermediate steps over pattern-power escalation in v1
+
 ### Design Intent
 
 Pattern matching is part of Ferox's invalid-state modeling story.
@@ -337,6 +363,7 @@ Goals:
 * make enum and result handling mechanical
 * improve refactor safety
 * keep control flow analyzable
+* keep the pattern language smaller than the surrounding type language
 
 ## Literal Syntax
 

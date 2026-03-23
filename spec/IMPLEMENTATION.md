@@ -770,18 +770,21 @@ Suggested accepted-form buckets:
 * expression-oriented blocks that return values without obscuring control flow
 * small helper-function transformations written as ordinary nested calls or explicit named steps
 * explicit `Option` / `Result` transformation flows using `match`, `if let`, `while let`, and `?`
+* nested destructuring that stays within the explicitly supported pattern forms
 
 Suggested rejection or non-goal buckets:
 
 * operator-heavy or ambiguous pipeline-style experiments that the language intentionally does not support
 * syntax or diagnostics that would imply multiple equivalent FP composition styles for ordinary code
 * unsupported advanced type-level abstractions that Ferox deliberately keeps out of scope
+* unsupported pattern-surface growth such as guards, or-patterns, alias patterns, ranges, or collection-spread patterns
 
 Expected validation layers:
 
 * unit tests for parsing and lowering of accepted expression-oriented and pattern-heavy forms
 * formatter tests that lock down canonical layout for multiline `match` and nested destructuring
 * diagnostic tests for malformed or deliberately unsupported FP-adjacent constructs
+* diagnostic tests for deliberately unsupported pattern forms
 * corpus fixtures for canonical accepted examples and representative rejected anti-patterns
 * end-to-end scripts that exercise transformation-heavy workflows through `ferox check` and `ferox fmt`
 
@@ -791,6 +794,7 @@ Suggested early corpus examples:
 * `Result` propagation with local transformation steps
 * nested `Option` / `Result` destructuring
 * multiline expression-oriented block formatting
+* rejected guard, or-pattern, and range-pattern examples with explicit diagnostics
 
 Logging and tracing expectation:
 

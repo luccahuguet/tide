@@ -97,6 +97,7 @@ The current v1 direction includes these explicit simplifications:
 * borrowing is lexical and intentionally more restrictive than Rust
 * method receivers are only `self`, `&self`, and `&mut self`
 * traits stay small
+* patterns stay small, explicit, and shape-driven
 * shared ownership and synchronization are explicit and secondary
 * concurrency stays bounded and visible
 * ordinary borrows do not cross task boundaries by default

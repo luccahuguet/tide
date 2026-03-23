@@ -261,6 +261,7 @@ Design rules:
 * bindings introduced by destructuring are explicit and local to the pattern arm
 * destructuring syntax should mirror construction syntax where practical
 * pattern destructuring must not bypass exhaustiveness checking
+* pattern bindings must stay linear and non-magical
 
 ### Tuple Destructuring
 
@@ -398,6 +399,37 @@ Rules:
 * nested destructuring is allowed
 * each nested layer must follow the declared type shape
 * nested patterns do not weaken exhaustiveness requirements
+* nesting should remain a direct composition of the supported core pattern forms, not a separate pattern-power feature
+
+### Deliberate Pattern Exclusions
+
+Ferox v1 should keep several tempting pattern features out of scope.
+
+Excluded in v1:
+
+* alias patterns that bind both the whole value and a nested match in one pattern
+* guard clauses attached to match arms
+* or-patterns that merge multiple pattern alternatives into one arm
+* numeric or character range patterns
+* implicit field-rest patterns for structs
+* advanced collection or spread-style patterns
+
+Reason:
+
+* each of these features increases the amount of logic embedded inside pattern syntax
+* they create more edge cases for exhaustiveness, lowering, formatting, and diagnostics
+* Ferox gets more value from a small regular pattern core than from maximizing pattern cleverness
+
+### Where Patterns Belong In V1
+
+Pattern use should stay concentrated in a few explicit contexts.
+
+Current v1 direction:
+
+* `match` is the primary refutable-pattern control-flow form
+* `if let` and `while let` are allowed as focused shorthands for common single-pattern cases
+* ordinary function parameters remain explicit named parameters rather than destructuring patterns
+* ordinary `let` bindings are not a general destructuring system in the initial design unless a later syntax decision explicitly adds a narrow form
 
 ### Design Intent
 
@@ -409,3 +441,4 @@ Goals:
 * support readable case handling
 * improve refactor safety for ADTs
 * keep compiler analysis straightforward
+* prevent the pattern surface from becoming a second broad language inside Ferox
