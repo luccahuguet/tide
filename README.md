@@ -69,9 +69,9 @@ Current version ladder:
 The main documents are:
 
 * [spec.md](./spec.md): spec index and document map
-* [spec/LANGUAGE.md](./spec/LANGUAGE.md): the working language specification
+* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language-spec entrypoint and topic map
 * [spec/VISION.md](./spec/VISION.md): project vision, priorities, and positioning
-* [spec/TOOLING.md](./spec/TOOLING.md): tooling, manifests, workspaces, and package design
+* [spec/TOOLING.md](./spec/TOOLING.md): tooling-spec entrypoint and topic map
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 * [TASKS.md](./TASKS.md): completed-task archive
 * [BR_WORKFLOW.md](./BR_WORKFLOW.md): `br` workflow and open-task tracking rules
@@ -93,21 +93,9 @@ The main documents are:
 
 Already specified:
 
-* core syntax for functions, bindings, blocks, expressions, and statements
-* modules, imports, exports, and visibility
-* traits and implementations
-* generic types and generic functions
-* move semantics
-* copy-safe type rules
-* basic borrowing model with lexical borrow scopes
-* shared ownership primitives as explicit escape hatches
-* explicit async syntax and a first-pass concurrency model
-* error handling with `Option`, `Result`, `?`, and `panic`
-* package manifests, workspaces, and dependency resolution
-* registry and publishing strategy
-* documentation generation and machine-readable tooling output
-* canonical formatting rules
-* implementation sequencing and self-hosting criteria
+* core language rules across ownership, types, syntax, async/concurrency, errors, modules, and generics in [spec/LANGUAGE.md](./spec/LANGUAGE.md) and [spec/language/](./spec/language)
+* tooling, package, formatter, and machine-contract rules in [spec/TOOLING.md](./spec/TOOLING.md) and [spec/tooling/](./spec/tooling)
+* bootstrap sequencing, compiler architecture, validation harness, and self-hosting criteria in [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md)
 
 Under active v1 review and still subject to cuts or deferral:
 

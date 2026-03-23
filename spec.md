@@ -2,6 +2,10 @@
 
 This repository now splits the specification into focused documents instead of keeping all language, tooling, and strategy material in one file.
 
+Language-reference topic files live under [`spec/language/`](./spec/language/).
+
+Tooling-reference topic files live under [`spec/tooling/`](./spec/tooling/).
+
 ## Current Status
 
 The language is called **Ferox**.
@@ -19,8 +23,8 @@ Current status:
 ## Main Documents
 
 * [spec/VISION.md](./spec/VISION.md): project vision, priorities, positioning, and high-level design principles
-* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language rules, semantics, syntax, ownership, async, concurrency, and error handling
-* [spec/TOOLING.md](./spec/TOOLING.md): formatter, CLI, manifests, workspaces, and package-system design
+* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language-spec entrypoint and topic map
+* [spec/TOOLING.md](./spec/TOOLING.md): tooling-spec entrypoint and topic map
 * [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
 
 ## Supporting Documents
