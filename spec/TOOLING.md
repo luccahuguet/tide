@@ -902,3 +902,192 @@ Required validation directions:
 Logging expectation:
 
 * when a structured output changes unexpectedly, the toolchain should make it practical to trace which compiler or driver stage produced the changed record
+
+## Mutation-Side Machine Contract
+
+Ferox should define an explicit mutation-side machine contract for safe automated change.
+
+Core rule:
+
+* tools should mutate Ferox code through official structured edit surfaces rather than by relying on ad hoc text rewriting alone
+
+The mutation-side contract should be divided into three classes:
+
+* guaranteed-safe automated rewrites
+* review-oriented suggested rewrites
+* non-contractual internal transformations
+
+## Mutation Safety Tiers
+
+Each machine-driven change should declare its safety tier.
+
+Initial tiers:
+
+* `safe_apply`: the toolchain can apply the rewrite automatically because the preconditions are fully checked and the result is guaranteed to remain within the validated contract for that operation
+* `suggest_only`: the toolchain can propose the rewrite with structured rationale, but a human should review or explicitly accept it
+* `internal_only`: compiler-internal transformations not exposed as user-facing mutation surfaces
+
+Core rule:
+
+* Ferox should be conservative about what counts as `safe_apply`
+
+## Official Mutation Surfaces
+
+The initial official mutation surfaces should eventually include:
+
+* structured diagnostic fixes
+* formatter rewrites
+* import normalization
+* symbol-aware rename
+* structural rule matches with constrained autofix
+
+The exact rollout can be staged, but these should define the intended long-term surface.
+
+### 1. Structured Diagnostic Fixes
+
+Some diagnostics may include machine-applicable fixes.
+
+Examples:
+
+* inserting a missing delimiter when parser recovery makes the fix unambiguous
+* replacing a trivially wrong token with the only syntactically valid intended token in a constrained context
+* adding or removing a formatter-only syntactic normalization where meaning is unchanged
+
+Rules:
+
+* a diagnostic fix should identify the exact text range or structured node it intends to replace
+* the fix should carry the diagnostic code that justified it
+* `safe_apply` fixes must be semantics-preserving within the scope of the diagnosed issue
+* fixes that may alter meaning should remain `suggest_only`
+
+### 2. Formatter Rewrites
+
+Formatter rewrites are the simplest official machine mutation surface.
+
+Rules:
+
+* formatting rewrites are `safe_apply` only for source the formatter considers confidently parseable
+* formatting rewrites must preserve program meaning
+* partial formatting of damaged files must preserve untouched regions when confidence is insufficient
+
+### 3. Import And Module-Surface Normalization
+
+Import ordering, grouping, deduplication, and similar normalization may be exposed as official machine edits.
+
+Rules:
+
+* these rewrites are `safe_apply` only when the compiler can prove the normalized form is semantically equivalent
+* import insertion or removal that depends on unresolved names should not be applied automatically
+* module-surface rewrites that affect visibility or API shape should default to `suggest_only` unless explicitly proven safe
+
+### 4. Symbol-Aware Rename
+
+Rename is one of the most important future mutation surfaces.
+
+Rules:
+
+* rename must operate on stable symbol identity rather than raw textual matching
+* the tool must report every affected location before or alongside the change
+* rename is `safe_apply` only when every affected reference and declaration can be resolved confidently
+* unresolved references, macro-like text expansion, or ambiguous dynamic lookup should force `suggest_only` or refusal
+
+### 5. Structural Rules And Autofix
+
+Ferox should eventually support first-party structural rule matching with constrained autofix.
+
+Rules:
+
+* structural rules should match over official syntax and semantic identities rather than plain text alone
+* autofix attached to a rule must declare the preconditions under which it is valid
+* rule-based autofix is `safe_apply` only when the compiler can validate the transformed result against the intended guarantees of that rule
+* rules that merely encode style or heuristic cleanup may still be useful, but should default to `suggest_only` unless their safety is very strong
+
+## Mutation Packaging
+
+Machine-driven edits should be represented in a structured form.
+
+Initial direction:
+
+* a mutation result should identify the targeted files
+* each edit should include a stable range or node target
+* the result should include the originating diagnostic, symbol action, or rule id when applicable
+* edit batches should declare whether they are atomic and whether they require revalidation after application
+
+Example logical fields:
+
+* mutation kind
+* safety tier
+* originating source (`diagnostic`, `rename`, `rule`, `formatter`, etc.)
+* target file
+* target span or node id
+* replacement content or structured edit payload
+* post-apply validation requirement
+
+## Boundaries Between Safe Apply And Suggest Only
+
+Ferox should define explicit boundaries.
+
+`safe_apply` should require all of the following:
+
+* the target nodes or spans are resolved confidently
+* the preconditions of the mutation are checked by the compiler or official tool
+* the transformation stays within the meaning-preserving contract for that mutation kind
+* the result can be revalidated immediately by parser/checker/formatter as appropriate
+
+`suggest_only` should be used when any of the following are true:
+
+* the tool is making a style or intent guess
+* the rewrite may change semantics
+* affected references are incomplete or ambiguous
+* package/workspace-wide consequences are not fully known
+* the transformation depends on heuristics rather than validated compiler facts
+
+The toolchain should refuse to emit an official machine mutation entirely when:
+
+* the source cannot be resolved confidently enough to target the right symbol or node
+* recovery damage is too high
+* applying the rewrite would require inventing missing code rather than transforming known code
+
+## Mutation Auditability And Logging
+
+Machine-applied changes should be traceable.
+
+Expected mutation-side logging data:
+
+* mutation kind
+* safety tier
+* originating diagnostic, symbol action, or rule id
+* affected file set
+* pre-validation status
+* post-apply validation status
+* refusal reason when no official mutation is emitted
+
+Core rule:
+
+* tools should make it easy to inspect why a change was auto-applied, downgraded to suggestion, or refused entirely
+
+## Mutation Validation Expectations
+
+The mutation-side contract should carry explicit regression obligations.
+
+Required validation directions:
+
+* scenario tests for each official mutation surface
+* before/after corpus cases for formatter, diagnostics-with-fixes, and later structural rules
+* rename and refactor tests that verify all affected symbol references are updated or that the tool refuses safely
+* end-to-end scripts that apply machine mutations and immediately re-run parser/checker/formatter validation
+* trace inspection for failed or refused machine rewrites
+
+## Mutation Rollout Direction
+
+The expected rollout should be conservative.
+
+Suggested order:
+
+1. formatter rewrites
+2. structured diagnostic fixes in narrow unambiguous cases
+3. import normalization
+4. symbol-aware rename
+5. structural rules with constrained autofix
+
+This keeps the early mutation contract narrow enough to earn trust before it attempts larger-scale automated rewrites.

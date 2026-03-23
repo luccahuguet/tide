@@ -232,6 +232,317 @@ Suggested early corpus areas:
 * machine-readable output snapshots
 * later rule-and-autofix before/after cases
 
+## Shared Validation And Observability Harness
+
+Ferox should use one shared validation and observability harness across bootstrap compiler and tooling work.
+
+Core rule:
+
+* parser, formatter, diagnostics, semantic analysis, and CLI work should plug into one validation system instead of inventing separate test and logging conventions per subsystem
+
+The harness should define:
+
+* test layers
+* fixture and snapshot layout
+* e2e script conventions
+* logging and tracing conventions
+* failure artifact capture
+* local and CI invocation paths
+
+### Test Layers
+
+The harness should use four primary layers.
+
+#### 1. Unit Tests
+
+Purpose:
+
+* fast local feedback for small components
+* direct coverage of low-level logic without file-based fixtures when that would add noise
+
+Typical scope:
+
+* span math
+* token behavior
+* syntax helpers
+* diagnostic construction
+* formatter primitives
+* small semantic utilities
+
+#### 2. Corpus And Golden Tests
+
+Purpose:
+
+* lock down externally visible behavior through small source fixtures and expected outputs
+
+Typical scope:
+
+* parser acceptance and rejection
+* formatter input/output pairs
+* structured diagnostics snapshots
+* ownership pass/fail examples
+* machine-readable output snapshots
+
+Core rule:
+
+* whenever output shape matters to users or tools, prefer fixture-driven golden tests over ad hoc inline assertions
+
+#### 3. Integration Tests
+
+Purpose:
+
+* validate interactions between crates or pipeline stages without requiring full CLI orchestration
+
+Typical scope:
+
+* syntax plus diagnostics integration
+* formatter over parsed syntax
+* driver plus package-loading interactions
+* metadata and machine-readable output generation
+
+#### 4. End-To-End Scripts
+
+Purpose:
+
+* exercise the same command surface that users, CI, and agents will actually run
+
+Typical scope:
+
+* `ferox check` success and failure cases
+* `ferox fmt` formatting and idempotence checks
+* workspace/package-loading scenarios
+* machine-readable output smoke tests
+
+Core rule:
+
+* e2e scripts should be explicit, debuggable shell entrypoints rather than opaque CI-only glue
+
+### Recommended Layout
+
+The initial shared layout should look like:
+
+```text
+crates/
+  ferox_syntax/
+    src/
+      ...
+    tests/
+      ...
+  ferox_fmt/
+    src/
+      ...
+    tests/
+      ...
+  ...
+tests/
+  integration/
+  corpus/
+    parser/
+      ok/
+      err/
+    fmt/
+      in/
+      out/
+    diag/
+      cases/
+      expected/
+    ownership/
+      pass/
+      fail/
+    machine/
+      diagnostics/
+      metadata/
+  e2e/
+    check/
+    fmt/
+    workspace/
+  artifacts/
+    .gitkeep
+scripts/
+  test/
+    e2e_check.sh
+    e2e_fmt.sh
+    update_snapshots.sh
+```
+
+Rules:
+
+* unit tests should live with the crate code they exercise, using normal Rust crate-local test conventions
+* top-level `tests/` should be reserved for integration, corpus/golden, and end-to-end material that spans crate boundaries or validates externally visible behavior
+
+This layout is a direction, not a frozen path contract, but the categories should remain stable even if exact file placement evolves.
+
+### Fixture And Snapshot Naming
+
+Naming should be mechanical and predictable.
+
+Rules:
+
+* use short descriptive fixture names based on the behavior under test rather than task ids
+* pair source fixtures and expected outputs by basename where possible
+* use `.expected.json` for structured output snapshots
+* use `.expected.ferox` for formatter or canonical-source snapshots
+* prefer one behavior family per fixture rather than giant kitchen-sink examples
+
+Examples:
+
+```text
+tests/corpus/ownership/fail/use_after_move.ferox
+tests/corpus/diag/expected/use_after_move.expected.json
+tests/corpus/fmt/in/multiline_match.ferox
+tests/corpus/fmt/out/multiline_match.expected.ferox
+```
+
+### Snapshot Update Workflow
+
+Snapshot updates should be explicit.
+
+Rules:
+
+* failing golden tests should never silently rewrite expected outputs
+* snapshot regeneration should happen through an explicit update command or script
+* the update workflow should make it obvious which snapshots changed and why
+
+Initial direction:
+
+* provide one official snapshot-update script rather than ad hoc per-test update flags scattered across crates
+
+### Logging And Tracing Model
+
+Ferox should use structured logging and tracing from the beginning where practical.
+
+Core rule:
+
+* every major pipeline stage should emit structured events that are useful in debugging but suppressible in normal runs
+
+Minimum event categories:
+
+* package and workspace loading
+* file discovery and source loading
+* tokenization
+* parse decisions and recovery
+* formatter passes and idempotence failures
+* semantic phase entry/exit
+* ownership and concurrency checking decisions where relevant
+* machine-output emission
+* CLI command dispatch and exit status
+
+Minimum common fields where applicable:
+
+* command or phase name
+* file or package identifier
+* target identifier
+* symbol or item identifier when available
+* elapsed time or step timing where practical
+* outcome status
+
+### Trace Controls
+
+Initial direction:
+
+* normal developer commands should stay concise by default
+* verbose tracing should be enabled explicitly through flags, environment variables, or both
+
+Suggested controls:
+
+* `--verbose` for human-readable additional detail
+* an environment variable such as `FEROX_TRACE` for structured tracing selection during local debugging and CI artifact capture
+
+The exact mechanism may evolve, but there should be one clear official path rather than crate-specific hidden toggles.
+
+### Failure Artifact Capture
+
+The harness should preserve enough failure context that regressions are easy to debug.
+
+Expected artifacts where relevant:
+
+* structured diagnostics output
+* actual-versus-expected snapshot diffs
+* captured stdout/stderr from e2e commands
+* trace logs for failing runs when verbose mode is enabled
+
+Core rule:
+
+* failure artifacts should be stored in stable, easy-to-inspect locations rather than buried inside transient CI output only
+
+### Local And CI Invocation Model
+
+The same harness should support:
+
+* focused local iteration
+* broader pre-commit validation
+* CI execution
+* agent-driven targeted runs
+
+Initial direction:
+
+* offer a small set of stable entrypoints for running unit, corpus, integration, and e2e layers
+* keep full-suite and focused-suite commands obvious from repository scripts or cargo aliases
+* do not require contributors to memorize crate-specific test incantations for common workflows
+
+Example workflow categories:
+
+* fast unit run
+* focused corpus run by area
+* snapshot update run
+* full bootstrap validation run
+* e2e smoke run
+
+### Phased Adoption Across T072-T076
+
+The bootstrap tasks should adopt the harness in order.
+
+#### T072 Workspace Skeleton
+
+Must establish:
+
+* top-level test and script locations
+* baseline cargo/test wiring
+* a place for failure artifacts and future corpora
+
+#### T073 Source, Spans, Tokens, Diagnostics, Syntax Scaffolding
+
+Must add:
+
+* unit tests for low-level source and token behavior
+* initial corpus fixture structure
+* structured trace hooks for source loading, tokenization, and diagnostic construction
+
+#### T074 Parser And Structured Diagnostics
+
+Must add:
+
+* parser ok/err corpus fixtures
+* structured diagnostic snapshots
+* parser recovery and diagnostic e2e smoke coverage
+
+#### T075 Formatter
+
+Must add:
+
+* formatter in/out golden fixtures
+* idempotence checks
+* formatter trace points and mismatch artifacts
+
+#### T076 CLI Commands
+
+Must add:
+
+* command-level e2e scripts
+* stdout/stderr capture conventions
+* machine-readable output smoke tests through the actual CLI
+
+### Forward-Compatibility Rule
+
+The harness should be able to absorb later:
+
+* richer ownership cases
+* concurrency validation
+* contracts and verification examples
+* structural-rule and autofix scenarios
+
+without changing its basic layers or naming philosophy.
+
 ## Safety Invariant Validation
 
 The ownership model should not be treated as "specified" merely because the prose sounds plausible.
