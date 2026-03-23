@@ -300,6 +300,194 @@ Goals:
 * reduce hidden lifetime reasoning
 * support safe mutation without full Rust-level borrow complexity
 
+## Concrete Ownership Rules
+
+The v1 ownership model should follow these concrete rules.
+
+### Whole-Value Ownership
+
+Ownership moves and borrows are defined around ordinary values and explicit access paths, but v1 should stay conservative about fine-grained path reasoning.
+
+Rules:
+
+* the default unit of ownership reasoning is the value bound to a local binding, parameter, or named field access path written directly in source
+* moving a non-copy value invalidates the moved-from path immediately
+* a moved-from binding or path may not be read, written, borrowed, or moved again until it is reinitialized
+* moving a value while any active borrow derived from that value exists is rejected
+
+### Mutation Rules
+
+Rules:
+
+* mutation requires a mutable binding or an active exclusive mutable borrow
+* mutation through shared borrows is rejected
+* mutation through shared ownership requires explicit shared-ownership mechanisms rather than ordinary `&mut` borrowing
+* ordinary safe mutation may not hide synchronization or ownership promotion
+
+### Borrow Origin Rules
+
+Rules:
+
+* safe borrows must be explicit in source
+* a borrow must originate from a currently valid owner path
+* a borrow does not create a new owner
+* borrows may be passed to functions, but the borrow itself remains governed by the enclosing lexical scope in v1
+
+## Conservative Precision Rules
+
+Ferox v1 should choose conservative checker behavior when more precision would require substantially more semantic machinery.
+
+### No Guaranteed Disjoint-Field Borrow Precision
+
+Ferox v1 does not need to guarantee that the checker accepts simultaneous borrows of disjoint fields from the same aggregate.
+
+This means code such as:
+
+```ferox
+let mut pair = Pair { left: 1, right: 2 };
+let l = &mut pair.left;
+let r = &mut pair.right;
+```
+
+may be rejected in v1 even though the fields are disjoint.
+
+Reason:
+
+* this keeps the checker smaller and more predictable
+* it avoids turning field-sensitive alias analysis into a hidden source of complexity early
+
+### No Partial Moves from Ordinary Aggregates in V1
+
+Ferox v1 should reject partial moves that leave the remainder of an aggregate in a partly-moved state.
+
+Example:
+
+```ferox
+let user = User { id: 1, name: "ana" };
+let name = user.name;
+show(user.id);
+```
+
+This should be rejected in v1 rather than requiring the language and checker to reason about partially moved aggregate states.
+
+Reason:
+
+* keeps the value-state model smaller
+* avoids partially valid aggregates as a user-visible concept in the initial language
+
+### Lexical Endpoints Over Flow-Sensitive Borrow Endings
+
+Ferox v1 should require explicit scope boundaries to end borrows early.
+
+Example:
+
+```ferox
+let mut user = load_user();
+let w = &mut user;
+rename(w, "new-name");
+save(user);
+```
+
+This may be rejected in v1 if `w` remains in scope, even if a more flow-sensitive system could prove it is no longer used.
+
+Preferred v1 style:
+
+```ferox
+let mut user = load_user();
+{
+    let w = &mut user;
+    rename(w, "new-name");
+}
+save(user);
+```
+
+Reason:
+
+* explicit scopes are easier for both humans and tools to reason about
+* this avoids non-local borrow-ending analysis in the initial checker
+
+## Deliberate Exclusions Relative To Rust
+
+Ferox v1 should reject some useful Rust patterns on purpose.
+
+Current deliberate exclusions:
+
+* no non-lexical lifetime-style borrow endings
+* no requirement to accept disjoint sibling-field mutable borrows
+* no partial moves from ordinary aggregates
+* no implicit promotion from ordinary ownership into shared ownership
+* no mutation through ordinary shared borrows
+* no hidden interior-mutability semantics through ordinary references
+* no borrowing model that depends on users understanding a large lifetime sublanguage
+
+Current conservative rule:
+
+* borrows should not cross async or task boundaries by default unless a later concurrency rule explicitly allows a narrowly defined case
+
+Example intent:
+
+```ferox
+let user = load_user();
+async let handle = process(&user);
+```
+
+This should be rejected in v1 unless the concurrency design later introduces an explicit narrowly scoped exception and updates this rule accordingly.
+
+## Accepted And Rejected Ownership Examples
+
+Accepted:
+
+```ferox
+let user = load_user();
+let r1 = &user;
+let r2 = &user;
+show(r1);
+show(r2);
+```
+
+Accepted:
+
+```ferox
+let mut user = load_user();
+{
+    let w = &mut user;
+    rename(w, "new-name");
+}
+save(user);
+```
+
+Rejected:
+
+```ferox
+let user = load_user();
+let moved = user;
+show(user);
+```
+
+Rejected:
+
+```ferox
+let mut user = load_user();
+let r = &user;
+let w = &mut user;
+```
+
+Rejected:
+
+```ferox
+let mut pair = Pair { left: 1, right: 2 };
+let l = &mut pair.left;
+let r = &mut pair.right;
+```
+
+Rejected:
+
+```ferox
+let user = User { id: 1, name: "ana" };
+let name = user.name;
+show(user.id);
+```
+
 ## Arenas And Regions
 
 Language-level arenas and broader region constructs are **deferred from the v1 core**.
@@ -403,26 +591,170 @@ This keeps shared ownership explicit, visible, and distinct from the normal owne
 
 Safe Ferox code is intended to guarantee the following within the boundaries of the safe language subset:
 
-* Use-after-free
-* Double free
-* Null dereference
-* Data races
-* Uninitialized reads
-* Invalid enum states created through safe construction paths
+* no use-after-free
+* no double free or double drop
+* no dangling borrow or other access path to already-destroyed storage
+* no uninitialized read through safe code
+* no null dereference through ordinary safe Ferox references and other non-nullable safe access paths
+* no data races in safe concurrent code
+* no invalid enum or tagged-union discriminant created through safe construction paths
 
-These guarantees apply only after the ownership, borrowing, mutation, and concurrency rules are fully specified and implemented.
+These guarantees apply only when all of the following are true:
+
+* the code stays within the safe Ferox subset
+* `unsafe` code, foreign code, and runtime escape hatches uphold their documented contracts
+* core standard-library ownership and synchronization primitives uphold the language invariants they expose
+* the compiler and runtime implementation correctly enforce the specified rules
 
 This section does not claim:
 
 * semantic correctness of business logic
-* prevention of all invalid program states
-* safety for `unsafe` code
+* protocol correctness beyond what the type system explicitly encodes
+* freedom from deadlock, starvation, livelock, or cancellation bugs
+* prevention of every invalid application state
+* safety for `unsafe` code or foreign code by default
 
 Principle:
 
 > If safe Ferox code compiles, it should satisfy a small, explicit, and mechanically enforced set of structural safety guarantees.
 
 Unsafe code exists but must be explicit and isolated.
+
+## Core Ownership Invariants
+
+The ownership model should preserve a small invariant set that remains true independently of surface syntax details.
+
+### 1. Live Owner Invariant
+
+Every non-shared value has exactly one live owning path at a time.
+
+Implications:
+
+* moving a value transfers that unique owning path
+* using the old path after a move is rejected
+* multiple owners are only possible through explicit shared-ownership primitives
+
+### 2. Derived Access Invariant
+
+Every safe read, write, move, or drop must occur through:
+
+* the current live owner, or
+* a borrow derived from that live owner under the borrowing rules, or
+* an explicit shared-ownership primitive with its own rules
+
+There is no hidden aliasing path outside those mechanisms in safe code.
+
+### 3. Unique Mutation Invariant
+
+Mutation requires unique active access to the relevant value.
+
+Implications:
+
+* mutable access may not overlap other mutable access to the same value
+* mutable access may not overlap shared read access to the same value
+* safe mutation and aliasing must obey the same rule in local and concurrent settings
+
+### 4. Lexical Borrow Invariant
+
+In v1, safe borrows are local, explicit, and lexical.
+
+Implications:
+
+* borrow lifetimes do not depend on non-local compiler reasoning in v1
+* ending a borrow early should usually require ending or narrowing an explicit scope
+* Ferox may reject valid Rust programs if accepting them would weaken predictability or locality
+
+### 5. Drop-Exactly-Once Invariant
+
+Owned values are destroyed at most once, and only after their final owning path becomes unreachable.
+
+Implications:
+
+* safe code cannot double-drop a value
+* safe code cannot observe a value after destruction
+* explicit shared-ownership primitives must preserve this invariant through their own accounting
+
+### 6. Explicit Sharing Invariant
+
+Multiple-owner access is never implicit in safe code.
+
+Implications:
+
+* ordinary borrowing does not create multiple owners
+* conversion from ordinary ownership to shared ownership must be explicit
+* single-threaded shared ownership and synchronized shared ownership remain distinct
+
+### 7. Concurrency Boundary Invariant
+
+Cross-context access in safe code must happen through one of a small number of explicit paths:
+
+* ownership transfer
+* explicit immutable sharing where the language and type permit it
+* explicit synchronized shared ownership
+
+Ferox safe code should not admit hidden shared mutable state across concurrent contexts.
+
+## Safety Boundary Non-Goals
+
+Ferox's safety claim should remain deliberately narrow.
+
+Ferox does not claim, merely from being safe code, that a program is:
+
+* deadlock-free
+* panic-free
+* logically correct
+* free of resource leaks caused by explicit shared ownership cycles if such cycles are introduced by user-visible shared abstractions
+* free of application-level race conditions that do not violate the language's structural data-race rules
+
+The language should be honest about this boundary rather than pretending memory safety implies full correctness.
+
+## Safety Boundary Examples
+
+Examples of failures Ferox safe code should rule out mechanically:
+
+```ferox
+let user = load_user();
+let moved = user;
+show(user);
+```
+
+This should be rejected because `user` is used after ownership moved into `moved`.
+
+```ferox
+let mut user = load_user();
+let r = &user;
+let w = &mut user;
+```
+
+This should be rejected because shared and mutable access overlap.
+
+Examples of bugs Ferox does not claim to prevent merely by being safe code:
+
+```ferox
+fn can_login(user: User) -> Bool {
+    if user.disabled {
+        true
+    } else {
+        false
+    }
+}
+```
+
+This can be logically wrong while still being memory-safe.
+
+Likewise, if later synchronized shared primitives permit blocking operations, safe code may still be able to deadlock or starve unless a separate protocol or verification layer rules that out.
+
+## Ownership Model Consequences
+
+These invariants impose real language-design constraints.
+
+Current consequences:
+
+* shared ownership must stay explicit and secondary
+* borrowing must stay smaller and more local than Rust in v1
+* ordinary safe references may not hide ownership promotion or synchronization
+* concurrency design must preserve the same mutation and aliasing invariants rather than introducing a separate weaker model
+* any `unsafe` escape hatch must document which invariant it temporarily suspends and what contract it must re-establish before returning to safe code
 
 ---
 

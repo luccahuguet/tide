@@ -232,6 +232,41 @@ Suggested early corpus areas:
 * machine-readable output snapshots
 * later rule-and-autofix before/after cases
 
+## Safety Invariant Validation
+
+The ownership model should not be treated as "specified" merely because the prose sounds plausible.
+
+The bootstrap must validate the safe-code guarantee boundary and core ownership invariants directly.
+
+Early implementation obligations:
+
+* represent ownership-, borrow-, and sharing-relevant states explicitly enough that checker behavior is inspectable
+* produce diagnostics that point to both the violating access and the earlier move, borrow, or conflicting access that caused the violation
+* keep ownership failures easy to regress through pass/fail corpus cases rather than relying only on ad hoc examples
+
+Suggested early validation buckets:
+
+* moved-value use rejection
+* overlapping shared and mutable borrow rejection
+* overlapping mutable borrow rejection
+* lexical borrow-end behavior
+* deliberate rejection of disjoint-field simultaneous mutable borrows in the initial checker if that remains the chosen v1 rule
+* partial-move rejection for ordinary aggregates in the initial checker if that remains the chosen v1 rule
+* explicit shared-ownership boundary behavior
+* cross-context ownership transfer and synchronized-sharing restrictions
+* safe construction and invalid-state rejection for enums where applicable
+
+The semantic corpus should therefore include:
+
+* compile-pass examples that witness each intended invariant
+* compile-fail examples that violate each invariant in one clear way
+* structured diagnostic snapshots for each failure family
+* end-to-end scripts that exercise representative edit, check, and failure-reporting flows
+
+Logging expectation:
+
+* the bootstrap checker should make ownership-state transitions and conflict detection debuggable enough that a failing corpus test can be diagnosed without reverse-engineering the entire checker
+
 ## Self-Hosting Transition Criteria
 
 Self-hosting is a gated transition, not just a symbolic rewrite milestone.
