@@ -109,14 +109,27 @@ Why deferred:
 
 Candidate scope:
 
-* one explicit way to expose a type publicly while restricting external construction
-* smart-constructor-friendly module boundaries for invariant-sensitive APIs
+* one explicit way to expose a nominal type publicly while restricting external construction from outside the defining module
+* smart-constructor-friendly APIs for invariant-sensitive modules
+* ordinary public functions or methods for validated creation and observation
+
+Preferred shape:
+
+* external code cannot directly construct the hidden representation
+* external code should also not rely on a special match-only/private-constructor middle ground in the initial design of this feature
+* the feature should behave like full external opacity with explicit API access, not like a broad constructor-visibility lattice
 
 Why deferred:
 
 * v1 should keep visibility binary and avoid a broader constructor/export lattice
 * if Ferox adopts this later, it should be one narrow invariant-preserving tool rather than a large new access-control system
 * the language should first prove that ordinary module boundaries and explicit constructor functions are insufficient in practice
+
+Why this still looks promising:
+
+* it can make invalid-state prevention materially stronger at module boundaries
+* it fits Ferox's explicit API and low-entropy goals better than a richer privacy lattice
+* it supports smart-constructor patterns without requiring proof-oriented language features
 
 ### Trait-system growth, if v1 proves the need
 

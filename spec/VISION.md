@@ -234,7 +234,15 @@ Why this fits:
 * it works naturally with ADTs, modules, and explicit public APIs
 * it helps humans and tools reason about which states are constructible from outside a module
 
-This is promising because it can strengthen Ferox's safe-change story without widening the core semantics dramatically.
+Current recommendation:
+
+* keep this idea
+* do not include it in v1
+* explore it as a **narrow v2 feature** only if it stays fully opaque across module boundaries rather than introducing a broad constructor/export control model
+
+Important boundary:
+
+* Ferox should avoid a subtle middle-ground model where external code can pattern-match private constructors but not construct them, because that adds semantic nuance faster than it adds value in the current design
 
 ### Interaction With The Rest Of Ferox
 

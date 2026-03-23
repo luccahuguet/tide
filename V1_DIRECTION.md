@@ -113,7 +113,7 @@ Current external-ideas conclusions:
 * Koka / Eff-style richer effect systems remain long-horizon research only
 * contracts and proof-oriented tooling are promising only as later optional assurance layers, not as the core v1 language identity
 * a small built-in ability model may be worth exploring if it reduces trait and marker complexity without widening the language
-* opaque public types with private constructors and explicit smart constructors look promising if they strengthen invariants without adding major semantic machinery
+* opaque public types with private constructors and explicit smart constructors look promising if they strengthen invariants without adding major semantic machinery, but they should be treated as a narrow post-v1 feature rather than part of the v1 core
 
 ## V2 Candidates
 
@@ -124,8 +124,7 @@ The most plausible post-v1 growth areas are:
 * structured concurrency beyond `async let`
 * richer but still bounded cancellation semantics
 * ownership-aware concurrency refinement
-* opaque public types and smart-constructor patterns if they fit the explicit module and API model cleanly
-* a narrow public-type/private-construction mechanism if invariant pressure proves it worthwhile
+* one narrow fully opaque public-type/private-construction mechanism if invariant pressure proves it worthwhile
 * arenas or regions only if real pressure justifies them
 * narrow protocol-state checking only if real APIs justify it
 * carefully limited trait and generic growth
