@@ -39,6 +39,7 @@ Ferox v1 currently means:
 * regular syntax, canonical formatting, and machine-usable tooling
 * fast incremental `check` and credible machine-readable diagnostics as explicit implementation goals
 * a likely bias toward one narrow pipe operator if it improves readability without adding operator sprawl
+* cross-task data flow by move, copy-safe duplication, or explicit `SyncShared[...]`, not by ordinary borrow capture
 
 ## Decisions Already Made
 
@@ -58,6 +59,7 @@ The current v1 direction includes these explicit simplifications:
 * traits stay small
 * shared ownership and synchronization are explicit and secondary
 * concurrency stays bounded and visible
+* ordinary borrows do not cross task boundaries by default
 
 ## What Ferox Should Borrow From Research
 

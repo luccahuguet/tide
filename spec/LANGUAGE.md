@@ -1606,6 +1606,75 @@ Goals:
 * No data races in safe code
 * Explicit async behavior
 
+## Concurrency Access Modes
+
+Ferox v1 should expose a small number of explicit cross-task access modes.
+
+The intended modes are:
+
+* ownership transfer
+* copy-safe duplication
+* explicit concurrent shared ownership
+
+This is the core concurrency simplification:
+
+* local mutation uses ordinary ownership and `&mut`
+* cross-task work uses moves, copies of copy-safe values, or explicit `SyncShared[...]`
+* ordinary borrows do not silently become a concurrent sharing mechanism
+
+### 1. Ownership Transfer
+
+The preferred cross-task mode is moving owned values into child work.
+
+Example intent:
+
+```ferox
+async let response = fetch_owned(request);
+```
+
+Here `request` is moved into the child task if it is not copy-safe.
+
+### 2. Copy-Safe Duplication
+
+Copy-safe values may be copied into child work without changing the ownership model.
+
+Example intent:
+
+```ferox
+let retries = 3;
+async let result = fetch_with_retry(url, retries);
+```
+
+This does not create shared mutable state. It only duplicates an ordinary copy-safe value.
+
+### 3. Explicit Concurrent Shared Ownership
+
+When multiple child tasks need access to the same underlying value, concurrency should use explicit shared ownership in the type.
+
+Read-only concurrent sharing:
+
+```ferox
+let config = SyncShared::new(Config::load());
+
+async let a = render(config.share());
+async let b = index(config.share());
+```
+
+Concurrent shared mutation:
+
+```ferox
+let state = SyncShared::new(Mutex::new(State::new()));
+
+async let a = update_a(state.share());
+async let b = update_b(state.share());
+```
+
+Core rule:
+
+* `SyncShared[T]` makes concurrent shared ownership explicit
+* mutation still requires an explicit synchronization wrapper such as `Mutex[T]` or `RwLock[T]`
+* `SyncShared[T]` alone does not imply shared mutation
+
 ## Structured Concurrency
 
 Ferox uses structured concurrency in v1.
@@ -1646,6 +1715,20 @@ Rules:
 * the parent scope is responsible for awaiting or otherwise concluding all child tasks before ordinary successful exit
 * leaving a scope with unfinished child tasks is not allowed to silently detach them
 * child tasks inherit the enclosing async context rather than creating an unrelated global execution context
+
+### Task Capture Rules
+
+Child-task captures should remain simple and explicit in v1.
+
+Rules:
+
+* capturing a non-copy value into `async let` moves that value unless it is wrapped in an explicit concurrent-sharing type
+* capturing a copy-safe value into `async let` copies that value
+* ordinary shared borrows from the parent scope do not cross into child tasks by default
+* ordinary mutable borrows from the parent scope do not cross into child tasks by default
+* values shared across child tasks must use explicit concurrent shared ownership types
+
+This keeps task boundaries visually aligned with ownership boundaries.
 
 ### Design Boundaries
 
@@ -1717,6 +1800,30 @@ Rules:
 * synchronization points are explicit: `await name` and structured early-scope cleanup
 * the language does not implicitly detach unfinished child tasks on successful scope exit
 * child-task results become available only through explicit synchronization operations
+
+## Concurrency Non-Goals For V1
+
+Ferox v1 does not attempt to provide:
+
+* detached background tasks in ordinary safe code
+* implicit shared-state concurrency
+* borrow-based task capture as an ordinary default
+* capability lattices or deep qualifier systems
+* rich dynamic task groups
+* fully general cancellation semantics
+
+The goal is a visibly bounded concurrency model that remains easy to audit and hard to accidentally widen.
+
+## Concurrency Design Consequences
+
+This concurrency model is intentionally safer to change than ad hoc task and shared-state models.
+
+Current consequences:
+
+* task boundaries align with ownership boundaries instead of hiding them
+* code review can distinguish moved ownership, copied small values, and explicit shared-state access from the type surface alone
+* mutable shared state is always visually second-class relative to transfer and immutable sharing
+* concurrency-related compiler diagnostics can point to a small number of explicit mechanisms instead of many overlapping ones
 
 ### Initial Non-Goals
 

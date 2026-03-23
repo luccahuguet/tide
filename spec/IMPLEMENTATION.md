@@ -114,6 +114,167 @@ Goals:
 * keep the path open for query-oriented compiler services instead of a CLI-only architecture
 * keep the path open for first-party structural refactor and autofix tooling built on the same normalized compiler data
 
+## Query-Oriented Compiler Architecture
+
+Ferox should treat a query-oriented compiler architecture as an explicit direction, not just a vague preference.
+
+Core rule:
+
+* the compiler should be organized around reusable dependency-aware services keyed by stable identities, rather than around one-shot command pipelines only
+
+This does not require a specific framework choice in v1, but it does require the architecture to behave as if:
+
+* data is requested through well-defined services
+* service results are cacheable
+* dependencies between results are explicit enough for incremental invalidation
+* CLI, IDE, refactor, and later verification workflows can reuse the same core computations
+
+### Core Service Graph
+
+The initial service graph should be close to the following shape:
+
+```text
+source text
+  -> tokenization
+  -> concrete syntax tree
+  -> recovery-aware parse diagnostics
+  -> normalized AST / lowered syntax view
+  -> name resolution
+  -> type + ownership analysis
+  -> checked IR
+  -> machine diagnostics
+  -> symbol records / symbol graph
+  -> formatter support
+  -> driver/build/package metadata views
+```
+
+The exact crate boundaries may evolve, but these service boundaries should remain conceptually stable.
+
+### Initial Query Families
+
+The architecture should support queries or equivalent reusable services for at least:
+
+* source file loading
+* file hashing or version identity
+* token stream generation
+* full-fidelity parse tree generation
+* parse diagnostics
+* lowered AST generation where needed
+* package and module loading
+* name resolution
+* type checking
+* ownership and concurrency-related checking as those rules exist
+* checked IR generation
+* symbol record generation
+* symbol graph generation
+* formatter input views
+* machine-readable diagnostics output
+
+### Stable Identity Model
+
+The query system should key work on stable identities rather than ephemeral traversal state.
+
+Minimum identity layers:
+
+* workspace id
+* package id
+* target id
+* file id
+* module id
+* item id
+* symbol id once symbol generation exists
+
+Core rule:
+
+* identities should remain stable across repeated queries for the same unchanged source tree and toolchain context
+
+### Cache Boundaries
+
+The bootstrap architecture should assume at least these cache boundaries:
+
+* source text by file
+* tokenization by file
+* parse tree by file
+* parse diagnostics by file
+* lowered syntax by file
+* name-resolution results by package or module
+* semantic checking by item or item-group where practical
+* checked IR by item or target
+* symbol data by package or module
+* package/workspace metadata by manifest graph
+
+Core rule:
+
+* cache boundaries should be chosen so that a small edit invalidates only the smallest trustworthy slice of downstream work
+
+### Invalidation Model
+
+Single-file edits should stay cheap whenever their effects are local.
+
+Initial direction:
+
+* editing one file should invalidate that file's source, tokens, parse tree, parse diagnostics, and directly dependent lowered views
+* module/package-level name resolution should only be recomputed when an edit can change visible declarations, imports, or module structure
+* item-level semantic checks should be recomputed for affected items and their direct dependents, not the whole project by default
+* package metadata and dependency-resolution caches should be invalidated only by manifest or workspace changes
+
+Non-goal:
+
+* promising maximal incrementality before the dependency model is implemented well enough to justify it
+
+### CLI And Tool Reuse
+
+The same underlying services should power:
+
+* `ferox check`
+* `ferox fmt`
+* machine-readable diagnostics output
+* editor integrations
+* future rename/refactor tooling
+* future structural-rule and autofix tooling
+* later verification-oriented analyses where applicable
+
+Core rule:
+
+* user-facing commands may orchestrate multiple services, but they should not reimplement core language analysis separately
+
+### V1 Architectural Non-Goals
+
+The v1 architecture does not need:
+
+* a distributed or remote query engine
+* whole-program perfect incrementality
+* stable public exposure of every internal intermediate representation
+* speculative background analysis of every possible future query
+* plugin-driven arbitrary compiler mutation hooks
+
+The goal is a small, explicit, reusable architecture, not an infrastructure research project.
+
+### Validation Expectations For Query Architecture
+
+The architecture should be validated directly.
+
+Required validation directions:
+
+* unit tests for identity stability and invalidation rules
+* corpus tests that compare cold and incremental results for the same inputs
+* integration tests for parse -> diagnostics -> formatter -> semantic service reuse
+* end-to-end scripts that run repeated edit/check flows and assert stable machine outputs
+* trace inspection for query execution order, cache hits, cache misses, and invalidation breadth
+
+### Logging And Trace Requirements
+
+The query-oriented architecture should make incremental behavior visible.
+
+Minimum trace areas:
+
+* service/query start and finish
+* identity key used
+* cache hit versus miss
+* invalidation cause
+* dependency fan-out where practical
+* output production stage for diagnostics, symbols, and metadata
+
 ## Implementation Order
 
 The bootstrap implementation should be staged so that each step validates language decisions before the next major subsystem is built.
@@ -566,6 +727,29 @@ Suggested early validation buckets:
 * explicit shared-ownership boundary behavior
 * cross-context ownership transfer and synchronized-sharing restrictions
 * safe construction and invalid-state rejection for enums where applicable
+
+### Concurrency-Focused Validation
+
+The bootstrap should also validate the explicit concurrency access modes directly.
+
+Suggested concurrency validation buckets:
+
+* move-based task capture
+* copy-safe task capture
+* rejection of ordinary borrow capture across task boundaries
+* explicit `SyncShared[...]` sharing across child tasks
+* explicit synchronized shared mutation through `Mutex[...]` or `RwLock[...]`
+* structured completion and unfinished-child-task rejection
+
+Expected test layers:
+
+* unit tests for concurrency-checking rules where that logic is separable
+* scenario tests for allowed and rejected task-capture patterns
+* end-to-end scripts that exercise `async let`, `await`, and structured early-exit behavior
+
+Logging expectation:
+
+* task creation, synchronization, rejection of invalid capture modes, and structured cleanup should all be traceable enough that concurrency failures are debuggable without reverse-engineering the scheduler model
 
 The semantic corpus should therefore include:
 
