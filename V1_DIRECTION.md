@@ -85,6 +85,61 @@ not:
 * type-level
 * semantically clever
 
+## Concrete Source Personality
+
+Everyday Ferox should feel like straightforward, strongly typed systems code with a regular expression-oriented shape.
+
+Core style rules:
+
+* use `if` for ordinary boolean conditions and `match` for typed state or mode changes
+* prefer named intermediate values once a flow changes representation, can fail, or would become awkward as nested calls
+* keep helper functions small when they clarify a transformation boundary, not because tiny combinators are fashionable
+* keep mutation local and visually obvious; return to immutable values at API boundaries
+* keep public APIs honest with explicit enums, `Option`, and `Result`
+* favor modules centered on one domain concept or capability rather than wide grab-bags of unrelated helpers
+
+Canonical examples:
+
+```ferox
+fn classify(user: User) -> Status {
+    match user.role {
+        admin => active,
+        guest => limited,
+        suspended => blocked,
+    }
+}
+
+fn load_profile(id: UserId) -> Result[Profile, LoadError] {
+    let raw = read_profile(id)?;
+    let parsed = parse_profile(raw)?;
+    ok(parsed)
+}
+
+fn display_name(user: Option[User]) -> String {
+    match user {
+        some(value) => value.name,
+        none => "guest",
+    }
+}
+
+fn increment(current: Int) -> Int {
+    let next = {
+        let mut value = current;
+        value = value + 1;
+        value
+    };
+    next
+}
+```
+
+Discouraged everyday moves:
+
+* deep nesting of small calls when named steps would make representation changes clearer
+* public APIs that encode state with boolean flags, sentinel integers, or loosely related primitive parameters
+* broad mutation-oriented call chains when an owned value can be transformed and returned more directly
+* control flow that depends on clever pattern features, operator tricks, or abstraction stacks to express ordinary branching
+* modules that mix unrelated domain concepts simply because the code is short
+
 ## Decisions Already Made
 
 The current v1 direction includes these explicit cuts:
@@ -113,12 +168,12 @@ The current v1 direction includes these explicit simplifications:
 Current external-ideas conclusions:
 
 * Bosque-style regularization is a strong fit for compiler IR and tooling architecture
-* Perceus-style reuse is promising only as later backend optimization work
+* Perceus-style storage reuse is promising only as a later backend optimization direction; it should not shape the v1 language surface or become a semantic promise to users
 * typestate ideas are promising only in narrow library-encoded forms, with possible later opt-in analysis
 * Pony and Verona are useful mainly for isolation and ownership-transfer lessons, not for a capability lattice
 * Koka / Eff-style richer effect systems remain long-horizon research only
 * contracts and proof-oriented tooling are promising only as later optional assurance layers, not as the core v1 language identity
-* a small built-in ability model may be worth exploring if it reduces trait and marker complexity without widening the language
+* Ferox should not adopt a general built-in ability system in v1; `copy` remains special, while `drop`, `send`, and `share` stay out unless later language pressure proves they are truly simpler than the existing ownership and concurrency rules
 * opaque public types with private constructors and explicit smart constructors look promising if they strengthen invariants without adding major semantic machinery, but they should be treated as a narrow post-v1 feature rather than part of the v1 core
 
 ## V2 Candidates

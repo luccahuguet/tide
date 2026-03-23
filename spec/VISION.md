@@ -299,9 +299,23 @@ fn load_profile(id: UserId) -> Result[Profile, LoadError] {
     let parsed = parse_profile(raw)?;
     ok(parsed)
 }
+
+fn display_name(user: Option[User]) -> String {
+    match user {
+        some(value) => value.name,
+        none => "guest",
+    }
+}
 ```
 
 and less like a style that depends on large abstraction stacks, clever operator composition, or type-level indirection to express ordinary control flow.
+
+Additional source-style expectations:
+
+* use `if` for boolean questions and `match` for typed state
+* introduce named intermediate values when a flow changes representation or failure boundary
+* keep mutation tight and obvious, often inside a small block or helper, rather than spreading mutable state across long call chains
+* prefer modules and APIs that expose one clear domain concept instead of wide convenience surfaces with loosely related helpers
 
 ---
 
@@ -404,14 +418,51 @@ Near-term rule:
 
 * do not turn the core language into a theorem prover or dependent-type system
 
-Longer-term direction:
+Staged direction:
 
-* contracts
-* invariants
-* ghost or spec code
-* proof-oriented tooling for critical modules when justified by real usage
+* v1: ordinary Ferox only; no verification layer is required for everyday programming
+* first optional layer: contracts, invariants, pure spec functions, and narrow ghost/spec code for critical modules
+* later layers: stronger proof-oriented tooling only if the first optional layer proves useful on real Ferox code
+
+Illustrative first-layer shape:
+
+```ferox
+spec fn sorted(xs: &[Int]) -> Bool { ... }
+
+fn binary_search(xs: &[Int], target: Int) -> Option[Int]
+    requires sorted(xs)
+    ensures match result {
+        some(index) => xs[index] == target,
+        none => true,
+    }
+{
+    ...
+}
+
+fn debit(account: &mut Account, amount: Int)
+    requires amount >= 0
+    requires account.balance >= amount
+    ensures account.balance == old(account.balance) - amount
+{
+    ...
+}
+```
+
+The exact syntax is still open, but the intended first step is narrow and familiar:
+
+* executable code remains ordinary Ferox
+* contracts describe entry, exit, and state-transition conditions
+* spec or ghost constructs are erased and do not become a second everyday runtime model
+* verification-oriented diagnostics should reuse the same machine-readable tooling contract as ordinary checking
 
 The goal is to support deeper assurance where it matters without forcing the whole language into proof-oriented everyday programming.
+
+Explicit non-goals for the first layer:
+
+* theorem-prover-style proof terms as ordinary application code
+* mandatory proof annotations on normal modules
+* dependent typing as part of the core language identity
+* a verification syntax surface broad enough to overshadow the ordinary language
 
 ---
 

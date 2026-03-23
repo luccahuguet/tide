@@ -1,0 +1,17 @@
+[package]
+name = "ferox_sem"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ferox_ast = { path = "../ferox_ast" }
+ferox_diag = { path = "../ferox_diag" }
+
+[dev-dependencies]
+ferox_syntax = { path = "../ferox_syntax" }
+
+[lints]
+workspace = true

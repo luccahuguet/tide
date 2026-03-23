@@ -90,10 +90,12 @@ Candidate scope:
 * broader backend plurality
 * more aggressive whole-program reasoning machinery
 * deep IR or optimization changes driven by external research ideas
+* ownership- or uniqueness-driven storage-reuse optimization beyond the baseline backend path
 
 Why deferred this far:
 
 * these may be valuable, but they should be justified by real compiler maturity, not early design temptation
+* Ferox already has explicit mutation and ownership, so reuse-oriented backend work should improve generated code without reshaping the surface language first
 
 ### Richer formal verification systems
 
@@ -102,6 +104,7 @@ Candidate scope:
 * stronger proof-oriented language support
 * advanced verifier integration
 * more ambitious specification or proof sublanguages
+* proof functions, lemmas, or equivalent deeper proof-oriented constructs if the narrower contract/spec layer proves insufficient
 
 Why deferred this far:
 

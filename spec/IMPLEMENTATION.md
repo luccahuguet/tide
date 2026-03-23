@@ -719,6 +719,8 @@ Early implementation obligations:
 Suggested early validation buckets:
 
 * moved-value use rejection
+* copy-eligibility checking for user-defined types
+* rejection of `copy` on types that contain non-copy fields or ownership-sensitive resources
 * overlapping shared and mutable borrow rejection
 * overlapping mutable borrow rejection
 * lexical borrow-end behavior
@@ -740,6 +742,7 @@ Suggested concurrency validation buckets:
 * explicit `SyncShared[...]` sharing across child tasks
 * explicit synchronized shared mutation through `Mutex[...]` or `RwLock[...]`
 * structured completion and unfinished-child-task rejection
+* rejection of pseudo-ability-style concurrency declarations if the language intentionally does not support them
 
 Expected test layers:
 
@@ -750,6 +753,7 @@ Expected test layers:
 Logging expectation:
 
 * task creation, synchronization, rejection of invalid capture modes, and structured cleanup should all be traceable enough that concurrency failures are debuggable without reverse-engineering the scheduler model
+* copy-eligibility resolution and gated-operation failures should be traceable enough that users can see why a type was treated as move-only rather than copy-safe
 
 The semantic corpus should therefore include:
 
@@ -796,12 +800,55 @@ Suggested early corpus examples:
 * `Result` propagation with local transformation steps
 * nested `Option` / `Result` destructuring
 * multiline expression-oriented block formatting
+* local block-scoped mutation followed by a returned immutable value
 * rejected guard, or-pattern, and range-pattern examples with explicit diagnostics
 * public API examples contrasting explicit enum modeling against rejected or discouraged flag/sentinel encoding
+* module-scale examples that keep one domain concept, public typed entrypoints, and private helper transformations in a regular order
 
 Logging and tracing expectation:
 
 * parse, lower, and format stages should emit enough structured trace data that failures involving pattern-heavy syntax and expression blocks can be diagnosed without guessing which stage misinterpreted the source
+* formatter traces should make block-layout and multiline `match` decisions easy to inspect on the canonical source-personality examples
+* diagnostics for discouraged or unsupported source forms should point to the specific style or syntax boundary Ferox is protecting rather than failing as generic parse noise
+
+## Verification-Layer Validation
+
+If Ferox later adds an optional contract/spec layer, that layer should be validated as an extension of the safe-change toolchain rather than as a separate proof world.
+
+First-layer validation goals:
+
+* contracts should attach to ordinary executable items without changing their base ownership semantics
+* ghost or spec constructs should be clearly erased from runtime lowering
+* verification failures should produce structured diagnostics through the same machine-facing contract used for ordinary checking
+* verified modules and ordinary modules should coexist without forcing proof-oriented ceremony into unrelated code
+
+Suggested first-layer validation buckets:
+
+* satisfied `requires` / `ensures` examples on ordinary executable functions
+* rejected contract cases with precise failing-condition diagnostics
+* spec-function purity and non-executable-use restrictions
+* ghost-code erasure and rejection of ghost values leaking into runtime state
+* ownership-sensitive contract examples involving borrowing, mutation, and state transitions
+* mixed projects where only selected modules opt into contracts or spec code
+
+Expected validation layers:
+
+* unit tests for contract attachment, spec-function checking, ghost erasure, and verifier-facing item classification
+* pass/fail corpus cases for accepted contract style and deliberately rejected proof-heavy or runtime-leaking forms
+* machine-readable diagnostic snapshots for contract failures and spec-boundary errors
+* end-to-end scripts that run ordinary `ferox check` and contract-enabled verification flows side by side
+
+Suggested early examples:
+
+* a sorted-input precondition plus search postcondition
+* a state-transition contract on a small mutable domain type
+* a rejected ghost-to-runtime leak
+* a rejected proof-heavy construct that the first layer intentionally keeps out of scope
+
+Logging and tracing expectation:
+
+* verification traces should identify contract attachment points, erased ghost/spec items, and the specific failing obligation when verification does not succeed
+* ordinary compiler traces should remain understandable even when verification is disabled for most of the project
 
 Related ownership-checking expectation:
 
@@ -952,7 +999,56 @@ Initial direction:
 * `LLVM` remains a possible later backend for stronger optimization or broader low-level targeting needs
 * the project may ultimately support more than one backend if the engineering cost is justified
 * backend plurality is a later optimization decision, not a requirement for the first working compiler
-* reuse and in-place-update analysis inspired by work such as Perceus may be worth exploring later, but only after the checked IR and first backend are already credible
+* uniqueness- or ownership-driven storage reuse inspired by work such as Perceus may be worth exploring later, but only as an implementation optimization after the checked IR and first backend are already credible
+
+### Functional Source, Reuse-Oriented Backend
+
+Ferox should keep this idea only as a long-term implementation direction, not as a language promise.
+
+What the idea means here:
+
+* source code may remain expression-oriented and transformation-friendly
+* the compiler may later prove that some temporary values are unique, dead after use, or otherwise safely reusable
+* when that proof holds, lowering and backend passes may reuse storage or emit in-place update sequences without changing Ferox source semantics
+
+What Ferox must not promise:
+
+* users must not be required to write purely functional code to get good performance
+* users must not depend on reuse happening for correctness
+* optimized reuse must not change observable ownership, aliasing, drop timing, or synchronization rules at the language level
+* the language should not grow surface mutation shortcuts merely to make this optimization easier
+
+Why this is only a later direction:
+
+* Ferox already has explicit mutation for code that genuinely wants in-place behavior
+* the optimization only matters after the checked IR, ownership tracking, and backend pipeline are mature enough to prove reuse safely
+* pushing this idea too early would distort language design around speculative backend wins
+
+Prerequisites:
+
+* a checked IR that makes ownership transfer, copy-safety, destruction points, and shared-ownership boundaries explicit
+* stable value identity through lowering so reuse decisions can be explained and audited
+* backend passes that can distinguish unique owned values from borrowed, shared, synchronized, or otherwise non-reusable values
+* debug and non-optimized modes that preserve a credible explanation path for why reuse did or did not occur
+
+Non-goals:
+
+* introducing a garbage-collection or reference-counting mandate as part of the language identity
+* replacing explicit mutable APIs with hidden optimizer magic as the primary performance story
+* promising whole-program reuse analysis in the first native backend
+
+Suggested validation and benchmark plan:
+
+* benchmark transformation-heavy but ownership-friendly examples against explicit mutable equivalents
+* validate that optimized reuse preserves diagnostics, value semantics, and destruction behavior
+* include IR snapshots or debug traces for representative reuse wins and deliberate non-reuse cases
+* require pass/fail regression tests for cases where reuse must be rejected because a value is borrowed, shared, synchronized, or observed after the candidate update point
+
+Logging and observability expectation:
+
+* optimized builds should be able to emit reuse decisions for selected functions
+* traces should identify why a candidate value was reusable or why reuse was rejected
+* debugging optimized code should not require guessing whether hidden in-place lowering happened
 
 ### Design Intent
 

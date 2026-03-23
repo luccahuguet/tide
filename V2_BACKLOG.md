@@ -44,11 +44,27 @@ Candidate scope:
 * postconditions
 * invariants
 * ghost or spec code in a narrow form
+* pure spec functions used by contracts and state invariants
+
+Preferred first step:
+
+* keep executable code ordinary and recognizable
+* make contracts optional at module or item boundaries
+* erase ghost/spec constructs from runtime code generation
+* prefer contract-style reasoning over proof-script-style programming
+* expose verification results through the same machine-readable diagnostic and symbol infrastructure as ordinary checking
 
 Why deferred:
 
 * v1 should prove the safe core before adding a second assurance layer
 * Ferox should stay verification-ready without becoming proof-first too early
+
+Still out of scope for this layer:
+
+* theorem-prover-oriented everyday syntax
+* dependent-type-style core language growth
+* mandatory verification annotations across ordinary code
+* advanced proof automation that would become a second dominant compiler subsystem
 
 ### Structured concurrency beyond `async let`
 

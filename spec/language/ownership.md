@@ -164,17 +164,64 @@ Goals:
 
 ## Core Semantic Abilities
 
-Ferox should remain open to a **small built-in ability model** for core semantic properties if doing so reduces trait and marker-surface complexity.
+Ferox should **not** adopt a general built-in ability system in v1.
 
 Current design direction:
 
-* this is a design exploration, not yet a fixed v1 commitment
-* the most plausible use is for core properties such as copy-safety, destruction behavior, or concurrency-relevant capabilities
-* Ferox should prefer built-in semantic categories over trait sprawl only when the result is simpler and more analyzable
+* `copy` remains a built-in ownership property because it directly gates one of the language's most fundamental operations: whether assignment duplicates a value or moves it
+* Ferox should not generalize that single special case into a broader user-facing ability framework unless later language pressure clearly justifies it
+* the default comparison point is therefore:
+  * built-in `copy` semantics for copy-safe types
+  * ordinary language rules for destruction, ownership transfer, borrowing, and concurrency
+  * explicit library types for shared ownership and synchronization
 
-Non-goal:
+Why this is the preferred model:
 
-* inventing a large second abstraction system for ordinary user-defined behavior
+* it keeps the language smaller than both a full trait-marker story and a Move-style ability surface
+* it preserves the important ergonomic win of cheap implicit copies for simple value types
+* it avoids inventing a second abstraction system for properties that are already expressed more clearly by Ferox's ownership and concurrency rules
+
+Rejected generalization for v1:
+
+* `drop` should not be a user-facing ability in the current Ferox direction
+* `send` should not be a user-facing ability in the current Ferox direction
+* `share` should not be a user-facing ability in the current Ferox direction
+
+Rationale:
+
+* `drop` only earns its keep if Ferox later wants linear or must-use resource semantics strong enough to justify gating ordinary scope-end destruction
+* `send` only earns its keep if Ferox later grows enough detached or generic concurrency machinery that transfer-across-context becomes a standalone semantic property rather than a direct consequence of the existing ownership model
+* `share` is the wrong shape for an ability because sharing in Ferox is not an intrinsic permission on arbitrary types; it is an explicit wrapper-mediated ownership mode such as `Shared[T]` or `SyncShared[T]`
+
+Possible later revisit:
+
+* a later Ferox version may reconsider one additional built-in concurrency-relevant property if real usage pressure appears
+* that should happen only after the v1 ownership and structured-concurrency model has been exercised in practice
+* Ferox should still avoid a larger ability lattice or a second general-purpose trait-like system
+
+Worked recommended example:
+
+```ferox
+copy struct Point {
+    x: Int,
+    y: Int,
+}
+
+let a = Point { x: 1, y: 2 };
+let b = a;
+show(a);
+show(b);
+```
+
+Here `copy` directly answers one core semantic question: whether `a` remains usable after assignment.
+
+Rejected direction example:
+
+```ferox
+send share drop struct CacheHandle { ... }
+```
+
+Ferox should not move toward this style in v1. It introduces a larger ability vocabulary before the language has shown that those properties cannot be expressed more clearly through explicit ownership rules, task-capture rules, and shared-ownership wrapper types.
 
 ## Borrowing Model
 

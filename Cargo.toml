@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/ferox_cli",
+    "crates/ferox_driver",
+    "crates/ferox_diag",
+    "crates/ferox_syntax",
+    "crates/ferox_ast",
+    "crates/ferox_sem",
+    "crates/ferox_fmt",
+]
+default-members = ["crates/ferox_cli"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/luccahuguet/ferox"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
