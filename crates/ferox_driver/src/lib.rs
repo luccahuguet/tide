@@ -67,4 +67,3 @@ mod tests {
         assert_eq!(formatted, "fn main() -> Int { 1 }\n");
     }
 }
-

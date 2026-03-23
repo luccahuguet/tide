@@ -3,7 +3,7 @@
 use ferox_syntax::SourceFile;
 
 pub fn bootstrap_format(file: &SourceFile) -> String {
-    let mut formatted = file.text.trim().to_string();
+    let mut formatted = file.text().trim().to_string();
     if !formatted.ends_with('\n') {
         formatted.push('\n');
     }
@@ -24,4 +24,3 @@ mod tests {
         assert_eq!(formatted, "fn main() -> Int { 1 }\n");
     }
 }
-
