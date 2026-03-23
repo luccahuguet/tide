@@ -703,3 +703,202 @@ The initial machine-readable output model does not include:
 * multiple official structured formats beyond JSON
 * exposing every internal compiler data structure as public output
 * guaranteeing that ordinary human terminal output is stable for parsers
+
+## Read-Side Machine Contract
+
+Ferox should define an explicit read-side machine contract for tools, CI systems, editors, and agents.
+
+Core rule:
+
+* tools should depend on official structured outputs, not scraped terminal text or unstable internal compiler structures
+
+The read-side contract should be divided into four output categories:
+
+* diagnostics
+* symbol and semantic identity data
+* project and package metadata
+* deterministic tool outputs and build-resolution facts
+
+### Stability Tiers
+
+Each output category should declare a stability tier.
+
+Initial tiers:
+
+* `stable`: intended for long-term external tooling use; changes require controlled evolution
+* `provisional`: machine-readable and documented, but expected to evolve during bootstrap
+* `internal`: not part of the public tooling contract
+
+Core rule:
+
+* ordinary bootstrap implementation details remain internal unless explicitly promoted into the read-side contract
+
+## Diagnostics Contract
+
+Diagnostics are the first required read-side output.
+
+Every structured diagnostic record should eventually include at least:
+
+* schema version
+* tool or command name
+* severity
+* diagnostic code
+* primary message
+* primary file path
+* primary span with start and end locations
+* zero or more related spans or notes
+* zero or more suggested fixes when available
+
+Initial location shape:
+
+* file path
+* byte range
+* line and column data when available
+
+Suggested stability tier:
+
+* `stable` once exposed through official JSON output flags for `ferox check`, `ferox build`, and related commands
+
+Example shape:
+
+```json
+{
+  "schema_version": "1",
+  "tool": "ferox check",
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "ownership.use_after_move",
+      "message": "value used after move",
+      "primary": {
+        "file": "src/main.ferox",
+        "span": { "start_byte": 42, "end_byte": 46, "start_line": 4, "start_column": 5, "end_line": 4, "end_column": 9 }
+      },
+      "related": [
+        {
+          "message": "value moved here",
+          "file": "src/main.ferox",
+          "span": { "start_byte": 20, "end_byte": 24, "start_line": 3, "start_column": 9, "end_line": 3, "end_column": 13 }
+        }
+      ],
+      "suggested_fixes": []
+    }
+  ]
+}
+```
+
+### Diagnostic Evolution Rules
+
+Rules:
+
+* new optional fields may be added in a controlled way
+* existing stable fields must not silently change meaning
+* diagnostic codes should stay stable enough to be used in tooling, tests, and documentation
+* human-readable wording may improve over time, but code, span structure, and related-information shape should evolve carefully once marked stable
+
+## Symbol And Semantic Identity Contract
+
+Ferox should expose stable symbol identity and symbol graph data once the compiler architecture is ready.
+
+Initial direction:
+
+* every externally visible declaration should have a stable symbol identifier within the scope of a given package graph and toolchain contract version
+* symbol records should identify declaration kind, name, defining package, defining module, visibility, and source span
+* symbol graph data should expose relations such as declaration ownership, containment, and reference edges where the compiler can do so reliably
+
+Minimum symbol record fields:
+
+* schema version
+* symbol id
+* package id
+* module path
+* declaration kind
+* local name
+* fully qualified name or canonical path
+* defining span
+* visibility
+
+Suggested stability tier:
+
+* `provisional` in early bootstrap
+* `stable` once symbol-based editor and refactor tooling depend on it
+
+Non-goal:
+
+* exposing every internal compiler node or temporary analysis artifact as a public symbol
+
+## Project And Package Metadata Contract
+
+Ferox should expose project and package metadata in structured form rather than requiring tools to reverse-engineer manifests and workspace structure manually.
+
+Minimum metadata areas:
+
+* workspace root identity
+* package identities
+* package roots
+* target definitions
+* dependency edges
+* edition and toolchain-compatibility data
+* lockfile or resolution facts when present
+
+Example metadata uses:
+
+* editor workspace loading
+* CI validation
+* graph visualization
+* agent-safe repository inspection
+
+Suggested stability tier:
+
+* `stable` for basic package and workspace identity fields
+* `provisional` for richer derived analysis metadata until the architecture settles
+
+## Deterministic Output And Resolution Facts
+
+Some read-side outputs are not diagnostics or symbols, but they still matter to safe change.
+
+These include:
+
+* canonical formatter output for supported syntax
+* deterministic dependency-resolution results
+* stable target-selection and package-loading facts
+* machine-readable build and analysis event records when those are exposed
+
+Core rule:
+
+* if a command participates in the official safe-change contract, the structured facts it emits should be deterministic for the same source tree, manifest state, lock state, and toolchain version
+
+Suggested stability tier:
+
+* formatter output: `stable` within the formatter compatibility policy
+* dependency-resolution and package metadata facts: `stable` once exposed as official machine-readable outputs
+* build or progress-event streams: `provisional` until event schemas settle
+
+## Read-Side Contract Table
+
+The current intended contract is:
+
+| Output category | Minimum contents | Stability target | First expected phase |
+| --- | --- | --- | --- |
+| Diagnostics JSON | severity, code, message, primary span, related info, suggested fixes | stable | V1 bootstrap |
+| Symbol records | stable symbol id, declaration kind, name, defining location, visibility | provisional -> stable | later V1 / V2 |
+| Symbol graph | containment and reference relations where reliable | provisional | later V1 / V2 |
+| Project/package metadata | workspace, package, target, dependency, edition facts | stable for core identity | V1 bootstrap |
+| Deterministic formatter output | canonical output for supported syntax | stable | V1 bootstrap |
+| Resolution/build facts | dependency resolution, target selection, package loading, event records | provisional -> stable by category | V1 bootstrap and later |
+
+## Read-Side Validation Expectations
+
+The read-side contract should carry explicit regression obligations.
+
+Required validation directions:
+
+* compatibility tests for stable JSON schemas and field meanings
+* fixture snapshots for representative diagnostic outputs
+* fixture snapshots for package/workspace metadata outputs
+* regression tests for deterministic formatter output on supported syntax
+* output-level regression tests for dependency-resolution and package-loading facts where they are exposed
+
+Logging expectation:
+
+* when a structured output changes unexpectedly, the toolchain should make it practical to trace which compiler or driver stage produced the changed record
