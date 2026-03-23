@@ -1,14 +1,15 @@
 # Ferox
 
-Ferox is a language design project for a compiled, ownership-based programming language aimed at high-trust software.
+Ferox is a language design project for a compiled, ownership-based programming language aimed at high-trust software and safe change.
 
 The current direction is:
 
 * safety first
 * explicit costs and predictable performance
-* simpler ownership and borrowing than Rust
+* simpler and lower-entropy ownership than Rust
 * strong support for long-lived codebases
-* syntax and tooling designed to work well for both humans and coding agents
+* fast incremental feedback as a product requirement
+* syntax and tooling designed for safer human and agent-assisted change
 
 ## Status
 
@@ -40,6 +41,7 @@ Current planned characteristics:
 * statically typed
 * ownership-based
 * safe by default
+* low-entropy
 * performance-transparent
 * tooling-first
 
@@ -55,6 +57,12 @@ Current implementation verdict:
 
 * start a narrow Rust bootstrap now
 * keep deeper semantic ambition staged and architecture-first
+
+Current version ladder:
+
+* v1: Safe Core
+* v2: Safe Change
+* v3: Deep Assurance
 
 ## Repository Guide
 
@@ -115,6 +123,8 @@ Still in progress:
 The next core design work is focused on:
 
 * keeping the v1 core narrow and coherent
+* sharpening the safe-change vision and low-entropy design filter
+* treating fast incremental `check` and machine-readable tooling as core product goals
 * starting implementation without reintroducing deferred systems
 * later-version backlog discipline
 * validating the narrowed spec through a real bootstrap path
@@ -123,5 +133,5 @@ The next core design work is focused on:
 
 Ferox is trying to be bold selectively:
 
-* bold in ownership, explicitness, and analyzability
+* bold in ownership, explicitness, low entropy, and analyzability
 * conservative where extra semantic novelty would make the system harder to reason about

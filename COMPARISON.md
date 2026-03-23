@@ -21,11 +21,12 @@ Ferox is trying to combine:
 * Rust's seriousness about ownership and safety
 * Zig's explicitness about cost
 * Go's practical focus on backends, CLIs, and operationally maintainable software
-* a stronger tooling-first and machine-friendly design bias than any of those is currently optimized for
+* a stronger safe-change and tooling-first design bias than any of those is currently optimized for
 
 The hard constraint is:
 
 * Ferox only makes sense if it stays smaller and more coherent than the sum of those influences
+* Ferox should be judged as a language for safer long-term evolution of codebases, not merely as a language for safe execution
 
 ## Internal Scorecard
 
@@ -85,7 +86,7 @@ What this scorecard is trying to enforce:
 * Ferox should not chase Rust's semantic breadth
 * Ferox should not give up Zig's cost visibility
 * Ferox should not give up Go's domain pragmatism
-* Ferox should push harder than all three on regularity for tooling and agent-assisted work
+* Ferox should push harder than all three on regularity for tooling, mechanically safer change, and agent-assisted work
 
 ## Ferox vs Rust
 
@@ -104,11 +105,12 @@ What Ferox is trying to change:
 * fewer advanced systems in the v1 core
 * more restrictions rather than more overlapping escape hatches
 * a surface that is easier for tools and agents to parse, transform, and reason about mechanically
+* a language and toolchain better suited to safe automated change in long-lived codebases
 
 Current honest tradeoff:
 
 * Rust is more mature, more expressive, and more proven
-* Ferox is only interesting if it becomes easier to reason about without giving up too much of the value of ownership-based safety
+* Ferox is only interesting if it becomes easier to reason about and safer to evolve without giving up too much of the value of ownership-based safety
 * if Ferox drifts toward Rust-level semantic breadth, the project loses most of its reason to exist
 
 If Ferox fails that test, users should just use Rust.
@@ -156,6 +158,7 @@ What Ferox is trying to change:
 * more explicit performance behavior
 * richer invalid-state modeling
 * more compiler- and tooling-visible program structure
+* stronger guarantees around safe change in high-trust codebases
 
 Current honest tradeoff:
 
@@ -178,6 +181,7 @@ That means the language needs a narrow identity:
 * explicitness matters
 * analyzability matters
 * tooling and agent-friendliness matter
+* safe change matters
 * coherence matters more than feature breadth
 
 ## Current V1 Shape In Comparative Terms
@@ -195,6 +199,7 @@ This implies:
 * Ferox should accept more restrictions if those restrictions buy better local reasoning
 * Ferox should prefer one primary model plus explicit escape hatches
 * Ferox should not add advanced systems just because Rust, Zig, or research languages can support them
+* Ferox should treat fast feedback and machine-usable tooling as core parts of the language promise, not mere implementation details
 
 If a feature proposal weakens those statements, it should face a very high bar.
 
@@ -225,3 +230,4 @@ Use Ferox, if it succeeds, when you want:
 * a smaller and more regular model than Rust
 * stronger long-term analyzability than ad hoc systems code
 * a language surface shaped for strong tooling and agent-assisted evolution
+* safer automated and human-guided change in long-lived, high-trust systems

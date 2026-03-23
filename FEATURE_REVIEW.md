@@ -32,13 +32,13 @@ Recommendation labels:
 
 Ferox has one very strong core bet:
 
-* a smaller, safer, more analyzable systems language centered on explicitness, long-term maintainability, and agent-friendly tooling
+* a lower-entropy systems language for safe change centered on ownership, explicitness, long-term maintainability, and machine-usable tooling
 
 The main risk is not lack of ambition. The main risk is **too many hard bets at once**.
 
 The best path is:
 
-* keep the boldness in ownership, explicitness, and machine-friendly regularity
+* keep the boldness in ownership, explicitness, mechanically safer change, and machine-friendly regularity
 * simplify or defer the rest until the core model proves coherent
 * prefer one primary way to do something, with at most one explicit escape hatch
 
@@ -47,7 +47,7 @@ The best path is:
 | ID | Item | Cost | Benefit | Danger | Complexity | Potential | Recommendation | Notes |
 |---|---|---:|---:|---:|---:|---:|---|---|
 | F01 | High-trust, correctness-first language | 3 | 5 | 2 | 3 | 5 | Keep | Strong north star. It gives the language a clear market and design filter. |
-| F02 | Optimized for humans and coding agents | 3 | 4 | 3 | 3 | 5 | Keep | Distinctive and worth pursuing, but it should influence syntax/tooling rather than become ideology. |
+| F02 | Optimized for humans and coding agents | 3 | 4 | 3 | 3 | 5 | Keep | Distinctive and worth pursuing, but it should mean mechanically safer change, not vague AI branding. |
 | F03 | Target domain focus on backends, infra, CLIs, services, data systems, long-lived codebases | 2 | 4 | 1 | 1 | 4 | Keep | Good constraint. It prevents the project from drifting into general-purpose wish-list design. |
 | F04 | Non-goals: not beginner-first, not C replacement, not scripting, not multi-paradigm | 1 | 4 | 1 | 1 | 3 | Keep | These exclusions are healthy. They reduce design churn. |
 
@@ -60,7 +60,7 @@ The best path is:
 | F07 | Ownership-based design | 5 | 5 | 4 | 5 | 5 | Keep | This is the strongest differentiator, but it is also the hardest subsystem. This should be the primary innovation focus. |
 | F08 | Safe by default | 4 | 5 | 2 | 4 | 5 | Keep | Essential if Ferox wants to sit between Go and Rust in a meaningful way. |
 | F09 | Performance-transparent model | 4 | 5 | 2 | 4 | 5 | Keep | Very good positioning. Explicit costs are a real advantage for both humans and agents. |
-| F10 | Tooling-first language | 4 | 4 | 2 | 3 | 5 | Keep | Worth keeping, but implement conservatively. Tooling-first does not require language novelty everywhere. |
+| F10 | Tooling-first language | 4 | 4 | 2 | 3 | 5 | Keep | Worth keeping, but implement conservatively. Tooling-first should focus on safe change, machine-readable outputs, and fast feedback rather than novelty everywhere. |
 
 ## Memory and Safety
 
@@ -120,7 +120,7 @@ The best path is:
 |---|---|---:|---:|---:|---:|---:|---|---|
 | F38 | Small grammar / low ambiguity / regular syntax / predictable AST | 4 | 5 | 2 | 4 | 5 | Keep | This is one of Ferox's strongest and most realistic differentiators. |
 | F39 | Explicit imports and exports | 2 | 4 | 1 | 2 | 4 | Keep | Cheap win for tooling and readability. |
-| F40 | Machine-readable diagnostics | 4 | 5 | 1 | 3 | 5 | Keep | High leverage. Very strong fit for the agent-friendly vision. |
+| F40 | Machine-readable diagnostics | 4 | 5 | 1 | 3 | 5 | Keep | High leverage. Very strong fit for the safe-change and machine-usable tooling vision. |
 | F41 | Single canonical formatter | 3 | 4 | 2 | 3 | 4 | Keep | Worth keeping, especially for machine-assisted work. |
 | F42 | Enforce formatting through formatter and CI, not build/run/test failure | 2 | 4 | 1 | 2 | 3 | Keep | This is the correct enforcement model. |
 | F43 | One official toolchain for build/run/test/fmt/lint/bench/docs/deps/publish | 5 | 5 | 3 | 4 | 5 | Keep/Simplify | Good strategic idea, but the initial toolchain should stay narrow. |
@@ -150,6 +150,8 @@ These are the ideas with the best benefit/potential relative to danger:
 
 * F07 Ownership-based design
 * F09 Performance-transparent model
+* fast incremental feedback as a product requirement
+* query-oriented compiler services and reusable compiler data
 * F18 Strong local inference with explicit public API types
 * F19 ADTs / enums / exhaustive matching
 * F38 Small grammar / predictable AST
@@ -179,7 +181,7 @@ Coherence reminder:
 
 For a coherent first version, the recommended profile is:
 
-* Keep: ownership, explicitness, ADTs, exhaustive matching, `Option`/`Result`, regular syntax, machine-readable diagnostics, canonical formatting, explicit modules, Rust bootstrap
-* Simplify: shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises
-* Defer: arenas/regions, rich effects system, advanced cancellation semantics, broad self-hosting milestones
+* Keep: ownership, explicitness, ADTs, exhaustive matching, `Option`/`Result`, regular syntax, machine-readable diagnostics, canonical formatting, explicit modules, fast-feedback tooling goals, Rust bootstrap
+* Simplify: shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises, pipe syntax if adopted
+* Defer: structural rule/autofix systems until the frontend is credible, contracts/spec layers until the safe core is proven, arenas/regions, rich effects system, advanced cancellation semantics, broad self-hosting milestones, built-in ability experiments until they clearly reduce complexity
 * Move Out: agent-production rule as governance rather than language design

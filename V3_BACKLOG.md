@@ -16,8 +16,11 @@ An item belongs in the v3 backlog when it:
 * adds a major semantic subsystem
 * depends on real-world pressure that Ferox does not yet have
 * may still turn out to be unnecessary even after v2
+* primarily strengthens deep assurance or research ambition rather than the proven v1/v2 safe-change core
 
 ## Current Candidates
+
+These are long-horizon candidates for **deep assurance** or other high-cost expansion.
 
 ### General effect sets
 
@@ -91,6 +94,19 @@ Candidate scope:
 Why deferred this far:
 
 * these may be valuable, but they should be justified by real compiler maturity, not early design temptation
+
+### Richer formal verification systems
+
+Candidate scope:
+
+* stronger proof-oriented language support
+* advanced verifier integration
+* more ambitious specification or proof sublanguages
+
+Why deferred this far:
+
+* Ferox should first prove that contracts or narrower verification layers are useful
+* proof-heavy systems should not shape the language before the core safe-change story is already working
 
 ## Research Connection
 

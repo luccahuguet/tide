@@ -77,3 +77,22 @@ Canonical open-task state lives in the committed `.beads/issues.jsonl` ledger an
 Canonical task meaning and completed-task archive still live in [TASKS.md](./TASKS.md) and `tasks/T###.md`.
 
 The detailed `br` workflow is documented in [BR_WORKFLOW.md](./BR_WORKFLOW.md).
+
+## Design Admission Rule
+
+Ferox should apply an explicit low-entropy admission filter to major language and toolchain changes.
+
+Core rule:
+
+> A feature should be rejected by default if it increases semantic entropy more than it improves safe change.
+
+Before accepting a substantial design addition, Ferox should ask:
+
+* does this improve mechanically safer change?
+* does this reduce or increase the number of overlapping ways to solve the same problem?
+* does this preserve or damage local reasoning?
+* does this support or hinder fast incremental feedback?
+* does this help humans and agents converge on one obvious code shape?
+* can this live in tooling or libraries instead of widening the core language?
+
+If the answers are weak or mixed, the default action should be defer or reject rather than expand the core casually.

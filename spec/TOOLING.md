@@ -29,7 +29,7 @@ ferox fmt
 Goals:
 
 * eliminate style ambiguity
-* improve agentic reliability
+* improve mechanically safer change
 * reduce review noise
 * stabilize refactoring and code generation
 * ensure uniform codebases
@@ -76,6 +76,8 @@ Goals:
 * keep declarations and control flow visually regular
 * avoid style choices that depend on manual alignment
 * support formatter-driven refactors and code generation
+
+This is part of the broader Ferox goal of reducing semantic entropy and making automated change safer.
 
 ## Import Ordering And Grouping
 
@@ -255,11 +257,29 @@ Goals:
 
 A single official toolchain exists.
 
+The toolchain should be treated as part of the language contract for safe change, not as a thin convenience wrapper around unrelated tools.
+
+Core direction:
+
+* structured diagnostics and machine-readable outputs are first-class
+* incremental `ferox check` should be a product requirement
+* formatter and parser architecture should support editor and agent workflows on partially complete code
+* tooling interfaces should grow from the same compiler data model rather than from scraped terminal text
+
+The official machine-facing surface should eventually include more than diagnostics alone.
+
+Long-term direction:
+
+* stable symbol identity and symbol graphs
+* project and package metadata suitable for tools and agents
+* refactor-oriented compiler services
+* machine-readable build and analysis events with controlled evolution
+
 CLI:
 
 ferox
 
-Responsibilities:
+Long-term responsibilities:
 
 * build
 * run
@@ -270,6 +290,18 @@ Responsibilities:
 * documentation generation
 * dependency management
 * package publishing
+
+Initial implementation scope should stay narrower.
+
+The first bootstrap wave should prioritize:
+
+* `ferox check`
+* `ferox fmt`
+* diagnostics
+* package loading
+* basic build-oriented workflows
+
+Commands such as documentation generation, richer dependency workflows, and package publishing remain part of the official long-term toolchain direction, but they are not required to prove the initial safe-core bootstrap.
 
 Goals:
 
@@ -651,6 +683,7 @@ Rules:
 * the JSON schema should be versioned or otherwise evolve in a controlled compatible way
 * human-readable terminal formatting may change more freely than machine-readable output
 * machine-readable output should not require scraping styled terminal text
+* stable machine-facing outputs should grow beyond diagnostics when the compiler architecture is ready, especially for symbols, project metadata, and refactor workflows
 
 ### Design Intent
 

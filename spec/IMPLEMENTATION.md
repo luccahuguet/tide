@@ -73,13 +73,15 @@ Core direction:
 * one Rust workspace contains the bootstrap toolchain components
 * shared language data structures are defined in reusable library crates
 * the `ferox` CLI is a thin orchestration layer over those libraries
+* the architecture should support fast incremental checking and reusable compiler services from the start where practical
+* the compiler should trend toward a query-oriented architecture so checking, diagnostics, refactors, and later agent tooling can share one dependency-aware core
 
 ### Initial Component Layout
 
 Initial bootstrap components:
 
 * `ferox_cli`: command-line entrypoint and command dispatch
-* `ferox_syntax`: tokens, concrete syntax tree, parser, and source span handling
+* `ferox_syntax`: tokens, full-fidelity concrete syntax tree, parser, and source span handling
 * `ferox_ast`: normalized language AST where needed beyond the syntax tree
 * `ferox_fmt`: formatter built on syntax and source mapping
 * `ferox_sem`: name resolution, type checking, ownership and async-related analysis, and other semantic analysis
@@ -96,6 +98,8 @@ Rules:
 * the CLI should not contain core language logic directly
 * package loading and build orchestration should remain separate from parsing and semantic analysis
 * machine-readable output should be produced from structured diagnostics and tool events, not reconstructed from human terminal text
+* compiler architecture should favor incremental reuse and tool-facing data rather than one-shot batch-only execution
+* internal boundaries should support future structural rule engines and safe autofix tooling without requiring a second parser or ad hoc source analysis layer
 
 ### Design Intent
 
@@ -107,6 +111,8 @@ Goals:
 * allow individual tools such as the formatter to be rewritten in Ferox independently
 * avoid tight coupling between the CLI and the compiler pipeline
 * support testing of parser, formatter, and semantic logic as standalone libraries
+* keep the path open for query-oriented compiler services instead of a CLI-only architecture
+* keep the path open for first-party structural refactor and autofix tooling built on the same normalized compiler data
 
 ## Implementation Order
 
@@ -131,6 +137,7 @@ Reasons:
 * every later tool depends on stable syntax and source spans
 * formatter and diagnostics both need a trustworthy parsed structure
 * syntax work exposes grammar problems early while the language is still changing quickly
+* full-fidelity syntax and local recovery are prerequisites for trustworthy formatting, refactors, and agent workflows
 
 #### 2. Formatter Second
 
@@ -159,6 +166,8 @@ Initial scope:
 Package loading and orchestration should be integrated once parsing, formatting, and semantic checking already exist as libraries.
 
 This stage turns the individual components into coherent `ferox check`, `ferox fmt`, and build-oriented workflows.
+
+It should also establish the architecture for fast incremental checking and structured machine-facing outputs.
 
 #### 5. Compiler Stages After Frontend Maturity
 
@@ -201,6 +210,27 @@ Goals:
 * avoid backend complexity before the frontend is trustworthy
 * create useful standalone tools before the full compiler exists
 * keep the self-hosting path incremental
+
+## Semantic Corpus And Golden Tests
+
+Ferox should maintain a semantic corpus early in the bootstrap.
+
+Purpose:
+
+* lock down syntax expectations
+* lock down formatter stability
+* lock down diagnostic shape and wording quality where appropriate
+* provide regression coverage for ownership and async edge cases
+* create a trustworthy basis for later structural rules and autofix behavior
+
+Suggested early corpus areas:
+
+* parser acceptance and rejection cases
+* formatter input/output pairs
+* structured diagnostic snapshots
+* ownership and borrow-check examples
+* machine-readable output snapshots
+* later rule-and-autofix before/after cases
 
 ## Self-Hosting Transition Criteria
 

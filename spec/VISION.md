@@ -14,13 +14,6 @@ Status:
 
 The name is treated as a standalone project name.
 
-This reflects the philosophy of the language:
-
-* correctness-first software
-* strong logical foundations
-* high-trust systems
-* compiler-enforced guarantees
-
 Example CLI:
 
 ferox build
@@ -49,13 +42,29 @@ Follow-up checks still recommended:
 
 ## Vision
 
-Ferox is a compiled programming language designed for **high-trust software** where correctness, analyzability, and predictable performance are prioritized over convenience.
+Ferox is a compiled programming language for **high-trust software** and **safe change**.
 
-The language is optimized for **both humans and coding agents** to read, reason about, and safely evolve codebases.
+The project should aim for:
+
+* preserving Rust-grade safe-code guarantees for memory safety and data-race safety through a simpler and more restrictive model
+* lower semantic entropy than Rust
+* explicit performance behavior
+* fast incremental feedback
+* tooling that helps both humans and agents evolve codebases without semantic drift
 
 Core idea:
 
-> Build fast software that both humans and agents can maintain safely over long periods.
+> Build software that is hard to break, easy to reason about, and safer to change at scale.
+
+Ferox should not try to win by being more expressive than Rust or more magical than modern FP languages.
+
+Ferox should try to win by making large codebases:
+
+* easier to read
+* easier to reason about locally
+* safer to refactor
+* harder to accidentally degrade
+* easier to validate mechanically
 
 ---
 
@@ -63,46 +72,48 @@ Core idea:
 
 When tradeoffs occur, the language prioritizes:
 
-1. **Safety > fewer lines of code**
-2. **Tool and agent analyzability > local terseness**
-3. **Performance > elegance**
-4. **Compiler guarantees > ease of learning**
+1. **Safe change > local convenience**
+2. **Safety > fewer lines of code**
+3. **Low entropy and analyzability > feature breadth**
+4. **Fast feedback > semantic ambition**
+5. **Explicit cost > hidden convenience**
 
 Secondary rule:
 
-> When possible, preserve both sides of the tradeoff without compromising the higher priority.
+> Ferox should preserve power only when doing so does not weaken local reasoning, regularity, or feedback speed.
 
 ---
 
-## Coherence Rule
+## Low-Entropy Rule
 
-Ferox should avoid multiple overlapping ways to do the same job.
+Ferox should aggressively resist semantic sprawl.
 
 Primary rule:
 
-> Prefer one primary way to do something, with at most one explicit escape hatch.
+> Prefer one dominant way to solve a problem, with at most one explicit escape hatch.
 
-This is especially important for:
+This matters especially for:
 
-* memory handling
+* ownership and borrowing
 * mutation
 * concurrency
 * error handling
+* abstraction mechanisms
 * package and tooling workflows
 
 Design guidance:
 
-* multiple mechanisms are acceptable when they solve genuinely different problems
-* multiple mechanisms are bad when they are mostly different ways to reach the same result
-* if two features overlap heavily, v1 should usually pick one and defer the other
-* restrictions are often better than overlapping escape hatches in an early language
+* overlapping mechanisms are a cost, not a free feature
+* restrictions are often better than widening the model early
+* if two features solve mostly the same problem, v1 should usually pick one
+* every new subsystem should justify its entropy cost directly
 
 Reason:
 
 * this keeps the language easier to learn
 * this keeps the compiler and diagnostics smaller
-* this keeps the mental model more coherent for both humans and coding agents
-* this makes "smaller than Rust" a real constraint instead of a slogan
+* this improves formatter and refactor determinism
+* this makes "smaller than Rust" a real engineering constraint instead of a slogan
 
 ---
 
@@ -115,8 +126,16 @@ Ferox is:
 * Ownership-based
 * Safe by default
 * Performance-transparent
-* Agent-friendly
+* Low-entropy
 * Tooling-first
+
+In strategic terms, Ferox should keep the **language rigid** while making the **tooling extensible**.
+
+That means:
+
+* avoid syntax-extension culture
+* avoid multiple competing user-defined abstraction layers for the same job
+* prefer stronger compiler services, rule engines, diagnostics, and refactor tooling over language-level extensibility
 
 Target domains:
 
@@ -140,74 +159,94 @@ Non-goals:
 
 ## Functional Programming Influence
 
-Functional programming influences Ferox, but it is **not a purely functional language**.
+Functional programming influences Ferox, but Ferox should borrow FP mostly as a **code-shaping discipline**, not as a second semantic center.
 
 Included FP ideas:
 
 * Immutability by default
-* Pure functions encouraged
 * Algebraic data types
 * Pattern matching
-* Expression-oriented constructs
 * Exhaustive match checking
-* Explicit async and unsafe boundaries
+* Expression-oriented constructs
+* Small pure helper functions
+* Narrow pipeline-friendly data transformation where it improves readability
+* At most one official pipe operator if it proves readable, regular, and low-ambiguity in practice
 
 Not adopted from FP:
 
 * Lazy evaluation by default
 * Purity absolutism
 * Heavy monadic ceremony
-* Complex type-level programming
-* Higher-kinded types (initial versions)
+* Higher-kinded types in early versions
+* Type-level complexity that weakens local reasoning
+* Broad operator culture
 
 Philosophy:
 
-> Functional defaults with practical systems programming capabilities.
+> Prefer functional shape where it improves readability, regularity, and safe transformation.
 
 ---
 
-## Performance Philosophy
+## Performance And Feedback Philosophy
 
-Ferox favors **predictable performance**.
+Ferox favors both **predictable performance** and **fast feedback**.
 
 Design principles:
 
-* Runtime costs should be visible in the source
-* Allocations should not be hidden
-* Copies and moves should be understandable
-* Async behavior should be explicit
-* No hidden global runtime
+* runtime costs should be visible in the source
+* allocations should not be hidden
+* copies and moves should be understandable
+* async behavior should be explicit
+* there should be no hidden global runtime
+* incremental `ferox check` should be treated as a first-class product requirement
 
-Performance model goals:
+Performance and tooling goals:
 
-* Low memory overhead
-* Native performance
-* Deterministic destruction
-* Efficient concurrency
+* low memory overhead
+* native performance
+* deterministic destruction
+* efficient concurrency
+* fast incremental checking
+* reusable compiler services
+
+## Concurrency Direction
+
+Ferox should treat ownership-aware concurrency as part of its identity, not just as a deferred implementation detail.
+
+Core direction:
+
+* concurrency should make ownership transfer, immutable sharing, and synchronized sharing visually distinct
+* shared mutable concurrency should remain explicit and second-class relative to ownership transfer and immutable sharing
+* Ferox should prefer clearer concurrency boundaries over richer qualifier lattices
+
+This is one of the main ways Ferox should stay safer to evolve than ad hoc concurrent systems code.
 
 ---
 
-## Agentic Design Principles
+## Tooling And Agent Design Principles
 
-Ferox is designed to be **machine-friendly**.
+Ferox should be designed for **mechanically safer change**.
+
+"Better for agents" should mean:
+
+* easier to parse
+* easier to transform
+* easier to refactor
+* easier to validate mechanically
+* easier to repair without semantic drift
 
 Key design goals:
 
-* Small grammar
-* Low syntax ambiguity
-* Canonical formatting
-* Highly regular syntax
-* Explicit imports and exports
-* Predictable AST structure
-* Machine-readable diagnostics
-
-The language should be easy for agents to:
-
-* Parse
-* Transform
-* Refactor
-* Verify
-* Repair
+* small grammar
+* low syntax ambiguity
+* canonical formatting
+* highly regular syntax
+* explicit imports and exports
+* full-fidelity syntax trees
+* error-tolerant parsing
+* predictable AST structure
+* normalized checked IR
+* machine-readable diagnostics and symbol data
 
 Ferox should therefore prefer:
 
@@ -215,25 +254,67 @@ Ferox should therefore prefer:
 * more explicit default paths
 * smaller semantic surface area
 * one dominant model where possible instead of several partially competing ones
+* query-oriented compiler services over tooling built around one-shot batch-only execution
+* official structural rules and autofix capabilities over ad hoc source rewriting
+
+Strategic differentiator:
+
+* Ferox should treat first-party structural rules and safe autofix as one of its strongest long-term advantages for large-scale, mechanically validated change
+
+## Safe-Change Tooling Contract
+
+Ferox should treat the following as part of the long-term safe-change contract:
+
+* canonical formatting
+* structured diagnostics
+* stable machine-readable outputs
+* stable symbol and project metadata
+* deterministic builds and dependency resolution
+* refactor-oriented compiler services
+
+These are not incidental tooling niceties.
+
+They are part of the language's strategy for mechanically safer change.
+
+---
+
+## Verification Direction
+
+Ferox should be **verification-ready**, not proof-first.
+
+Near-term rule:
+
+* do not turn the core language into a theorem prover or dependent-type system
+
+Longer-term direction:
+
+* contracts
+* invariants
+* ghost or spec code
+* proof-oriented tooling for critical modules when justified by real usage
+
+The goal is to support deeper assurance where it matters without forcing the whole language into proof-oriented everyday programming.
 
 ---
 
 ## Strategic Positioning
 
-Ferox is trying to occupy a narrow space between Rust, Zig, and Go without copying any of them directly.
+Ferox is closest to Rust, but the project should not position itself as "Rust, but easier because it does less safety."
 
-Current aspiration:
+The intended position is:
 
-* ownership-based and safety-oriented like Rust
-* explicit about runtime cost like Zig
-* practical about tooling and backend use like Go
+* Rust-grade safe-code guarantees for memory safety and data-race safety through stricter and more regular rules
+* stricter and more regular than Rust
+* more explicit about code shape and cost
+* more disciplined about tooling and machine-usable outputs
+* better suited to safe automated change in long-lived codebases
 
 Current caution:
 
-* Ferox has not earned broad claims of being better than mature languages
-* the language has recently narrowed its v1 core and is only now entering a narrow Rust bootstrap
-* comparative claims should stay conditional until the design proves coherent
+* Ferox has not earned claims of superiority over mature languages
+* the language is still in design and early bootstrap planning
+* comparative claims should remain conditional until the implementation and tooling prove the thesis
 
 Core promise:
 
-> Build a smaller, more analyzable ownership-based language for high-trust software.
+> Build a lower-entropy ownership-based language for high-trust software and safe change.

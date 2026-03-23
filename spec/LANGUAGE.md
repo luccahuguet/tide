@@ -2,6 +2,12 @@
 
 This document contains the language-level rules for Ferox.
 
+Current positioning:
+
+* Ferox aims at high-trust software and safe change
+* v1 should prefer lower semantic entropy over extra expressiveness
+* the language should stay readable, mechanically analyzable, and friendly to fast tooling feedback
+
 Related documents:
 
 * `spec/VISION.md` for project goals and positioning
@@ -26,6 +32,7 @@ Goals:
 * Prevent double-free
 * Prevent data races in safe code
 * Keep the reasoning model smaller than Rust
+* Preserve strong safe-code guarantees through a simpler and more restrictive model rather than through broader semantic machinery
 
 Key characteristics:
 
@@ -52,6 +59,7 @@ Rationale:
 * keeps the memory model smaller than Rust
 * makes compiler behavior easier to predict
 * supports Ferox's explicitness and analyzability goals
+* supports the broader safe-change goal by keeping ownership reasoning local and mechanical
 
 ## Move Semantics
 
@@ -167,6 +175,20 @@ Goals:
 * make expensive duplication visible in source
 * prevent accidental performance regressions
 * preserve the move-default mental model
+
+## Core Semantic Abilities
+
+Ferox should remain open to a **small built-in ability model** for core semantic properties if doing so reduces trait and marker-surface complexity.
+
+Current design direction:
+
+* this is a design exploration, not yet a fixed v1 commitment
+* the most plausible use is for core properties such as copy-safety, destruction behavior, or concurrency-relevant capabilities
+* Ferox should prefer built-in semantic categories over trait sprawl only when the result is simpler and more analyzable
+
+Non-goal:
+
+* inventing a large second abstraction system for ordinary user-defined behavior
 
 ## Borrowing Model
 

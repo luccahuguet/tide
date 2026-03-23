@@ -15,8 +15,40 @@ An item belongs in the v2 backlog only if:
 * it is plausibly useful after a stable v1 exists
 * it does not obviously explode the language core
 * it solves a real problem rather than adding a parallel model for the same job
+* it strengthens Ferox's safe-change story more than it increases entropy
 
 ## Current Candidates
+
+These candidates are the main ways Ferox may strengthen **safe change** after proving the v1 safe core.
+
+They should still be pulled in only when real usage creates pressure for them.
+
+### Structural rule and autofix system
+
+Candidate scope:
+
+* first-party structural lint rules
+* machine-safe autofix and codemod support
+* policy enforcement and large-scale migration tooling
+
+Why deferred:
+
+* the parser, formatter, diagnostics, and normalized compiler representations need to exist first
+* the language must prove its syntax and semantic regularity before a rule system can be trusted
+
+### Contract or spec layer
+
+Candidate scope:
+
+* preconditions
+* postconditions
+* invariants
+* ghost or spec code in a narrow form
+
+Why deferred:
+
+* v1 should prove the safe core before adding a second assurance layer
+* Ferox should stay verification-ready without becoming proof-first too early
 
 ### Structured concurrency beyond `async let`
 
@@ -97,6 +129,19 @@ Why deferred:
 * this is only worth adding if real Ferox libraries show repeated protocol-state pressure
 * Ferox should avoid a broad built-in typestate subsystem unless the smaller approach clearly fails
 
+### Richer machine-readable compiler metadata
+
+Candidate scope:
+
+* expanded symbol graphs
+* richer refactor and analysis hooks
+* more stable machine-facing compiler services
+
+Why deferred:
+
+* v1 should first prove the basic diagnostics and tooling contract
+* wider machine interfaces should grow from real tooling pressure, not from speculation
+
 ### Generic-surface growth, if v1 proves the need
 
 Candidate scope:
@@ -131,5 +176,6 @@ The following are **not** assumed to be v2 items by default:
 * effect handlers
 * capability-heavy concurrency models
 * major semantic expansions that would widen the language core substantially
+* proof-first or theorem-prover-style language features
 
 Those belong in [V3_BACKLOG.md](./V3_BACKLOG.md) unless later evidence strongly pulls them forward.
