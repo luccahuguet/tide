@@ -47,23 +47,23 @@ path = "src/main.ferox"
 
 The `[package]` table defines package identity and basic compilation context.
 
-Initial required fields:
+Initial bootstrap-required fields:
 
 * `name`
-* `version`
 * `edition`
 
 Initial optional fields:
 
+* `version`
 * `description`
 * `license`
 * `repository`
 
 Rules:
 
-* `name` identifies the package for dependency resolution and publishing
-* `version` uses semantic-version-style numbering
+* `name` identifies the package for local workspace loading, dependency edges, and eventual publishing
 * `edition` selects language-edition compatibility, not package version
+* `version` is recommended for ordinary packages and required for publishing or versioned-registry participation, but the first bootstrap `check` / `fmt` flows should not require it for local unpublished packages
 
 ### Target Tables
 
@@ -76,6 +76,13 @@ Initial direction:
 * each target table may specify at least a `path`
 * binary targets may additionally specify `name`
 * target paths are relative to the package root
+
+Bootstrap convention support:
+
+* if `[lib]` is omitted and `src/lib.ferox` exists, the package has one conventional library target
+* if no `[[bin]]` tables are present and `src/main.ferox` exists, the package has one conventional default binary target
+* explicit target tables override convention when both are present
+* the bootstrap toolchain does not need examples, benches, tests-as-targets, or build-script targets
 
 ### Dependencies Table
 
@@ -149,6 +156,117 @@ The initial manifest format does not yet define:
 * build scripts
 
 These are deferred to later package-system tasks so the base manifest format stays stable and small.
+
+## Bootstrap Package And Workspace Contract
+
+The first real `ferox check` and `ferox fmt` flows should support a deliberately smaller package-system surface than the full long-term package vision.
+
+Bootstrap support scope:
+
+* one local package root with one `ferox.toml`
+* explicit workspace roots with a `[workspace]` member list
+* local path dependencies
+* conventional or explicitly declared lib/bin targets
+* deterministic package loading and target selection facts exposed in machine-readable form
+
+Bootstrap non-goals:
+
+* registry fetching as part of the first real local `check` / `fmt` flows
+* alternate registries or source overrides
+* feature-flag resolution
+* build scripts
+* target-specific dependency sections
+* publishing workflows as a prerequisite for local development
+
+### Bootstrap Loading Rules
+
+Package-root behavior:
+
+* if the current directory contains a package `ferox.toml`, `ferox check` should load that package
+* if the current directory contains a workspace `ferox.toml`, `ferox check` should load all workspace members unless a later explicit package-selection flag narrows the scope
+* `ferox fmt` should use the same package or workspace discovery rules when invoked from a manifest root, even if formatting ultimately acts on selected source files
+* the first bootstrap path may keep discovery root-local rather than searching parent directories, but that behavior must be explicit and deterministic
+* if root-local discovery is used initially, parent-directory discovery should be treated as a later ergonomics refinement rather than as implicit unstated behavior
+
+Workspace rules:
+
+* workspace member discovery is explicit only through `[workspace].members`
+* member paths are resolved relative to the workspace root
+* each member must contain exactly one package manifest
+* duplicate member paths, missing member manifests, and nested implicit discovery should be rejected with direct diagnostics
+
+Dependency rules for bootstrap:
+
+* local path dependencies are in scope
+* registry-version dependencies may remain parsed and represented, but the first bootstrap `check` / `fmt` path does not need remote fetching or full registry resolution
+* if a bootstrap command encounters a dependency mode it intentionally does not support yet, it should fail explicitly rather than guessing or silently skipping it
+
+### Bootstrap Machine-Readable Facts
+
+The first bootstrap package-loading layer should expose at least:
+
+* loaded manifest path
+* whether the root is a package or workspace
+* workspace root path when applicable
+* package identities: name, optional version, edition, root path
+* selected targets: kind, name, source path, and whether they were explicit or convention-derived
+* local dependency edges and unresolved/deferred dependency modes
+
+Suggested first failure codes:
+
+* `package.manifest_not_found`
+* `package.manifest_parse_error`
+* `package.invalid_root_shape`
+* `workspace.member_missing`
+* `workspace.member_duplicate`
+* `package.target_missing`
+* `package.unsupported_dependency_mode`
+
+Worked single-package example:
+
+```toml
+[package]
+name = "greeter"
+edition = "1"
+
+[lib]
+path = "src/lib.ferox"
+```
+
+Bootstrap expectation:
+
+* `ferox check` loads one package named `greeter`
+* target selection reports one library target at `src/lib.ferox`
+* machine-readable package metadata includes `name`, `edition`, `root`, `manifest path`, and selected target facts
+
+Worked workspace example:
+
+```toml
+[workspace]
+members = [
+    "libs/core",
+    "apps/cli",
+]
+```
+
+Bootstrap expectation:
+
+* the workspace root is not treated as an implicit package
+* member discovery follows the listed paths only
+* package-loading output identifies the workspace root plus the two member packages
+* if one member manifest is missing, package loading fails explicitly with a workspace diagnostic instead of partially continuing
+
+### Bootstrap Discovery Non-Goal
+
+The initial bootstrap package-loading layer does not need to support Cargo-style parent-directory manifest discovery.
+
+That means:
+
+* commands may require invocation from a package root or workspace root in the first bootstrap phase
+* if the current directory is only a nested subdirectory, the initial driver may fail with a direct manifest-root diagnostic rather than searching upward
+* this is an ergonomics tradeoff, not a long-term ideological commitment
+
+If Ferox later adds parent-directory discovery, it should do so as one explicit rule with deterministic root-selection behavior.
 
 ## Workspace Layout
 

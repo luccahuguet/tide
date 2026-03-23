@@ -330,6 +330,14 @@ This stage turns the individual components into coherent `ferox check`, `ferox f
 
 It should also establish the architecture for fast incremental checking and structured machine-facing outputs.
 
+The initial driver integration should use the narrow bootstrap package/workspace-loading contract:
+
+* explicit package roots and explicit workspace member lists
+* conventional or explicitly declared lib/bin targets
+* local path dependencies only as a required bootstrap capability
+* explicit failure for dependency or registry modes that the first bootstrap does not implement yet
+* explicit and documented manifest discovery behavior, even if the first bootstrap requires commands to run from a package or workspace root
+
 #### 5. Compiler Stages After Frontend Maturity
 
 Lowering, code generation, and backend integration come after the frontend pipeline is credible.

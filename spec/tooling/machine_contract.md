@@ -196,6 +196,7 @@ Minimum metadata areas:
 * dependency edges
 * edition and toolchain-compatibility data
 * lockfile or resolution facts when present
+* selected-target and manifest-loading facts for the active command
 
 Example metadata uses:
 
@@ -254,10 +255,12 @@ Required validation directions:
 * fixture snapshots for package/workspace metadata outputs
 * regression tests for deterministic formatter output on supported syntax
 * output-level regression tests for dependency-resolution and package-loading facts where they are exposed
+* fixture snapshots for package-root loading, workspace-member loading, and explicit unsupported-dependency failures
 
 Logging expectation:
 
 * when a structured output changes unexpectedly, the toolchain should make it practical to trace which compiler or driver stage produced the changed record
+* manifest parsing, workspace discovery, target selection, and package-loading failures should emit enough structured trace information that output regressions can be explained without ad hoc print debugging
 
 ## Mutation-Side Machine Contract
 
