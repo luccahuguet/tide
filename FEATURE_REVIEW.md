@@ -184,6 +184,6 @@ Coherence reminder:
 For a coherent first version, the recommended profile is:
 
 * Keep: ownership, explicitness, ADTs, exhaustive matching, `Option`/`Result`, regular syntax, machine-readable diagnostics, canonical formatting, explicit modules, fast-feedback tooling goals, Rust bootstrap
-* Simplify: shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises, pipe syntax if adopted
+* Simplify: shared ownership, traits, structured concurrency, full toolchain scope, "no hidden runtime" promises
 * Defer: structural rule/autofix systems until the frontend is credible, contracts/spec layers until the safe core is proven, arenas/regions, rich effects system, advanced cancellation semantics, broad self-hosting milestones, built-in ability experiments until they clearly reduce complexity
 * Move Out: agent-production rule as governance rather than language design

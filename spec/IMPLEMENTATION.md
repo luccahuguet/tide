@@ -758,7 +758,45 @@ The semantic corpus should therefore include:
 * structured diagnostic snapshots for each failure family
 * end-to-end scripts that exercise representative edit, check, and failure-reporting flows
 
-Logging expectation:
+## FP Profile Validation
+
+The Ferox FP profile also needs direct validation rather than being left as aesthetic preference.
+
+The bootstrap should validate accepted FP-shaped forms and rejected FP-heavy anti-pattern directions through parser, lowering, formatting, diagnostics, and CLI workflows.
+
+Suggested accepted-form buckets:
+
+* ADT-heavy examples with exhaustive `match`
+* expression-oriented blocks that return values without obscuring control flow
+* small helper-function transformations written as ordinary nested calls or explicit named steps
+* explicit `Option` / `Result` transformation flows using `match`, `if let`, `while let`, and `?`
+
+Suggested rejection or non-goal buckets:
+
+* operator-heavy or ambiguous pipeline-style experiments that the language intentionally does not support
+* syntax or diagnostics that would imply multiple equivalent FP composition styles for ordinary code
+* unsupported advanced type-level abstractions that Ferox deliberately keeps out of scope
+
+Expected validation layers:
+
+* unit tests for parsing and lowering of accepted expression-oriented and pattern-heavy forms
+* formatter tests that lock down canonical layout for multiline `match` and nested destructuring
+* diagnostic tests for malformed or deliberately unsupported FP-adjacent constructs
+* corpus fixtures for canonical accepted examples and representative rejected anti-patterns
+* end-to-end scripts that exercise transformation-heavy workflows through `ferox check` and `ferox fmt`
+
+Suggested early corpus examples:
+
+* ADT-based state classification
+* `Result` propagation with local transformation steps
+* nested `Option` / `Result` destructuring
+* multiline expression-oriented block formatting
+
+Logging and tracing expectation:
+
+* parse, lower, and format stages should emit enough structured trace data that failures involving pattern-heavy syntax and expression blocks can be diagnosed without guessing which stage misinterpreted the source
+
+Related ownership-checking expectation:
 
 * the bootstrap checker should make ownership-state transitions and conflict detection debuggable enough that a failing corpus test can be diagnosed without reverse-engineering the entire checker
 

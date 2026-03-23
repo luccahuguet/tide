@@ -38,8 +38,47 @@ Ferox v1 currently means:
 * explicit `unsafe`
 * regular syntax, canonical formatting, and machine-usable tooling
 * fast incremental `check` and credible machine-readable diagnostics as explicit implementation goals
-* a likely bias toward one narrow pipe operator if it improves readability without adding operator sprawl
 * cross-task data flow by move, copy-safe duplication, or explicit `SyncShared[...]`, not by ordinary borrow capture
+
+## FP Profile
+
+Ferox should be FP-shaped in source form, not FP-heavy in semantic machinery.
+
+Core FP choices for v1:
+
+* immutable-by-default bindings and values unless mutation is made explicit
+* ADTs and exhaustive `match` as the normal invalid-state and branching tools
+* expression-oriented code with small transformation-focused helper functions where that improves readability
+
+Clarification:
+
+* Ferox v1 does not treat purity here as a checked effect contract; this is a style and API-shaping preference, not a second semantic system
+
+Secondary FP choices:
+
+* focused pattern-control forms are useful when they remain obvious shorthands rather than a second control-flow family
+
+Rejected FP directions for v1:
+
+* lazy defaults
+* purity/effect machinery as a parallel semantic system
+* monadic ceremony as the expected everyday style
+* higher-kinded or research-heavy type abstraction
+* broad operator culture
+
+The target feel is:
+
+* transformation-friendly
+* explicit
+* regular
+* easy to lower, format, and rewrite
+
+not:
+
+* abstraction-dense
+* operator-driven
+* type-level
+* semantically clever
 
 ## Decisions Already Made
 
@@ -51,6 +90,7 @@ The current v1 direction includes these explicit cuts:
 * no broad typestate subsystem in v1
 * no capability-heavy concurrency system in v1
 * no large structured-concurrency or cancellation model in v1
+* no broad constructor-visibility or export-control lattice in v1
 
 The current v1 direction includes these explicit simplifications:
 
@@ -60,6 +100,7 @@ The current v1 direction includes these explicit simplifications:
 * shared ownership and synchronization are explicit and secondary
 * concurrency stays bounded and visible
 * ordinary borrows do not cross task boundaries by default
+* module visibility stays binary in v1 unless a later narrow invariant-preserving mechanism clearly earns its keep
 
 ## What Ferox Should Borrow From Research
 
@@ -72,6 +113,7 @@ Current external-ideas conclusions:
 * Koka / Eff-style richer effect systems remain long-horizon research only
 * contracts and proof-oriented tooling are promising only as later optional assurance layers, not as the core v1 language identity
 * a small built-in ability model may be worth exploring if it reduces trait and marker complexity without widening the language
+* opaque public types with private constructors and explicit smart constructors look promising if they strengthen invariants without adding major semantic machinery
 
 ## V2 Candidates
 
@@ -82,6 +124,8 @@ The most plausible post-v1 growth areas are:
 * structured concurrency beyond `async let`
 * richer but still bounded cancellation semantics
 * ownership-aware concurrency refinement
+* opaque public types and smart-constructor patterns if they fit the explicit module and API model cleanly
+* a narrow public-type/private-construction mechanism if invariant pressure proves it worthwhile
 * arenas or regions only if real pressure justifies them
 * narrow protocol-state checking only if real APIs justify it
 * carefully limited trait and generic growth

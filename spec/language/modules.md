@@ -119,6 +119,23 @@ Rules:
 * Visibility is private by default
 * `pub` is the only visibility modifier in the initial design
 * More granular visibility such as package-scoped or module-subtree-scoped access is deferred
+* v1 should not introduce a separate constructor-visibility lattice on top of ordinary declaration visibility
+
+### Constructor Discipline In V1
+
+Ferox should keep the initial visibility model binary and simple.
+
+Current v1 direction:
+
+* v1 does not require a general mechanism for making a type public while separately controlling constructor visibility
+* if invariant-preserving APIs are needed in v1, they should prefer ordinary module boundaries, private helper types, and explicit constructor or factory functions over a richer visibility system
+* constructor/privacy discipline beyond that remains a post-v1 design area
+
+Reason:
+
+* this keeps the module and visibility model low-entropy during the safe-core phase
+* it avoids combining explicit modules with a second export-control sublanguage too early
+* it leaves room for one later narrow invariant-preserving mechanism if real pressure justifies it
 
 ### Imported Name Usage
 
@@ -154,3 +171,4 @@ The initial module system does not include:
 * package-private visibility
 * cyclic import support as a design goal
 * runtime module loading
+* constructor-export lists or a broad constructor-visibility lattice in v1

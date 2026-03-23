@@ -161,18 +161,55 @@ Non-goals:
 
 Functional programming influences Ferox, but Ferox should borrow FP mostly as a **code-shaping discipline**, not as a second semantic center.
 
-Included FP ideas:
+### Ferox FP Doctrine
+
+The FP profile should strengthen:
+
+* regularity of source form
+* local reasoning
+* explicit data transformation
+* safe automated change
+* analyzable compiler and tooling behavior
+
+The FP profile should not introduce a second major semantic stack alongside ownership.
+
+### Core FP Ideas
+
+These are part of Ferox's intended identity:
 
 * Immutability by default
 * Algebraic data types
 * Pattern matching
 * Exhaustive match checking
 * Expression-oriented constructs
-* Small pure helper functions
-* Narrow pipeline-friendly data transformation where it improves readability
-* At most one official pipe operator if it proves readable, regular, and low-ambiguity in practice
+* Small helper functions written in a pure data-transformation style where practical
 
-Not adopted from FP:
+These choices are valuable because they:
+
+* keep ordinary data flow visible
+* reduce invalid-state encoding pressure
+* improve refactor safety
+* make code easier for humans and tools to normalize mechanically
+
+Core clarification:
+
+* Ferox v1 does not treat helper-function purity as a checked language effect; this is a source-style preference, not a parallel effect system
+
+### Useful But Secondary FP Ideas
+
+These may be adopted, but only if they remain narrow and regular:
+
+* `if let` / `while let` style focused pattern-control forms
+* library conventions that reward pure transformation-heavy helpers without requiring purity annotations everywhere
+
+Core rule:
+
+* Ferox should not require pipeline syntax or point-free style to write idiomatic code
+* ordinary nested calls, named intermediate values, and expression-oriented blocks are sufficient for v1 transformation-heavy code
+
+### Out Of Scope FP Directions
+
+Ferox should explicitly stay out of these areas in early versions:
 
 * Lazy evaluation by default
 * Purity absolutism
@@ -180,10 +217,60 @@ Not adopted from FP:
 * Higher-kinded types in early versions
 * Type-level complexity that weakens local reasoning
 * Broad operator culture
+* Effect-heavy purity tracking
+* Multiple equivalent composition idioms for ordinary code
+
+These would widen the language faster than they improve readability or safety.
+
+### Promising Adjacent Idea
+
+One promising non-heavyweight extension is:
+
+* opaque public types with private constructors and explicit smart-constructor APIs where they clearly improve invariant preservation
+
+Why this fits:
+
+* it strengthens invalid-state modeling without requiring theorem-prover machinery
+* it works naturally with ADTs, modules, and explicit public APIs
+* it helps humans and tools reason about which states are constructible from outside a module
+
+This is promising because it can strengthen Ferox's safe-change story without widening the core semantics dramatically.
+
+### Interaction With The Rest Of Ferox
+
+The FP profile should remain compatible with the rest of the language direction.
+
+Rules of interaction:
+
+* ownership remains the primary semantic center; FP-style code must fit ownership rather than bypass it
+* async and concurrency stay explicit; expression-oriented syntax must not hide suspension or task boundaries
+* tooling should be able to parse, lower, format, and rewrite accepted FP forms mechanically
+* compile-time behavior should stay predictable; Ferox should reject FP machinery that adds large inference cliffs or type-checking opacity
+* later contracts or ghost code should benefit from small transformation-focused helpers and ADT-heavy modeling, not require proof-oriented everyday code
 
 Philosophy:
 
 > Prefer functional shape where it improves readability, regularity, and safe transformation.
+
+Canonical source style should therefore look more like:
+
+```ferox
+fn classify(user: User) -> Status {
+    match user.role {
+        admin => active,
+        guest => limited,
+        suspended => blocked,
+    }
+}
+
+fn load_profile(id: UserId) -> Result[Profile, LoadError] {
+    let raw = read_profile(id)?;
+    let parsed = parse_profile(raw)?;
+    ok(parsed)
+}
+```
+
+and less like a style that depends on large abstraction stacks, clever operator composition, or type-level indirection to express ordinary control flow.
 
 ---
 

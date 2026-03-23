@@ -105,6 +105,19 @@ Why deferred:
 
 * `pub` and private are enough for the initial model
 
+### Narrow public-type/private-construction mechanism
+
+Candidate scope:
+
+* one explicit way to expose a type publicly while restricting external construction
+* smart-constructor-friendly module boundaries for invariant-sensitive APIs
+
+Why deferred:
+
+* v1 should keep visibility binary and avoid a broader constructor/export lattice
+* if Ferox adopts this later, it should be one narrow invariant-preserving tool rather than a large new access-control system
+* the language should first prove that ordinary module boundaries and explicit constructor functions are insufficient in practice
+
 ### Trait-system growth, if v1 proves the need
 
 Candidate scope:
