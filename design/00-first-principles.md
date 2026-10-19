@@ -1,9 +1,9 @@
 # First Principles
 
-Status: working draft, written before the research reports in `research/`
-landed. Later design documents cite this one for the problem statement and the
-targets; the hypotheses at the end are tested against the evidence, not
-assumed.
+Status: written before the research reports in `research/` and the reviews
+in `reviews/`. Later design documents cite this one for the problem statement
+and the targets. The hypotheses have verdicts, given in the final section and
+based on that evidence and the decisions in `design/01-design.md` (draft 3).
 
 ## The Shift
 
@@ -128,6 +128,13 @@ or must argue for an explicit exception.
 | Authority | every function's possible effects derivable from its signature |
 | Verification | contracts on core library functions proven by the toolchain, with no proof required for ordinary code |
 
+Learnability so far: the first E1 pilot, ten programs by one agent that saw
+only `design/reference.md`, graded without a compiler, estimated a 6/10
+first-check pass rate against an estimated 9/10 for the same writer in Rust,
+with no leaked Rust habits in 1,614 lines. Every first-check failure traced to
+the reference lagging the normative chapters or to one design gap
+(`trials/e1/grading.md`).
+
 ## Tensions
 
 These trade-offs define the design space. Each needs an explicit decision.
@@ -170,3 +177,81 @@ The research reports should confirm, refine, or refute each of these.
   language.
 - **H7.** Typed holes and a structured query-and-edit interface improve agent
   success more than any single syntax feature.
+
+## Verdicts
+
+Each verdict rests on the reports in `research/`, the reviews in `reviews/`,
+and the decisions in `design/01-design.md` (draft 3). "Open" means the
+validation program (D0) has to settle it.
+
+- **H1: refined, into origins.** Draft 1's version (second-class references
+  with views, one implicit region per type) was unsound or unusable as
+  written and stricter than Rust's elision on common accessors, so Ferox
+  keeps Rust's first-class `&` and `&mut` and its elision rules and replaces
+  named lifetime parameters with origins, `from` clauses that name a
+  parameter or place (D2). The E1 writer used origins correctly in every
+  borrowing case, though `reviews/round2-simplicity.md` counts this as
+  respelling lifetimes rather than removing them.
+  Sources: `research/02-memory-models.md`, `reviews/round1-soundness.md`
+  B1–B3, `reviews/round1-agent-usability.md` B2, `design/02-memory.md`,
+  `trials/e1/grading.md`.
+- **H2: supported.** Capabilities are ordinary parameters passed by
+  reference, with attenuation methods and a `Pure` auto trait in place of
+  effect variables; effect rows and implicit `with` clauses were rejected
+  (D7). Review added two refinements, write-only diagnostic sinks that are
+  not capabilities (so agents do not pass `Root` everywhere) and a `Pure`
+  that also excludes synchronization handles, and the plumbing cost for
+  agents stays unmeasured until E6.
+  Sources: `research/07-effects-capabilities.md`,
+  `reviews/round1-agent-usability.md` B3–B4, `reviews/round1-soundness.md`
+  B6, `design/03-authority-concurrency.md`.
+- **H3: refined.** Auto-active SMT contracts give the best agent results on
+  the evidence (Dafny 82% against Verus 44% and Lean 27%; agents completed
+  81% of real Verus systems proofs), but writing specs is the weak half, and
+  agents game verifiers unless trust holes are policed mechanically. Ferox
+  keeps that style but narrows its role: contracts support the trust surface
+  instead of leading it, which keeps Ferox out of Bend's territory; v0 runs
+  them as runtime checks and property tests, `prove` mode is v1, and the
+  escape hatch is `#[trusted]` with a reason, with interactive-proof export a
+  later tier.
+  Sources: `research/04-verification.md`, `reviews/round1-verification.md`,
+  `reviews/round1-strategy.md` B1, `reviews/round2-simplicity.md`.
+- **H4: refuted by measurement.** Witness-table generics ran 5.6–23.9x
+  slower than monomorphized code in optimized builds and another 1.6–2.1x
+  slower on top of unoptimized code, and a separate development code path
+  threatened the equivalence of debug and release builds. Ferox monomorphizes
+  in every profile through one content-addressed instantiation cache, with
+  witness tables only as a budgeted fallback that must behave identically
+  (D12).
+  Sources: `reviews/round1-performance.md` M3 and B2,
+  `reviews/round1-soundness.md` B9, `research/03-compile-speed.md` (which
+  had recommended dictionaries).
+- **H5: open.** The evidence favors the approach: most model failures in
+  unfamiliar languages are borrowed syntax, execution feedback took one model
+  from 45% to 82% on an unseen language, and 77% of files in a 6.08M-line
+  Rust sample used constructs draft 1 would have rejected or respelled, which
+  led to Rust spelling wherever the meaning is the same (D1). The first E1
+  pilot leaked no Rust habits but missed all three E1 thresholds, mostly
+  through gaps in a reference that already uses about 74% of its token
+  budget, so the hypothesis stays open until E1 runs on the interpreter.
+  Sources: `research/05-llm-code-empirics.md`,
+  `research/09-adoption-interop-backends.md`,
+  `reviews/round1-agent-usability.md` B1 and B7,
+  `reviews/round2-simplicity.md`, `trials/e1/grading.md`.
+- **H6: supported.** HVM does not fit as a backend: HVM2 is legacy, later
+  versions are pre-release or private, and independent measurements show
+  large single-thread and memory overheads. Deterministic parallelism of pure
+  code is inherited natively instead (`join`, `par_map`, and `par_for` equal
+  their sequential versions, D9), and Bend 2, the closest peer, works in
+  tandem with Ferox as the owner of proved, parallel kernels (D16).
+  Sources: `research/01-bend-hvm.md`, `research/10-concurrency-parallelism.md`,
+  `research/11-bend-interop.md`, `reviews/round1-strategy.md` B1.
+- **H7: refined.** The strongest evidence is for a fast, single-verdict check
+  loop with precise, fix-carrying diagnostics (precise feedback raised Rust
+  repair rates from 10.7% to 73.7%), not for structured edits, which gave
+  frontier models only 1–5 points. Ferox keeps typed holes (D14), whose
+  benefit as context is shown but whose effect on frontier agents is
+  untested, keeps source text canonical with a base hash on every write, and
+  treats check latency as a design requirement.
+  Sources: `research/06-agent-native-tooling.md`,
+  `research/05-llm-code-empirics.md`, `research/03-compile-speed.md`.

@@ -1,125 +1,137 @@
 # Ferox
 
-Ferox is a language design project for a compiled, ownership-based programming language aimed at high-trust software and safe change.
-
-The current direction is:
-
-* safety first
-* explicit costs and predictable performance
-* simpler and lower-entropy ownership than Rust
-* strong support for long-lived codebases
-* fast incremental feedback as a product requirement
-* syntax and tooling designed for safer human and agent-assisted change
+Ferox is a systems language design for software that coding agents write and
+humans must trust. Its core is three guarantees that a language can make only
+if it is designed for them from the start. First, there is no ambient
+authority: code reaches files, the network, the clock, the environment, or
+randomness only through capability values it is handed, so a function's
+signature bounds what it can do, in every dependency. Second, whole programs
+run under deterministic simulation: any program, dependencies included,
+replays bit for bit from a seed when its foreign effects have simulator
+models. Third, the compiler computes a reviewable
+trust surface (signatures, authority, contract status, and trust holes such as
+`unsafe` and FFI) and diffs it between revisions. Ferox delivers these on a
+Rust-familiar surface, with Rust spelling wherever the meaning is the same,
+ownership with origins instead of lifetime parameters, no async, and no user
+macros, and it aims for much faster builds than Rust. Contracts (`requires`,
+`ensures`) are part of the language and serve as runtime checks, property
+tests, and optional SMT proofs; they support the trust surface rather than
+lead it. Ferox works in tandem with Bend 2, not in competition: Ferox is the
+effectful, authority-checked shell, and Bend owns proved, massively parallel
+pure kernels.
 
 ## Status
 
-This repository is currently design-first.
+Ferox is in the design phase; there is no compiler for this design. The
+decision record is `design/01-design.md` (draft 3). Syntax is provisional
+until the E1 learnability experiment meets its thresholds (D0).
 
-There is no compiler implementation yet. The current work is focused on:
+`crates/` holds an early Rust scaffold (seven crates, about 700 lines) from
+the archived first design; it does not implement the current design.
+`scripts/test/e2e_workspace_smoke.sh` builds and tests it.
 
-* language vision
-* core syntax
-* memory model decisions
-* design tradeoff review
-* implementation planning
-* narrowing the v1 scope
-* preparing the narrow Rust bootstrap
+## Reading Guide
 
-## Current Language Direction
+### Design
 
-The language currently targets:
+- [design/00-first-principles.md](design/00-first-principles.md): the problem
+  statement, hard constraints, measurable targets, and hypotheses H1–H7 with
+  their verdicts.
+- [design/01-design.md](design/01-design.md): the decision record (D0–D17)
+  and the tier table; it owns every decision.
+- [design/reference.md](design/reference.md): the agent-facing reference for
+  the v0 core, written as a delta from Rust, under a 25,000-token budget.
+- [design/02-memory.md](design/02-memory.md): ownership, origins, variance,
+  drop check, `Send`, `Sync`, and `Pure`; the definition the checker
+  implements.
+- [design/03-authority-concurrency.md](design/03-authority-concurrency.md):
+  capabilities, structured tasks, parallelism, the simulator, the Bend
+  boundary, and Rust import.
+- [design/04-contracts.md](design/04-contracts.md): contracts, proof modes,
+  and the trust surface.
 
-* backends
-* infrastructure systems
-* CLIs
-* services
-* data systems
+Chapters 02–04 elaborate draft 2.1 and still describe some later-tier
+features; on any conflict, `01-design.md` and its tier table win.
 
-Current planned characteristics:
+### Research
 
-* compiled
-* statically typed
-* ownership-based
-* safe by default
-* low-entropy
-* performance-transparent
-* tooling-first
+Cited evidence behind the decisions, in [research/](research/):
 
-The public language name is **Ferox**.
+- `00-old-design-salvage.md`: what to keep, drop, and re-decide from the
+  archived first design.
+- `01-bend-hvm.md`: Bend, HVM, and interaction nets, measured against native
+  code.
+- `02-memory-models.md`: memory-safety and aliasing models, from Rust to Hylo
+  and Mojo.
+- `03-compile-speed.md`: which language decisions set the ceiling on check
+  and build speed.
+- `04-verification.md`: practical program verification and how well LLMs
+  produce verified code.
+- `05-llm-code-empirics.md`: which language properties help or hurt LLM
+  coding agents.
+- `06-agent-native-tooling.md`: agent-first languages and the toolchain
+  contract agents need.
+- `07-effects-capabilities.md`: effect systems, capabilities, and purity
+  tracking.
+- `08-type-system-core.md`: types, generics, traits, and metaprogramming.
+- `09-adoption-interop-backends.md`: adoption, interop, and backend and
+  bootstrap strategy.
+- `10-concurrency-parallelism.md`: concurrency, deterministic parallelism, and
+  deterministic simulation testing.
+- `11-bend-interop.md`: how Ferox and Bend 2 divide the work.
 
-The official CLI binary is `ferox`.
+### Reviews and Trials
 
-The official source file extension is `.ferox`.
+- [reviews/](reviews/): adversarial reviews. Round 1 (agent usability,
+  performance, soundness, strategy, verification, and a second-model review)
+  examined draft 1; `round1-resolution.md` audits draft 2 against it. Round 2
+  (simplicity and a second-model review) examined draft 2.1 and led to the
+  tier split.
+- [trials/e1/](trials/e1/): the first E1 learnability pilot. An agent that saw
+  only `reference.md` wrote ten programs, which `grading.md` grades without a
+  compiler against the normative chapters. It estimated a 6/10 first-check
+  pass rate against about 9/10 for Rust, with no leaked Rust habits; the
+  misses trace to gaps in the reference and one design gap.
 
-The v1 semantic core has recently been narrowed through an adversarial review pass.
+## v0 Core and Later Tiers
 
-Current implementation verdict:
+- **v0 core**: Rust surface and ownership with origins; traits with a power
+  ceiling; `Result` and `?`; built-in `!` forms and derives; capabilities and
+  `Root`; the `Pure` auto trait; structured tasks on blocking and thread
+  runtimes; channels, `Shared::with`, `join`, `par_map`, and `par_for`;
+  executable contracts as runtime checks and property-test drivers; the
+  simulator with crashes and durability; the declared-authority trust diff;
+  per-dependency grants; the agent toolchain on an interpreter, then a
+  Cranelift-class backend.
+- **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the
+  evented runtime, the C-emitting release backend, FFI, Rust crate import,
+  `par_reduce`, field-borrow declarations, and production record and replay.
+- **Later**: the Bend tandem, deferred overflow traps, automatic
+  parallelization, `Shape` reflection, Polonius-precision borrows, and
+  interactive-proof export.
 
-* start a narrow Rust bootstrap now
-* keep deeper semantic ambition staged and architecture-first
+## Project Process
 
-Current version ladder:
+- [AGENTS.md](AGENTS.md): rules for agents working here, generated from a
+  pinned protocol profile plus `.agent-protocols.local.md`.
+- [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
+  set architecture, write specifications, and review.
+- [AI_SUPERVISOR.md](AI_SUPERVISOR.md): the AI supervisor review every PR
+  needs before it merges.
+- [BR_WORKFLOW.md](BR_WORKFLOW.md): how `br` tracks work and which `.beads/`
+  files are committed.
+- Open work lives in beads (`.beads/issues.jsonl`), managed with `br`.
 
-* v1: Safe Core
-* v2: Safe Change
-* v3: Deep Assurance
+## History
 
-## Repository Guide
-
-The main documents are:
-
-* [spec.md](./spec.md): spec index and document map
-* [spec/LANGUAGE.md](./spec/LANGUAGE.md): language-spec entrypoint and topic map
-* [spec/VISION.md](./spec/VISION.md): project vision, priorities, and positioning
-* [spec/TOOLING.md](./spec/TOOLING.md): tooling-spec entrypoint and topic map
-* [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md): bootstrap and self-hosting strategy
-* [TASKS.md](./TASKS.md): completed-task archive
-* [BR_WORKFLOW.md](./BR_WORKFLOW.md): `br` workflow and open-task tracking rules
-* [V1_DIRECTION.md](./V1_DIRECTION.md): current narrowed v1 direction after the adversarial review
-* [ROADMAP.md](./ROADMAP.md): version roadmap and implementation-path summary
-* [V2_BACKLOG.md](./V2_BACKLOG.md): post-v1 candidate backlog
-* [V3_BACKLOG.md](./V3_BACKLOG.md): long-horizon backlog
-* [PUBLIC_NAME_REVIEW.md](./PUBLIC_NAME_REVIEW.md): naming review history and final decision
-* [FEROX_DOMAIN_STRATEGY.md](./FEROX_DOMAIN_STRATEGY.md): first-pass domain strategy for `Ferox`
-* [FEROX_TRADEMARK_REVIEW.md](./FEROX_TRADEMARK_REVIEW.md): first-pass trademark review for `Ferox`
-* [FEROX_SOFTWARE_BRAND_REVIEW.md](./FEROX_SOFTWARE_BRAND_REVIEW.md): first-pass software and developer-brand review for `Ferox`
-* [AI_SUPERVISOR.md](./AI_SUPERVISOR.md): mandatory AI supervisor review policy and prompt template
-* [FEATURE_REVIEW.md](./FEATURE_REVIEW.md): feature-by-feature strategic review
-* [COMPARISON.md](./COMPARISON.md): positioning against Rust, Zig, and Go
-* [MEMORY_MODEL_RESEARCH.md](./MEMORY_MODEL_RESEARCH.md): research notes for the ownership and borrowing design
-* [GOVERNANCE.md](./GOVERNANCE.md): project governance rules
-
-## Current Progress
-
-Already specified:
-
-* core language rules across ownership, types, syntax, async/concurrency, errors, modules, and generics in [spec/LANGUAGE.md](./spec/LANGUAGE.md) and [spec/language/](./spec/language)
-* tooling, package, formatter, and machine-contract rules in [spec/TOOLING.md](./spec/TOOLING.md) and [spec/tooling/](./spec/tooling)
-* bootstrap sequencing, compiler architecture, validation harness, and self-hosting criteria in [spec/IMPLEMENTATION.md](./spec/IMPLEMENTATION.md)
-
-Under active v1 review and still subject to cuts or deferral:
-
-* semantic edge cases that may still surface once ownership and async checks are implemented
-
-Still in progress:
-
-* architecture-first Rust bootstrap work against the narrowed v1
-* `br`-tracked open work for the first bootstrap queue
-
-## Near-Term Priorities
-
-The next core design work is focused on:
-
-* keeping the v1 core narrow and coherent
-* sharpening the safe-change vision and low-entropy design filter
-* treating fast incremental `check` and machine-readable tooling as core product goals
-* starting implementation without reintroducing deferred systems
-* later-version backlog discipline
-* validating the narrowed spec through a real bootstrap path
-
-## Principle
-
-Ferox is trying to be bold selectively:
-
-* bold in ownership, explicitness, low entropy, and analyzability
-* conservative where extra semantic novelty would make the system harder to reason about
+- [archive/v0-design/](archive/v0-design/): the first design, superseded by
+  `design/`; its name predates the v0 core tier and is unrelated to it.
+  `research/00-old-design-salvage.md` records what carried over.
+- Naming: [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md) records the choice of
+  the name Ferox; the `FEROX_*` documents review its domains, trademarks, and
+  software brand, and the `ORBIS_*` documents review the rejected candidate
+  Orbis.
+- [ZERO_LANGUAGE_FINDINGS.md](ZERO_LANGUAGE_FINDINGS.md): findings from a
+  review of Zerolang (Zero), an agent-first language.
+- [TASKS.md](TASKS.md) and `tasks/`: tasks from the first design's bootstrap
+  work.
