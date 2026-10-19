@@ -94,12 +94,12 @@ Notes:
 - **Owned buffers.** The kernel only ever owns runtime buffers.
   `read(&mut buf)` copies out of one; `read_owned(buf)` and `write_owned(buf)`
   move a `Vec<u8>` in and return it, inside the error on failure. Cancellation
-  never leaves the kernel writing into unwound Ferox memory.
+  never leaves the kernel writing into unwound Tide memory.
 - **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
   value. Authority is spent at seeding; drawing from a `Pcg64` is
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
 - **Processes.** A child process is not capability-checked, so `Proc` is the
-  widest grant in the set and `ferox review` lists every new path to it.
+  widest grant in the set and `tide review` lists every new path to it.
 - **`fault_point(name) -> bool`** returns `false` under every real runtime and
   folds to a constant; under the simulator it is a seed-driven fault trigger
   (§9.4).
@@ -173,7 +173,7 @@ N1). Test builds add the simulator behind one predictable branch.
 - **ROOT-3.** `Root::sim`, `SimRoot`, `NodeRoot`, and everything in
   `std::sim` compile only in test code: `#[cfg(test)]` items, `#[test]` and
   `#[sim_test]` functions, and files under `tests/` (`FX0504`). Under
-  `ferox sim` the runtime, not user code, builds the simulated root. A
+  `tide sim` the runtime, not user code, builds the simulated root. A
   dependency's test code is never compiled into its dependents, so a
   simulated capability cannot reach production code.
 - **ROOT-4.** Capability and handle types cannot be made from data: they have
@@ -212,7 +212,7 @@ N1). Test builds add the simulator behind one predictable branch.
 
 What replaces each use of global state:
 
-| Rust habit | Ferox |
+| Rust habit | Tide |
 | --- | --- |
 | `lazy_static!`, `LazyLock`, `OnceLock` tables | `const`, or a lazy static under GLOBAL-2 |
 | a global cache, memo table, or interner | a value owned by the caller and passed by `&mut`; in concurrent code, a `Shared<Cache>` |
@@ -310,7 +310,7 @@ table.
 - `dyn Trait` without `+ Pure`, and unbounded type parameters.
 
 Everything else is `Pure` exactly when its components are, including `Cell`,
-`RefCell`, `Rc`, collections, closures, and Ferox function pointers (a
+`RefCell`, `Rc`, collections, closures, and Tide function pointers (a
 pointee's authority arrives through its arguments).
 
 **`Pure + Sync`** replaces draft 2's `Frozen` (D7): `Sync` excludes `Cell`,
@@ -330,7 +330,7 @@ also cannot create a synchronization handle, since that takes `&Tasks`
 
 `#[pure]` asserts authority-freedom for every instantiation the bounds
 allow; an edit that breaks it is `FX0511`. Every public function's interface
-records the property anyway, and `ferox review` reports its loss as an API
+records the property anyway, and `tide review` reports its loss as an API
 change, which answers the design's open question 4.
 
 ### 3.3 What authority-freedom guarantees
@@ -438,7 +438,7 @@ parameter; review still shows their exercised paths.
 
 ### 4.3 The trust diff
 
-`ferox review <base>` has an authority section. It lists only items whose
+`tide review <base>` has an authority section. It lists only items whose
 summaries changed, grouped by kind, with the attenuation in `main` that
 reaches each changed path:
 
@@ -457,9 +457,9 @@ trust holes                                                      unchanged
 New paths to `proc`, `foreign`, and `accel` are listed first. `--full`
 prints every public item's declared and exercised authority.
 
-### 4.4 `ferox fix --thread`
+### 4.4 `tide fix --thread`
 
-`ferox fix --thread <Cap> --to <fn>` adds a capability parameter along a
+`tide fix --thread <Cap> --to <fn>` adds a capability parameter along a
 call chain as one checked, atomic, multi-file edit:
 
 1. Choose the shortest call path from a function holding a `Cap` to `<fn>`;
@@ -510,7 +510,7 @@ the fallback is a declared authority list on types that hold capabilities.
   5. the same holds for the foreign destructor of any handle it returns.
   Pure foreign code that is not thread-safe is wrapped in a type that is not
   `Sync`, and its functions take that handle.
-- **FFI-4. Attenuation is the wrapper's job.** Foreign code ignores Ferox
+- **FFI-4. Attenuation is the wrapper's job.** Foreign code ignores Tide
   attenuation, so a wrapper that gives foreign code a path must check it.
   The preferred form passes an open descriptor instead: `fs.open(p)?` returns
   a `File`, and the wrapper passes `file.as_raw_fd()`.
@@ -523,16 +523,16 @@ the fallback is a declared authority list on types that hold capabilities.
 ### 5.2 Simulation of foreign effects
 
 A wrapper that takes capabilities may name a model,
-`#[sim_model(path::to::model_fn)]`: a Ferox function with the same signature,
+`#[sim_model(path::to::model_fn)]`: a Tide function with the same signature,
 written against simulated capabilities. The sim build lists every reachable
-wrapper without one (`FX0514`); `ferox sim` refuses to run while any remain
+wrapper without one (`FX0514`); `tide sim` refuses to run while any remain
 unless `--allow-unmodeled` is given, which marks the run non-replayable.
 `#[trusted_pure]` calls need no model; the determinism self-check (§9.7)
 catches some false claims.
 
 ### 5.3 Callbacks
 
-- **FFI-6.** A Ferox function or closure passed to foreign code must be
+- **FFI-6.** A Tide function or closure passed to foreign code must be
   authority-free (`FX0513`). It therefore never suspends, so no foreign frame
   is ever live across a suspension point, and a task can migrate between
   workers without moving foreign frames (`reviews/round1-codex.md` B3).
@@ -565,7 +565,7 @@ runtimes tasks never migrate, so pinning is a no-op.
 
 The origin structure is `02-memory.md` §8.2; the names here are normative.
 
-```ferox
+```tide
 impl Tasks {
     pub fn scope<T, E, F>(&self, body: F) -> Result<T, E>
         where E: From<TaskError> + Send, F: FnOnce(Scope<E> from self) -> Result<T, E>;
@@ -659,7 +659,7 @@ checkpoints. `recv_deadline(t)` returns `Timeout` at `t`. Payloads must be
 
 ### 6.5 `Shared::with`
 
-```ferox
+```tide
 impl<T: Send + Pure> Shared<T> {
     pub fn new(v: T, tasks: &Tasks) -> Shared<T>;
     pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
@@ -767,7 +767,7 @@ connection handler holds tens to hundreds of bytes.
 
 Under `blocking` and `threads`, every function is compiled as an ordinary
 function and suspension blocks the OS thread. The simulator uses either
-lowering (§9.1). Foreign code calls only authority-free Ferox code (FFI-6),
+lowering (§9.1). Foreign code calls only authority-free Tide code (FFI-6),
 which is never lowered, and wrapper calls that block run on the blocking pool
 while the task's frame waits (FFI-5). One package compiled to mid-IR serves
 every runtime; the instantiation cache keys may-suspend instances by
@@ -848,8 +848,8 @@ simulator, parallel branches run on real cores.
 
 A simulation is defined by its scheduler decisions, so three engines can run
 it: baton-passed OS threads, one runnable at a time (default for
-`ferox test`); the evented lowering on one thread (default for long
-`ferox sim` runs, once the evented runtime exists in v1); and the
+`tide test`); the evented lowering on one thread (default for long
+`tide sim` runs, once the evented runtime exists in v1); and the
 interpreter. Decisions happen at the same points in each, and v0 overflow
 traps are precise in every engine (D3), so a seed yields one trace in all of
 them; conformance tests check it.
@@ -862,8 +862,8 @@ them; conformance tests check it.
 `sim.node` (§9.5), and `sim.elapsed()`, `sim.records()`, and `sim.trace()`
 for assertions.
 The test body runs as the simulation's main task. `#[sim_test(seeds = N)]`
-gives a test a fresh `SimRoot` per seed; `ferox test` runs 100 seeds by
-default and `ferox sim --test` runs more.
+gives a test a fresh `SimRoot` per seed; `tide test` runs 100 seeds by
+default and `tide sim --test` runs more.
 
 ### 9.3 Time and scheduling
 
@@ -897,7 +897,7 @@ default and `ferox sim --test` runs more.
 | `fault_point(name, p)` | probability that `tasks.fault_point(name)` returns true |
 | `accel_crash(p)` | Bend kernel failures (§10) |
 
-`ferox sim` defaults to swarm testing: each seed enables a random subset of
+`tide sim` defaults to swarm testing: each seed enables a random subset of
 faults at random rates.
 
 ### 9.5 Nodes
@@ -919,10 +919,10 @@ over the surviving disk. `sim.run_for(d)` and `sim.run_until(&handle)`,
 which returns the entry's `Result<T, E>`, drive the world; `node.fs()`
 inspects a node's disk.
 
-### 9.6 `ferox sim`
+### 9.6 `tide sim`
 
 ```text
-ferox sim [<bin> -- args | --test <name>] [--seeds N | --seed S] [--time 10m]
+tide sim [<bin> -- args | --test <name>] [--seeds N | --seed S] [--time 10m]
           [--strategy random|pct] [--faults swarm|none|<plan.toml>]
           [--minimize] [--allow-unmodeled] [--json]
 ```
@@ -932,11 +932,11 @@ NDJSON record per failing seed and a summary:
 
 ```json
 {"kind":"sim_failure","target":"kv::tests::acked_writes_survive","seed":3141,
- "commit":"e9d8ed4","toolchain":"ferox 0.4.1","virtual_time":"0.704s","steps":18342,
+ "commit":"e9d8ed4","toolchain":"tide 0.4.1","virtual_time":"0.704s","steps":18342,
  "failure":{"type":"panic","message":"acked k17 missing on backup",
-            "span":"src/kv.fx:121:13","node":"client","task":"0"},
+            "span":"src/kv.tide:121:13","node":"client","task":"0"},
  "faults":["partition#1 at 0.200s"],
- "replay":"ferox sim --test kv::tests::acked_writes_survive --seed 3141",
+ "replay":"tide sim --test kv::tests::acked_writes_survive --seed 3141",
  "trace":"target/sim/acked_writes_survive-3141.ndjson","trace_hash":"9f2c…"}
 ```
 
@@ -950,7 +950,7 @@ preemptions toward a shorter failing trace.
 ### 9.7 Determinism self-check
 
 The first seed of every run, and every failing seed, runs twice and the
-trace hashes are compared. On a mismatch `ferox sim` reports the first
+trace hashes are compared. On a mismatch `tide sim` reports the first
 diverging pair of events with spans. The usual causes are an unmodeled
 foreign effect, a false `#[trusted_pure]` claim, unsafe code observing
 addresses, or a toolchain bug.
@@ -977,7 +977,7 @@ real child processes, which need a `sim.world.proc` model.
 life = { bend = "=2.0.37", src = "kernels/", mode = "process" }  # "inproc" needs grants = ["ffi"]
 ```
 
-```ferox
+```tide
 #[bend(dep = "life", def = "Life.steps", reference = life_steps_ref)]
 pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendArray<u32>, BendFault>
     ensures result.is_ok() ==> result.unwrap().len() == board.len()
@@ -1004,7 +1004,7 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   across. `BendArray<u32 | f32>` pads to a power of two with the logical
   length passed. `Vec<T>`, `String`, and `[u8]` copy to lists. `BendNat` is
   range-checked below 2^48. 64-bit types are compile errors for now. Bend
-  arithmetic wraps; Ferox's checks stop at the boundary.
+  arithmetic wraps; Tide's checks stop at the boundary.
 - **Failures.** `BendFault` is `Crashed { code, stderr_tail }`,
   `FailStop(n)`, `Limit(what)` (from pre-validation of Bend's known limits),
   `Protocol` (version or schema mismatch), or `Unavailable`. A kernel that
@@ -1013,14 +1013,14 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   runs the `reference` implementation if one is declared, and otherwise the
   real kernel outside virtual time, recording the result's hash. Latency is
   modeled, and `accel_crash` exercises the failure paths.
-- **Imported claims.** A `by bend_law` clause is accepted only if Ferox can
+- **Imported claims.** A `by bend_law` clause is accepted only if Tide can
   render it as a Bend law (first-order fragment), the pinned `bend` verdict
   passes, and the verdict lists no foreign or `@unsafe` dependency. The claim
   enters the trust surface as `external: bend` with version and hashes in the
-  lockfile. It never counts as Ferox-proved; a Ferox proof may use it only as
+  lockfile. It never counts as Tide-proved; a Tide proof may use it only as
   a counted assumption. Under `assert` and `test` the clause is still checked
   at run time where executable.
-- **Differential tests.** With a `reference`, `ferox test` property-tests the
+- **Differential tests.** With a `reference`, `tide test` property-tests the
   kernel against it; deterministic `par_map` makes exact comparison meaningful.
 
 ## 11. Imported Rust Crates (v1)
@@ -1031,7 +1031,7 @@ regex = { version = "1.11", authority = [] }
 rusqlite = { version = "0.32", authority = ["fs.read", "fs.write"], build = true }
 ```
 
-- **RUST-1. Shims.** Ferox generates explicitly instantiated C-ABI shims
+- **RUST-1. Shims.** Tide generates explicitly instantiated C-ABI shims
   for the synchronous APIs it uses; async, macro-driven, and lifetime-heavy
   APIs need a hand-written Rust shim.
 - **RUST-2. Authority.** With `authority = []`, every wrapper is
@@ -1060,14 +1060,14 @@ What this cannot guarantee: a present symbol may be unreachable, and the
 scan misses inline-assembly syscalls and inherited descriptors; Rust code
 ignores attenuation (FFI-4); Rust `unsafe` may be unsound; simulation through
 libc interposition is best-effort; a build script can emit malicious code
-into its outputs; threads a crate spawns escape Ferox scheduling. The trust
+into its outputs; threads a crate spawns escape Tide scheduling. The trust
 surface marks each crate `rust: declared, scan-checked, unverified`.
 
 ## 12. Worked Examples
 
 ### 12.1 A command-line tool
 
-```ferox
+```tide
 #[derive(Debug, Error)]
 enum CliError {
     #[error("usage: lc <file>...")]
@@ -1111,7 +1111,7 @@ fn counts_lines() {
 
 ### 12.2 A concurrent fetcher with a deadline
 
-```ferox
+```tide
 #[derive(Debug, Error)]
 pub enum FetchError {
     #[error("task: {0}")]
@@ -1154,7 +1154,7 @@ an error, so the deadline does not fail the scope: both joins return and
 
 ### 12.3 A replicated key-value node under a partition
 
-```ferox
+```tide
 pub struct Node { pub net: Net, pub fs: Fs, pub clock: Clock, pub tasks: Tasks, pub backup: Option<String> }
 
 pub fn serve(node: &Node, addr: &str) -> Result<(), ServeError> {   // ServeError: #[from] TaskError, io::Error, ..
@@ -1230,7 +1230,7 @@ run exactly.
 
 ### 12.4 A bank transfer with `Shared::with2`
 
-```ferox
+```tide
 #[derive(Debug, Error)]
 pub enum BankError {
     #[error("insufficient funds")]

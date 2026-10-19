@@ -1,12 +1,12 @@
-# Ferox Governance
+# Tide Governance
 
 ## Development Rule - Agent-Produced Code
 
-Ferox development follows an **agent-produced code rule**.
+Tide development follows an **agent-produced code rule**.
 
 Primary rule:
 
-> No production Ferox code should originate from direct human coding.
+> No production Tide code should originate from direct human coding.
 
 Human responsibilities:
 
@@ -31,11 +31,11 @@ Philosophy:
 > Humans define the system.
 > Agents produce the code.
 
-This rule is project governance, not part of the Ferox language specification.
+This rule is project governance, not part of the Tide language specification.
 
 ## Merge Rule - AI Supervisor Pass
 
-Ferox also follows an **AI supervisor merge rule**.
+Tide also follows an **AI supervisor merge rule**.
 
 Primary rule:
 
@@ -51,7 +51,7 @@ Current operating model:
 The supervisor reviews proposed changes against:
 
 * the existing codebase
-* the relevant Ferox specs
+* the relevant Tide specs
 * surrounding architecture
 * project simplicity and correctness standards
 
@@ -70,7 +70,7 @@ Detailed workflow and prompt guidance live in [AI_SUPERVISOR.md](./AI_SUPERVISOR
 
 ## Operational Work Tracking
 
-Ferox uses `br` as the canonical tracker for open work.
+Tide uses `br` as the canonical tracker for open work.
 
 Canonical open-task state lives in the committed `.beads/issues.jsonl` ledger and its associated `br` metadata.
 
@@ -80,13 +80,13 @@ The detailed `br` workflow is documented in [BR_WORKFLOW.md](./BR_WORKFLOW.md).
 
 ## Design Admission Rule
 
-Ferox should apply an explicit low-entropy admission filter to major language and toolchain changes.
+Tide should apply an explicit low-entropy admission filter to major language and toolchain changes.
 
 Core rule:
 
 > A feature should be rejected by default if it increases semantic entropy more than it improves safe change.
 
-Before accepting a substantial design addition, Ferox should ask:
+Before accepting a substantial design addition, Tide should ask:
 
 * does this improve mechanically safer change?
 * does this reduce or increase the number of overlapping ways to solve the same problem?

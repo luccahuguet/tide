@@ -1,4 +1,4 @@
-# Ferox Memory: Ownership and Origins
+# Tide Memory: Ownership and Origins
 
 Status: draft 1, synchronized with draft 3. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
@@ -12,7 +12,7 @@ Polonius-precision borrows (§2.8, §12). Draft 3 removed `Frozen` (§9 now
 requires `Pure + Sync`), the `lock` keyword (§8.4, now `Shared::with`),
 `par { }` (§8.5, now `join`), and the moved-out rule (§8.3).
 
-Notation. Ferox code is in `ferox` blocks and Rust in `rust` blocks. In rules,
+Notation. Tide code is in `tide` blocks and Rust in `rust` blocks. In rules,
 `ρ`, `σ` and `τ` are origins, `ℓ` is a loan, and `p` and `q` are places.
 `ρ ⊆ σ` means "σ may carry every loan of ρ"; in Rust this is `'ρ: 'σ`.
 
@@ -339,7 +339,7 @@ origin where it would otherwise have two. The named place may be any sibling
 path that holds exactly one origin: `from lx.src`, `from *out`. Order does not
 matter, and mutual references collapse into one origin.
 
-```ferox
+```tide
 struct Collector { src: &str, out: &mut Vec<&str from src> }   // origins: src, out
 ```
 
@@ -394,7 +394,7 @@ Rust: `struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`.
 
 ### 4.1 Rules
 
-Ferox subtyping comes only from origins and from instantiating higher-ranked
+Tide subtyping comes only from origins and from instantiating higher-ranked
 origins.
 
 ```
@@ -561,7 +561,7 @@ the destructor on an inner owned type. Thanks to the exemption, a
 
 **Syntax.** A method receiver may name the fields it borrows:
 
-```ferox
+```tide
 fn advance(&mut self.{pos})                  // mutable borrow of `pos`
 fn peek(&self.{src, pos}) -> Option<char>    // shared borrow of `src` and `pos`
 fn step(&mut self.{pos, &src})               // mutable `pos`, shared `src`
@@ -652,7 +652,7 @@ construct that §11 cannot translate.
 The names and failure semantics are those of `03-authority-concurrency.md`
 §6.1. The origin structure is normative here.
 
-```ferox
+```tide
 impl Tasks {
     pub fn scope<T, E, F>(&self, body: F) -> Result<T, E>
         where E: From<TaskError> + Send, F: FnOnce(Scope<E> from self) -> Result<T, E>;
@@ -782,7 +782,7 @@ These are **not `Pure`**:
 
 **Everything else is `Pure` exactly when its components are**, including
 references, std collections, `Rc`, `rc::Weak`, `Cell`, `RefCell`, `Arena`,
-structs, enums and closures. Ferox function pointers are `Pure`: any
+structs, enums and closures. Tide function pointers are `Pure`: any
 authority the pointee uses arrives through its arguments.
 
 **What `Pure` guarantees.** A function whose parameter and capture types are
@@ -797,7 +797,7 @@ nor create one (D7).
 a result that depends on other tasks. `Arc` and `sync::Weak` are therefore
 synchronization handles (D7): even without count readers, the last release
 runs `T::drop` in whichever task drops last, `make_mut` calls `Clone` only
-when another clone exists, and `upgrade` observes other tasks' drops. Ferox's
+when another clone exists, and `upgrade` observes other tasks' drops. Tide's
 `Arc` also omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap` and
 `into_inner`. Authority-free and parallel code shares data by reference
 inside a scope instead.
@@ -823,11 +823,11 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 
 ## 10. Worked examples
 
-Each example shows Ferox, the Rust it corresponds to, and the verdict.
+Each example shows Tide, the Rust it corresponds to, and the verdict.
 
 ### 10.1 Iterators over a `Vec`
 
-```ferox
+```tide
 fn total_len(words: &Vec<String>) -> usize {
     words.iter().map(|w| w.len()).sum()
 }
@@ -860,7 +860,7 @@ would borrow `min_age` and be rejected, as in Rust.
 
 ### 10.2 `HashMap` get and entry
 
-```ferox
+```tide
 fn count_words(text: &str) -> HashMap<&str, usize> {
     let mut counts = HashMap::new();
     for w in text.split_whitespace() {
@@ -893,7 +893,7 @@ origin of its own; the origins of `K` and `V` are not counted.
 **Rejected in v1**, as in stable Rust, is the conditional return of a lookup
 (NLL problem case #3):
 
-```ferox
+```tide
 fn get_default(map: &mut HashMap<String, String>, k: &str) -> &mut String from map {
     if let Some(v) = map.get_mut(k) { return v; }   // error: `*map` still mutably borrowed
     map.insert(k.to_string(), String::new());
@@ -905,7 +905,7 @@ The idiom is `map.entry(k.to_string()).or_default()`.
 
 ### 10.3 A lexer holding `&str`
 
-```ferox
+```tide
 pub struct Lexer { src: &str, pos: usize }
 
 impl Lexer {
@@ -941,7 +941,7 @@ The diagnostic suggests `from self.src`.
 
 ### 10.4 A parser returning slices of its input
 
-```ferox
+```tide
 pub struct Parser { lx: Lexer, peeked: Option<&str from lx.src> }   // one origin: lx.src
 
 impl Parser {
@@ -973,7 +973,7 @@ the text.
 
 ### 10.5 Builders
 
-```ferox
+```tide
 #[derive(Default)]
 pub struct Request { url: String, headers: Vec<(String, String)>, timeout: Option<Duration> }
 
@@ -1011,7 +1011,7 @@ Rust, and the body would be rejected.
 
 ### 10.6 `longest`
 
-```ferox
+```tide
 fn longest(a: &str, b: &str) -> &str from a, b {
     if a.len() >= b.len() { a } else { b }
 }
@@ -1035,7 +1035,7 @@ fn longest_word<'w>(words: &[&'w str]) -> &'w str { /* … */ }
 
 ### 10.7 A struct holding references from two sources
 
-```ferox
+```tide
 pub struct Match { needle: &str, line: &str }       // two origins: needle, line
 
 pub fn find(needle: &str, text: &str) -> Option<Match from { needle: needle, line: text }> {
@@ -1061,7 +1061,7 @@ because `pat` dies at the end of `first_error`.
 
 ### 10.8 A struct whose fields share an origin
 
-```ferox
+```tide
 struct Collector { src: &str, out: &mut Vec<&str from src> }
 
 impl Collector {
@@ -1089,7 +1089,7 @@ either unsound or unusable (B1).
 
 ### 10.9 A graph through `Arena` handles
 
-```ferox
+```tide
 struct Node { name: String, edges: Vec<Id<Node>> }
 
 fn build() -> (Arena<Node>, Id<Node>) {
@@ -1120,7 +1120,7 @@ together with `g.get_disjoint_mut([a, b])`, checked at run time.
 
 ### 10.10 `Rc<RefCell<T>>`
 
-```ferox
+```tide
 struct TreeNode { val: i32, children: Vec<Rc<RefCell<TreeNode>>>, parent: rc::Weak<RefCell<TreeNode>> }
 
 let leaf = Rc::new(RefCell::new(TreeNode { val: 3, children: vec![], parent: rc::Weak::new() }));
@@ -1138,7 +1138,7 @@ panics.
 
 ### 10.11 A trait object holding a reference
 
-```ferox
+```tide
 fn words(text: &str) -> Box<dyn Iterator<Item = &str> from text> {
     Box::new(text.split_whitespace())
 }
@@ -1174,7 +1174,7 @@ on §5.1's default bound behind `&mut`.
 
 ### 10.12 Scoped tasks borrowing a slice
 
-```ferox
+```tide
 fn parallel_sum(tasks: &Tasks, xs: &[u64]) -> Result<u64, TaskError> {
     let mid = xs.len() / 2;
     let mut sums = [0u64; 2];
@@ -1226,13 +1226,13 @@ child panicked instead, `scope` would panic and neither arm would run (§8.3).
 scope (`reviews/round1-soundness.md` B2.4). The second spawn is accepted,
 because its closure owns everything it uses.
 
-Like Rust's scope, Ferox's re-raises a child's panic (§8.3). For pure work
-the Ferox idiom is
+Like Rust's scope, Tide's re-raises a child's panic (§8.3). For pure work
+the Tide idiom is
 `let (a, b) = join(|| sum(&xs[..mid]), || sum(&xs[mid..]));`.
 
 ## 11. Soundness sketch: translation to Rust
 
-**Claim.** For every program `P` that the Ferox checker accepts, the
+**Claim.** For every program `P` that the Tide checker accepts, the
 translation `τ(P)`, Rust with explicit lifetimes, is accepted by rustc's NLL
 borrow checker, except at the constructs listed as non-exact below.
 
@@ -1240,12 +1240,12 @@ Rust's soundness covers the rest: RustBelt for the core type system, plus
 std's audited unsafe code. That gives memory safety and data-race freedom
 for `P`. `τ` is a proof device and the CI oracle of D12's origin cross-check;
 it is not a backend. The cross-check runs on the test corpus and on every
-change to std. A program that Ferox accepts and rustc rejects blocks the
+change to std. A program that Tide accepts and rustc rejects blocks the
 release.
 
 ### 11.1 The translation
 
-| Ferox | Rust | Exact? |
+| Tide | Rust | Exact? |
 | --- | --- | --- |
 | A borrowing struct or enum | one lifetime parameter per origin, in name order; `from` in a field reuses the named lifetime; recursive occurrences reuse the declaration's lifetimes; rustc derives the same variances from the same fields | yes |
 | Elided origins in signatures | the same elided positions; output elision under identical rules | yes |
@@ -1309,7 +1309,7 @@ release.
    every containing type, possibly far from the edit. The interface diff
    reports such changes in public types as breaking. E1 data should decide
    whether a visible marker such as `view struct` is worth its cost.
-6. **Lifetimes Ferox cannot express.** These are explicit outlives bounds
+6. **Lifetimes Tide cannot express.** These are explicit outlives bounds
    between unrelated origins, lifetime parameters on traits, lending traits
    that need GATs, and `for<'a>` beyond elision. Interop with lifetime-heavy
    Rust APIs is out of scope (Positioning).

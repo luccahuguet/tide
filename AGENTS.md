@@ -223,9 +223,9 @@ reviewed revert unless local policy says otherwise.
 
 ## Repository-local rules
 
-### Ferox
+### Tide
 
-Ferox is a design-first programming language project. `design/01-design.md`
+Tide is a design-first programming language project. `design/01-design.md`
 is the decision record and owns every language decision; the chapters in
 `design/` elaborate it and `design/reference.md` is the agent-loadable core
 reference. `research/` holds cited evidence, `reviews/` the adversarial
@@ -252,4 +252,5 @@ it.
 ### Verification
 
 `scripts/test/e2e_workspace_smoke.sh` runs `cargo test --workspace` and the
-`ferox` CLI smoke checks.
+CLI smoke checks of the early bootstrap scaffold, whose binary keeps
+the working name `ferox`.

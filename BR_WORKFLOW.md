@@ -1,8 +1,8 @@
-# Ferox br Workflow
+# Tide br Workflow
 
 ## Purpose
 
-Ferox uses `br` as the canonical tracker for open work.
+Tide uses `br` as the canonical tracker for open work.
 
 The repo docs still carry task meaning, history, and archive material, but open-task status now lives in `br`.
 
@@ -22,7 +22,7 @@ If task status and repo docs disagree, `br` wins for open work and `TASKS.md` sh
 
 ## Current Scope
 
-Ferox now uses `br` for all open tasks.
+Tide now uses `br` for all open tasks.
 
 The initial seeded queue is:
 

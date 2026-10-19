@@ -1,4 +1,4 @@
-# Ferox Contracts
+# Tide Contracts
 
 Status: draft 1, synchronized with draft 3. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
@@ -163,7 +163,7 @@ Rules that the grammar does not show:
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
    parameter means its value at return (`reference.md` §10.1). From v1, a
    bare `*x` is an error with two machine-applicable fixes, `old(*x)` and
-   `final(*x)` (§4.1), and `ferox fix` rewrites v0 clauses to `final(*x)`.
+   `final(*x)` (§4.1), and `tide fix` rewrites v0 clauses to `final(*x)`.
 5. **`decreases`** on a function bounds recursion; on a loop it bounds
    iterations (§3.3). `diverges` is legal only on exec functions.
 6. **Impls refine trait contracts.** An impl method inherits its trait
@@ -188,7 +188,7 @@ Its meaning is the same in all three uses:
 - **Integers.** Reads of machine integers widen to `int`. `+ - * / %` and
   unary `-` compute in `int` and never overflow. `/` and `%` truncate toward
   zero, as in Rust, so `-7 / 2 == -3`; `div_euclid` and `rem_euclid` give
-  Euclidean results. Verus's ghost `/` is Euclidean; Ferox chooses Rust's
+  Euclidean results. Verus's ghost `/` is Euclidean; Tide chooses Rust's
   rule so that the same text means the same thing in code and in specs.
   Comparisons compare as `int`. Bitwise operators and shifts take operands of
   one machine type, compute at that width with Rust's meaning, then widen.
@@ -226,7 +226,7 @@ local cannot have a spec-only type.
 Every type has a view. The standard library defines the `View` trait with
 Verus's spelling:
 
-```ferox
+```tide
 pub trait View {
     type V;
     spec fn view(&self) -> Self::V;
@@ -346,7 +346,7 @@ package's use, is a downgrade and needs approval (D11, §11).
 ### 2.2 Clause classes
 
 The compiler gives every clause one class, the same in every use, and
-`ferox check` reports it per clause.
+`tide check` reports it per clause.
 
 - **`proof-only`** if the clause contains an unbounded quantifier, `choose`, a
   call to an uninterpreted spec fn, `final` of a prophetic borrow (§4.1),
@@ -423,7 +423,7 @@ gets a property test.
    `requires`. Below a floor (by default 100 accepted cases or 1% acceptance)
    the test fails as `vacuous`, so a filtered test cannot pass on zero cases.
 6. A failure carries the seed, shrunk input, failing clause, and replay
-   command (D14). `ferox test --fuzz` adds coverage-guided mutation.
+   command (D14). `tide test --fuzz` adds coverage-guided mutation.
 
 ### 2.5 `prove`
 
@@ -603,7 +603,7 @@ the callee's `ensures` then determines `final(*x)`. Prophecies arise only
 from `from` returns, `from` identifications into another `&mut` parameter,
 and borrowing types with `&mut` fields; ordinary `&mut` arguments need none.
 
-```ferox
+```tide
 impl<K: Eq + Hash, V> Table<K, V> {
     pub fn get_mut(&mut self, k: &K) -> Option<&mut V>
         ensures match result {
@@ -621,7 +621,7 @@ declaration is part of the hashed signature (§11).
 
 ### 4.2 Type invariants
 
-```ferox
+```tide
 pub struct Span
     invariant self.lo <= self.hi
 {
@@ -702,7 +702,7 @@ Trait methods carry contracts. A trait may declare bodiless `spec fn`s that
 each impl defines, and a method's contract can tie the method to one of them.
 The standard library states its core traits this way:
 
-```ferox
+```tide
 pub trait PartialEq {
     spec fn eq_spec(&self, other: &Self) -> bool;
     fn eq(&self, other: &Self) -> bool
@@ -792,7 +792,7 @@ assumption.
 
 A closure literal may carry clauses, which force a block body:
 
-```ferox
+```tide
 let scale = |x: &i64| -> i64 requires *x < 1_000_000 ensures result == *x * 1000 { *x * 1000 };
 ```
 
@@ -823,7 +823,7 @@ mutated; proved code uses loops for that. At run time each closure checks its
 own clauses on every call, so `f.requires(..)` on a function value is
 `proof-only` at the higher-order function's boundary without losing a check.
 
-```ferox
+```tide
 pub fn map<T, U>(xs: &[T], f: &dyn Fn(&T) -> U) -> Vec<U>
     requires forall |i: int| 0 <= i && i < xs.len() ==> f.requires(&xs[i])
     ensures result.len() == xs.len()
@@ -866,11 +866,11 @@ functions run under `Root::sim` seeds with fault injection.
 
 ### 8.2 Status
 
-`ferox verify` streams NDJSON verdicts per obligation: `pending`, `proved`,
+`tide verify` streams NDJSON verdicts per obligation: `pending`, `proved`,
 `failed` with `confirmed_bug` or `proof_incomplete`, `unknown` (resource limit
 reached), or `unstable` (§9). A solver counterexample is replayed in the
 reference interpreter; `confirmed_bug` means a concrete run violates the
-contract. `ferox check` never runs the solver, to keep its 100 ms budget: it
+contract. `tide check` never runs the solver, to keep its 100 ms budget: it
 reports classes and cached verdicts, marks the rest `pending`, and never says
 `ok` while obligations are pending.
 
@@ -926,7 +926,7 @@ only (D11).
 - **Pinned solver.** Each toolchain release pins one solver build. Upgrades
   rerun all proofs. Proofs are not on the trust surface, so agents repair them
   without approval.
-- **Stability CI.** `ferox verify --stability N` reruns each obligation under
+- **Stability CI.** `tide verify --stability N` reruns each obligation under
   N variants (solver seeds, shuffled declarations, renamed symbols), following
   Mariposa. An obligation that fails under any variant is `unstable`, which
   fails CI when a root spec depends on it and warns otherwise.
@@ -937,8 +937,8 @@ only (D11).
 
 ## 10. Spec quality
 
-Root specs (§11) must pass checks 1–3; all results appear in `ferox check`
-and next to each contract in `ferox review`.
+Root specs (§11) must pass checks 1–3; all results appear in `tide check`
+and next to each contract in `tide review`.
 
 1. **Satisfiability.** The `requires` together with the parameter invariants
    must be satisfiable, and each type invariant must have a model. The
@@ -962,7 +962,7 @@ and next to each contract in `ferox review`.
 6. **Spec tests.** A `#[spec_test]` function holds ground spec assertions,
    evaluated under `test` and decided by `by(compute)` under `prove`:
 
-   ```ferox
+   ```tide
    #[protected]
    #[spec_test]
    fn sort_examples() {
@@ -1007,16 +1007,16 @@ Records live in the repository; the allowlist of approver keys lives outside
 it, in CI configuration the agent cannot write. The CI gate compares the
 candidate with the protected base branch and requires, for every gated
 change, a valid record whose new hash matches exactly. Hashes, lockfiles, and
-caches written in the same change never count. Locally, `ferox check` reports
+caches written in the same change never count. Locally, `tide check` reports
 `pending_approval`. CI runs a protected test only if its hash matches an
-approved one. Agent loops run `ferox verify --deny-new-holes`, the mechanical
+approved one. Agent loops run `tide verify --deny-new-holes`, the mechanical
 cheat checker that brought VeruSAGE's cheating rates below 1.5%.
 
 ## 12. Worked examples
 
 ### 12.1 Binary search, proved
 
-```ferox
+```tide
 pub spec fn sorted(s: Seq<i64>) -> bool {
     forall |i: int, j: int| 0 <= i && i <= j && j < s.len() ==> s[i] <= s[j]
 }
@@ -1059,7 +1059,7 @@ and the generator builds sorted inputs from the `sorted` shape.
 
 ### 12.2 A bounded queue with a type invariant
 
-```ferox
+```tide
 spec fn phys(head: int, k: int, cap: int) -> int {     // slot of logical index k
     if head + k < cap { head + k } else { head + k - cap }
 }
@@ -1157,7 +1157,7 @@ because other tasks share the cell (§4.4).
 
 ### 12.3 A generic sort relying on `Ord` laws
 
-```ferox
+```tide
 pub spec fn sorted_by<T: Ord>(s: Seq<T>) -> bool {
     forall |a: int, b: int| 0 <= a && a < b && b < s.len() ==> le(&s[a], &s[b])
 }

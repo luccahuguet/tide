@@ -186,7 +186,7 @@ validation program (D0) has to settle it.
 
 - **H1: refined, into origins.** Draft 1's version (second-class references
   with views, one implicit region per type) was unsound or unusable as
-  written and stricter than Rust's elision on common accessors, so Ferox
+  written and stricter than Rust's elision on common accessors, so Tide
   keeps Rust's first-class `&` and `&mut` and its elision rules and replaces
   named lifetime parameters with origins, `from` clauses that name a
   parameter or place (D2). The E1 writer used origins correctly in every
@@ -208,9 +208,9 @@ validation program (D0) has to settle it.
 - **H3: refined.** Auto-active SMT contracts give the best agent results on
   the evidence (Dafny 82% against Verus 44% and Lean 27%; agents completed
   81% of real Verus systems proofs), but writing specs is the weak half, and
-  agents game verifiers unless trust holes are policed mechanically. Ferox
+  agents game verifiers unless trust holes are policed mechanically. Tide
   keeps that style but narrows its role: contracts support the trust surface
-  instead of leading it, which keeps Ferox out of Bend's territory; v0 runs
+  instead of leading it, which keeps Tide out of Bend's territory; v0 runs
   them as runtime checks and property tests, `prove` mode is v1, and the
   escape hatch is `#[trusted]` with a reason, with interactive-proof export a
   later tier.
@@ -219,7 +219,7 @@ validation program (D0) has to settle it.
 - **H4: refuted by measurement.** Witness-table generics ran 5.6–23.9x
   slower than monomorphized code in optimized builds and another 1.6–2.1x
   slower on top of unoptimized code, and a separate development code path
-  threatened the equivalence of debug and release builds. Ferox monomorphizes
+  threatened the equivalence of debug and release builds. Tide monomorphizes
   in every profile through one content-addressed instantiation cache, with
   witness tables only as a budgeted fallback that must behave identically
   (D12).
@@ -243,13 +243,13 @@ validation program (D0) has to settle it.
   large single-thread and memory overheads. Deterministic parallelism of pure
   code is inherited natively instead (`join`, `par_map`, and `par_for` equal
   their sequential versions, D9), and Bend 2, the closest peer, works in
-  tandem with Ferox as the owner of proved, parallel kernels (D16).
+  tandem with Tide as the owner of proved, parallel kernels (D16).
   Sources: `research/01-bend-hvm.md`, `research/10-concurrency-parallelism.md`,
   `research/11-bend-interop.md`, `reviews/round1-strategy.md` B1.
 - **H7: refined.** The strongest evidence is for a fast, single-verdict check
   loop with precise, fix-carrying diagnostics (precise feedback raised Rust
   repair rates from 10.7% to 73.7%), not for structured edits, which gave
-  frontier models only 1–5 points. Ferox keeps typed holes (D14), whose
+  frontier models only 1–5 points. Tide keeps typed holes (D14), whose
   benefit as context is shown but whose effect on frontier agents is
   untested, keeps source text canonical with a base hash on every write, and
   treats check latency as a design requirement.

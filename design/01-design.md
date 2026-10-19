@@ -1,4 +1,4 @@
-# Ferox Design
+# Tide Design
 
 Status: draft 3. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
@@ -7,7 +7,7 @@ contradict them; a change of decision is made here first.
 
 ## Thesis
 
-Ferox is a systems language for software that agents write and humans must
+Tide is a systems language for software that agents write and humans must
 trust.
 
 It keeps what makes Rust worth learning: memory safety and data-race freedom
@@ -26,7 +26,7 @@ can reach the outside world from anywhere:
    without capabilities cannot read the clock, the network, files, the
    environment, or randomness, in any dependency.
 2. **Deterministic simulation of whole programs.** Because every source of
-   nondeterminism is a capability, any Ferox program, dependencies included,
+   nondeterminism is a capability, any Tide program, dependencies included,
    runs under a seeded simulator and replays bit for bit from seed and commit,
    provided every foreign effect it reaches has a simulator model; the build
    lists any that do not. Agents get a reproducible oracle for concurrent and
@@ -50,11 +50,11 @@ deterministic replay, with Rust's guarantees and much faster builds.
 - **v0 target**: command-line tools, developer tooling, and infrastructure
   components (agents, proxies, storage engines, schedulers). Blocking and
   thread runtimes plus the simulator; the evented runtime follows.
-- **Rust coexistence**: Ferox builds C-ABI libraries with generated Rust
+- **Rust coexistence**: Tide builds C-ABI libraries with generated Rust
   binding crates, and imports synchronous Rust leaf crates through generated
   shims. Async Rust ecosystems (tokio, axum) and lifetime-heavy APIs
   (serde's `'de`) are out of scope for interop.
-- **Bend tandem, not competition**: Ferox is the effectful, authority-checked
+- **Bend tandem, not competition**: Tide is the effectful, authority-checked
   shell; Bend 2 owns proved, massively parallel kernels (D16).
 - **Evidence-gated**: the thesis is tested by the validation program (D0)
   before syntax freezes.
@@ -77,7 +77,7 @@ later-tier feature, the tier table wins.
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
 already use the clause syntax agents will later prove, so moving proofs in
 later costs no rewrite, while shipping them in v0 would roughly double the
-reference and put Ferox's pitch on Bend 2's ground.
+reference and put Tide's pitch on Bend 2's ground.
 
 v0 removes these from draft 2: the `Frozen` trait (`Pure + Sync` covers it),
 the `lock` keyword (replaced by `Shared::with` methods), `par { }` blocks
@@ -119,10 +119,10 @@ Details and sources are in `research/` and `reviews/`.
 
 The design is a hypothesis. Before syntax freezes, the project runs:
 
-- **E1 learnability**: a fresh agent given only the Ferox reference writes a
+- **E1 learnability**: a fresh agent given only the Tide reference writes a
   fixed task set; pass rates and iterations to green are compared with the
   same agent writing Rust.
-- **E2 productivity**: equivalent multi-file tasks in Ferox (interpreter) and
+- **E2 productivity**: equivalent multi-file tasks in Tide (interpreter) and
   Rust, measuring wall time, iterations, and defects.
 - **E3 review**: reviewers detect planted malicious or authority-widening
   changes using the trust diff versus the plain code diff.
@@ -132,7 +132,7 @@ The design is a hypothesis. Before syntax freezes, the project runs:
   measuring how often they pass `Root`-like bundles everywhere and how large
   the resulting trust diffs are.
 
-Initial thresholds, revised as data arrives: on a 30-task suite, Ferox
+Initial thresholds, revised as data arrives: on a 30-task suite, Tide
 first-check pass rate at least 0.8x the Rust rate and final pass rate at least
 the Rust rate within 1.5x the iterations (E1); reviewers using the trust diff
 catch at least 1.5x as many planted authority-widening changes as with the
@@ -142,7 +142,7 @@ provisional until E1 meets its thresholds.
 
 ### D1. Surface: Rust spelling wherever the meaning is the same
 
-- Rust syntax is Ferox syntax for every construct with the same meaning,
+- Rust syntax is Tide syntax for every construct with the same meaning,
   including `where` clauses, `pub(crate)`, inline `mod` blocks,
   `#[derive(...)]` with Rust's trait names, `#[cfg(test)]`, `'static`,
   `From`/`TryFrom`/`Into`, `wrapping_add`, `checked_add`, `saturating_add`,
@@ -157,7 +157,7 @@ provisional until E1 meets its thresholds.
 - Named lifetimes whose use maps exactly onto origins are accepted as a
   legacy spelling and rewritten to `from` by the formatter; other uses are
   errors with suggested origins (D2).
-- Where Ferox's meaning differs, the Rust spelling is rejected with a
+- Where Tide's meaning differs, the Rust spelling is rejected with a
   machine-applicable fix: `async`/`.await`
   (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
   I/O such as `std::env::args()` or `std::fs::read` (→ capabilities, D7),
@@ -322,7 +322,7 @@ serialization as the default (5–7x slower in prior art).
   read the environment, or spawn.
 - `main` may take `root: Root`, the only source of capabilities. `Root` can be
   named only in `main`; a simulated root (`Root::sim(seed)`) only in tests and
-  in `ferox sim`.
+  in `tide sim`.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
@@ -362,14 +362,14 @@ serialization as the default (5–7x slower in prior art).
   parameters. A call through a closure or `dyn` value may suspend exactly when
   that value's type is not `Pure`.
 - **Foreign calls carry authority.** `extern` declarations are allowed only in
-  packages granted `ffi`. Each foreign function is wrapped by a Ferox
+  packages granted `ffi`. Each foreign function is wrapped by a Tide
   signature that takes the capabilities it may use, or is marked
   `#[trusted_pure]` with a reason, which counts as a trust hole.
 - The manifest grants escape hatches per dependency: `unsafe`, `ffi`. There
   are no build scripts or install hooks. The lockfile records each package's
   public authority; an upgrade that widens it fails until approved (D13).
 - Tooling reports **declared and exercised authority** for every public item
-  and lints over-granted capabilities. `ferox fix` can thread a capability
+  and lints over-granted capabilities. `tide fix` can thread a capability
   through a call chain.
 
 Rejected: effect rows and effect variables; implicit capability resolution
@@ -500,7 +500,7 @@ stackful execution internally.
 - Trust holes are counted transitively: `unsafe`, `#[trusted]`,
   `#[trusted_pure]`, `assume`, foreign calls, unproved impls of laws, and
   unproved dependency contracts that a proof relies on.
-- `ferox review <base>` prints the trust diff. It also reports **spec
+- `tide review <base>` prints the trust diff. It also reports **spec
   coverage**: which public items have contracts and at what status. Items
   without contracts still need ordinary review and tests; the trust diff
   narrows review, it does not replace it.
@@ -549,17 +549,17 @@ stackful execution internally.
 
 - An **origin cross-check** tool translates signatures and bodies to Rust
   with explicit lifetimes and runs `rustc`'s borrow checker over the test
-  corpus, so the Ferox checker is continuously compared with Rust's. It is a
+  corpus, so the Tide checker is continuously compared with Rust's. It is a
   test oracle, not a backend.
 
 Rejected: Rust emission as the release backend (53 s clean builds, coupling
-to rustc's borrow precision, no route to stackless lowering of Ferox tasks);
+to rustc's borrow precision, no route to stackless lowering of Tide tasks);
 witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 1.0.
 
 ### D13. Packages and supply chain
 
-- Ferox packages have no build scripts, install hooks, or code that runs at
+- Tide packages have no build scripts, install hooks, or code that runs at
   fetch or build time. The one exception is an imported Rust crate's build
   script, which runs sandboxed and counts as a trust hole.
 - Lockfiles are on by default with content hashes; publishing requires
@@ -576,28 +576,28 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 
 ### D14. Toolchain contract for agents
 
-- `ferox check` returns one verdict and NDJSON diagnostics with stable codes,
+- `tide check` returns one verdict and NDJSON diagnostics with stable codes,
   exact spans, related spans, and fix plans marked `safe` or `suggest`.
   Diagnostics for Rust habits (D1) carry safe fixes.
-- `ferox test` and `ferox sim` return structured results: each failure has its
+- `tide test` and `tide sim` return structured results: each failure has its
   seed, a replay command, and a capability event trace.
 - **Typed holes**: `todo!()` or `_?name` in expression position checks the
   rest of the program and reports the expected type, in-scope bindings, and
   candidate functions.
-- `ferox eval` runs an expression in the interpreter against the current
-  package. `ferox verify` runs proofs and returns NDJSON results with proof
+- `tide eval` runs an expression in the interpreter against the current
+  package. `tide verify` runs proofs and returns NDJSON results with proof
   status per item and counterexamples for failures. Coverage and spec coverage
   are reported.
 - `#[protected]` tests are part of the trust surface; agents cannot change
   them without approval (D11).
 - Every response carries a snapshot hash; every write request carries its base
   hash and applies atomically or not at all.
-- `ferox doc` serves documentation matched to the installed compiler: a card
-  under 8 KB for an agent's instructions file, `ferox explain <code>` with fix
+- `tide doc` serves documentation matched to the installed compiler: a card
+  under 8 KB for an agent's instructions file, `tide explain <code>` with fix
   examples, and the delta-from-Rust reference. The core reference budget is
   25,000 tokens, counted in CI; the standard-library reference is separate
   and served on demand.
-- `ferox fix` applies safe fixes and owns migrations between language
+- `tide fix` applies safe fixes and owns migrations between language
   versions.
 - Source text is canonical; the formatter is deterministic and has no
   options. Definitions are content-hashed; symbols have stable IDs.
@@ -610,7 +610,7 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   Virtual time advances only when every task is blocked; a global deadlock is
   reported with the blocked-task graph. On a simulated crash, writes not made
   durable by `sync` or `sync_dir` may be lost or torn, as the seed decides.
-- `ferox sim <binary>` runs a program's `main` under many seeds. A failure
+- `tide sim <binary>` runs a program's `main` under many seeds. A failure
   prints seed and commit and replays bit for bit, dependencies included.
 - Authority-free `par` regions run on real cores under simulation, because
   their results are deterministic.
@@ -620,22 +620,22 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 
 ### D16. Bend tandem
 
-- Ferox calls Bend 2 for pure, proved, massively parallel kernels; Bend may
-  call Ferox libraries through its foreign effects once Ferox exports C ABIs.
+- Tide calls Bend 2 for pure, proved, massively parallel kernels; Bend may
+  call Tide libraries through its foreign effects once Tide exports C ABIs.
 - **Stage 0, available now**: a `bend` dependency kind with an exact version
   pin and cached builds; a generated shim lets Bend's own checker verify the
   declared kernel signature; kernels run as a supervised child process with a
   generated text protocol. A Bend crash maps to `Err`.
 - **Stage 1, if Bend ships a native library target**: in-process calls under
-  an `ffi` grant. Ferox never depends on this stage.
+  an `ffi` grant. Tide never depends on this stage.
 - The boundary has a closed type map (no 64-bit Bend numbers yet, bounded
   naturals, power-of-two arrays, strings copied); values move or copy across,
   never share; closures and handles never cross.
 - Calls require an `Accel` capability: one Bend runtime per process with a
   thread budget, kernels pure and total.
-- A Ferox contract can be exported as a Bend law, proved by Bend, and imported
-  as an external claim at a lower trust level than a Ferox proof.
-- Deterministic `par` lets Ferox and Bend implementations of one kernel be
+- A Tide contract can be exported as a Bend law, proved by Bend, and imported
+  as an external claim at a lower trust level than a Tide proof.
+- Deterministic `par` lets Tide and Bend implementations of one kernel be
   tested against each other.
 
 ### D17. Record, replay, and authority policies
@@ -654,7 +654,7 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 
 ## The Feel
 
-```ferox
+```tide
 use std::net::{Net, NetError, Url};
 use std::time::{Clock, Duration};
 use std::json;
@@ -747,7 +747,7 @@ fn feed_times_out() {
    through shims.
 4. Whether authority-free public functions should be declarable (`#[pure]`)
    so that adding authority is a visible breaking change.
-5. The interpreter's role in `ferox test` once the development backend exists.
+5. The interpreter's role in `tide test` once the development backend exists.
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
 7. How the C-emitting release backend (D12, v1) implements unwinding for

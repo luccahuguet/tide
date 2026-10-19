@@ -1,6 +1,6 @@
-# Ferox
+# Tide
 
-Ferox is a systems language design for software that coding agents write and
+Tide is a systems language design for software that coding agents write and
 humans must trust. Its core is three guarantees that a language can make only
 if it is designed for them from the start. First, there is no ambient
 authority: code reaches files, the network, the clock, the environment, or
@@ -10,19 +10,19 @@ run under deterministic simulation: any program, dependencies included,
 replays bit for bit from a seed when its foreign effects have simulator
 models. Third, the compiler computes a reviewable
 trust surface (signatures, authority, contract status, and trust holes such as
-`unsafe` and FFI) and diffs it between revisions. Ferox delivers these on a
+`unsafe` and FFI) and diffs it between revisions. Tide delivers these on a
 Rust-familiar surface, with Rust spelling wherever the meaning is the same,
 ownership with origins instead of lifetime parameters, no async, and no user
 macros, and it aims for much faster builds than Rust. Contracts (`requires`,
 `ensures`) are part of the language and serve as runtime checks, property
 tests, and optional SMT proofs; they support the trust surface rather than
-lead it. Ferox works in tandem with Bend 2, not in competition: Ferox is the
+lead it. Tide works in tandem with Bend 2, not in competition: Tide is the
 effectful, authority-checked shell, and Bend owns proved, massively parallel
 pure kernels.
 
 ## Status
 
-Ferox is in the design phase; there is no compiler for this design. The
+Tide is in the design phase; there is no compiler for this design. The
 decision record is `design/01-design.md` (draft 3). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0).
 
@@ -78,7 +78,7 @@ Cited evidence behind the decisions, in [research/](research/):
   bootstrap strategy.
 - `10-concurrency-parallelism.md`: concurrency, deterministic parallelism, and
   deterministic simulation testing.
-- `11-bend-interop.md`: how Ferox and Bend 2 divide the work.
+- `11-bend-interop.md`: how Tide and Bend 2 divide the work.
 
 ### Reviews and Trials
 
@@ -127,10 +127,11 @@ Cited evidence behind the decisions, in [research/](research/):
 - [archive/v0-design/](archive/v0-design/): the first design, superseded by
   `design/`; its name predates the v0 core tier and is unrelated to it.
   `research/00-old-design-salvage.md` records what carried over.
-- Naming: [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md) records the choice of
-  the name Ferox; the `FEROX_*` documents review its domains, trademarks, and
-  software brand, and the `ORBIS_*` documents review the rejected candidate
-  Orbis.
+- Naming: the language is named Tide (tidelang). Ferox was its working name;
+  documents in `research/`, `reviews/`, `trials/`, `tasks/`, and `archive/`
+  keep that name as written. [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md),
+  the `FEROX_*` documents, and the `ORBIS_*` documents record earlier naming
+  reviews.
 - [ZERO_LANGUAGE_FINDINGS.md](ZERO_LANGUAGE_FINDINGS.md): findings from a
   review of Zerolang (Zero), an agent-first language.
 - [TASKS.md](TASKS.md) and `tasks/`: tasks from the first design's bootstrap

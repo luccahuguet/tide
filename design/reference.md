@@ -1,6 +1,6 @@
-# Ferox for Rust Programmers
+# Tide for Rust Programmers
 
-Status: the agent-facing reference for the **v0 core** of Ferox, as the
+Status: the agent-facing reference for the **v0 core** of Tide, as the
 tier table of `design/01-design.md` (draft 3, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`, which still describe
@@ -15,7 +15,7 @@ Diagnostic codes (`FX0201`, ...) are placeholders.
 
 ## 0. How to use this document
 
-You know Rust. Write Rust. Ferox is Rust's surface with a few changes in
+You know Rust. Write Rust. Tide is Rust's surface with a few changes in
 meaning, and every Rust habit that would mean something different fails
 loudly with a stable code and, usually, a machine-applicable fix. Section 1
 lists what is unchanged, sections 2–11 the differences, 12.3 every std
@@ -74,7 +74,7 @@ edition):
 - **Testing**: `#[test]`, `#[should_panic(expected = "..")]`,
   `#[cfg(test)] mod tests { use super::*; .. }`, the `assert!` family.
 
-Source files end in `.fx`.
+Source files end in `.tide`.
 
 ## 2. Surface: `!` forms, derives, attributes
 
@@ -83,7 +83,7 @@ Source files end in `.fx`.
 Users cannot define macros. The compiler implements exactly these, with
 Rust's spelling and meaning:
 
-| Form | Ferox notes |
+| Form | Tide notes |
 | --- | --- |
 | `print!`, `println!`, `eprint!`, `eprintln!` | Write to the task's stdout/stderr sink; need no capability (6.5). Lint in library packages. |
 | `format!`, `write!`, `writeln!`, `vec!`, `matches!` | As Rust, including inline `{name}` arguments. |
@@ -97,9 +97,9 @@ Anything else ending in `!` is `FX0103`, including `debug_assert_eq!`
 `thread_local!`, `lazy_static!`, and every crate macro. `macro_rules!` and
 procedural macros are `FX0101`. Instead of a macro, write a generic function
 or trait; for test tables, loop over a `const` array; for generated code or
-embedded data, run a generator program yourself and commit its `.fx` output.
+embedded data, run a generator program yourself and commit its `.tide` output.
 
-```ferox
+```tide
 #[test]
 fn parse_cases() {
     const CASES: [(&str, Option<u32>); 3] = [("1", Some(1)), ("x", None), ("", None)];
@@ -127,7 +127,7 @@ All are in the prelude; remove `use thiserror::Error;` and `use serde::..`.
   `#[codec(default)]`, `#[codec(skip)]` (provisional: serde's spelling).
 - `Serialize`/`Deserialize`/`thiserror::Error` are `FX0102` with safe fixes.
 
-```ferox
+```tide
 #[derive(Debug, Error)]
 pub enum LoadError {
     #[error("cannot read {path:?}")]
@@ -160,7 +160,7 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
   `#[non_exhaustive]`, `#[deprecated]`, `#[doc]`. `#[cfg]` accepts `test`,
   `debug_assertions`, `target_os`, `target_arch`, `unix`, `windows`, and
   `feature = ".."` (provisional beyond `test`).
-- Ferox attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
+- Tide attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
   `#[pure]` (6.6), `#[sim_test]` (6.8), `#[protected]` (11).
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
@@ -168,10 +168,10 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
 ## 3. Origins instead of lifetimes (provisional)
 
 This whole section is provisional: E1 compares `from` against Rust's own
-lifetime syntax. Ferox has Rust's borrow checker without lifetime
+lifetime syntax. Tide has Rust's borrow checker without lifetime
 parameters. An **origin** names where a borrow comes from: a parameter, a
 place path, or `'static`. A Rust signature with named lifetimes that map
-exactly onto origins is accepted, and `ferox fmt` rewrites it to `from`.
+exactly onto origins is accepted, and `tide fmt` rewrites it to `from`.
 
 ### 3.1 Elision is Rust's
 
@@ -180,7 +180,7 @@ without `from`, and every origin of a borrowing type written without `from`
 (as Rust's `S<'_>`): `Lexer`, `Token`, `Cow<str>`, `Chars`,
 `std::slice::Iter<T>`.
 
-```ferox
+```tide
 fn first_word(s: &str) -> &str                          // from s
 fn get(&self, key: &str) -> Option<&V>                  // from self
 fn split_csv(line: &str) -> Result<Vec<Cow<str>>, CsvError>   // Cow borrows line
@@ -196,7 +196,7 @@ or `Lexer<'_>`.
 `from p` after a type means "borrows from what the value at place `p`
 borrows". If `p` is a reference parameter, that is its referent.
 
-| Ferox | Rust |
+| Tide | Rust |
 | --- | --- |
 | `fn longest(a: &str, b: &str) -> &str from a, b` | `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str` |
 | `fn pick(a: &str, b: &str) -> &str from a` | `fn pick<'a>(a: &'a str, b: &str) -> &'a str` |
@@ -241,7 +241,7 @@ for the elements of `out: &mut Vec<&str>`, `lx.src` inside a field
 `lx: Lexer`, `Ident.0` for a tuple variant `Ident(&str)`. Variance is
 Rust's: `&T` covariant; `&mut T`, `Cell`, `RefCell`, `Shared` invariant.
 
-```ferox
+```tide
 pub struct Lexer { src: &str, pos: usize }        // Rust: Lexer<'a> { src: &'a str, .. }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -316,7 +316,7 @@ A struct cannot borrow from its own field (`FX0210`):
 | Graphs, parent links, cycles | `Arena<T>` with `Id<T>` handles (below) |
 | Shared ownership | `Rc<RefCell<T>>` and `Weak`, as Rust; `Arc` across tasks |
 
-```ferox
+```tide
 use std::arena::{Arena, Id};
 
 struct Node { name: String, edges: Vec<Id<Node>> }
@@ -362,7 +362,7 @@ checksums, and PRNGs must use these.
 
 Lossy `as` is `FX0301` with these fixes:
 
-| Rust | Ferox |
+| Rust | Tide |
 | --- | --- |
 | `x as u8` (may not fit) | `u8::try_from(x)?`; keep the low bits: `let b: u8 = x.truncate();` |
 | `i32 as u32` (reinterpret) | `x.cast_unsigned()`; back with `cast_signed()` |
@@ -448,7 +448,7 @@ Calling conventions:
 
 ### 6.2 `main(root: Root)`
 
-```ferox
+```tide
 fn main(root: Root) -> Result<(), AppError> {
     let data = root.fs.dir("/var/lib/app", Mode::ReadWrite)?;   // Fs below one directory
     let net = root.net.only(["db.internal:5432"]);               // Net to one host
@@ -477,7 +477,7 @@ shows where every capability reaching a function was attenuated.
 
 ### 6.3 Files: paths, append, durability
 
-```ferox
+```tide
 impl Fs {                                         // every method takes &self; p: impl AsRef<Path>
     fn read(&self, p) -> io::Result<Vec<u8>>;
     fn read_to_string(&self, p) -> io::Result<String>;
@@ -523,7 +523,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
   acknowledged write is therefore: write, `sync()`, and, the first time a
   file or directory is created, `sync_dir` of its parent.
 
-```ferox
+```tide
 pub struct Log { file: File }
 
 impl Log {
@@ -573,7 +573,7 @@ return `Ok`), and `std::trace::span(name)` (a guard that closes on drop)
 write to sinks owned by the current task. They read nothing back, need no
 capability, never suspend, and keep a function authority-free.
 
-```ferox
+```tide
 fn decode_user(row: &Row) -> Result<User, DecodeError> {      // still authority-free
     if row.version < 3 {
         warn!("legacy row format for user {}", row.id);
@@ -683,7 +683,7 @@ Semantics:
   decides. `restart` reruns the entry over the surviving disk. The test body
   itself cannot crash: put crash-tested code in a node.
 
-```ferox
+```tide
 #[sim_test(seeds = 200)]
 fn acked_lines_survive_a_crash(sim: SimRoot) {
     let node = sim.node("db");
@@ -709,16 +709,16 @@ fn acked_lines_survive_a_crash(sim: SimRoot) {
 }
 ```
 
-`ferox test` reports a failing seed with a replay command
-(`ferox test acked_lines_survive_a_crash --seed 1729 --trace`);
-`ferox sim <bin> -- args` runs `main` under many seeds as one node.
+`tide test` reports a failing seed with a replay command
+(`tide test acked_lines_survive_a_crash --seed 1729 --trace`);
+`tide sim <bin> -- args` runs `main` under many seeds as one node.
 
 ### 6.9 Ambient Rust calls and their fixes
 
 All are `FX0501`; the fix uses a capability in scope or proposes adding the
 parameter.
 
-| Rust | Ferox |
+| Rust | Tide |
 | --- | --- |
 | `std::fs::read_to_string(p)` | `fs.read_to_string(p)` |
 | `File::open(p)` / `File::create(p)` | `fs.open(p)` / `fs.create(p)` |
@@ -737,13 +737,13 @@ parameter.
 
 **Thread a capability.** When a leaf starts needing authority, add the
 parameter along the call chain; never reach for a global or `Root`.
-`ferox fix --thread Fs --to decode_user` makes that edit along the shortest
+`tide fix --thread Fs --to decode_user` makes that edit along the shortest
 path from a holder, test call sites included.
 
 **App-context struct.** For service code, bundle attenuated capabilities
 and clients built in `main`, and pass narrow pieces down:
 
-```ferox
+```tide
 pub struct App { db: Db, files: Fs, clock: Clock }   // each already attenuated
 
 impl App {
@@ -765,7 +765,7 @@ operation; authority-free code never suspends. Write blocking-style code.
 
 ### 7.1 Scopes and tasks
 
-```ferox
+```tide
 impl Tasks {
     fn scope<T, E>(&self, body: impl FnOnce(Scope<E>) -> Result<T, E>) -> Result<T, E>
         where E: From<TaskError> + Send;
@@ -822,7 +822,7 @@ pub struct Panicked { pub message: String }          // (provisional)
 - The task, not the OS thread, is the isolation unit: values that never
   leave a task need not be `Send` (an `Rc` inside one task is fine).
 
-```ferox
+```tide
 fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
     -> Result<(Vec<u8>, Vec<u8>), FetchError>          // FetchError: #[from] TaskError, #[from] NetError
 {
@@ -877,7 +877,7 @@ on several sources (Rust's `select!`), send one enum through one channel.
 
 ### 7.4 `Shared<T>`
 
-```ferox
+```tide
 impl<T: Send + Pure> Shared<T> {                   // std::sync
     fn new(tasks: &Tasks, v: T) -> Shared<T>;      // handles let tasks observe each other, so creation takes &Tasks
     fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
@@ -911,7 +911,7 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   library authors and are not `Pure`. `Mutex` and `RwLock` live in
   `std::sync::raw` and need the `unsafe` grant.
 
-```ferox
+```tide
 use std::sync::{LockError, Shared};
 
 #[derive(Debug, Error)]
@@ -943,12 +943,12 @@ pub fn total(accounts: &[Shared<Account>]) -> Result<u64, LockError> {
 ### 7.5 Runtimes
 
 The binary's manifest picks the runtime (`[bin] runtime = "threads"`, the
-default, or `"blocking"`); tests and `ferox sim` use the simulator.
+default, or `"blocking"`); tests and `tide sim` use the simulator.
 Libraries never choose and behave the same under all of them.
 
 ### 7.6 Porting async Rust
 
-| Rust | Ferox |
+| Rust | Tide |
 | --- | --- |
 | `async fn f(..) -> T` | `fn f(net: &Net, ..) -> T` |
 | `x.await` | `x` (`FX0601`, safe fix deletes `.await` and `async`) |
@@ -967,7 +967,7 @@ Libraries never choose and behave the same under all of them.
 
 Deterministic fork-join for authority-free code:
 
-```ferox
+```tide
 use std::par::join;
 
 let (a, b) = join(|| parse(x), || parse(y));
@@ -1041,7 +1041,7 @@ builds, erased in release, and used to drive property tests.
   (Rust's private-in-public rule; provisional for v0).
 - Trait methods may carry contracts; every impl is checked against them.
 
-```ferox
+```tide
 pub fn max_index(xs: &[i64]) -> usize
     requires xs.len() > 0
     ensures result < xs.len()
@@ -1069,7 +1069,7 @@ index: `x == a` before the first iteration and `x == b` at exit.
 
 ### 10.2 Property tests
 
-- A `#[test]` function with parameters is a property test: `ferox test`
+- A `#[test]` function with parameters is a property test: `tide test`
   generates and shrinks inputs. Generated types: integers, floats, `bool`,
   `char`, `String`, `Vec`, arrays, tuples, `Option`, `Result`, maps, sets,
   and structs and enums whose fields can all be generated, or that
@@ -1080,10 +1080,10 @@ index: `x == a` before the first iteration and `x == b` at exit.
   100 accepted cases fails as `vacuous`; an early `return` counts as a pass,
   so prefer `requires`. A rare condition (a random `Vec` is seldom sorted)
   makes the test vacuous: construct such inputs instead (`xs.sort()`).
-- `ferox test` also calls each authority-free function that has `ensures`
+- `tide test` also calls each authority-free function that has `ensures`
   on generated inputs that satisfy its `requires` (provisional for v0).
 
-```ferox
+```tide
 #[test]
 fn midpoint_stays_in_range(lo: u32, hi: u32)
     requires lo <= hi
@@ -1095,7 +1095,7 @@ fn midpoint_stays_in_range(lo: u32, hi: u32)
 
 ### 10.3 Contracts in review
 
-`ferox review` shows each public item's contract text. Weakening or
+`tide review` shows each public item's contract text. Weakening or
 removing a contract of a public item, like widening authority, needs human
 approval (11). If a contract or `#[protected]` test looks wrong, stop and
 report it; never weaken it to get a green check.
@@ -1107,7 +1107,7 @@ report it; never weaken it to get a green check.
 | Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync`/`Pure` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
 
-`ferox review <base>` prints the trust diff: public signatures, declared
+`tide review <base>` prints the trust diff: public signatures, declared
 authority (the capability types each public item can reach through its
 parameters), contracts, trust holes, and grants, so a reviewer sees what
 changed in what code *may do* before reading how. Changes that need a human
@@ -1120,15 +1120,15 @@ check.
 
 ### 12.1 Files are modules
 
-- `src/main.fx` is a binary root, `src/lib.fx` a library root. Every `.fx`
+- `src/main.tide` is a binary root, `src/lib.tide` a library root. Every `.tide`
   file under `src/` is a module; the directory tree is the module tree
-  (`src/net/http.fx` is `crate::net::http`), with an optional `src/net.fx`
-  beside `src/net/`; no `mod.fx`.
+  (`src/net/http.tide` is `crate::net::http`), with an optional `src/net.tide`
+  beside `src/net/`; no `mod.tide`.
 - You do not write `mod foo;`. If present, `mod foo;` is a no-op and
   `pub mod foo;` sets visibility; a file module without one is private to
   its parent. `mod foo;` with no file is `FX0910`; `#[path]` is `FX0911`.
   (provisional)
-- `ferox check path.fx` checks one file as a crate root (provisional), for
+- `tide check path.tide` checks one file as a crate root (provisional), for
   single-file programs and exercises.
 
 ### 12.2 Imports
@@ -1170,7 +1170,7 @@ derives `Error`, `Encode`, `Decode` (provisional). Import everything else:
 ### 12.4 Manifest and grants
 
 ```toml
-# ferox.toml (provisional file name and keys)
+# tide.toml (provisional file name and keys)
 [package]
 name = "acme/linecount"          # names are namespaced
 version = "0.1.0"
@@ -1196,37 +1196,37 @@ only = ["crate::net::*"]         # no other module may declare Net
   violation is an error (`FX0516`), and policy changes appear in the trust
   diff.
 
-- Escape hatches are granted per dependency. `ferox.lock` is on by default,
+- Escape hatches are granted per dependency. `tide.lock` is on by default,
   with content hashes, and records each package's public authority and
   trust holes; an upgrade that widens either fails until a human approves.
 - The client rejects a dependency name that does not exist; it never
   guesses a near name.
-- Ferox packages have no `build.rs`, install hooks, or code that runs at
+- Tide packages have no `build.rs`, install hooks, or code that runs at
   fetch or build time (`FX0915`). Code generators are programs you run
-  explicitly (`ferox run --bin gen`); commit their output.
+  explicitly (`tide run --bin gen`); commit their output.
 
 ## 13. Toolchain loop
 
 | Command | Use |
 | --- | --- |
-| `ferox check` | One verdict plus NDJSON diagnostics: stable codes, exact and related spans, fixes marked `safe` or `suggest`. |
-| `ferox fix` | Apply safe fixes; `--thread <Cap> --to <fn>` threads a capability. |
-| `ferox test [filter] [--seed N] [--trace]` | Tests, property tests, and sim tests: diff, panic span, seed, shrunk input, replay command, event trace. |
-| `ferox sim <bin> -- args` | Run `main` under many seeds. |
-| `ferox eval '<expr>'` | Evaluate an expression against the package in the interpreter. |
-| `ferox explain FX0201` | Explanation with a before/after example. |
-| `ferox review <base>` | Trust diff (11). |
-| `ferox fmt` | The one canonical format; rewrites legacy lifetime spellings to `from`. |
+| `tide check` | One verdict plus NDJSON diagnostics: stable codes, exact and related spans, fixes marked `safe` or `suggest`. |
+| `tide fix` | Apply safe fixes; `--thread <Cap> --to <fn>` threads a capability. |
+| `tide test [filter] [--seed N] [--trace]` | Tests, property tests, and sim tests: diff, panic span, seed, shrunk input, replay command, event trace. |
+| `tide sim <bin> -- args` | Run `main` under many seeds. |
+| `tide eval '<expr>'` | Evaluate an expression against the package in the interpreter. |
+| `tide explain FX0201` | Explanation with a before/after example. |
+| `tide review <base>` | Trust diff (11). |
+| `tide fmt` | The one canonical format; rewrites legacy lifetime spellings to `from`. |
 
-**Typed holes**: `todo!()` or `_?name` in expression position. `ferox check`
+**Typed holes**: `todo!()` or `_?name` in expression position. `tide check`
 checks the rest and reports each hole's expected type, bindings in scope,
 and candidate functions; use holes to build a function top-down.
 
 ## 14. Rust habits and their fixes
 
-| Rust habit | Ferox | Code |
+| Rust habit | Tide | Code |
 | --- | --- | --- |
-| `fn f<'a>(x: &'a str, y: &str) -> &'a str` | `fn f(x: &str, y: &str) -> &str from x` | accepted; `ferox fmt` rewrites |
+| `fn f<'a>(x: &'a str, y: &str) -> &'a str` | `fn f(x: &str, y: &str) -> &str from x` | accepted; `tide fmt` rewrites |
 | `struct P<'a> { s: &'a str }`, `impl<'a> P<'a>`, `P<'_>` | `struct P { s: &str }`, `impl P`, `P` | accepted; rewritten |
 | `T: 'static` | `T: Owned` | accepted; rewritten |
 | `'a: 'b`, `trait Foo<'a>`, `for<'a>` | a `from` clause, or restructure | `FX0201` |
@@ -1256,9 +1256,9 @@ and candidate functions; use holes to build a function top-down.
 | Ignoring a `Result` | `?`, handle it, or `let _ =` | `FX0702` |
 | `requires a, b` | `requires a` `requires b` | safe fix |
 | `unsafe` without a grant or `// SAFETY:` | add the grant; write the comment | `FX0901`, `FX0902` |
-| `mod foo;` for a missing file, `#[path]` | create `foo.fx`; move the file | `FX0910`, `FX0911` |
+| `mod foo;` for a missing file, `#[path]` | create `foo.tide`; move the file | `FX0910`, `FX0911` |
 | Unused `use`; `extern crate foo;` | delete | `FX0913`, `FX0912` safe |
-| `a.fx` uses `b`, `b.fx` uses `a` | move shared items to a third module | `FX0914` |
+| `a.tide` uses `b`, `b.tide` uses `a` | move shared items to a third module | `FX0914` |
 | `build.rs` | a generator you run; commit its output | `FX0915` |
 
 ## 15. Example programs
@@ -1267,8 +1267,8 @@ and candidate functions; use holes to build a function top-down.
 
 `lc [--min N] FILE...` counts lines with at least `N` characters per file.
 
-```ferox
-// src/main.fx
+```tide
+// src/main.tide
 use std::fs::Fs;
 use std::io;
 use std::path::PathBuf;
@@ -1345,8 +1345,8 @@ mod tests {
 
 ### 15.2 Bounded concurrent fetcher with a deadline
 
-```ferox
-// src/main.fx
+```tide
+// src/main.tide
 use std::net::{Net, NetError, Url};
 use std::task::{TaskError, Tasks};
 use std::time::{Clock, Duration, Instant};
@@ -1407,8 +1407,8 @@ an `Outcome`, so the scope returns `Ok` with one outcome per URL (7.2).
 
 ### 15.3 Contracts and a generic search
 
-```ferox
-// src/search.fx
+```tide
+// src/search.tide
 use std::cmp::Ordering;
 
 /// Public, so public contracts may call it.
@@ -1541,7 +1541,7 @@ From the tier table of 01 (draft 3). The chapters specify most of these.
   (`int`, `nat`, `Seq`, `Set`, `Map`, `Multiset`); `final`; `decreases` and
   `diverges`; type invariants; trait laws and abstract spec fns (`eq_spec`,
   `cmp_spec`, `le`); closure contracts (`f.requires`); triggers, `by(..)`,
-  `#[opaque]`, `#[trusted]`; proof status and trust closures; `ferox verify`.
+  `#[opaque]`, `#[trusted]`; proof status and trust closures; `tide verify`.
 - **Authority**: exercised-authority tracking, the least-authority lint
   `FX0510`, and effect reporting for sinks; FFI (`extern`, the `ffi` grant,
   `#[trusted_pure]`, `#[sim_model]`, `ThreadBound`); imported Rust crates
