@@ -155,6 +155,11 @@ provisional until E1 meets its thresholds.
   `#[derive(...)]` with Rust's trait names, `#[cfg(test)]`, `'static`,
   `From`/`TryFrom`/`Into`, `wrapping_add`, `checked_add`, `saturating_add`,
   `Wrapping<T>`, `Box<dyn Error>`, and `// SAFETY:` comments.
+- Blocks use braces and semicolons exactly as in Rust; indentation is never
+  significant. Braces match model priors, survive diffs, markdown, and logs
+  intact, and keep a mis-indented agent edit cosmetic instead of silently
+  moving a statement into another block. Generics use angle brackets and
+  Rust's turbofish.
 - A **fixed, compiler-implemented set of `!` forms** keeps Rust's most common
   macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
   `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,
@@ -667,7 +672,9 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 - `tide fix` applies safe fixes and owns migrations between language
   versions.
 - Source text is canonical; the formatter is deterministic and has no
-  options. Definitions are content-hashed; symbols have stable IDs.
+  options. Its style is rustfmt's default style (four-space indentation,
+  100-column lines, opening braces on the same line), so formatting a
+  Rust-habit draft changes almost nothing. Definitions are content-hashed; symbols have stable IDs.
 
 ### D15. Deterministic simulation as a first-class mode
 
