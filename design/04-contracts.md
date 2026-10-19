@@ -1,13 +1,13 @@
 # Tide Contracts
 
-Status: draft 1, synchronized with draft 3.5. This chapter is the normative
+Status: draft 1, synchronized with draft 3.7. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
 `design/01-design.md`. It elaborates those decisions and must not contradict
 them. Where it needs a decision changed, it says so in the last section;
 until `01-design.md` changes, the decision there wins.
 
-**Tier** (01's Tiers table). v0 core: executable `requires`, `ensures`, loop
-`invariant`, `old`, `result`, and bounded quantifiers, checked at run time in
+**Tier** (01's Tiers table). v0 core: executable `#[requires]`, `#[ensures]`,
+loop `invariant!`, `old`, `result`, and bounded quantifiers, checked at run time in
 debug and test builds and driving property tests. §1.8 is the one normative
 statement of what a v0 clause means; v0 also uses the grammar of §1.1–§1.2
 for those forms, §2.3 and §2.4 as §1.8 applies them, release erasure (§2.6,
@@ -21,15 +21,29 @@ status and trust closures.
 Later: deferred overflow traps (§3.2); interactive-proof export (§13). v0
 overflow traps are precise.
 
+**Spelling** (D10, D18). Every Tide program is a valid Rust crate, so clauses
+are toolchain attributes and `!` forms: `#[requires(..)]` and
+`#[ensures(..)]` on functions and loop `invariant!(..)` in v0; in v1
+`#[decreases(..)]` and `#[diverges]` on functions, `decreases!(..)` in
+loops, `#[invariant(..)]` on types, and `requires!(..)` and `ensures!(..)`
+in closures. They are proc macros owned by the toolchain and exported
+through Tide's std prelude (D6). v1's proof forms (`spec fn`, `proof fn`,
+`law fn`, `ghost let`, `proof { }` blocks, `x@`, `int` and `nat`,
+`#![trigger]`, `reveal`, `assume`) are still written here in draft 3.5's
+grammar, which is not Rust. D10 requires them to become attributes,
+toolchain `!` forms, or library types before v1; E1 does not cover them.
+
 Inputs: the round-1 reviews in `reviews/`, chiefly
 `round1-verification.md`, and `research/04-verification.md`. Prior art is
 cited by name: Verus, Dafny, Creusot, Prusti, and SPARK.
 
 ## 0. Terms
 
-- **Contract**: the clauses attached to an item. Functions take `requires`,
-  `ensures`, `decreases`, and `diverges`; types and loops take `invariant`;
-  traits declare `law fn`s.
+- **Contract**: the clauses attached to an item. Functions take
+  `#[requires]`, `#[ensures]`, `#[decreases]`, and `#[diverges]`; types take
+  `#[invariant]`; loops take `invariant!` and `decreases!`; closures take
+  `requires!` and `ensures!`; traits declare `law fn`s. Prose names a clause
+  by its word: a `requires`, an `ensures`, an invariant.
 - **Use**: `assert`, `test`, or `prove`, as in D10.
 - **Mode**: the kind of code. *Spec code* is clause expressions and `spec fn`
   bodies. *Proof code* is `proof fn` bodies, law proofs, `proof { }` blocks,
@@ -45,75 +59,81 @@ cited by name: Verus, Dafny, Creusot, Prusti, and SPARK.
 
 ### 1.1 Words
 
-Every contract word is a contextual keyword, so Rust code that uses `result`,
-`old`, or `proof` as an identifier keeps compiling.
+Clause words are attribute and `!`-form names that Tide's std prelude
+supplies, and the spec words have meaning only inside clause arguments, so
+Rust code that uses `result` or `old` as an identifier keeps compiling.
 
-| Word | Recognized |
+| Form | Where |
 | --- | --- |
-| `requires`, `ensures`, `decreases`, `diverges` | after a function signature or closure parameter list |
-| `invariant` | after a struct, enum, or loop header |
-| `spec`, `proof`, `law` | before `fn` |
-| `proof` | before `{` at statement start |
-| `ghost` | before `let` |
-| `result`, `old`, `final`, `forall`, `exists`, `choose` | inside spec expressions |
-| `assert`, `assume`, `reveal` | as statements inside proof blocks |
+| `#[requires(..)]`, `#[ensures(..)]`; v1: `#[decreases(..)]`, `#[diverges]` | outer attributes on a function, trait method, or impl method |
+| `#[invariants]` | outer attribute on a function: rewrites its loops and closures without adding a clause |
+| `invariant!(..)`; v1: `decreases!(..)` | statements opening a loop body |
+| v1: `requires!(..)`, `ensures!(..)` | statements opening a closure's block body |
+| v1: `#[invariant(..)]` | outer attribute on a struct or enum |
+| `result`, `old`, `final`, `forall`, `exists`, `choose` | inside clause arguments |
+| v1, draft 3.5 grammar: `spec`, `proof`, `law` | before `fn` |
+| v1, draft 3.5 grammar: `proof` | before `{` at statement start |
+| v1, draft 3.5 grammar: `ghost` | before `let` |
+| v1, draft 3.5 grammar: `assert`, `assume`, `reveal` | as statements inside proof blocks |
 
-Attributes: `#[spec]` (§1.6), `#[trusted(reason = "...")]` (§8.3),
+Other attributes: `#[spec]` (§1.6), `#[trusted(reason = "...")]` (§8.3),
 `#[opaque]` (§8.1), `#[protected]` and `#[spec_test]` (§10, §11), and
-`#[contracts(assert | test | prove)]` (§2.1). `final` is already reserved in
-Rust, so it never collides. The runtime
-`assert!` keeps its Rust meaning; a bare `assert e;` statement exists only in
-proof code.
+`#[contracts(assert | test | prove)]` (§2.1). The runtime `assert!` keeps
+its Rust meaning; a bare `assert e;` statement exists only in proof code.
 
 ### 1.2 Grammar
 
-The grammar extends the Rust item and expression grammar that D1 adopts.
-`sexpr` is a spec expression (§1.3). Braces `{ }` denote repetition, brackets
-`[ ]` an option.
+Under D18 every clause is a Rust attribute or macro call, so the clause
+productions add no syntax to Rust's: they fix which attributes and `!` forms
+the contract macros accept and where. A clause argument is a token stream
+that the macros parse as a spec expression (`sexpr`, §1.3), so spec-only
+tokens such as `==>`, which Rust lexes as `==` and `>`, need no change to
+Rust's grammar. The ghost productions (`spec_fn`, `proof_fn`, `law_decl`,
+`law_proof`, and the ghost statements) are draft 3.5's grammar for v1 and
+are not Rust; D10 requires their respelling before v1. Braces `{ }` denote
+repetition, brackets `[ ]` an option, and `attr` is any other Rust outer
+attribute.
 
 ```ebnf
-(* Functions *)
-fn_item     = attrs vis? "fn" ident generics? "(" params ")" ret? from? where?
-              { fn_clause } block ;
-fn_clause   = "requires" sexpr
-            | "ensures" sexpr
-            | "decreases" sexpr { "," sexpr }        (* lexicographic *)
-            | "diverges" ;
-trait_fn    = attrs "fn" ident generics? "(" params ")" ret? from? where?
-              { fn_clause } ( block | ";" ) ;
-impl_fn     = attrs vis? "fn" ident generics? "(" params ")" ret? from? where?
-              { "requires" sexpr } { "ensures" sexpr }
-              [ "decreases" sexpr { "," sexpr } ] block ;     (* refines, §5.2 *)
+(* Functions: clauses are outer attributes, conjoined in source order *)
+fn_item     = { attr | fn_clause } vis? "fn" ident generics? "(" params ")"
+              ret? where? block ;
+fn_clause   = "#[" "requires" "(" sexpr ")" "]"
+            | "#[" "ensures" "(" sexpr ")" "]"
+            | "#[" "decreases" "(" sexpr { "," sexpr } ")" "]"  (* v1; lexicographic *)
+            | "#[" "diverges" "]"                                (* v1 *)
+            | "#[" "invariants" "]" ;              (* rewrites loops and closures only *)
+trait_fn    = { attr | fn_clause } "fn" ident generics? "(" params ")" ret?
+              where? ( block | ";" ) ;
+impl_fn     = { attr | fn_clause } vis? "fn" ident generics? "(" params ")"
+              ret? where? block ;              (* no #[diverges]; refines, §5.2 *)
 
-(* Ghost functions *)
-spec_fn     = attrs vis? "spec" "fn" ident generics? "(" params ")" "->" type
-              where? { "requires" sexpr } [ "decreases" sexpr { "," sexpr } ]
-              ( "{" sexpr "}" | ";" ) ;
-proof_fn    = attrs vis? "proof" "fn" ident generics? "(" params ")" where?
-              { "requires" sexpr } { "ensures" sexpr }
-              [ "decreases" sexpr { "," sexpr } ] ( pblock | ";" ) ;
-law_decl    = attrs "law" "fn" ident generics? "(" params ")"
-              { "requires" sexpr } { "ensures" sexpr } ";" ;       (* in a trait *)
+(* Ghost functions: v1, draft 3.5 grammar, respelled before v1 *)
+spec_fn     = { attr | fn_clause } vis? "spec" "fn" ident generics?
+              "(" params ")" "->" type where? ( "{" sexpr "}" | ";" ) ;
+proof_fn    = { attr | fn_clause } vis? "proof" "fn" ident generics?
+              "(" params ")" where? ( pblock | ";" ) ;
+law_decl    = { attr | fn_clause } "law" "fn" ident generics? "(" params ")" ";" ;
+                                                                    (* in a trait *)
 law_proof   = attrs "law" "fn" ident generics? "(" params ")" pblock ;  (* in an impl *)
 
-(* Types: invariant clauses sit where Rust puts a where clause *)
-struct_item = attrs vis? "struct" ident generics?
-              ( where? { type_inv } "{" fields "}"
-              | "(" tuple_fields ")" where? { type_inv } ";" ) ;
-enum_item   = attrs vis? "enum" ident generics? where? { type_inv }
+(* Types (v1): invariant attributes, conjoined in source order *)
+struct_item = { attr | type_inv } vis? "struct" ident generics? rust_struct_rest ;
+enum_item   = { attr | type_inv } vis? "enum" ident generics? where?
               "{" variants "}" ;
-type_inv    = "invariant" sexpr ;
+type_inv    = "#[" "invariant" "(" sexpr ")" "]" ;
 
-(* Loops *)
-while_expr  = "while" expr { loop_clause } block ;
-for_expr    = "for" pat "in" expr { loop_clause } block ;
-loop_expr   = "loop" { loop_clause } block ;
-loop_clause = "invariant" sexpr | "decreases" sexpr { "," sexpr } ;
+(* Loops: clause statements open the body *)
+loop_body   = "{" { loop_clause } { stmt } [ expr ] "}" ;
+loop_clause = "invariant!" "(" sexpr ")" ";"
+            | "decreases!" "(" sexpr { "," sexpr } ")" ";" ;           (* v1 *)
 
-(* Closures: clauses force a block body *)
-closure     = "move"? "|" cparams "|" [ "->" type ] { fn_clause } ( expr | block ) ;
+(* Closures (v1): clause statements open a block body *)
+closure     = "move"? "|" cparams "|" [ "->" type ]
+              ( expr | "{" { closure_clause } { stmt } [ expr ] "}" ) ;
+closure_clause = "requires!" "(" sexpr ")" ";" | "ensures!" "(" sexpr ")" ";" ;
 
-(* Ghost statements *)
+(* Ghost statements: v1, draft 3.5 grammar, respelled before v1 *)
 ghost_let   = "ghost" "let" "mut"? pat [ ":" type ] "=" sexpr ";" ;
 proof_block = "proof" pblock ;
 pblock      = "{" { pstmt } "}" ;
@@ -153,7 +173,8 @@ splace      = "*" ident { "." ( ident | int ) }           (* rooted at a &mut, �
 Rules that the grammar does not show:
 
 1. **One expression per clause.** A top-level comma in a clause is an error
-   whose safe fix splits it into repeated clauses. Verus's comma lists are
+   whose safe fix splits it into repeated clauses (repeated attributes or
+   statements). Verus's comma lists are
    rejected so that each clause gets its own classification and diagnostic.
 2. **Order.** Clauses of one kind are conjoined in source order. For
    well-formedness (§1.3), each `requires` may assume the earlier ones; each
@@ -166,8 +187,9 @@ Rules that the grammar does not show:
    error with two machine-applicable fixes, `old(*x)` and `final(*x)`
    (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
    is executable, and otherwise reports it for a manual choice.
-5. **`decreases`** (v1) on a function bounds recursion; on a loop it bounds
-   iterations (§3.3). `diverges` is legal only on exec functions.
+5. **`#[decreases]`** (v1) on a function bounds recursion; `decreases!` in
+   a loop bounds iterations (§3.3). `#[diverges]` is legal only on exec
+   functions.
 6. **Impls refine trait contracts.** An impl method inherits its trait
    method's contract and may weaken the precondition and strengthen the
    postcondition, never the reverse (§5.2).
@@ -178,6 +200,13 @@ Rules that the grammar does not show:
    fields (§4.2).
 9. **Quantifier, `choose`, and lambda bodies** extend as far right as
    possible, as in Verus and Dafny.
+10. **Loop and closure clauses.** `invariant!`, `decreases!`, `requires!`,
+    and `ensures!` must open the loop or closure block body, before any
+    other statement. The enclosing function must carry `#[invariants]` or a
+    contract attribute (`#[requires]`, `#[ensures]`, `#[decreases]`,
+    `#[diverges]`, `#[contracts]`), whose macro rewrites each loop and
+    closure in the body; an unrewritten clause statement is a compile error
+    whose safe fix adds `#[invariants]`.
 
 ### 1.3 Spec expressions
 
@@ -202,7 +231,7 @@ the two readings differ (D10):
   views, `a@ == b@` (§1.4). For a type without a `View` impl, including
   every spec type, the view is the value, so `==` is structural: fieldwise
   on structs, enums, and tuples; extensional on `Seq`, `Set`, `Map`, and
-  `Multiset`; on floats it compares D3's canonical `to_bits()`, so it is
+  `Multiset`; on floats it compares D3's canonical `float::bits`, so it is
   reflexive even for NaN. It never calls a user `PartialEq`.
 - **References.** `&e` and `*e` are transparent: a `&T` denotes the `T`.
 - **Floats** are IEEE 754 values, not reals: `a + b` in a spec is the rounded
@@ -304,7 +333,7 @@ In spec code, a call `f(a)` denotes the value `f` returns on `a`. Its
 value; its body stays opaque (§8.1). Under `assert` and `test` the evaluator
 runs the function. The standard library marks its pure accessors (`len`,
 indexing, `get`, `contains`, `is_some`, `unwrap`, `first`, `last`, and
-similar) with exact `ensures`, such as `ensures result == self@.len()`; these
+similar) with exact `ensures`, such as `#[ensures(result == self@.len())]`; these
 are part of the toolchain base (§8.3), conditional on the laws of their type
 arguments.
 
@@ -342,17 +371,17 @@ This section is the whole meaning of a v0 clause (D10). v0 has no spec
 language, so in v0 this section replaces §1.3–§1.7 and §2.2. Item *n* is
 rule CLAUSE-*n*.
 
-1. **CLAUSE-1. Forms.** v0 has `requires`, `ensures`, and loop `invariant`
-   clauses, with `result`, `old(e)`, `==>`, and `forall` and `exists` over a
-   bounded binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
+1. **CLAUSE-1. Forms.** v0 has `#[requires]` and `#[ensures]` on
+   functions and loop `invariant!` statements (§1.2), with `result`,
+   `old(e)`, `==>`, and `forall` and `exists` over a bounded binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
    `exists`), with `lo` and `hi` free of `x`, or `c.contains(&x) ==> p`; an
    unsigned binder implies `0 <= x`. An unbounded quantifier is an error.
-   `decreases`, `diverges`, `final`, type invariants, and the spec language
-   of §1.3–§1.7 are v1.
+   `decreases`, `diverges`, `final`, type invariants, closure clauses, and
+   the spec language of §1.3–§1.7 are v1.
 2. **CLAUSE-2. Code semantics.** A clause is a Rust boolean expression,
    typed and evaluated as code: machine integers that trap on overflow,
    and `==` and `<` through `PartialEq` and `PartialOrd`. So
-   `fn widen(a: u8, b: u8) -> u16 ensures result == a + b` is a type error;
+   `#[ensures(result == a + b)] fn widen(a: u8, b: u8) -> u16` is a type error;
    write `result == a as u16 + b as u16`. Mathematical integers and model
    equality apply only under `prove` (v1).
 3. **CLAUSE-3. Read-only evaluation.** A clause calls only authority-free
@@ -409,7 +438,10 @@ rule CLAUSE-*n*.
    and blames the caller for `requires` and the callee for `ensures` and
    invariants. Each evaluation of a `sampled` clause has a step budget, and
    one that exceeds it is reported as unchecked, not as failed. The report
-   lists every clause a build or test run did not evaluate.
+   lists every clause a build or test run did not evaluate. Not yet
+   implemented in the D18 spike: reporting a panic inside a clause as a
+   violation, and step budgets (`research/15-rust-dialect.md`, Spike
+   results).
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
@@ -418,8 +450,9 @@ rule CLAUSE-*n*.
 ### 2.1 Selecting a use
 
 The manifest sets the package default (`[contracts] use = "assert"` when
-absent). A module overrides it with
-`#![contracts(test)]` and an item with `#[contracts(prove)]`. Uses are
+absent) and may override it for a module path; an item overrides it with
+`#[contracts(prove)]`. Modules have no in-source override, because custom
+inner attributes such as `#![contracts(test)]` are unstable Rust (D10). Uses are
 cumulative: `test` does everything `assert` does, and `prove` keeps `test`
 behavior for whatever it has not proved. The trust surface records each item's
 use. Setting a module or item below its package's use, or lowering the
@@ -460,7 +493,8 @@ Debug and test builds evaluate `checked` clauses:
 - `ensures` at each return; a failure blames the callee;
 - type invariants (v1) at the exits of functions in the type's defining
   module that produce a value of the type or hold `&mut` to one (§4.2);
-- loop invariants at loop entry and at loop exit.
+- loop invariants at loop entry and at loop exit, through the function
+  attribute's rewrite of the loop (§1.2 rule 10).
 
 Clauses are evaluated with §1.8's code semantics; overflow traps are precise
 (§3.2). In v1, an evaluator linked into debug builds also computes spec-only
@@ -475,7 +509,7 @@ on every call in a test run, so a clause's outcome depends only on its inputs
 and the build mode, never on how often the function has been called. Each
 evaluation has a step budget, and one that runs out is reported as
 unchecked, never as checked or failed (D10). Packages can change the
-budget.
+budget. The D18 spike does not yet implement budgets.
 
 **Loop invariants and measures.** Executable loop invariants are evaluated
 before the first iteration, after every iteration, and at exit. `sampled`
@@ -488,7 +522,9 @@ non-negative and strictly decrease. In `for x in a..b`, an invariant sees
 `x` as the index of the next iteration: it is checked with `x == a` before
 the first iteration, even when the range is empty, and with
 `x == max(a, b)` at exit. This is Dafny's rule, and `max_index` needs it to
-conclude `best < xs.len()`.
+conclude `best < xs.len()`. The function attribute's loop rewrite binds the
+next index; the D18 spike does so for `a..b` ranges, not yet for `a..=b` or
+general iterators.
 
 **Generated tests.** Every function with an `ensures`, and every law (§5),
 gets a property test.
@@ -544,8 +580,8 @@ all of the following hold:
    only if every function of the invariant's defining module is proved;
 4. deletion is decided per instantiation. A check deleted in generic code
    that relies on laws of the instantiated impls is deleted only where those
-   laws are `proved`; the instantiation cache (D12) keys each instance on
-   that law status, and witness-table code keeps law-dependent checks.
+   laws are `proved`, and the build cache (D12) keys each instance on that
+   law status.
 
 Bounds checks follow the same rule but are deleted only under
 `release_delete_bounds_checks = true`, off by default in v1. A wrongly deleted
@@ -560,10 +596,10 @@ change types, layouts, or which code runs.
 `prove` verifies every function in scope, including ones without contracts,
 whose implicit contract is `requires true`. A function verifies when, for
 every input that satisfies its `requires`, it reaches no panic site,
-terminates unless it is `diverges`, and at each return satisfies its
+terminates unless it is `#[diverges]`, and at each return satisfies its
 `ensures` and the invariants it owes (§4.2). Allocation failure, which
-aborts, and stack overflow are outside the guarantee. `#[test]` functions are
-not verified.
+aborts, and stack overflow, which aborts (D5), are outside the guarantee.
+`#[test]` functions are not verified.
 
 ### 3.1 Panic sites
 
@@ -589,9 +625,9 @@ in its trust closure.
 
 ### 3.2 Arithmetic and traps
 
-1. **v0 traps are precise** (D3). Every engine traps at the overflowing
-   operation, and nothing after it runs, so the interpreter and compiled code
-   report the same panic.
+1. **v0 traps are precise** (D3). Every build traps at the overflowing
+   operation (`-C overflow-checks=on` in every profile), and nothing after it
+   runs, so debug, test, and simulator runs report the same panic.
 2. **Proofs use precise traps.** Each arithmetic operation is an obligation at
    its own site, whatever the code generator does. A proved function never
    reaches a trap.
@@ -609,8 +645,9 @@ in its trust closure.
 ### 3.3 Termination
 
 - **Loops.** Every loop needs a measure. `for x in a..b` infers `b - x`;
-  writing it is allowed, as `max_index` does. `while a < b` infers `b - a`,
-  and `while a > b` infers `a - b`. Any other loop needs `decreases`: an
+  writing it with `decreases!` is allowed, as `max_index` does. `while a < b`
+  infers `b - a`, and `while a > b` infers `a - b`. Any other loop needs
+  `decreases!`: an
   `int` expression or a lexicographic tuple of them, non-negative whenever an
   iteration begins and strictly smaller after it. In v1, `for` under `prove`
   iterates only over integer ranges; other `for` loops are errors whose safe
@@ -618,7 +655,7 @@ in its trust closure.
   of produced items, as in Verus, and are deferred. A variable that a loop
   never assigns or mutably borrows keeps its facts across the loop without an
   invariant.
-- **Recursion.** Recursive exec, spec, and proof functions need `decreases`,
+- **Recursion.** Recursive exec, spec, and proof functions need `#[decreases]`,
   except structural recursion on an enum argument, where each call passes a
   value matched out of it. Mutually recursive functions in one module compare
   measures lexicographically at each call.
@@ -629,23 +666,23 @@ in its trust closure.
   trait-call summaries exported for executable generics as for ghost ones
   (§3.4 item 2). A cycle through these edges, such as `impl Step for S {
   fn step(&self) { drive(self) } }` with `fn drive(t: &dyn Step) {
-  t.step() }`, needs a measure or `diverges`.
+  t.step() }`, needs a measure or `#[diverges]`.
 - **Function values.** A closure's calls count as calls by the function that
   creates it, and naming a function as a value adds an edge to it. A call
   through a function value adds none. A call in a closure body must decrease
   the creating function's measure, which stays sound when the closure
   escapes: each activation reached that way has a smaller measure than the
   one that created the closure.
-- **`diverges`** declares partial correctness: `ensures` holds if the function
-  returns. A function that is not `diverges` cannot call one that is. D11
-  counts `diverges` as a trust hole that needs approval. Capability operations
+- **`#[diverges]`** declares partial correctness: `ensures` holds if the
+  function returns. A function without `#[diverges]` cannot call one with
+  it. D11 counts `#[diverges]` as a trust hole that needs approval. Capability operations
   are assumed to return; a peer that never answers is outside contracts.
 
 ### 3.4 Soundness of ghost code
 
 Careless ghost code proves `false`, so these are errors, not lints.
 
-1. `spec fn`s and `proof fn`s always terminate. `diverges` is illegal on them,
+1. `spec fn`s and `proof fn`s always terminate. `#[diverges]` is illegal on them,
    and recursion needs a measure (Creusot's `falso()` shows why).
 2. Termination is checked over a package-level call graph that includes impl
    edges. Each interface exports, for each generic function, the trait
@@ -702,12 +739,12 @@ ordinary `&mut` arguments need none.
 
 ```tide
 impl<K: Eq + Hash, V> Table<K, V> {
-    pub fn get_mut(&mut self, k: &K) -> Option<&mut V>
-        ensures match result {
-            Some(r) => old(*self)@.contains_key(k) && *r == old(*self)@[k]
-                && final(*self)@ == old(*self)@.insert(k, final(*r)),
-            None => !old(*self)@.contains_key(k) && final(*self)@ == old(*self)@,
-        }
+    #[ensures(match result {
+        Some(r) => old(*self)@.contains_key(k) && *r == old(*self)@[k]
+            && final(*self)@ == old(*self)@.insert(k, final(*r)),
+        None => !old(*self)@.contains_key(k) && final(*self)@ == old(*self)@,
+    })]
+    pub fn get_mut(&mut self, k: &K) -> Option<&mut V> { /* ... */ }
 }
 ```
 
@@ -718,16 +755,15 @@ declaration is part of the hashed signature (§11).
 
 ### 4.2 Type invariants
 
-```tide
-pub struct Span
-    invariant self.lo <= self.hi
-{
+```rust
+#[invariant(self.lo <= self.hi)]
+pub struct Span {
     lo: usize,
     hi: usize,
 }
 ```
 
-A type may carry several `invariant` clauses. A clause's *footprint* is the
+A type may carry several `#[invariant]` attributes. A clause's *footprint* is the
 set of fields it reads, and those fields must be private, so only the defining
 module can break an invariant. A type with an invariant cannot opt in to
 `Shape` construction (D6). The invariant `inv(T)` is the conjunction of the
@@ -802,24 +838,24 @@ The standard library states its core traits this way:
 ```tide
 pub trait PartialEq {
     spec fn eq_spec(&self, other: &Self) -> bool;
-    fn eq(&self, other: &Self) -> bool
-        ensures result == self.eq_spec(other);
+    #[ensures(result == self.eq_spec(other))]
+    fn eq(&self, other: &Self) -> bool;
 }
 pub trait Eq: PartialEq {
-    law fn eq_is_view_eq(a: &Self, b: &Self)
-        ensures a.eq_spec(b) <==> a@ == b@;
+    #[ensures(a.eq_spec(b) <==> a@ == b@)]
+    law fn eq_is_view_eq(a: &Self, b: &Self);
 }
 pub trait Ord: Eq + PartialOrd {
     spec fn cmp_spec(&self, other: &Self) -> Ordering;
-    fn cmp(&self, other: &Self) -> Ordering
-        ensures result == self.cmp_spec(other);
-    law fn reverse(a: &Self, b: &Self)
-        ensures a.cmp_spec(b) == b.cmp_spec(a).reverse();
-    law fn transitive(a: &Self, b: &Self, c: &Self)
-        requires le(a, b) && le(b, c)
-        ensures le(a, c);
-    law fn agrees_with_eq(a: &Self, b: &Self)
-        ensures (a.cmp_spec(b) == Ordering::Equal) <==> a@ == b@;
+    #[ensures(result == self.cmp_spec(other))]
+    fn cmp(&self, other: &Self) -> Ordering;
+    #[ensures(a.cmp_spec(b) == b.cmp_spec(a).reverse())]
+    law fn reverse(a: &Self, b: &Self);
+    #[requires(le(a, b) && le(b, c))]
+    #[ensures(le(a, c))]
+    law fn transitive(a: &Self, b: &Self, c: &Self);
+    #[ensures((a.cmp_spec(b) == Ordering::Equal) <==> a@ == b@)]
+    law fn agrees_with_eq(a: &Self, b: &Self);
 }
 pub spec fn le<T: Ord>(a: &T, b: &T) -> bool { a.cmp_spec(b) != Ordering::Greater }
 ```
@@ -828,7 +864,7 @@ pub spec fn le<T: Ord>(a: &T, b: &T) -> bool { a.cmp_spec(b) != Ordering::Greate
 coarser than its structure, such as case-insensitive names, expresses that by
 giving the type a `View` that normalizes, which keeps `HashMap`'s `Map` view
 honest. `Hash` has one law: values with equal views feed the hasher equal
-bytes. `Clone::clone` has the contract `ensures result@ == self@`.
+bytes. `Clone::clone` has the contract `#[ensures(result@ == self@)]`.
 
 An impl must define each abstract spec fn. Under `assert` and `test` an impl
 may omit one; it is then uninterpreted for that impl, and clauses that
@@ -836,7 +872,7 @@ mention it are `proof-only` there. That keeps Rust-style
 `impl Ord for Version { fn cmp(..) }` compiling. `test` still checks such an
 impl's laws *operationally*: it replaces each application `a.cmp_spec(b)`
 with a run of the paired method `a.cmp(b)`, the method whose contract is
-`ensures result == self.cmp_spec(other)`. That is a test, not a definition,
+`#[ensures(result == self.cmp_spec(other))]`. That is a test, not a definition,
 so the impl's laws are `tested`, never `proved`. Under `prove`, omitting an
 abstract spec fn is an error.
 
@@ -862,12 +898,12 @@ when the law proof is `#[trusted]`.
 
 Generic code may rely on the laws of its bounds, called as lemmas:
 `T::transitive(&a, &b, &c);`. Laws are not ambient quantified axioms, for
-solver stability. A generic proof is parametric and checked once, so
-monomorphization and witness tables share it. Its reliance is settled at
+solver stability. A generic proof is parametric and checked once, so every
+monomorphized instance shares it. Its reliance is settled at
 each *concrete instantiation*: a call with concrete type arguments, a `dyn`
 coercion, or the use of a default method by an impl. There the caller's trust
 closure gains every law of the instantiated impls that is not `proved`, and
-the instantiation cache (D12) keys the instance on those laws' proof status,
+the build cache (D12) keys the instance on those laws' proof status,
 so a cached instance never outlives a change in what it relies on (§2.6). A
 generic caller passes the reliance up to its own instantiation sites. This is
 how the unsound `max_of::<Weird>` example of the soundness review (B10a)
@@ -887,10 +923,17 @@ assumption.
 
 ## 6. Closures and function values
 
-A closure literal may carry clauses, which force a block body:
+A closure literal carries clauses as `requires!` and `ensures!` statements
+opening its block body (D10). Attributes on closure expressions are unstable
+Rust, so the enclosing function's contract attribute or `#[invariants]`
+rewrites the closure instead (§1.2 rule 10):
 
-```tide
-let scale = |x: &i64| -> i64 requires *x < 1_000_000 ensures result == *x * 1000 { *x * 1000 };
+```rust
+let scale = |x: &i64| -> i64 {
+    requires!(*x < 1_000_000);
+    ensures!(result == *x * 1000);
+    *x * 1000
+};
 ```
 
 In specs a function value `f` appears only as `f.requires(a, b)` and
@@ -921,10 +964,10 @@ own clauses on every call, so `f.requires(..)` on a function value is
 `proof-only` at the higher-order function's boundary without losing a check.
 
 ```tide
-pub fn map<T, U>(xs: &[T], f: &dyn Fn(&T) -> U) -> Vec<U>
-    requires forall |i: int| 0 <= i && i < xs.len() ==> f.requires(&xs[i])
-    ensures result.len() == xs.len()
-    ensures forall |i: int| 0 <= i && i < xs.len() ==> f.ensures(&xs[i], result[i])
+#[requires(forall |i: int| 0 <= i && i < xs.len() ==> f.requires(&xs[i]))]
+#[ensures(result.len() == xs.len())]
+#[ensures(forall |i: int| 0 <= i && i < xs.len() ==> f.ensures(&xs[i], result[i]))]
+pub fn map<T, U>(xs: &[T], f: &dyn Fn(&T) -> U) -> Vec<U> { /* ... */ }
 ```
 
 ## 7. Capabilities
@@ -932,8 +975,8 @@ pub fn map<T, U>(xs: &[T], f: &dyn Fn(&T) -> U) -> Vec<U>
 Capabilities have no spec model in v1 (D10). Capability values and handles
 have opaque views, and spec and `#[spec]` functions cannot take them.
 Capability methods carry contracts only on their arguments and results, such
-as `ensures match result { Ok(b) => b.len() <= max, Err(_) => true }` on a
-bounded read. The verifier treats each capability call's result as an
+as `#[ensures(match result { Ok(b) => b.len() <= max, Err(_) => true })]`
+on a bounded read. The verifier treats each capability call's result as an
 arbitrary value that satisfies that method's `ensures`, so a postcondition of
 an effectful function holds for every possible response of the world.
 
@@ -965,8 +1008,8 @@ functions run under `Root::sim` seeds with fault injection.
 
 `tide verify` streams NDJSON verdicts per obligation: `pending`, `proved`,
 `failed` with `confirmed_bug` or `proof_incomplete`, `unknown` (resource limit
-reached), or `unstable` (§9). A solver counterexample is replayed in the
-reference interpreter; `confirmed_bug` means a concrete run violates the
+reached), or `unstable` (§9). A solver counterexample is replayed as a
+concrete run of a debug build; `confirmed_bug` means that run violates the
 contract. `tide check` never runs the solver, to keep its 100 ms budget: it
 reports classes and cached verdicts, marks the rest `pending`, and never says
 `ok` while obligations are pending.
@@ -980,16 +1023,18 @@ it is `proved, assuming N`, and the review lists the N.
 
 Counted per function and transitively: `assume`; `#[trusted]` functions, law
 proofs, and bodiless `proof fn`s; `#[trusted_pure]`; `unsafe` blocks;
-contracts of `extern` functions, Rust shims, and Bend kernels (Bend claims
+contracts of `extern` functions, imported Rust crates' wrappers (RUST-2),
+and Bend kernels (Bend claims
 carry the `external` label of D16); dependency contracts a proof relies on that
 were not proved in this build, including panic-freedom and termination; laws
 that are not `proved` at a concrete instantiation; `diverges`; and use
 downgrades. Each hole carries its reason string.
 
 Not counted per use, but listed once per toolchain version: the verification
-condition generator and its encoding, the pinned solver, the reference
-interpreter (for `by(compute)` and spec tests), and the standard library's
-contracts and `#[spec]` accessors.
+condition generator and its encoding, the pinned solver, the contract
+macros' lowering of clauses into checks, the spec evaluator (§2.3; for
+`by(compute)` and spec tests), and the standard library's contracts and
+`#[spec]` accessors.
 
 ### 8.4 Proof cache
 
@@ -1015,7 +1060,7 @@ only (D11).
   terms, division or remainder by a non-constant, bitwise operators, and float
   operations as uninterpreted. `assert e by(nonlinear_arith) requires p;` and
   `by(bit_vector)` run isolated queries that see only the listed `requires`;
-  `by(compute)` evaluates a ground expression in the reference interpreter
+  `by(compute)` evaluates a ground expression in the spec evaluator (§2.3)
   under fuel.
 - **Deterministic limits.** Each obligation has a resource limit (rlimit),
   never a wall-clock timeout; `#[rlimit(n)]` raises it up to a toolchain cap.
@@ -1029,7 +1074,7 @@ only (D11).
   fails CI when a root spec depends on it and warns otherwise.
 - **Diagnostics.** One per failed obligation, with its kind, span, and a hint
   category: missing invariant, needs `reveal`, nonlinear, trigger, or weak
-  callee contract. A proof hole `proof { _?goal }` prints the goal, the facts
+  callee contract. A proof hole `proof { hole!(goal); }` prints the goal, the facts
   in scope, and any counterexample.
 
 ## 10. Spec quality
@@ -1097,9 +1142,9 @@ refinement between the old and new closures, renamed apart:
 a previously unspecified item, is listed in review without a gate. v0 has
 no solver, so there every other changed hash is undecided. A weakened,
 incomparable, or undecided change needs approval and, in v1, comes with a
-distinguishing example, a solver model replayed in the interpreter. As D11
+distinguishing example, a solver model replayed as a concrete run. As D11
 lists, approval is needed for weakening or removing a contract, widening
-authority, adding a trust hole (including `diverges`), downgrading a use,
+authority, adding a trust hole (including `#[diverges]`), downgrading a use,
 and changing or unprotecting a `#[protected]` test.
 
 **Mechanism.** An approval record holds the item's stable ID, the old and new
@@ -1123,20 +1168,18 @@ pub spec fn sorted(s: Seq<i64>) -> bool {
 }
 
 #[contracts(prove)]
-pub fn binary_search(xs: &[i64], key: i64) -> Option<usize>
-    requires sorted(xs@)
-    ensures match result {
-        Some(i) => i < xs.len() && xs[i] == key,
-        None => forall |i: int| 0 <= i && i < xs.len() ==> xs[i] != key,
-    }
-{
+#[requires(sorted(xs@))]
+#[ensures(match result {
+    Some(i) => i < xs.len() && xs[i] == key,
+    None => forall |i: int| 0 <= i && i < xs.len() ==> xs[i] != key,
+})]
+pub fn binary_search(xs: &[i64], key: i64) -> Option<usize> {
     let mut lo: usize = 0;
     let mut hi: usize = xs.len();
-    while lo < hi
-        invariant hi <= xs.len()
-        invariant forall |i: int| 0 <= i && i < lo ==> xs[i] < key
-        invariant forall |i: int| hi <= i && i < xs.len() ==> xs[i] > key
-    {
+    while lo < hi {
+        invariant!(hi <= xs.len());
+        invariant!(forall |i: int| 0 <= i && i < lo ==> xs[i] < key);
+        invariant!(forall |i: int| hi <= i && i < xs.len() ==> xs[i] > key);
         let mid = lo + (hi - lo) / 2;
         if xs[mid] < key {
             lo = mid + 1;
@@ -1168,13 +1211,12 @@ spec fn offset(head: int, s: int, cap: int) -> int {   // logical index of slot 
     if s >= head { s - head } else { s + cap - head }
 }
 
-pub struct Ring<T>
-    invariant self.slots.len() > 0
-    invariant self.head < self.slots.len()
-    invariant self.len <= self.slots.len()
-    invariant forall |s: int| 0 <= s && s < self.slots.len() ==>
-        (#[trigger] self.slots[s]).is_some() == (offset(self.head, s, self.slots.len()) < self.len)
-{
+#[invariant(self.slots.len() > 0)]
+#[invariant(self.head < self.slots.len())]
+#[invariant(self.len <= self.slots.len())]
+#[invariant(forall |s: int| 0 <= s && s < self.slots.len() ==>
+    (#[trigger] self.slots[s]).is_some() == (offset(self.head, s, self.slots.len()) < self.len))]
+pub struct Ring<T> {
     slots: Vec<Option<T>>,
     head: usize,
     len: usize,
@@ -1190,15 +1232,14 @@ impl<T> View for Ring<T> {
 impl<T> Ring<T> {
     pub spec fn cap(&self) -> nat { self.slots.len() }   // closed: reads a private field
 
-    pub fn push(&mut self, x: T) -> Result<(), T>
-        ensures final(*self).cap() == old(*self).cap()
-        ensures match result {
-            Ok(()) => old(*self)@.len() < old(*self).cap()
-                && final(*self)@ == old(*self)@.push(x),
-            Err(y) => old(*self)@.len() == old(*self).cap()
-                && final(*self)@ == old(*self)@ && y == x,
-        }
-    {
+    #[ensures(final(*self).cap() == old(*self).cap())]
+    #[ensures(match result {
+        Ok(()) => old(*self)@.len() < old(*self).cap()
+            && final(*self)@ == old(*self)@.push(x),
+        Err(y) => old(*self)@.len() == old(*self).cap()
+            && final(*self)@ == old(*self)@ && y == x,
+    })]
+    pub fn push(&mut self, x: T) -> Result<(), T> {
         let cap = self.slots.len();
         if self.len == cap {
             return Err(x);
@@ -1210,14 +1251,13 @@ impl<T> Ring<T> {
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Option<T>
-        ensures final(*self).cap() == old(*self).cap()
-        ensures match result {
-            Some(x) => old(*self)@.len() > 0 && x == old(*self)@[0]
-                && final(*self)@ == old(*self)@.skip(1),
-            None => old(*self)@.len() == 0 && final(*self)@ == old(*self)@,
-        }
-    {
+    #[ensures(final(*self).cap() == old(*self).cap())]
+    #[ensures(match result {
+        Some(x) => old(*self)@.len() > 0 && x == old(*self)@[0]
+            && final(*self)@ == old(*self)@.skip(1),
+        None => old(*self)@.len() == 0 && final(*self)@ == old(*self)@,
+    })]
+    pub fn pop(&mut self) -> Option<T> {
         if self.len == 0 {
             return None;
         }
@@ -1228,16 +1268,14 @@ impl<T> Ring<T> {
     }
 }
 
-fn wrap(head: usize, k: usize, cap: usize) -> usize
-    requires head < cap && k < cap
-    ensures result == phys(head, k, cap)
-{
+#[requires(head < cap && k < cap)]
+#[ensures(result == phys(head, k, cap))]
+fn wrap(head: usize, k: usize, cap: usize) -> usize {
     if k < cap - head { head + k } else { k - (cap - head) }
 }
 
-pub fn submit(q: &Shared<Ring<Job>>, job: Job) -> Result<(), SubmitError>
-    ensures match result { Err(SubmitError::Full(j)) => j == job, _ => true }
-{
+#[ensures(match result { Err(SubmitError::Full(j)) => j == job, _ => true })]
+pub fn submit(q: &Shared<Ring<Job>>, job: Job) -> Result<(), SubmitError> {
     match q.with(|r| r.push(job)) {
         Ok(Ok(())) => Ok(()),
         Ok(Err(j)) => Err(SubmitError::Full(j)),
@@ -1264,24 +1302,21 @@ pub spec fn sorted_by<T: Ord>(s: Seq<T>) -> bool {
 }
 
 #[contracts(prove)]
-pub fn selection_sort<T: Ord>(v: &mut Vec<T>)
-    ensures sorted_by(final(*v)@)
-    ensures final(*v)@.to_multiset() == old(*v)@.to_multiset()
-{
+#[ensures(sorted_by(final(*v)@))]
+#[ensures(final(*v)@.to_multiset() == old(*v)@.to_multiset())]
+pub fn selection_sort<T: Ord>(v: &mut Vec<T>) {
     let n = v.len();
-    for i in 0..n
-        invariant v.len() == n
-        invariant v@.to_multiset() == old(*v)@.to_multiset()
-        invariant sorted_by(v@.take(i))
-        invariant forall |a: int, b: int| 0 <= a && a < i && i <= b && b < n
-            ==> le(&v[a], &v[b])
-    {
+    for i in 0..n {
+        invariant!(v.len() == n);
+        invariant!(v@.to_multiset() == old(*v)@.to_multiset());
+        invariant!(sorted_by(v@.take(i)));
+        invariant!(forall |a: int, b: int| 0 <= a && a < i && i <= b && b < n
+            ==> le(&v[a], &v[b]));
         let mut m = i;
         proof { T::reverse(&v[i], &v[i]); }              // gives le(v[i], v[i])
-        for k in i + 1..n
-            invariant i <= m && m < k
-            invariant forall |t: int| i <= t && t < k ==> le(&v[m], &v[t])
-        {
+        for k in i + 1..n {
+            invariant!(i <= m && m < k);
+            invariant!(forall |t: int| i <= t && t < k ==> le(&v[m], &v[t]));
             if v[k].cmp(&v[m]) == Ordering::Less {
                 proof {
                     assert forall |t: int| i <= t && t < k ==> le(&v[k], &v[t]) by {
@@ -1339,9 +1374,9 @@ from `with2` (D8), dropped abandoned values (D5), opaque executable bodies
 (D10), spec fn bodies and laws in interfaces (D12), and trust closures in
 status (D11). These remain:
 
-1. D12: the instantiation cache key should include the proof status of the
-   laws an instance relies on, so check deletion stays sound across builds
-   (§2.6, §5.3).
+1. D12: the build cache key for a monomorphized instance should include the
+   proof status of the laws it relies on, so check deletion stays sound
+   across builds (§2.6, §5.3).
 2. D10: say that a clause in generic code needs `Pure + Sync` bounds on the
    type parameters whose values it passes to calls (CLAUSE-3). D4's
    definition checking and the one skip rule, which leaves no

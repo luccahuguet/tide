@@ -1,18 +1,19 @@
 # Authority, Concurrency, and Simulation
 
 Status: draft 1 of the normative chapter for D7, D8, D9, D15, D16, and the
-Rust-import part of D13 in `design/01-design.md`, synchronized with its draft
-3.5. That document owns the decisions; this chapter turns them into rules a
+Rust-crate part of D13 in `design/01-design.md`, synchronized with its draft
+3.7, which applies D18: every Tide program is a Rust crate that rustc builds
+against Tide's std. That document owns the decisions; this chapter turns them into rules a
 compiler, runtime, and simulator can implement. Where a rule needs a decision
 the design does not state, this chapter says so and lists it in §13.
 
 **Tier** (01's Tiers table). v0 core: §0–§3; declared authority and the trust
-diff (§4.1, §4.3–§4.5); §6; the may-suspend flag (§7.1); `join`, `par_map`,
+diff (§4.1, §4.3–§4.5); admission (§2.5); §6; the may-suspend flag (§7.1); `join`, `par_map`,
 and `par_for` (§8.1, §8.2, §8.4); the simulator with crash, restart, and
 durability (§9); the worked examples (§12). v1: exercised authority,
 effect reporting, and `FX0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`,
 and `ThreadBound` (§5); the evented runtime and its lowering (§7.2);
-`par_reduce` (§8.3); imported Rust crates (§11). Later: the Bend boundary and
+`par_reduce` (§8.3); imported Rust crates (§11, RUST-1 to RUST-5). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
 by `reference.md`: `pct` scheduling and `--minimize` (§9). Draft 3 removed
 `Frozen` (now `Pure + Sync`), the `lock` keyword (now `Shared::with`, §6.5),
@@ -140,9 +141,9 @@ workers = "cores"          # evented only (v1)
 par-threads = "cores"      # the join/par_* pool (§8); 1 makes them sequential
 ```
 
-The generated entry point starts the allocator, runtime, and sinks, builds
-`Root` with full authority over the real process, and runs `main(root)` as
-the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
+The entry point that `#[tide::main]` generates starts the allocator,
+runtime, and sinks, builds `Root` with full authority over the real process,
+and runs `main(root)` as the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
 `Error: {e:?}`), 101 after a panic.
 
 | Runtime | Tasks run as | Suspension is | Code generation |
@@ -150,7 +151,7 @@ the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
 | `blocking` | the main thread, plus one OS thread per child, created at spawn and joined at scope exit | a blocking syscall or futex wait | ordinary functions |
 | `threads` | one OS thread per task for its whole life (v0); a finished task's thread may be reused | a blocking syscall or futex wait | ordinary functions |
 | `evented` (v1) | M:N on per-core workers with work stealing; reactor on io_uring, else epoll, kqueue, or IOCP, chosen at startup | a return to the scheduler | may-suspend functions become state machines (§7) |
-| simulator | one task at a time under a seeded scheduler | a scheduling point | baton-passed OS threads, the interpreter, or the evented lowering (§9.1) |
+| simulator | one task at a time under a seeded scheduler | a scheduling point | baton-passed OS threads; the evented lowering in v1 (§9.1) |
 
 No runtime runs children inline, so a library that spawns is correct under
 all four; they differ in cost, not meaning. Because `threads` gives every
@@ -169,7 +170,9 @@ N1). Test builds add the simulator behind one predictable branch.
 ### 2.1 `Root`
 
 - **ROOT-1.** `Root` may be named only as the parameter of the binary's
-  `main`.
+  `main`, written `#[tide::main] fn main(root: Root)`. rustc rejects
+  parameters on a plain `main` (E0580); the attribute generates Rust's entry
+  point, which mints the `Root`.
 - **ROOT-2.** `root` cannot be passed, borrowed into a call, stored,
   returned, or captured (`FX0503`). Its fields can be moved or borrowed out
   one by one. Attenuation and wiring therefore happen in `main`, where review
@@ -186,10 +189,13 @@ N1). Test builds add the simulator behind one predictable branch.
   safe std require `T: Pure`. Unsafe code can still forge a capability by
   writing raw memory, so the lockfile marks every package with an `unsafe` or
   `ffi` grant `authority: declared, unverified`.
+- **ROOT-5.** No code calls `main` or uses it as a value (`FX0506`), so a
+  test cannot mint a real `Root` through it.
 
 ### 2.2 No mutable globals, no thread-locals
 
-- **GLOBAL-1.** A `static` must be `Owned + Sync + Pure` (`FX0502`). There is
+- **GLOBAL-1.** A `static` must be `Sync + Pure` (`FX0502`), and, as in
+  Rust, `'static`. There is
   no `static mut` in safe code.
 - **GLOBAL-2.** v0 has no lazy statics (D7). A static's initializer is
   evaluated at compile time by `const fn` (D6); a value that needs run-time
@@ -200,8 +206,10 @@ N1). Test builds add the simulator behind one predictable branch.
   runtime's per-task state (cancellation, deadline, sink buffers, frame
   stack) is reachable only through the operations in this chapter.
 - **GLOBAL-4.** Raw pointer addresses are observable only in packages
-  granted `unsafe` (D15): pointer-to-integer casts, `{:p}`, and raw pointers'
-  `PartialOrd`, `Ord`, `Hash`, and `Debug` compile only there. `Hash` on a
+  granted `unsafe` (D15): raw pointer types are admitted only there
+  (ADMIT-1), because their `PartialOrd`, `Ord`, `Hash`, and `Debug` impls
+  observe addresses, and so are pointer-to-integer casts, `addr`, and
+  `{:p}`. `Hash` on a
   reference hashes the referent. `ptr::eq` and `Shared::same` compare
   identity without exposing it.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
@@ -234,12 +242,10 @@ Allocation needs no capability; its failure aborts the process. Every
 determinism claim here holds modulo exhaustion of memory, stack, or
 `const fn` fuel.
 
-- **PANIC-1. Stack overflow** is a panic (D5). Engines detect it before the
-  stack runs out, compiled code by a stack-limit check at function entry and
-  the interpreter by a depth limit, so it unwinds like any panic: destructors
-  run, scope exit joins the children that borrow the task's frames (JOIN-1),
-  and `spawn_isolated` can contain it. The depth at which it occurs is
-  outside the determinism claim.
+- **PANIC-1. Stack overflow** aborts the process, as in Rust (D5): no
+  destructors run and `spawn_isolated` cannot contain it. Under the
+  simulator it fails the seed. The depth at which it occurs is outside the
+  determinism claim.
 - **PANIC-2. Panic during unwinding.** A panic raised while a task is
   unwinding from another panic, for example in a destructor, aborts the
   process, as in Rust (D5).
@@ -303,17 +309,59 @@ determinism claim here holds modulo exhaustion of memory, stack, or
   so formatting one is a type error; `expose()` reads the value. Exfiltration
   still needs `Net`, `Fs`, or `Proc`.
 
+### 2.5 Admission
+
+Under D18 rustc compiles a Tide crate against Tide's std, injected as `std`,
+so the real std's paths cannot be named. `core` and `alloc` stay reachable,
+and std's inherent methods stay callable on the types Tide's std re-exports,
+so the rules above also need an admission check (D7).
+
+- **ADMIT-1. Allowlist.** The checker resolves every path, method call,
+  operator, deref, impl selected for an obligation, and macro expansion, and
+  admits only listed items of `core` and `alloc` and listed inherent methods
+  of std's types, keyed on crate identity rather than crate name. Anything
+  else is `FX0520`, with a fix where std offers a replacement. Outside the
+  list are at least:
+  - safe hardware intrinsics such as `core::arch::x86_64::__cpuid`;
+  - raw pointer types without an `unsafe` grant, and every address observer
+    (GLOBAL-4);
+  - `core` atomics, which are created without `&Tasks` (§1.2);
+  - float observers and math methods (`to_bits`, `copysign`, `total_cmp`,
+    `min`, `max`, `sin`, `exp`, and the rest; PAR-3);
+  - I/O methods on re-exported std types (`Path::exists`, `metadata`,
+    `read_dir`, `canonicalize`);
+  - `io::Error::last_os_error`, and timed waits such as
+    `mpsc::Receiver::recv_timeout`, which read time without a `Clock`;
+  - compile-time reads of files and the build environment (`include_str!`,
+    `env!`, `option_env!`), inside attributes too;
+  - the internal runtime entry points of Tide's std.
+
+  The allowlist is versioned with the rustc pin and reviewed whenever the
+  pin moves.
+- **ADMIT-2. The driver owns rustc** (D18). It passes rustc no
+  user-controlled `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C`
+  flags, and passes `-Zallow-features=` so user code cannot enable unstable
+  features. A build that skips the checker, such as Cargo with Rust's own
+  std, is not a Tide build and carries none of this chapter's guarantees.
+
 ## 3. `Pure` and Authority-Free Functions
 
 ### 3.1 Definitions
 
-`Pure` is a compiler-known auto trait. Outside std it can be implemented only
-by `unsafe impl` in a package granted `unsafe`, and each such impl is a trust
-hole. It is deep: it looks through every field, private ones included, and
-through `Box` and `Rc`; recursive types take the greatest fixed point; `dyn`
-and `impl Trait` types are `Pure`, `Send`, or `Sync` only if their bounds
-name it (`Owned` follows origins, `02-memory.md` §3.7); a type parameter has one only if bounded by it. `02-memory.md` §9 has the full
-table.
+`Pure` is a marker trait the checker owns (D7). Tide's std declares it with a
+blanket impl, so rustc accepts every `Pure` bound and coherence never treats
+`Pure` as making two impls disjoint. The checker decides it structurally
+wherever a type meets a `Pure`-implying obligation or is coerced to a `Pure`
+trait object. A type the structural rule rejects that is authority-free in
+fact, such as a foreign handle, may be marked
+`#[trusted_pure(reason = "...")]` in a package granted `unsafe`, and each
+such mark is a trust hole. `Pure` is deep: it looks through every field,
+private ones included, and through `Box` and `Rc`; recursive types take the
+greatest fixed point; `impl Trait` types are `Pure`, `Send`, or `Sync` only
+if their bounds name it, and `dyn` types are `Send` or `Sync` only if they
+name it and `Pure` only through a companion supertrait (below); `Owned`
+follows origins (`02-memory.md` §3.7); a type parameter has one only if
+bounded by it. `02-memory.md` §9 has the full table.
 
 **`Pure`** means that no authority is reachable. Not `Pure`:
 
@@ -323,11 +371,30 @@ table.
   `Arc`, `sync::Weak`, atomics, everything in `std::sync::raw`);
 - foreign handles: raw pointers, `extern` types, foreign function pointers;
 - `ThreadBound` types;
-- `dyn Trait` without `+ Pure`, and unbounded type parameters.
+- `dyn Trait` whose trait does not have `Pure` as a supertrait, and
+  unbounded type parameters.
 
 Everything else is `Pure` exactly when its components are, including `Cell`,
 `RefCell`, `Rc`, collections, closures, and Tide function pointers (a
 pointee's authority arrives through its arguments).
+
+**`Pure` trait objects.** `dyn Trait + Pure` is not Rust (E0225): only auto
+traits can be added to a trait object. A trait object that must be `Pure`
+uses a companion supertrait with a blanket impl:
+
+```rust
+pub trait PureValue: Value + Pure {}
+impl<T: Value + Pure + ?Sized> PureValue for T {}
+```
+
+`&dyn PureValue` upcasts to `&dyn Value`. To rustc the blanket impl makes
+every `Value` a `PureValue`, so the checker's structural check runs at each
+coercion to `dyn PureValue`, not at the impl.
+
+**Unchecked callers.** Rust code that calls a Tide crate is not checked
+(RUST-6), so a closure or trait impl it passes in may meet a `Pure` bound
+without being authority-free. Such values are trust holes, as foreign
+callbacks are.
 
 **`Pure + Sync`** replaces draft 2's `Frozen` (D7): `Sync` excludes `Cell`,
 `RefCell`, `OnceCell`, `UnsafeCell`, and `Rc`, and `Pure` excludes atomics
@@ -363,7 +430,7 @@ For an authority-free function `f`:
    environment, or other task. Its only outputs besides its result and its
    arguments' memory are sink records.
 4. **Runtime independence.** `f` behaves identically under every runtime,
-   including the simulator, and under every backend (D12).
+   including the simulator, and in every build profile (D12).
 
 The argument: safe code has no ambient source (§2.1, §2.2); `Pure` arguments
 reach no capability or handle, and the body cannot create a handle without
@@ -392,7 +459,7 @@ its last release and `make_mut` run user code at timing-dependent points
 | --- | --- |
 | `join` closures; `par_*` closures | `FnOnce + Pure + Send`; `Fn + Pure + Send + Sync`; for both, shared captures `Pure + Sync` and mutable captures disjoint; `par_*` elements `Pure + Sync` when shared, `Pure + Send` when split or moved (PAR-4) |
 | compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters; a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
-| `static` (computed at compile time, GLOBAL-2) | `Owned + Sync + Pure` |
+| `static` (computed at compile time, GLOBAL-2) | `Sync + Pure`, and `'static` as in Rust |
 | `Shared<T>` payloads | `T: Send + Pure` |
 | `Shared::with` closures | `Pure`, so every call in them is authority-free |
 | contract clauses (v0) | as `04-contracts.md` CLAUSE-3: calls only to authority-free functions with `Pure + Sync` argument types that take `&mut` only to temporaries the clause creates |
@@ -409,7 +476,8 @@ from its type, each labelled with its access path. For
 `fn handle(app: &App, req: &Request)` where `App` holds `db: Db` (which holds
 a `Net`), `files: Fs`, and `clock: Clock`, declared authority is
 `{app.db.net: net, app.files: fs.read+fs.write, app.clock: clock}`. A
-`dyn Trait` without `+ Pure` and an unbounded type parameter contribute
+`dyn Trait` whose trait lacks a `Pure` supertrait and an unbounded type
+parameter contribute
 `opaque(..)`, resolved below.
 
 **Exercised authority** (v1; v0 reports declared authority only) is computed
@@ -563,14 +631,17 @@ catches some false claims.
 
 `ThreadBound` marks values tied to one OS thread: foreign handle types
 declared `#[thread_bound]`, and imported Rust types that are not `Send`
-(§11). It is a compiler-known structural property: a type is `ThreadBound`
+(§11). It is a checker-owned structural property: a type is `ThreadBound`
 if any component is, through fields, type arguments, and closure captures. A
 `ThreadBound` type is neither `Send`, `Sync`, nor `Pure`. A `ThreadBound`
 type may be coerced to `dyn Trait`, or be the hidden type of a returned
-`impl Trait`, only if the object or opaque type names `+ ThreadBound`
-(`Box<dyn Debug + ThreadBound>`, `-> impl Debug + ThreadBound`); such a
-value pins like the concrete type, so erasure cannot hide the value from the liveness
-analysis (round-2 consistency review B8). Under the evented runtime the
+`impl Trait`, only if the opaque type names `+ ThreadBound`
+(`-> impl Debug + ThreadBound`) or the object's trait has it as a companion
+supertrait, as for `Pure` (§3.1): `dyn Debug + ThreadBound` is not Rust
+(E0225), so the object is `Box<dyn DebugThreadBound>` with
+`trait DebugThreadBound: Debug + ThreadBound {}` and a blanket impl. Such a
+value pins like the concrete type, so erasure cannot hide the value from the
+liveness analysis (round-2 consistency review B8). Under the evented runtime the
 compiler computes, from liveness, where a `ThreadBound` value is live across
 a suspension point and pins the task to its current worker over that range;
 a pinned task is never stolen, and a foreign call taking a `ThreadBound`
@@ -587,7 +658,7 @@ The origin structure is `02-memory.md` §8.2; the names here are normative.
 impl Tasks {
     pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
         where E: From<TaskError> + Send, F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>;
-    pub fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + Owned)
+    pub fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + 'static)
         -> Result<T, Panicked>;
     pub fn shield<T>(&self, body: impl FnOnce() -> T) -> T;
     pub fn checkpoint(&self) -> Result<(), Cancelled>;
@@ -783,6 +854,11 @@ simultaneously and so require `Send`.
 
 ### 7.2 Lowering under the evented runtime (v1)
 
+This section states the lowering the evented runtime needs. Under D18 rustc
+lowers only `async fn` to state machines, so how Tide builds it without
+exposing coloring to users is open; failing that is a reversal condition
+of D18.
+
 - Each may-suspend instance becomes a **frame record** (the locals live
   across suspension points, plus a state index) and a **resume function**
   that switches on the state.
@@ -792,8 +868,8 @@ simultaneously and so require `Send`.
   stays valid across suspension without `Pin`.
 - Without recursion or may-suspend `dyn` calls below a spawn, the first
   chunk is sized to the deepest frame chain exactly. Recursive calls allocate
-  in the chunk list; a task over its cap (default 8 MiB) panics as on stack
-  overflow.
+  in the chunk list; a task over its cap (default 8 MiB) aborts the
+  process, as stack overflow does (PANIC-1).
 - Calls to non-suspending functions are ordinary calls on the worker's native
   stack, so native frames are never live across a suspension point.
 - A suspending leaf registers with the reactor and returns `Pending`. The
@@ -811,12 +887,10 @@ connection handler holds tens to hundreds of bytes.
 ### 7.3 The other runtimes and foreign code
 
 Under `blocking` and `threads`, every function is compiled as an ordinary
-function and suspension blocks the OS thread. The simulator uses either
-lowering (§9.1). Foreign code calls only authority-free Tide code (FFI-6),
-which is never lowered, and wrapper calls that block run on the blocking pool
-while the task's frame waits (FFI-5). One package compiled to mid-IR serves
-every runtime; the instantiation cache keys may-suspend instances by
-lowering.
+function and suspension blocks the OS thread. The simulator runs on
+baton-passed threads (§9.1). Foreign code calls only authority-free Tide code
+(FFI-6), which is never lowered, and wrapper calls that block run on the
+blocking pool while the task's frame waits (FFI-5).
 
 ## 8. Deterministic Parallelism
 
@@ -864,13 +938,15 @@ cancelled.
   have panicked.
 - **PAR-3.** Floating-point code is never contracted to FMA or reassociated
   unless written so (`mul_add`). Every operation that reads a float's sign
-  or bits (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`,
-  `signum`, `total_cmp`, hashing, formatting, and foreign calls) treats any
-  NaN as one canonical NaN in every engine, `const fn` evaluation included,
-  while arithmetic stays native (D3). std
-  ships one math library for every target (D15), so `sin`, `exp`, `ln`,
-  `powf`, and the other functions beyond IEEE's basic operations never call
-  the platform's libm.
+  or bits treats any NaN as one canonical NaN, `const fn` evaluation
+  included, while arithmetic stays native (D3). Rust's inherent observers
+  (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
+  `total_cmp`, `min`, `max`) and math methods are outside the allowlist
+  (ADMIT-1); std's `float::bits`, `float::min`, and `float::max` take their
+  place, and its `math::sin`, `math::exp`, `math::ln`, `math::powf`, and the
+  other functions beyond IEEE's basic operations use one math library for
+  every target (D15), never the platform's libm. Formatting, byte
+  conversions, and foreign calls are audited against the same rule.
   The automatic parallelization pass (later tier) only runs independent
   authority-free calls in parallel; it never regroups a fold.
 
@@ -915,14 +991,14 @@ sequential order (D9), so a seed replays exactly even when a branch panics.
 
 ### 9.1 Engines
 
-A simulation is defined by its scheduler decisions, so three engines can run
-it: baton-passed OS threads, one runnable at a time (default for
-`tide test`); the evented lowering on one thread (default for long
-`tide sim` runs, once the evented runtime exists in v1); and the
-interpreter. Decisions happen at the same points in each, and v0 overflow
-traps are precise in every engine (D3), and every engine runs parallel
-regions sequentially (§8.4), so a seed yields one trace in all of them;
-conformance tests check it.
+A simulation is defined by its scheduler decisions, so any engine that makes
+them at the same points can run it. v0 has one: baton-passed OS threads, one
+runnable at a time, in a rustc debug build (D18). The evented lowering on one
+thread may become a second, for long `tide sim` runs, once the evented
+runtime exists (v1), and an interpreter a third if one is built (D12). v0
+overflow traps are precise in every engine (D3), and every engine runs
+parallel regions sequentially (§8.4), so a seed yields one trace in all of
+them; conformance tests check it.
 
 ### 9.2 `Root::sim`
 
@@ -1008,7 +1084,7 @@ NDJSON record per failing seed and a summary:
 {"kind":"sim_failure","target":"kv::tests::acked_writes_survive","seed":3141,
  "commit":"e9d8ed4","toolchain":"tide 0.4.1","virtual_time":"0.704s","steps":18342,
  "failure":{"type":"panic","message":"acked k17 missing on backup",
-            "span":"src/kv.tide:121:13","node":"client","task":"0"},
+            "span":"src/kv.rs:121:13","node":"client","task":"0"},
  "faults":["partition#1 at 0.200s"],
  "replay":"tide sim --replay target/sim/acked_writes_survive-3141.manifest.json",
  "trace":"target/sim/acked_writes_survive-3141.ndjson","trace_hash":"9f2c…"}
@@ -1067,11 +1143,11 @@ real child processes, which need a `sim.world.proc` model.
 life = { bend = "=2.0.37", src = "kernels/", mode = "process" }  # "inproc" needs grants = ["ffi"]
 ```
 
-```tide
+```rust
 #[bend(dep = "life", def = "Life.steps", reference = life_steps_ref)]
-pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendArray<u32>, BendFault>
-    ensures result.is_ok() ==> result.unwrap().len() == board.len()
-        by bend_law("kernels/LAWS.bend", "steps_keep_size");
+#[ensures(result.is_ok() ==> result.unwrap().len() == board.len(),
+          by = bend_law("kernels/LAWS.bend", "steps_keep_size"))]
+pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendArray<u32>, BendFault>;
 ```
 
 - **Build.** The pin is exact. The build runs the pinned `bend`, caches by
@@ -1103,7 +1179,8 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   runs the `reference` implementation if one is declared, and otherwise the
   real kernel outside virtual time, recording the result's hash. Latency is
   modeled, and `accel_crash` exercises the failure paths.
-- **Imported claims.** A `by bend_law` clause is accepted only if Tide can
+- **Imported claims.** An `ensures` with `by = bend_law(..)` is accepted
+  only if Tide can
   render it as a Bend law (first-order fragment), the pinned `bend` verdict
   passes, and the verdict lists no foreign or `@unsafe` dependency. The claim
   enters the trust surface as `external: bend` with version and hashes in the
@@ -1113,7 +1190,9 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
 - **Differential tests.** With a `reference`, `tide test` property-tests the
   kernel against it; deterministic `par_map` makes exact comparison meaningful.
 
-## 11. Imported Rust Crates (v1)
+## 11. Rust Crates
+
+Imports (RUST-1 to RUST-5) are v1; RUST-6 is the other direction.
 
 ```toml
 [rust-dependencies]
@@ -1121,16 +1200,18 @@ regex = { version = "1.11", authority = [] }
 rusqlite = { version = "0.32", authority = ["fs.read", "fs.write"], build = true }
 ```
 
-- **RUST-1. Shims.** Tide generates explicitly instantiated C-ABI shims
-  for the synchronous APIs it uses; async, macro-driven, and lifetime-heavy
-  APIs need a hand-written Rust shim.
+- **RUST-1. Direct linking.** A Tide crate links synchronous Rust crates
+  directly (D13, D18), with no C ABI between them. Async, macro-driven, and
+  lifetime-heavy APIs (tokio, serde's `'de`) are out of scope, unless a
+  hand-written Rust adapter crate, imported the same way, wraps them in a
+  synchronous API.
 - **RUST-2. Authority.** With `authority = []`, every wrapper is
   `#[trusted_pure]` and carries FFI-3's claims. Otherwise every free function
   and constructor wrapper takes a capability for each declared kind, and the
   opaque types they return are resource handles: not `Pure`, carrying that
   authority, so their methods need no further parameters. Per-item overrides
   narrow this (`items."Connection::open_in_memory" = []`).
-- **RUST-3. Symbol scan.** After the build, the linked objects' symbols are
+- **RUST-3. Linked-symbol scan.** After the build, the linked objects' symbols are
   mapped to kinds: `open`, `stat`, `unlink` to `fs`; `socket`, `connect`,
   `getaddrinfo` to `net`; `clock_gettime` to `clock`; `getrandom` to `rand`;
   `getenv` to `env`; `fork`, `execve`, `posix_spawn` to `proc`;
@@ -1138,8 +1219,8 @@ rusqlite = { version = "0.32", authority = ["fs.read", "fs.write"], build = true
   kind found but not declared fails the build (`FX0515`) with the symbol and
   object.
 - **RUST-4. Threads and panics.** Rust types that are not `Send` import as
-  `ThreadBound`; `Send` and `Sync` otherwise carry over. Panics are caught in
-  the shim and re-raised in the calling task. Callbacks follow FFI-6.
+  `ThreadBound`; `Send` and `Sync` otherwise carry over. A crate's panic
+  unwinds into the calling task like any panic. Callbacks follow FFI-6.
 - **RUST-5. Build scripts** run only with `build = true`, in a sandbox: no
   network, read-only sources, a writable output directory only, a cleared
   environment, and CPU and time limits. Outputs are hashed into the
@@ -1153,11 +1234,20 @@ libc interposition is best-effort; a build script can emit malicious code
 into its outputs; threads a crate spawns escape Tide scheduling. The trust
 surface marks each crate `rust: declared, scan-checked, unverified`.
 
+- **RUST-6. Rust consumers.** A Tide crate is a Rust crate, so Rust code
+  depends on it directly. The consumer's manifest injects Tide's std with
+  `std = { package = "tide_std" }`. Types Tide's std re-exports from Rust's
+  (`Vec`, `String`, `Box`, `Option`, `Result`, slices, `&str`) are the same
+  types on both sides; Tide-owned types (`HashMap`, `HashSet`, `Arc`, the
+  capability types) are distinct and need adapters at the boundary. A Rust
+  caller gets capabilities only from a Tide-written entry point, and the
+  closures and trait impls it passes in are unchecked trust holes (§3.1).
+
 ## 12. Worked Examples
 
 ### 12.1 A command-line tool
 
-```tide
+```rust
 #[derive(Debug, Error)]
 enum CliError {
     #[error("usage: lc <file>...")]
@@ -1176,6 +1266,7 @@ fn count_lines(bytes: &[u8]) -> usize {
     bytes.iter().filter(|&&b| b == b'\n').count()
 }
 
+#[tide::main]
 fn main(root: Root) -> Result<(), CliError> {
     let paths: Vec<String> = root.env.args().skip(1).collect();
     if paths.is_empty() {
@@ -1201,7 +1292,7 @@ fn counts_lines() {
 
 ### 12.2 A concurrent fetcher with a deadline
 
-```tide
+```rust
 #[derive(Debug, Error)]
 pub enum FetchError {
     #[error("task: {0}")]
@@ -1244,7 +1335,7 @@ an error, so the deadline does not fail the scope: both joins return and
 
 ### 12.3 A replicated key-value node under a partition
 
-```tide
+```rust
 pub struct Node { pub net: Net, pub fs: Fs, pub clock: Clock, pub tasks: Tasks, pub backup: Option<String> }
 
 pub fn serve(node: &Node, addr: &str) -> Result<(), ServeError> {   // ServeError: #[from] TaskError, io::Error, ..
@@ -1321,7 +1412,7 @@ run exactly.
 
 ### 12.4 A bank transfer with `Shared::with2`
 
-```tide
+```rust
 #[derive(Debug, Error)]
 pub enum BankError {
     #[error("insufficient funds")]
@@ -1381,14 +1472,15 @@ write means an early `?` never leaves a half-applied transfer.
 1. Read-mostly data and counters: a read-only `with`, snapshot cells,
    sharded counters (`reviews/round1-performance.md` N3).
 2. Whether one enum through one channel replaces `select` well enough.
-3. How a library exported through the C ABI, called from C, Rust, or Bend,
+3. How a library exported through the C ABI, called from C or Bend,
    receives capabilities; probably a generated init entry that builds a
-   `Root` for it.
+   `Root` for it. Rust callers get them from a Tide-written entry point
+   (RUST-6).
 4. The porting cost of GLOBAL-6 (`Arc` creation taking `&Tasks`,
    `Arc::get_mut`, `try_unwrap`, counts).
 5. FFI-6 excludes callbacks that need effects, such as GUI event loops.
-6. Integration tests that need the real filesystem, since ROOT-1 keeps `Root`
-   out of tests.
+6. Integration tests that need the real filesystem, since ROOT-1 and ROOT-5
+   keep a real `Root` out of tests.
 7. Benchmarks for G(n)'s constants, the 100 ms watchdog, and baton-passed
    threads in large simulations.
 8. Whether read versus write should be a type distinction on `Fs`.

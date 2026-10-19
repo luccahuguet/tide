@@ -1,11 +1,12 @@
 # Tide Design
 
-Status: draft 3.5. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3.7. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
 3.4 returned D2 to Rust's lifetime spelling after the origin trial
 (`trials/e1-origins/`); draft 3.5 takes Rust 2024's lifetimes whole
 after review rounds 8 to 10; and draft 3.6 adopts the checked Rust dialect
-as the v0 direction (D18), whose feasibility spike passed. This
+as the v0 direction (D18), whose feasibility spike passed; draft 3.7
+applies D18's changes to the other decisions. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -18,8 +19,9 @@ It keeps what makes Rust worth learning: memory safety and data-race freedom
 without a garbage collector, zero-cost abstractions, algebraic data types,
 `Result` and `?`, and "if it compiles, it probably works". It keeps Rust's
 spelling wherever the meaning is the same, so a model's Rust knowledge
-transfers. It removes what costs agents the most: user macros, async
-coloring, an unbounded trait system, and slow builds. It keeps Rust 2024's
+transfers; under D18 every Tide program is a valid Rust crate. It removes
+what costs agents the most: user macros, async coloring, an unbounded trait
+system, and slow builds. It keeps Rust 2024's
 lifetimes, minus the forms beyond D4's power ceiling.
 
 It adds guarantees that tools layered on Rust cannot give, because Rust code
@@ -43,7 +45,7 @@ and `alloc` items that cannot reach the world (D18):
    and diffed between revisions, so reviewers see what changed in what code
    may do before reading how it does it.
 
-Contracts (`requires`, `ensures`) are part of the language and serve as
+Contracts (`#[requires]`, `#[ensures]`) are toolchain attributes and serve as
 runtime checks, property tests, and optional SMT proofs. They support the
 thesis; they are not the headline. Proof-first, massively parallel pure
 computation is Bend's territory (D16).
@@ -77,12 +79,12 @@ later-tier feature, the tier table wins.
 
 | Tier | Contents |
 | --- | --- |
-| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`requires`, `ensures`, loop `invariant`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the agent toolchain on the interpreter, then the Cranelift-class backend |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
+| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; FFI with `#[trusted_pure]`; direct Rust crate import with RUST-2 wrappers; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
-already use the clause syntax agents will later prove, so moving proofs in
+already use the clause attributes agents will later prove, so moving proofs in
 later costs no rewrite, while shipping them in v0 would roughly double the
 reference and put Tide's pitch on Bend 2's ground.
 
@@ -129,8 +131,8 @@ The design is a hypothesis. Before syntax freezes, the project runs:
 - **E1 learnability**: a fresh agent given only the Tide reference writes a
   fixed task set; pass rates and iterations to green are compared with the
   same agent writing Rust.
-- **E2 productivity**: equivalent multi-file tasks in Tide (interpreter) and
-  Rust, measuring wall time, iterations, and defects.
+- **E2 productivity**: equivalent multi-file tasks in Tide and Rust, measuring
+  wall time, iterations, and defects.
 - **E3 review**: reviewers detect planted malicious or authority-widening
   changes using the trust diff versus the plain code diff.
 - **E4 compile speed and E5 runtime**: benchmark suites against the D12
@@ -151,14 +153,16 @@ Initial thresholds, revised as data arrives: on a 30-task suite, Tide
 first-check pass rate at least 0.8x the Rust rate and final pass rate at least
 the Rust rate within 1.5x the iterations (E1); reviewers using the trust diff
 catch at least 1.5x as many planted authority-widening changes as with the
-plain diff (E3). Gates: month 3, E1 on the interpreter; month 6, E1 and E2;
+plain diff (E3). Gates: month 3, E1 on the first checked toolchain; month 6,
+E1 and E2;
 month 9, E3 to E6. Each gate decides continue, adjust, or stop. Syntax in D1 is
 provisional until E1 meets its thresholds.
 
 ### D1. Surface: Rust spelling wherever the meaning is the same
 
-- Rust syntax is Tide syntax for every construct with the same meaning,
-  including `where` clauses, `pub(crate)`, inline `mod` blocks,
+- **Every Tide program is a valid Rust 2024 crate** (D18), and Rust syntax
+  is Tide syntax for every construct with the same meaning, including `where`
+  clauses, `pub(crate)`, inline `mod` blocks,
   `#[derive(...)]` with Rust's trait names, `#[cfg(test)]`, `'static`,
   `From`/`TryFrom`/`Into`, `wrapping_add`, `checked_add`, `saturating_add`,
   `Wrapping<T>`, `Box<dyn Error>`, and `// SAFETY:` comments.
@@ -167,6 +171,8 @@ provisional until E1 meets its thresholds.
   intact, and keep a mis-indented agent edit cosmetic instead of silently
   moving a statement into another block. Generics use angle brackets and
   Rust's turbofish.
+- Source files are `.rs`. Modules are declared with `mod`, as in Rust;
+  `#[path]` and `extern crate` are errors (D12).
 - A **fixed, compiler-implemented set of `!` forms** keeps Rust's most common
   macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
   `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,
@@ -174,20 +180,36 @@ provisional until E1 meets its thresholds.
   `todo!`, `unimplemented!`, `unreachable!`, `dbg!`, and the logging forms
   `error!`, `warn!`, `info!`, `debug!`, `trace!`. Users cannot define macros
   (D6).
+- **Tide's own forms are toolchain attributes and `!` forms**, so they parse
+  as Rust:
+  - contracts are `#[requires(..)]` and `#[ensures(..)]` on functions (D10);
+  - a loop invariant is `invariant!(..)` at the top of the loop body, in a
+    function marked `#[invariants]` or carrying any contract attribute, which
+    rewrites each loop so the invariant is checked as D10 specifies;
+  - the entry point is `#[tide::main] fn main(root: Root)`, because rustc
+    rejects parameters on a plain `main` (E0580); the attribute generates
+    Rust's entry point and mints the `Root` (D7);
+  - a typed hole is `todo!()` or `hole!(name)` (D14).
 - Lifetimes are Rust 2024's, except the forms beyond D4's power ceiling
   (D2).
 - Where Tide's meaning differs, the Rust spelling is rejected with a
   machine-applicable fix: `async`/`.await`
   (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
   I/O such as `std::env::args()` or `std::fs::read` (→ capabilities, D7),
-  `impl` blocks outside the type's or trait's module (D4), user macros (D6).
+  float observers and math methods such as `x.to_bits()` and `x.sin()`
+  (→ `float::bits(x)`, `math::sin(x)`, D3), other items outside the
+  admission allowlist (D7), `impl` blocks outside the type's or trait's module
+  (D4), user macros (D6).
 - The reference is written as a delta from Rust and token-counted in CI
   (budget in D14).
 
 Rejected: fresh syntax (low-resource penalty with no data to recover it);
 respelling constructs that mean the same thing (`f"..."`, `print()`,
 `assert()`, `T?`, `[T]` generics), which draft 1 proposed and the usage
-measurement rejected.
+measurement rejected; draft 3.5's Tide-only spellings that rustc cannot
+parse (bare `requires` and `ensures` clauses after a signature, a bare
+`invariant` clause on a loop, `fn main(root: Root)` without an attribute,
+`_?name` holes), which D18 replaced.
 
 ### D2. Memory: ownership with Rust's lifetimes, checked as origins
 
@@ -205,7 +227,7 @@ measurement rejected.
     `+ 'a`); `+ use<..>`; and the relations that well-formed signature types
     imply. A returned `impl Trait` captures every generic parameter in
     scope, lifetimes included, unless `+ use<..>` lists fewer.
-    `T: 'static` is accepted and written `T: Owned` by the formatter.
+    `T: 'static` is written as in Rust; the formatter does not rewrite it.
   - Rejected (`FX0201`, `FX0403`, `FX0404`), because they lie beyond D4's
     power ceiling: lifetime parameters on traits, explicit `for<'a>`
     (higher-ranked lifetimes come from elision in `Fn` sugar and `fn`
@@ -232,9 +254,11 @@ measurement rejected.
 - **Drop check** uses Rust's conservative rule: data borrowed by a value with
   a destructor must strictly outlive that value; standard containers carry an
   audited exemption.
-- Borrow checking is per function at NLL precision plus declared field
-  borrows on methods (`fn advance(&mut self.{pos})`), so disjoint-field calls
-  compose. Polonius-level precision is a later, compatible relaxation.
+- Borrow checking is per function at NLL precision plus, in v1, declared
+  field borrows on methods, so disjoint-field calls compose. Draft 3.5 spelled
+  them `fn advance(&mut self.{pos})`, which is not Rust; under D18 their
+  spelling (a source transform or Rust's view types) is open until v1.
+  Polonius-level precision is a later, compatible relaxation.
 - Non-tree data uses the standard library: `Arena<T>` with generational
   handles, `Rc`/`Arc`/`Weak`, `Cell` and `RefCell`. No hidden reference
   counting of ordinary values.
@@ -280,7 +304,8 @@ over-capture, fixed with `+ use<..>`; self-referential structs need
   inherent method per name per type; trait methods with the same name are
   disambiguated by trait path, as in Rust. No polymorphic recursion.
 - **Integers trap on overflow, division by zero, and over-wide shifts in every
-  profile.** v0 traps are precise. Deferred reporting, which lets the
+  profile**; the driver builds every profile with `-C overflow-checks=on`.
+  v0 traps are precise. Deferred reporting, which lets the
   optimizer batch checks in vectorized loops, is a later tier that must first
   show the writes it delays are unobservable. A proof may delete a
   runtime check only if every fact it relies on is either proved inside the
@@ -289,10 +314,17 @@ over-capture, fixed with `+ use<..>`; self-referential structs need
 - `as` is accepted only where it is lossless; lossy conversions use
   `TryFrom`, `truncate()`, or explicit float rounding methods.
 - Floats are IEEE 754. Every operation that reads a float's sign or bits
-  (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
-  `total_cmp`, hashing, formatting, foreign calls) treats any NaN as one
-  canonical NaN, so observable results match across backends and targets
-  while arithmetic stays native. `min` and `max` order -0.0 below +0.0.
+  treats any NaN as one canonical NaN, and math functions use one libm on
+  every target, so observable results match across targets while arithmetic
+  stays native. Rust leaves NaN bits and math precision unspecified, and its
+  inherent float methods cannot be overridden, so the observers and math
+  methods (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`,
+  `signum`, `total_cmp`, `min`, `max`, `sin`, `exp`, and the rest) are
+  outside the admission allowlist (D7). Tide's std provides functions in
+  their place: `float::bits(x)`, `float::min(a, b)`, `float::max(a, b)`,
+  `math::sin(x)`, `math::exp(x)`. `float::min` and `float::max` order -0.0
+  below +0.0. Formatting, byte conversions, and foreign calls are audited
+  against the same rule.
 
 Rejected: signature inference, implicit conversions, overloading, custom
 operators.
@@ -325,9 +357,10 @@ generics.
 - Results are must-use.
 - Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
   current task. A panic raised while unwinding from another panic aborts the
-  process, and stack overflow is a panic. A child task's panic propagates to
-  its scope, which panics in
-  turn, as with Rust's `std::thread::scope`; no code ever observes data a
+  process. Stack overflow aborts the process, as in Rust; under the
+  simulator it fails the seed. A child task's panic propagates to its scope,
+  which panics in turn, as with Rust's `std::thread::scope`; no code ever
+  observes data a
   panicking task was mutating. Recovery happens only at
   `Tasks::spawn_isolated`, which takes an `Owned` closure and returns
   `Result<T, Panicked>`. Abandoned values are dropped, as in Rust's unwinding,
@@ -348,6 +381,9 @@ Rejected: exceptions; draft 1's `from` keyword on variants (collides with
   layout) for printing, diffing, and inspection. Constructing a value through
   `Shape` is allowed only for types that opt in and whose fields are all
   visible; capability types can never be constructed this way.
+- Derives `Error`, `Encode`, and `Decode`, the contract attributes, and
+  `#[tide::main]` are proc macros owned by the toolchain and exported through
+  Tide's std prelude; they are not user macros.
 - `const fn` evaluation is authority-free, deterministic, fuel-limited, and
   cached; it computes values, never declarations or types.
 - Code generators are programs the developer runs explicitly; their output is
@@ -366,9 +402,22 @@ serialization as the default (5–7x slower in prior art).
   kernels (D16). The standard
   library has no free functions that do I/O, read the time, draw randomness,
   read the environment, or spawn.
-- `main` may take `root: Root`, the only source of capabilities. `Root` can be
-  named only in `main`; a simulated root (`Root::sim(seed)`) only in tests and
-  in `tide sim`.
+- `main`, written `#[tide::main] fn main(root: Root)`, may take `root: Root`,
+  the only source of capabilities. `Root` can be named only in `main`; a
+  simulated root (`Root::sim(seed)`) only in tests and in `tide sim`. No code
+  calls `main`, so a test cannot mint a real `Root` through it.
+- **Admission allowlist.** Under D18 `core` and `alloc` are always present,
+  and std's inherent methods stay callable on the types Tide's std
+  re-exports. Tide's checker therefore admits only listed `core` and `alloc`
+  items and listed inherent methods, keyed on crate identity, and rejects the
+  rest (`FX0520`): safe hardware intrinsics such as `__cpuid`; raw pointer
+  types without an `unsafe` grant, since their `Debug`, `Hash`, and `Ord`
+  impls observe addresses, and every address observer (`addr`, `{:p}`);
+  atomics not created through `Tasks`; float observers and math methods
+  (D3); I/O methods on re-exported std types (`Path::exists`, `metadata`);
+  `io::Error::last_os_error`; timed waits such as `recv_timeout`; and
+  compile-time reads of files and the build environment (`include_str!`,
+  `env!`, `option_env!`). The allowlist is reviewed with every rustc pin.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
@@ -393,9 +442,13 @@ serialization as the default (5–7x slower in prior art).
   cancellation, so creating one takes `&Tasks`. Authority-free code can
   neither create nor receive them; `Rc` and `Cell` stay capability-free
   because they never cross tasks.
-- **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
-  `Pure` if no capability, synchronization handle, or foreign handle is
-  reachable from it. `Arc` exposes no reference-count readers, and
+- **Authority-free types.** `Pure` is a marker trait the checker owns: a type
+  is `Pure` if no capability, synchronization handle, or foreign handle is
+  reachable from it. Tide's std declares it with a blanket impl, so rustc
+  accepts every bound and coherence never treats `Pure` as making impls
+  disjoint; the checker decides it structurally wherever a type meets a
+  `Pure`-implying obligation or is coerced to a `Pure` trait object. `Arc`
+  exposes no reference-count readers, and
   `Arc` and `sync::Weak` are synchronization handles, because drop timing and
   conditional cloning can reveal scheduling; authority-free code shares data
   by reference inside scopes instead. Classification is structural over every
@@ -403,6 +456,16 @@ serialization as the default (5–7x slower in prior art).
   is authority-free if all its parameter and capture types are `Pure`. An
   authority-free function cannot observe nondeterminism: its results depend
   only on its arguments.
+- **`Pure` trait objects** use a companion supertrait, because
+  `dyn Trait + Pure` is not Rust (E0225): `trait PureValue: Value + Pure {}`
+  with a blanket impl, so `&dyn PureValue` upcasts to `&dyn Value`. A type
+  the structural rule rejects that is authority-free in fact, such as a
+  foreign handle, is marked `#[trusted_pure]` with a reason in a package
+  granted `unsafe`, which counts as a trust hole; `unsafe impl Pure` is not
+  used. Rust code that calls a Tide
+  crate is unchecked, so closures and impls it passes in are trust holes,
+  as FFI callbacks are. v1's `ThreadBound` trait objects take the same
+  companion form, since `dyn Trait + ThreadBound` is E0225 as well.
 - Parallel code (D9) requires `Pure + Send` closures and `Pure + Sync` shared
   captures: `Pure` excludes atomics and synchronization handles, and `Sync`
   excludes `Cell` and `RefCell`, so no interior mutability is observable
@@ -478,15 +541,16 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   functions may suspend; under the evented runtime it compiles them to
   stackless state machines with non-moving heap frames, and under the blocking
   and thread runtimes it compiles them as ordinary functions. Recursive
-  suspending calls allocate their frames.
+  suspending calls allocate their frames. The evented runtime is v1, and its
+  lowering under D18 is open (D18, reversal conditions).
 - Foreign callbacks cannot suspend. A task holding a `ThreadBound` value is
   pinned to its thread while it holds it.
 
 Rejected: Rust-style async; hidden effect-based suspension; unstructured
 spawn; stackful tasks in compiled code (thread-local caching across migration
 is unsound with foreign frames, and per-task stacks cap task counts,
-`reviews/round1-performance.md` B3). The interpreter and simulator may use
-stackful execution internally.
+`reviews/round1-performance.md` B3). The simulator may use stackful
+execution internally; it runs tasks on baton-passed threads.
 
 ### D9. Parallelism: deterministic, with defined grouping
 
@@ -522,8 +586,18 @@ stackful execution internally.
 
 ### D10. Contracts: one spec, three uses, defined semantics
 
-- Clauses `requires`, `ensures`, `invariant`, `decreases`, with Dafny and
-  Verus names, written in the grammar, not in macros. `result` names the
+- Clauses keep Dafny and Verus names, spelled as toolchain attributes and
+  `!` forms, as Prusti and Creusot spell them (D18): `#[requires(..)]` and
+  `#[ensures(..)]` on functions; `invariant!(..)` statements at the top of a
+  loop body in a function marked `#[invariants]` or carrying any contract
+  attribute; and in v1 `#[decreases(..)]` and `#[diverges]` on functions,
+  `decreases!(..)` in loops, and `#[invariant(..)]` on types. The
+  function-level attribute rewrites each loop, so an invariant is checked at
+  loop entry (also when the loop runs zero times) and at exit, and under
+  `tide test` after every iteration. A closure's clauses (v1) are `requires!(..)` and `ensures!(..)`
+  statements at the top of its block body, rewritten the same way, because
+  attributes on closure expressions are unstable Rust.
+  `result` names the
   return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
   value a returned or stored `&mut` holds when its borrow ends. A bare `*x` of
   a `&mut` parameter in `ensures` is an error: write `old(*x)` or `final(*x)`.
@@ -561,7 +635,9 @@ stackful execution internally.
   and model equality
   apply under `prove` (v1), and the compiler warns where a clause would read
   differently under the two.
-- **Uses**, chosen per package and overridable per item:
+- **Uses**, chosen per package in the manifest and overridable per item
+  with `#[contracts(..)]` (custom inner attributes such as `#![contracts]`
+  are unstable Rust):
   1. `assert`: executable clauses become runtime checks in debug and test
      builds;
   2. `test`: clauses also drive property tests and fuzzing (`requires`
@@ -586,13 +662,20 @@ stackful execution internally.
   capability may state postconditions about its results that hold for every
   possible response of the world.
 - Specs never affect typing or code generation, except that proved facts may
-  delete runtime checks. Release builds erase specs unless asked to keep them.
+  delete runtime checks; how a build deletes one check under D18, where
+  every profile sets `-C overflow-checks=on`, is open until v1. Release builds
+  erase specs unless asked to keep them.
 - Solver stability: executable function bodies are opaque to callers by
   default (`spec fn` bodies are transparent); quantifiers need
   triggers; nonlinear and bit-vector reasoning stays in marked blocks; the
   solver version is pinned; CI checks proof stability under seed changes.
 - Interactive proofs are out of v1; the escape hatch is `#[trusted]` with a
   reason.
+- v1's proof forms (`spec fn`, `proof fn`, `law fn`, `ghost let`, proof
+  blocks, views, spec integer types) are still written in draft 3.5's
+  grammar in `design/04-contracts.md`. Under D18 they too must become
+  attributes, toolchain `!` forms, or library types; their spelling is
+  decided before v1 and E1 does not cover it.
 
 ### D11. Trust surface and transitive trust
 
@@ -627,8 +710,9 @@ stackful execution internally.
 
 ### D12. Compilation and backends
 
-- A module is a file or an inline `mod` block; the module tree follows the
-  directory tree. Imports are explicit; cycles and unused imports are errors.
+- A module is a `.rs` file or an inline `mod` block, declared with `mod` as
+  in Rust; the module tree follows the directory tree. Imports are explicit;
+  cycles and unused imports are errors.
 - Each module compiles to an interface artifact (signatures, layouts,
   contracts, public `spec fn` bodies, views, type invariants, laws,
   authority, proof status, and which trait methods generic code calls) with a
@@ -639,40 +723,41 @@ stackful execution internally.
   dependents.
 - Checking, borrow checking, authority checking, and proving are per
   function, parallel, and cached by content hash.
-- **Generics are monomorphized in every profile** through one
-  content-addressed instantiation cache shared across the package graph and
-  across builds. Witness-table code is a budgeted fallback for very large or
-  cold instantiations and must behave identically.
-- **Backends**, all from one mid-level IR:
-  1. a reference interpreter: the semantic oracle, `const fn` evaluator, and
-     simulator engine;
-  2. a Cranelift-class development backend with mid-IR inlining and an
-     incremental linker, in v1;
-  3. a release backend that emits C and builds it with an optimizing C
-     compiler, which gives LLVM-class code, portable targets, and WASM through
-     clang. A direct LLVM backend is a later option if C limits debug info or
-     performance.
+- **Checker architecture: A, then B** (D18). (A) A `rustc_private` driver on
+  the pinned nightly that builds the code is the authoritative admission
+  gate and the oracle. (B) Tide's own incremental front end, which produces
+  the interface artifacts above, serves the edit-loop targets below and is
+  tested against A; where they disagree, A decides.
+- **Backend**: a pinned, unmodified nightly rustc with LLVM, in every
+  profile: debug builds for development, tests, and the simulator, release
+  builds for production. The driver owns every rustc invocation and keeps a
+  content-addressed artifact cache instead of Cargo's build directory.
+  Generics are monomorphized, as rustc does. An interpreter is built only if
+  `tide eval`, E4's edit-to-test target, or v1's spec evaluation
+  (`by(compute)`, spec tests, counterexample replay) needs it.
 - **Targets** for a 100,000-line project: edit to diagnostics around 30 ms
   typical, under 100 ms at the 95th percentile; edit to running tests under
   1 s; clean debug build a few seconds; development-build runtime within 3x of
   release; release runtime within 10–20% of equivalent Rust.
 - The compiler is written in Rust and not self-hosted before 1.0.
 
-- An **origin cross-check** tool translates signatures and bodies to Rust,
-  which for lifetimes is nearly the identity, and runs `rustc`'s borrow
-  checker over the test corpus, so the Tide checker is continuously compared with Rust's. It is a
-  test oracle, not a backend.
+- **The origin cross-check is the build.** Because every Tide program is
+  Rust, rustc's borrow checker runs on every build, so a program Tide's
+  checker wrongly accepts is still rejected; the conformance corpus compares
+  the two checkers' verdicts.
 
-Rejected: Rust emission as the release backend (53 s clean builds, coupling
-to rustc's borrow precision, no route to stackless lowering of Tide tasks),
-a rejection D18 reverses;
-witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
-1.0.
+Rejected: witness tables by default (6–24x slower); C++ interop, MLIR, and
+GPU before 1.0. History: drafts up to 3.5 planned a reference interpreter, a
+Cranelift-class development backend, and a C-emitting release backend from
+one mid-level IR, and rejected Rust emission as the release backend (53 s
+clean builds, coupling to rustc's borrow precision, no route to stackless
+lowering of Tide tasks); D18 reversed that.
 
 ### D13. Packages and supply chain
 
 - Tide packages have no build scripts, install hooks, or code that runs at
-  fetch or build time. The one exception is an imported Rust crate's build
+  fetch or build time, beyond the toolchain's own proc macros. The one
+  exception is an imported Rust crate's build
   script, which runs sandboxed and counts as a trust hole.
 - Lockfiles are on by default with content hashes; publishing requires
   trusted publishing; package names are namespaced; the client rejects
@@ -680,12 +765,16 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 - Each package's manifest lists escape-hatch grants per dependency (`unsafe`,
   `ffi`), and the lockfile records each package's public authority and trust
   holes. Widening either needs approval (D11).
-- **Rust crates** are imported through generated C-ABI shims for synchronous
-  APIs; under D18 they link directly, behind the same capability wrappers
-  (RUST-2). Each imported crate declares its authority in the manifest; the shim
-  requires those capabilities; a symbol scan of the compiled crate checks the
-  declaration; its build script, if any, runs sandboxed without network and
-  with recorded outputs.
+- **Rust crates** with synchronous APIs link directly (D18), behind Tide
+  wrappers that take the capabilities they may use (RUST-2). Each imported
+  crate declares its authority in the manifest; the wrapper requires those
+  capabilities; a scan of the linked symbols checks the declaration; its
+  build script, if any, runs sandboxed without network and with recorded
+  outputs.
+- **Rust consumers** depend on a Tide crate as a Rust crate. Their manifest
+  injects Tide's std with `std = { package = "tide_std" }`; types Tide's std
+  re-exports from Rust's are shared, and Tide-owned types (`HashMap`,
+  `Arc`, capabilities) need adapters at the boundary.
 
 ### D14. Toolchain contract for agents
 
@@ -694,13 +783,14 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   Diagnostics for Rust habits (D1) carry safe fixes.
 - `tide test` and `tide sim` return structured results: each failure has its
   seed, a replay command, and a capability event trace.
-- **Typed holes**: `todo!()` or `_?name` in expression position checks the
-  rest of the program and reports the expected type, in-scope bindings, and
+- **Typed holes**: `todo!()` or `hole!(name)` in expression position checks
+  the rest of the program and reports the expected type, in-scope bindings, and
   candidate functions.
-- `tide eval` runs an expression in the interpreter against the current
-  package. `tide verify` runs proofs and returns NDJSON results with proof
-  status per item and counterexamples for failures. Coverage and spec coverage
-  are reported.
+- `tide eval` runs an expression against the current package, through a
+  scratch crate built by rustc or the interpreter if one is built (D12).
+  `tide verify` runs proofs and returns NDJSON results with proof status per
+  item and counterexamples for failures. Coverage and spec coverage are
+  reported.
 - `#[protected]` tests are part of the trust surface; agents cannot change
   them without approval (D11).
 - Every response carries a snapshot hash; every write request carries its base
@@ -715,7 +805,8 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 - Source text is canonical; the formatter is deterministic and has no
   options. Its style is rustfmt's default style (four-space indentation,
   100-column lines, opening braces on the same line), so formatting a
-  Rust-habit draft changes almost nothing. Definitions are content-hashed; symbols have stable IDs.
+  Rust-habit draft changes almost nothing. Definitions are content-hashed;
+  symbols have stable IDs.
 
 ### D15. Deterministic simulation as a first-class mode
 
@@ -731,8 +822,9 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   the source and every dependency, a semantic build identity (compiler
   version, target, and every option that affects semantics), the simulated
   root's configuration (arguments, environment, files), and all injected
-  inputs. Replay refuses to run against a mismatched identity. The standard library ships
-  one math library for every target, `to_bits` canonicalizes NaN, and raw
+  inputs. Replay refuses to run against a mismatched identity. The standard
+  library ships
+  one math library for every target, `float::bits` canonicalizes NaN, and raw
   pointer addresses are observable only under an `unsafe` grant.
 - Node entry points are `fn` items or `Fn` closures with `Owned` captures, so
   a restart reruns the entry against the node's durable storage and fresh
@@ -792,7 +884,8 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
 `spikes/d18/`, results in research/15).
 
 - **Every Tide program is a valid Rust 2024 crate** that a pinned, unmodified
-  nightly rustc compiles, with Tide's meaning, against Tide's std. The driver passes
+  nightly rustc compiles, with Tide's meaning, against Tide's std. The driver
+  passes
   that std as `std` (`--extern std=`), so rustc's std injection loads it and
   the real std's paths cannot be named.
 - **Tide's checker gates every crate before rustc runs.** It owns the
@@ -822,8 +915,7 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   `research/15-rust-dialect.md` at prototype scale. Its gaps (a panic
   inside a clause, sampled-clause budgets, `a..=b` next-index binding) are
   implementation work.
-- **Changes to apply to the other decisions**, which keep their current
-  text until applied:
+- **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.
   - D2: no `T: Owned` rewrite.
@@ -848,7 +940,7 @@ linking provide.
 
 ## The Feel
 
-```tide
+```rust
 use std::net::{Net, NetError, Url};
 use std::time::{Clock, Duration};
 use std::json;
@@ -881,17 +973,15 @@ pub fn parse_feed(body: &[u8]) -> Result<Vec<Entry>, json::Error> {
 }
 
 /// Checked at run time under `assert`, fuzzed under `test`, proved under `prove`.
-pub fn max_index(xs: &[i64]) -> usize
-    requires xs.len() > 0
-    ensures result < xs.len()
-    ensures forall |i: usize| i < xs.len() ==> xs[result] >= xs[i]
-{
+#[requires(xs.len() > 0)]
+#[ensures(result < xs.len())]
+#[ensures(forall |i: usize| i < xs.len() ==> xs[result] >= xs[i])]
+pub fn max_index(xs: &[i64]) -> usize {
     let mut best = 0;
-    for i in 1..xs.len()
-        invariant best < i
-        invariant forall |j: usize| j < i ==> xs[best] >= xs[j]
-        decreases xs.len() - i
-    {
+    for i in 1..xs.len() {
+        invariant!(best < i);
+        invariant!(forall |j: usize| j < i ==> xs[best] >= xs[j]);
+        decreases!(xs.len() - i);
         if xs[i] > xs[best] {
             best = i;
         }
@@ -914,6 +1004,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
+#[tide::main]
 fn main(root: Root) -> Result<(), Box<dyn Error>> {
     let net = root.net.only(["example.com:443"]);
     let url = Url::parse("https://example.com/feed.json")?;
@@ -937,14 +1028,15 @@ fn feed_times_out() {
 1. The exact deferred-trap rule for overflow and its interaction with proofs.
 2. Field-borrow declaration syntax on methods and its effect on public API
    stability.
-3. The simulator model for foreign effects and for Rust crates imported
-   through shims.
+3. The simulator model for foreign effects and for imported Rust crates.
 4. Whether authority-free public functions should be declarable (`#[pure]`)
    so that adding authority is a visible breaking change.
-5. The interpreter's role in `tide test` once the development backend exists.
+5. Whether `tide eval` or E4's edit-to-test target needs an interpreter
+   (D12, D18).
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
 7. (Lapsed under D18.) How the C-emitting release backend (D12,
-   v1) implements unwinding for panics, which must drop values (D5): a flag check after every call,
+   v1) implements unwinding for panics, which must drop values (D5): a flag
+  check after every call,
    compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.

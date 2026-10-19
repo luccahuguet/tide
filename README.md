@@ -134,14 +134,15 @@ Cited evidence behind the decisions, in [research/](research/):
 
 - **v0 core**: Rust surface and ownership, with lifetimes checked as origins; traits with a power
   ceiling; `Result` and `?`; built-in `!` forms and derives; capabilities and
-  `Root`; the `Pure` auto trait; structured tasks on blocking and thread
+  `Root`; the `Pure` marker trait; structured tasks on blocking and thread
   runtimes; channels, `Shared::with`, `join`, `par_map`, and `par_for`;
   executable contracts as runtime checks and property-test drivers; the
   simulator with crashes and durability; the declared-authority trust diff;
-  per-dependency grants; the agent toolchain on an interpreter, then a
-  Cranelift-class backend.
+  per-dependency grants; the admission allowlist; the agent toolchain on
+  rustc builds gated by the admission driver, then Tide's incremental front
+  end (D18).
 - **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the
-  evented runtime, the C-emitting release backend, FFI, Rust crate import,
+  evented runtime, FFI, direct Rust crate import,
   `par_reduce`, field-borrow declarations, and production record and replay.
 - **Later**: the Bend tandem, deferred overflow traps, automatic
   parallelization, `Shape` reflection, Polonius-precision borrows, and

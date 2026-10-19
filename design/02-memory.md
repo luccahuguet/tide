@@ -1,8 +1,9 @@
 # Tide Memory: Ownership and Origins
 
-Status: draft 1, synchronized with draft 3.5. This chapter elaborates D2 of
+Status: draft 1, synchronized with draft 3.7. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
-definition the checker implements. Section 13 records the edits it asked of
+definition Tide's checker implements; under D18 rustc's borrow checker also
+checks every build (§11). Section 13 records the edits it asked of
 `01-design.md`.
 
 **Tier** (01's Tiers table). v0 core: §1–§6, §8 except task migration, §9,
@@ -12,7 +13,8 @@ Polonius-precision borrows (§2.8, §12). Draft 3 removed `Frozen` (§9 now
 requires `Pure + Sync`), the `lock` keyword (§8.4, now `Shared::with`),
 `par { }` (§8.5, now `join`), and the moved-out rule (§8.3).
 
-Notation. Tide code is in `tide` blocks and Rust in `rust` blocks. In rules,
+Notation. Under D18 every Tide program is a Rust crate, so examples are in
+`rust` blocks; a block that is not Rust says so. In rules,
 `ρ`, `σ` and `τ` are origins, `ℓ` is a loan, and `p` and `q` are places.
 `ρ ⊆ σ` means "σ may carry every loan of ρ"; in Rust this is `'ρ: 'σ`.
 
@@ -130,9 +132,9 @@ Rust lifetime.
 orig(&ρ T) = orig(&ρ mut T) = {ρ}
 orig(S<ρ1..ρn; T1..Tm)      = {ρ1..ρn} ∪ orig(T1) ∪ … ∪ orig(Tm)   (struct, enum)
 orig((T1, …, Tn))           = orig(T1) ∪ … ∪ orig(Tn); arrays and slices likewise
-orig(dyn Trait + ρ) = {ρ}        orig(dyn Trait + Owned) = ∅
+orig(dyn Trait + ρ) = {ρ}        orig(dyn Trait + 'static) = ∅
 orig(closure)               = the union of orig over its captured types
-orig(returned impl Trait)   = ∅ if its bounds state Owned (+ 'static); else {ρ} if
+orig(returned impl Trait)   = ∅ if its bounds state + 'static; else {ρ} if
                               they state exactly one lifetime ρ, written once or
                               more; otherwise, including bounds that name two or
                               more distinct lifetimes, its captured lifetimes ∪
@@ -179,8 +181,8 @@ Capture      ::= 'use' '<' .. '>'                 only on a return-position `imp
   them, as in Rust; in an impl header the bare name is an error (§2.5).
 - Outlives bounds are Rust's: `'a: 'b` declares `ρa ⊆ ρb`; `T: 'a`,
   `T: Trait + 'a`, `impl Trait + 'a`, and `dyn Trait + 'a` are type-outlives
-  bounds (§2.4 item 3). `T: 'static` is accepted and written `T: Owned` by
-  the formatter (§3.7). `+ use<..>` lists what a returned `impl Trait`
+  bounds (§2.4 item 3). `T: 'static` is the bound this chapter calls
+  `Owned` (§3.7). `+ use<..>` lists what a returned `impl Trait`
   captures (§5.2).
 - **Not accepted** (`FX0201`, `FX0403`, `FX0404`, with a suggested
   rewrite), as beyond D4's power ceiling: lifetime parameters on traits
@@ -245,8 +247,7 @@ Elision follows Rust's rules exactly.
 ### 2.6 Relation to Rust lifetimes
 
 Every signature Tide accepts is a Rust 2024 signature with the same
-meaning, so §11's translation is the identity on lifetimes, except the rows
-§11.1 marks. The forms Rust has and Tide rejects (§2.3) are D4's
+meaning; under D18 every Tide program is a Rust crate (§11). The forms Rust has and Tide rejects (§2.3) are D4's
 power-ceiling forms: lifetimes on traits, explicit higher-ranked binders,
 and lifetime-generic associated types.
 
@@ -285,14 +286,15 @@ whole.
 
 ### 2.8 Precision
 
-v0 accepts a body exactly when Rust's NLL borrow checker accepts its
-translation (§11). The field-borrow declarations of §7 (v1) translate exactly.
+v0 accepts a body exactly when Rust's NLL borrow checker accepts it (§11).
+The field-borrow declarations of §7 (v1) map to Rust exactly.
 
 In NLL terms, subset constraints hold at every point of the body, and a
 loan is live where its origin is live and reachable from the borrow without a
 kill. Polonius makes subset constraints location-sensitive, which only
-accepts more programs. D12's origin cross-check holds the checker to this
-definition.
+accepts more programs. Under D18 rustc's borrow checker runs on every
+build, so the origin cross-check is the build (D12) and holds Tide's checker
+to this definition.
 
 ## 3. Borrowing types
 
@@ -320,7 +322,7 @@ Diagnostics add the fields that carry it ("`'a`, carried by `src`").
 Fields that use one lifetime name share its origin; fields from different
 sources take different names:
 
-```tide
+```rust
 struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }   // origins: 's, 'o
 ```
 
@@ -360,9 +362,9 @@ denotes `Lexer<'a>`.
 
 ### 3.7 `Owned` and `'static`
 
-- `T: Owned` holds when `orig(T)` is empty after substitution, counting
-  `'static` as empty. This is Rust's `T: 'static`. The bound `T: 'static` is
-  accepted, and the formatter rewrites it to `T: Owned`.
+- A type is `Owned` when `orig(T)` is empty after substitution, counting
+  `'static` as empty. This is Rust's `T: 'static`, and the bound is spelled
+  that way; `Owned` is the design's name for it, not source syntax.
 - `&'static T` is `Owned` when `T` is. String literals have type
   `&'static str`, so `struct ParseError { msg: &'static str }` is `Owned`.
 - The types of consts and statics are `Owned`. Statics are also `Sync` and
@@ -446,7 +448,7 @@ the reference's origin. In detail:
   `&'a (dyn Trait + 'a)`. `&mut dyn FnMut(&Node)` callbacks that capture
   locals depend on it.
 - **Everywhere else outside a body**, including `Box`, `Rc`,
-  `Arc`, and type arguments, `dyn Trait` is `dyn Trait + Owned`, unless the
+  `Arc`, and type arguments, `dyn Trait` is `dyn Trait + 'static`, unless the
   containing type's own `T: 'a` bound gives the default `'a`, as in Rust.
   Inside a body (`let` annotations, type arguments), an elided object
   lifetime is inferred, as in Rust.
@@ -454,9 +456,12 @@ the reference's origin. In detail:
 - `dyn Trait + '_` is an elided origin and follows the elision rules. A
   field names a declared lifetime: `Box<dyn Fn(&Row) -> bool + 'p>`.
 - `dyn Trait + 'static` is `Owned`.
-- A `dyn` type is `Send`, `Sync`, `Pure`, or `ThreadBound` only if it
-  names them (`dyn Fn() + Send + Pure`); it is `Owned` when its object
-  lifetime is `'static`, stated or by default.
+- A `dyn` type is `Send` or `Sync` only if it names them
+  (`dyn Fn() + Send`), and `Pure` or, in v1, `ThreadBound` only if its trait
+  has it as a supertrait, a companion trait such as
+  `trait PureFn: Fn() + Pure {}`, because `dyn Fn() + Pure` is not Rust
+  (E0225, D7). It is `Owned` when its
+  object lifetime is `'static`, stated or by default.
 
 ### 5.2 `impl Trait`
 
@@ -465,8 +470,7 @@ the reference's origin. In detail:
 - **Return position.** As in Rust 2024, the opaque type captures every
   generic parameter in scope, lifetimes included, elided ones too;
   `+ use<..>` lists the captured parameters instead. It is `Owned` when
-  every captured parameter is, or when its bounds state `Owned`
-  (`+ 'static`), which the hidden type must then satisfy. So
+  every captured parameter is, or when its bounds state `+ 'static`, which the hidden type must then satisfy. So
   `fn evens(xs: &[u32]) -> impl Iterator<Item = u32>` borrows `xs` with no
   annotation, and `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn()
   -> usize + use<'a>` releases the caller's `key` borrow at the call.
@@ -475,8 +479,8 @@ the reference's origin. In detail:
   bounds state it, and the hidden type must then satisfy them. Rust's
   auto-trait leakage would make dependents depend on the function's body,
   which D12 forbids. In v1 a hidden type that is `ThreadBound` must be
-  returned as `impl Trait + ThreadBound`, as a `dyn` must name it
-  (`03-authority-concurrency.md` §5.4), so erasure cannot hide it from
+  returned as `impl Trait + ThreadBound`, as a `dyn` must carry it through a
+  companion supertrait (`03-authority-concurrency.md` §5.4), so erasure cannot hide it from
   pinning; the opaque type is then `ThreadBound`. `Owned` follows `orig`
   (§2.2, §3.7), as Rust's `'static` does.
 
@@ -555,9 +559,11 @@ the destructor on an inner owned type. Thanks to the exemption, a
 
 ## 7. Field-borrow declarations (v1)
 
-**Syntax.** A method receiver may name the fields it borrows:
+**Syntax.** A method receiver may name the fields it borrows. This is
+draft 3.5's spelling and is not Rust; under D18 it needs a source transform
+or Rust's view types (`research/15-rust-dialect.md`), decided before v1.
 
-```tide
+```text
 fn advance(&mut self.{pos})                  // mutable borrow of `pos`
 fn peek(&self.{src, pos}) -> Option<char>    // shared borrow of `src` and `pos`
 fn step(&mut self.{pos, &src})               // mutable `pos`, shared `src`
@@ -587,7 +593,7 @@ union of its field borrows. The impl's named lifetimes keep their meaning.
   each clause disjoint from it, and is rejected if it splits a clause's
   footprint (`04-contracts.md` §4.2; `reviews/round1-soundness.md` B10(d)).
 
-**Translation (exact).** The method becomes an associated function taking
+**In Rust (exact).** The method becomes an associated function taking
 one reference per field, and the call site passes `&mut x.pos, &x.src`, which
 rustc accepts as disjoint borrows.
 
@@ -634,27 +640,28 @@ It depends on four conditions:
 2. A task is pinned while a `ThreadBound` value is live across a suspension
    point, which the compiler knows from liveness. `ThreadBound` is
    structural, and a `dyn` or a returned `impl Trait` may hold it only as
-   `dyn Trait + ThreadBound` or `impl Trait + ThreadBound`, so erasure cannot
-   hide it (`03-authority-concurrency.md` §5.4).
+   a `dyn` of a companion trait with `ThreadBound` as a supertrait or as
+   `impl Trait + ThreadBound`, so erasure cannot hide it (`03-authority-concurrency.md` §5.4).
 3. Foreign code that relies on thread identity is wrapped in `ThreadBound`
    types.
 4. Parallel branches (`join`, `par_map`, `par_for`) run simultaneously on
    several threads, so they require `Send` rather than isolation.
 
 Rust has no counterpart, since tokio requires `Send` futures. This is the main
-construct that §11 cannot translate.
+construct Rust cannot express (§11.2, R1), and its lowering under D18 is open
+(01 D18).
 
 ### 8.2 Scopes
 
 The names and failure semantics are those of `03-authority-concurrency.md`
 §6.1. The origin structure is normative here.
 
-```tide
+```rust
 impl Tasks {
     pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
         where E: From<TaskError> + Send, F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>;
     pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
-        where F: FnOnce() -> T + Send + Owned;
+        where F: FnOnce() -> T + Send + 'static;
 }
 pub struct Scope<'s, 'env: 's, E> { .. }      // Copy; 's and 'env invariant, as in std
 impl<'s, 'env, E> Scope<'s, 'env, E> {
@@ -691,8 +698,8 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
   capture `Owned` values": a function's own locals never outlive a scope it
   received, so its children cannot borrow them.
 
-Translation: `std::thread::scope`, with `'env` taken to be the `&Tasks`
-borrow. `Scope<'s, 'env, E>` maps to `&'s std::thread::Scope<'s, 'env>`.
+In Rust: Tide's std implements it over `std::thread::scope`, with `'env`
+taken to be the `&Tasks` borrow. `Scope<'s, 'env, E>` maps to `&'s std::thread::Scope<'s, 'env>`.
 
 ### 8.3 Child failure
 
@@ -717,12 +724,11 @@ no half-updated place of the caller. A cell whose `with` closure panicked is
 poisoned (§8.4).
 
 Memory safety never depended on a failure rule: abandoning a task leaves
-every value valid memory, as unwinding does in Rust. Stack overflow is a
-panic too (D5, `03-authority-concurrency.md` PANIC-1), so it unwinds
-through scope exit, which joins the children that borrow the overflowing
-task's frames before those frames are freed. A panic during unwinding
-aborts the process (PANIC-2), so no frame is freed while a child still
-borrows it.
+every value valid memory, as unwinding does in Rust. Stack overflow aborts
+the process, as in Rust (D5, `03-authority-concurrency.md` PANIC-1), and
+under the simulator it fails the seed. A panic during unwinding aborts the
+process too (PANIC-2). An abort frees no frame while a child still borrows
+it.
 
 ### 8.4 `Shared<T>` and `Shared::with`
 
@@ -747,7 +753,7 @@ borrows it.
   naming one returns `Err(LockError::Poisoned)` without running its closure.
   No safe API reads a poisoned payload; `cell.reset(v)` replaces it and
   clears the poison (LOCK-6).
-- **Translation.** Mutex guards turned into `&'σ mut T` inside
+- **In Rust.** Tide's std turns Mutex guards into `&'σ mut T` inside
   `for<'σ> FnOnce(&'σ mut T1, …) -> R`.
 
 ### 8.5 `join`, `par_map`, `par_for`
@@ -777,21 +783,27 @@ after a panicking child (§8.3).
 
 ## 9. `Pure`
 
-`Pure` is a compiler-known auto trait. Outside std, it can be implemented
-only by `unsafe impl` in a package granted `unsafe`, and each such impl is a
-trust hole. It is **deep**:
+`Pure` is a marker trait the checker owns (D7). Tide's std declares it with
+a blanket impl, so rustc accepts every `Pure` bound; the checker decides it
+structurally wherever a type meets a `Pure`-implying obligation or is
+coerced to a `Pure` trait object, not at the blanket impl. Outside std, a
+type the rule rejects is declared `Pure` only by `#[trusted_pure]` with a
+reason, in a package granted `unsafe`, and each such attribute is a trust
+hole. It is **deep**:
 
 - it looks through every field, private ones included, and through `Box` and
   `Rc`, with type arguments substituted;
 - recursive types take the greatest fixed point;
-- opaque and `dyn` types have exactly the auto traits their bounds state
-  (`Owned` alone follows `orig`, §3.7);
+- opaque types have exactly the auto traits and `Pure` their bounds state,
+  and `dyn` types those their trait and its supertraits state (§5.1);
+  `Owned` alone follows `orig` (§3.7);
 - a type parameter is `Pure` only if it is bounded by it.
 
 Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`, `Owned`)
 as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
 `impl K for Net` overlap, although `Net` is not `Pure`. So a private-field
 edit that changes a type's auto traits cannot create or remove an overlap.
+For `Pure`, the blanket impl makes rustc agree.
 
 ### `Pure`: no authority reachable
 
@@ -805,7 +817,8 @@ These are **not `Pure`**:
 - the foreign handles: raw pointers, `extern` types and foreign function
   pointers;
 - `ThreadBound` types;
-- `dyn Trait` unless `+ Pure` is written;
+- `dyn Trait` unless `Trait` has `Pure` as a supertrait (a companion trait,
+  §5.1);
 - an unbounded type parameter.
 
 **Everything else is `Pure` exactly when its components are**, including
@@ -846,18 +859,17 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 | --- | --- |
 | `join`; `par_map`, `par_for`, `par_chunks_mut`, `par_sort` | `FnOnce + Pure + Send` closures; `Fn + Pure + Send + Sync` closures; both with `Pure + Sync` shared captures; elements `Pure + Sync` (`par_map`) or `Pure + Send` (the others) |
 | memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7) |
-| statics (computed at compile time) | `Owned + Sync + Pure` |
+| statics (computed at compile time) | `'static + Sync + Pure` |
 | `Shared` payloads; `with` closures | `Send + Pure`; `Pure` |
 
 ## 10. Worked examples
 
-Tide's lifetime spelling is Rust's (§2.6), so each example is also the Rust
-program, except where a `rust` block shows a difference. Each verdict
-matches rustc's.
+Each example is a Rust program (D18). Where a second block follows, it shows
+the same program against Rust's own std. Each verdict matches rustc's.
 
 ### 10.1 Iterators over a `Vec`
 
-```tide
+```rust
 fn total_len(words: &Vec<String>) -> usize {
     words.iter().map(|w| w.len()).sum()
 }
@@ -884,7 +896,7 @@ as in Rust.
 
 ### 10.2 `HashMap` get and entry
 
-```tide
+```rust
 fn count_words(text: &str) -> HashMap<&str, usize> {
     let mut counts = HashMap::new();
     for w in text.split_whitespace() {
@@ -913,7 +925,7 @@ counted.
 **Rejected**, as in stable Rust, is the conditional return of a lookup
 (NLL problem case #3):
 
-```tide
+```rust
 fn get_default<'m>(map: &'m mut HashMap<String, String>, k: &str) -> &'m mut String {
     if let Some(v) = map.get_mut(k) { return v; }   // error: `*map` still mutably borrowed
     map.insert(k.to_string(), String::new());
@@ -925,7 +937,7 @@ The idiom is `map.entry(k.to_string()).or_default()`.
 
 ### 10.3 A lexer holding `&str`
 
-```tide
+```rust
 pub struct Lexer<'a> { src: &'a str, pos: usize }
 
 impl<'a> Lexer<'a> {
@@ -952,7 +964,7 @@ The diagnostic suggests `&'a str`.
 
 ### 10.4 A parser returning slices of its input
 
-```tide
+```rust
 pub struct Parser<'a> { lx: Lexer<'a>, peeked: Option<&'a str> }   // one origin: 'a
 
 impl<'a> Parser<'a> {
@@ -977,7 +989,7 @@ the text.
 
 ### 10.5 Builders
 
-```tide
+```rust
 #[derive(Default)]
 pub struct Request { url: String, headers: Vec<(String, String)>, timeout: Option<Duration> }
 
@@ -1009,7 +1021,7 @@ would be rejected.
 
 ### 10.6 `longest`
 
-```tide
+```rust
 fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
     if a.len() >= b.len() { a } else { b }
 }
@@ -1028,7 +1040,7 @@ fn title(text: &str) -> &str {
 
 ### 10.7 A struct holding references from two sources
 
-```tide
+```rust
 pub struct Match<'n, 'l> { needle: &'n str, line: &'l str }   // two origins
 
 pub fn find<'n, 'l>(needle: &'n str, text: &'l str) -> Option<Match<'n, 'l>> {
@@ -1050,7 +1062,7 @@ because `pat` dies at the end of `first_error`.
 
 ### 10.8 A struct whose fields share an origin
 
-```tide
+```rust
 struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }
 
 impl Collector<'_, '_> {
@@ -1077,7 +1089,7 @@ unsound or unusable (B1).
 
 ### 10.9 A graph through `Arena` handles
 
-```tide
+```rust
 struct Node { name: String, edges: Vec<Id<Node>> }
 
 fn build() -> (Arena<Node>, Id<Node>) {
@@ -1108,7 +1120,7 @@ together with `g.get_disjoint_mut([a, b])`, checked at run time.
 
 ### 10.10 `Rc<RefCell<T>>`
 
-```tide
+```rust
 struct TreeNode { val: i32, children: Vec<Rc<RefCell<TreeNode>>>, parent: rc::Weak<RefCell<TreeNode>> }
 
 let leaf = Rc::new(RefCell::new(TreeNode { val: 3, children: vec![], parent: rc::Weak::new() }));
@@ -1124,7 +1136,7 @@ panics.
 
 ### 10.11 A trait object holding a reference
 
-```tide
+```rust
 fn words<'a>(text: &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a> {
     Box::new(text.split_whitespace())
 }
@@ -1155,7 +1167,7 @@ on §5.1's default bound behind `&mut`.
 
 ### 10.12 Scoped tasks borrowing a slice
 
-```tide
+```rust
 fn parallel_sum(tasks: &Tasks, xs: &[u64]) -> Result<u64, TaskError> {
     let mid = xs.len() / 2;
     let mut sums = [0u64; 2];
@@ -1215,38 +1227,41 @@ Like Rust's scope, Tide's re-raises a child's panic (§8.3). For pure work
 the Tide idiom is
 `let (a, b) = join(|| sum(&xs[..mid]), || sum(&xs[mid..]));`.
 
-## 11. Soundness sketch: translation to Rust
+## 11. Soundness sketch: Tide programs are Rust
 
-**Claim.** For every program `P` that the Tide checker accepts, the
-translation `τ(P)`, Rust with explicit lifetimes, is accepted by rustc's NLL
-borrow checker, except at the constructs listed as non-exact below.
+**Claim.** Under D18 every program `P` that Tide's checker accepts is a
+Rust 2024 crate, and rustc's NLL borrow checker checks it on every build.
+Except at the constructs listed as non-exact below, the calculus of §2–§8
+accepts exactly what rustc accepts.
 
 Rust's soundness covers the rest: RustBelt for the core type system, plus
-std's audited unsafe code. That gives memory safety and data-race freedom
-for `P`. `τ` is a proof device and the CI oracle of D12's origin cross-check;
-it is not a backend. The cross-check runs on the test corpus and on every
-change to std. A program that Tide accepts and rustc rejects blocks the
-release.
+the audited unsafe code of Rust's std and Tide's std. That gives memory
+safety and data-race freedom for `P`. Drafts up to 3.5 defined a translation
+`τ(P)` from Tide source to Rust as a proof device and the oracle of an
+origin cross-check; under D18 the source is the Rust program, so the
+cross-check is the build (D12). A program that Tide's checker accepts and
+rustc rejects fails to build and is a checker bug; the conformance corpus
+compares the two checkers' verdicts.
 
-### 11.1 The translation
+### 11.1 Tide constructs in Rust
 
 | Tide | Rust | Exact? |
 | --- | --- | --- |
 | Lifetime parameters, `'_`, `'static`, outlives bounds, `use<..>`, elision, implied bounds, object-lifetime defaults | the same | yes |
 | Return-position `impl Trait` | the same capture; auto traits stated, since Tide does not leak them (§5.2) | yes |
-| `Owned` | `'static` | yes |
+| `Owned` | `'static`, spelled so in source | yes |
 | Closures, `Fn` sugar, higher-ranked lifetimes, `Scope`'s `'env: 's` | the same | yes |
-| Field-borrow methods | associated functions with split borrows | yes |
+| Field-borrow methods (v1) | associated functions with split borrows; source spelling open (§7) | yes |
 | Two-phase borrows, NLL, drop check | the same | yes |
 | The std eyepatch | `#[may_dangle]` (unsafe, audited) | audited |
-| `Tasks::scope`, `Scope::spawn` | `std::thread::scope` with `'env` = the `&Tasks` borrow | yes |
+| `Tasks::scope`, `Scope::spawn` | Tide's std over `std::thread::scope` with `'env` = the `&Tasks` borrow | yes |
 | A child's panic | `std::thread::scope`'s re-raise; the `Err` edge needs no extra rule | yes |
 | `spawn_isolated` | `catch_unwind(AssertUnwindSafe(…))` over a `'static` closure | yes |
 | `Shared::with`, `with2` | `for<'σ> FnOnce(&'σ mut T1, …)` over Mutex guards, plus a run-time distinctness check in std | audited |
 | `join`, `par_map`, `par_for` | `rayon::join` or `thread::scope`; `Pure + Sync` is stricter than `Sync` | yes |
 | A non-`Send` value inside a task that migrates (v1) | none: Rust requires `Send` futures | **no** |
 
-### 11.2 Where the translation is not exact
+### 11.2 Where the correspondence is not exact
 
 - **R1. Task isolation (§8.1, v1): medium risk.** Rust cannot express it.
   Soundness rests on the argument in §8.1, which needs a written proof in the
@@ -1256,8 +1271,8 @@ release.
 - **R2. Bounded higher-ranked origins (§5.4): low risk.** They come only
   from well-formedness, the encoding that `std::thread::scope` relies on.
 - **R3. Implied bounds through `fn` pointers: low risk once implemented.**
-  Reducing to Rust inherits Rust's holes, such as rust-lang/rust#25860, which
-  the oracle cannot catch because rustc accepts them. §5.4's re-check closes
+  Relying on rustc inherits Rust's holes, such as rust-lang/rust#25860, which
+  the build cannot catch because rustc accepts them. §5.4's re-check closes
   it; known exploits belong in the negative test corpus.
 - **R4. The audited std set** (`Arena`, `Shared` and its `with` methods,
   channels, `Scope`, the eyepatch containers) has Rust std's trust model and
@@ -1267,8 +1282,10 @@ release.
   classified `Pure`; round 2 showed its drops and `make_mut` reveal timing).
 - **R6. Child failure (§8.3)** follows `std::thread::scope` exactly; the only
   recovery point, `spawn_isolated`, takes `Owned` closures.
-- **R7. The evented lowering of scoped children** needs non-moving frames
-  and uncancellable joins in the C backend, outside `τ`.
+- **R7. The evented lowering of scoped children** (v1) needs non-moving
+  frames and uncancellable joins. rustc lowers only `async fn` to state
+  machines, so this lowering is open under D18 (01 D18, reversal
+  conditions).
 
 ## 12. Known limitations and open questions
 

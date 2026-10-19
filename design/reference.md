@@ -1,7 +1,7 @@
 # Tide for Rust Programmers
 
 Status: the agent-facing reference for the **v0 core** of Tide, as the
-tier table of `design/01-design.md` (draft 3.5, the decision record) defines
+tier table of `design/01-design.md` (draft 3.7, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
@@ -14,9 +14,11 @@ Diagnostic codes (`FX0201`, ...) are placeholders.
 
 ## 0. How to use this document
 
-You know Rust. Write Rust. Tide is Rust's surface with a few changes in
-meaning, and every Rust habit that would mean something different fails
-loudly with a stable code and, usually, a machine-applicable fix. Section 1
+You know Rust. Write Rust. A Tide program is a valid Rust 2024 crate: Tide's
+checker admits it, then a pinned nightly rustc builds it against Tide's std
+(D18). Meaning changes in a few places, and every Rust habit that would mean
+something different fails loudly with a stable code and, usually, a
+machine-applicable fix. Section 1
 lists what is unchanged, sections 2–11 the differences, 12.3 every std
 import path, 14 the habit table, and 15 complete programs.
 
@@ -34,6 +36,8 @@ The differences you will hit first:
    conversions.
 5. **Shared mutable state is `Shared<T>`** with closure methods
    (`cell.with(|x| ..)`), not `Arc<Mutex<T>>`.
+6. **Only admitted library items.** `core`, `alloc`, and std methods outside
+   Tide's allowlist are errors (6.9): write `math::sin(x)`, not `x.sin()`.
 
 ## 1. What is unchanged
 
@@ -73,14 +77,14 @@ edition):
 - **Testing**: `#[test]`, `#[should_panic(expected = "..")]`,
   `#[cfg(test)] mod tests { use super::*; .. }`, the `assert!` family.
 
-Source files end in `.tide`.
+Source files end in `.rs`, and modules are declared with `mod` (12.1).
 
 ## 2. Surface: `!` forms, derives, attributes
 
 ### 2.1 The fixed built-in `!` forms
 
-Users cannot define macros. The compiler implements exactly these, with
-Rust's spelling and meaning:
+Users cannot define macros. Tide's std supplies exactly these, with Rust's
+spelling and meaning, plus Tide's own forms in the last row:
 
 | Form | Tide notes |
 | --- | --- |
@@ -90,15 +94,17 @@ Rust's spelling and meaning:
 | `panic!`, `todo!`, `unimplemented!`, `unreachable!` | As Rust. `todo!()` is also a typed hole (13). |
 | `dbg!` | As Rust. Error in release builds (`FX0507`). |
 | `error!`, `warn!`, `info!`, `debug!`, `trace!` | Write-only log sink (6.5). No `use` needed; `log::info!` and `tracing::info!` are accepted spellings (provisional). |
+| `invariant!`, `hole!` | Loop invariant (10.1); typed hole (13). |
 
 Anything else ending in `!` is `FX0103`, including `debug_assert_eq!`
-(write `debug_assert!(a == b)`), `include_str!`, `env!`, `concat!`,
-`thread_local!`, `lazy_static!`, and every crate macro. `macro_rules!` and
+(write `debug_assert!(a == b)`), `concat!`, `thread_local!`,
+`lazy_static!`, and every crate macro; `include_str!`, `env!`, and
+`option_env!` are `FX0520` (6.9). `macro_rules!` and
 procedural macros are `FX0101`. Instead of a macro, write a generic function
 or trait; for test tables, loop over a `const` array; for generated code or
-embedded data, run a generator program yourself and commit its `.tide` output.
+embedded data, run a generator program yourself and commit its `.rs` output.
 
-```tide
+```rust
 #[test]
 fn parse_cases() {
     const CASES: [(&str, Option<u32>); 3] = [("1", Some(1)), ("x", None), ("", None)];
@@ -120,8 +126,8 @@ All are in the prelude, and so is the `Error` trait itself (12.3); remove
   single-field variant generates `From` and, as in thiserror, also marks the
   field as the `source`; `#[source]` (or a field named `source`) sets
   `Error::source`; `#[error(transparent)]` forwards both. If you print the
-  `source()` chain, leave the source out of each message (no `{0}`), or it
-  prints twice.
+  `source()` chain, leave the source out of each message, or it prints
+  twice.
 - **`Encode`/`Decode`** are compiler-generated serialization. v0 supports
   JSON only: `std::json::encode(&v) -> Vec<u8>` and
   `std::json::decode::<T>(&bytes) -> Result<T, json::Error>`. Keys:
@@ -132,7 +138,7 @@ All are in the prelude, and so is the `Error` trait itself (12.3); remove
   (`{"Set":{"key":"a"}}`, `"Clear"`).
 - `Serialize`/`Deserialize`/`thiserror::Error` are `FX0102` with safe fixes.
 
-```tide
+```rust
 #[derive(Debug, Error)]
 pub enum LoadError {
     #[error("cannot read {path:?}")]
@@ -166,7 +172,9 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
   `debug_assertions`, `target_os`, `target_arch`, `unix`, `windows`, and
   `feature = ".."` (provisional beyond `test`).
 - Tide attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
-  `#[pure]` (6.6), `#[sim_test]` (6.8), `#[protected]` (11).
+  `#[tide::main]` (6.2), `#[pure]` (6.6), `#[sim_test]` (6.8),
+  `#[requires]`, `#[ensures]`, `#[invariants]` (10.1), `#[protected]` and
+  `#[trusted_pure]` (11). They are toolchain proc macros, not user macros.
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
 
@@ -189,7 +197,7 @@ the bare name (`Token`) is also accepted, as in Rust. In an impl header,
 write `impl Collector<'_, '_>`; the bare `impl Collector` is an error, as in
 Rust.
 
-```tide
+```rust
 fn first_word(s: &str) -> &str                          // borrows s
 fn get(&self, key: &str) -> Option<&V>                  // borrows self
 fn split_csv(line: &str) -> Result<Vec<Cow<'_, str>>, CsvError>   // Cow borrows line
@@ -232,7 +240,6 @@ Rules:
   own: `fn pick<'r, 'a: 'r, 'b: 'r>(v: &mut Vec<&'a str>, s: &'b str) -> &'r str`.
 - Relations that well-formed signature types imply need no bound:
   `&'m BTreeMap<char, Vec<&'t str>>` lets a result be `&'m [&'t str]`.
-- `T: 'static` is accepted and written `T: Owned` by `tide fmt` (3.4).
 - Not in Tide, as beyond the power ceiling (5.1): lifetime parameters on
   traits (`trait Parse<'a>`, `FX0201`), explicit `for<'a>` (`FX0404`), and
   generic associated types (`FX0403`).
@@ -247,7 +254,7 @@ exactly as in Rust: `Ident(&'a str)` in `enum Token<'a>`, a field
 `lx: Lexer<'a>`. Variance is Rust's: `&T` covariant; `&mut T`, `Cell`,
 `RefCell`, `Shared` invariant.
 
-```tide
+```rust
 pub struct Lexer<'a> { src: &'a str, pos: usize }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -278,17 +285,17 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
   is `Lexer<'a>`, so a constructor `fn new(src: &str) -> Self` is an error:
   write `fn new(src: &'a str) -> Self`. Builders return `-> &mut Self`.
 
-### 3.4 `'static`, `Owned`, and `dyn`
+### 3.4 `'static` and `dyn`
 
-- `'static` is kept: `&'static str`, string literals, consts.
-- `Owned` is a compiler-known auto trait: no borrowed lifetimes except
-  `'static` (Rust's `T: 'static`, accepted and rewritten to `T: Owned`).
+- `'static` is Rust's: `&'static str`, string literals, consts. A type is
+  *owned* when it borrows nothing except `'static` data (`T: 'static`).
   Work that outlives the current function requires it: `spawn_isolated`
-  (7.1), `Box<dyn Trait>` contents in a signature or field, and children of a scope passed down
-  unless they borrow only what the signature ties to the scope (7.1).
+  (7.1), `Box<dyn Trait>` contents in a signature or field, and children of
+  a scope passed down unless they borrow only what the signature ties to
+  the scope (7.1).
 - `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
   `&'a mut` it is `dyn Trait + 'a`. Elsewhere outside a body
-  (`Box`, `Rc`, `Arc`, type arguments) it means `dyn Trait + Owned`, unless
+  (`Box`, `Rc`, `Arc`, type arguments) it means `dyn Trait + 'static`, unless
   the container's own `T: 'a` bound sets `'a`; inside a body it is
   inferred. Write
   `Box<dyn Trait + 'a>` for a borrowing object, for example
@@ -305,7 +312,7 @@ where its lifetime is named or captured.
   Iterator<Item = u32>` and `fn over(min: &u32) -> impl Fn(&Person) -> bool`
   need no annotation. To capture less, list what it captures:
   `-> impl Fn() -> usize + use<'a>`.
-- Storing a closure in an `Owned` position (`Box<dyn Fn()>` in a signature
+- Storing a closure in a `'static` position (`Box<dyn Fn()>` in a signature
   or field, `spawn_isolated`) requires that it capture no borrows: `move` owned values
   in (`clone()`, `to_string()`), or write `+ 'a` (`FX0203`).
 
@@ -322,7 +329,7 @@ A struct cannot borrow from its own field (`FX0210`):
 | Graphs, parent links, cycles | `Arena<T>` with `Id<T>` handles (below) |
 | Shared ownership | `Rc<RefCell<T>>` and `Weak`, as Rust; `Arc` across tasks |
 
-```tide
+```rust
 use std::arena::{Arena, Id};
 
 struct Node { name: String, edges: Vec<Id<Node>> }
@@ -336,7 +343,7 @@ assert!(g.get(b).is_none());      // stale handle: None, never a dangling read
 ```
 
 `Id<T>` is a `u32` index plus a `u32` generation. It is `Copy`, `Eq`,
-`Hash`, `Owned`, `Pure`, `Send`, and `Sync` (02 §10.9), and also `Ord` and
+`Hash`, `'static`, `Pure`, `Send`, and `Sync` (02 §10.9), and also `Ord` and
 `Debug` (provisional), so it works as a `HashSet`/`HashMap` key. `Arena`
 methods: `new`, `insert(T) -> Id<T>`, `get(id) -> Option<&T>`, `get_mut`,
 `remove(id) -> Option<T>`, `get_disjoint_mut([a, b]) -> Option<[&mut T; 2]>`,
@@ -382,13 +389,17 @@ context. `round_from` and float `TryFrom` are provisional names.
 
 ### 4.3 Floats
 
-IEEE 754 as Rust, with native arithmetic, but every operation that reads a
-float's sign or bits (`to_bits`, `is_sign_positive`, `is_sign_negative`,
-`copysign`, `signum`, `total_cmp`, hashing, formatting, foreign calls) sees
-any NaN as one canonical NaN. `sin`, `exp`, `powf`, and the other math
-functions come from one library that std ships for every target, so results
-match across targets. `f64` is not `Eq`
-or `Ord`; use `total_cmp`.
+IEEE 754 as Rust, with native arithmetic. Rust leaves NaN bits and math
+precision unspecified, so the methods that read a float's sign or bits
+(`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
+`total_cmp`, `min`, `max`) and the math methods (`sin`, `exp`, `powf`,
+`sqrt`, ...) are `FX0520` (6.9). Use std's functions:
+`float::bits(x)` (any NaN reads as one canonical NaN), `float::min(a, b)`
+and `float::max(a, b)` (-0.0 below +0.0), and `math::sin(x)`,
+`math::exp(x)`, ..., from one library on every target (`use std::{float,
+math};`). Rounding and classification (`floor`, `ceil`, `round`, `trunc`,
+`abs`, `is_nan`, `is_finite`) stay methods (provisional). `f64` is not `Eq`
+or `Ord`; use `float::total_cmp(a, b)` (provisional name).
 
 ## 5. Traits and generics
 
@@ -414,8 +425,8 @@ and `impl K for Net` overlap (`FX0402`), though `Net` is not `Pure`. Trait
 methods are namespaced by trait, as in Rust, so `Display::fmt` and
 `Debug::fmt` coexist. A returned `impl Trait` is `Send`, `Sync`,
 or `Pure` only if it names them: write `-> impl Iterator<Item = u8> + Send`
-if callers need `Send`. It is `Owned` when it captures no borrow, or when it
-states `+ Owned`.
+if callers need `Send`. It is `'static` when it captures no borrow, or when
+it states `+ 'static`.
 
 ### 5.2 Impl placement
 
@@ -464,9 +475,10 @@ Calling conventions:
 - Every capability error type has a cancellation case whose
   `is_cancelled()` is true (7.2).
 
-### 6.2 `main(root: Root)`
+### 6.2 `#[tide::main] fn main(root: Root)`
 
-```tide
+```rust
+#[tide::main]
 fn main(root: Root) -> Result<(), AppError> {
     let data = root.fs.dir("/var/lib/app", Mode::ReadWrite)?;   // Fs below one directory
     let net = root.net.only(["db.internal:5432"]);               // Net to one host
@@ -477,7 +489,8 @@ fn main(root: Root) -> Result<(), AppError> {
 
 - `Root` has public fields `fs`, `net`, `clock`, `rand`, `env`, `stdin`,
   `proc`, `tasks`, and `log` (sink configuration, 6.5).
-- `main` takes `root: Root` or nothing, and returns `()`,
+- The attribute generates Rust's parameterless entry point and mints
+  `root`. `main` takes `root: Root` or nothing, and returns `()`,
   `Result<(), E: Debug>`, or `std::process::ExitCode` (`ExitCode::SUCCESS`,
   `ExitCode::FAILURE`, `ExitCode::from(2u8)`), as in Rust. After `Err(e)`
   the program prints `Error: {e:?}` to stderr and exits with 1; to print
@@ -485,8 +498,9 @@ fn main(root: Root) -> Result<(), AppError> {
   yourself. A panic exits with 101.
 - `Root` can be named only in `main`'s signature. `root` cannot be passed,
   borrowed into a call, stored, returned, or captured (`FX0503`); move or
-  borrow its fields (`root.fs`, `&root.clock`). Tests cannot call `main`, so
-  put the logic in functions that take capabilities.
+  borrow its fields (`root.fs`, `&root.clock`). No code may call `main` (`FX0506`),
+  so a test cannot mint a real `Root`: put the logic in functions that take
+  capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
   (`FX0504`, 6.8).
 
@@ -495,7 +509,7 @@ shows where every capability reaching a function was attenuated.
 
 ### 6.3 Files: paths, append, durability
 
-```tide
+```rust
 impl Fs {                                         // every method takes &self; p: impl AsRef<Path>
     fn read(&self, p) -> io::Result<Vec<u8>>;
     fn read_to_string(&self, p) -> io::Result<String>;
@@ -526,10 +540,8 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
   such a file reads from offset 0, and every write goes to the end.
 - **A `File` carries the authority of the `Fs` that opened it**; its methods
   need no other capability.
-- **Paths.** `root.fs` is rooted at `/`, so it reaches every path; a
-  relative path resolves against the working directory the process started
-  in (provisional; under simulation that is `/`, so
-  `sim.world.file("a.txt", ..)` creates `/a.txt`). `read_only()` keeps the
+- **Paths.** `root.fs` is rooted at `/`; a relative path resolves against
+  the starting working directory (provisional; `/` under simulation). `read_only()` keeps the
   same base. `fs.dir(p, mode)` resolves `p` like any path and returns an
   `Fs` rooted at it, which resolves relative paths beneath `p`; an absolute
   path, or a `..` or symlink that would leave `p`, fails with
@@ -548,7 +560,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
   before appending again, or the next acknowledged record is glued to the
   torn bytes and lost on the next read.
 
-```tide
+```rust
 pub struct Log { file: File }
 
 impl Log {
@@ -584,7 +596,7 @@ impl Log {
 Safe code has no mutable globals and no thread-locals: no `static mut`, no
 `static` holding atomics, `Mutex`, `OnceLock`, or `Cell`, no
 `thread_local!`, no `lazy_static!` (`FX0502`). A `static` must be
-`Owned + Sync + Pure`, and its value is computed at compile time by
+`'static + Sync + Pure`, and its value is computed at compile time by
 `const fn`; `const` is as Rust. There are no lazy statics: build a value
 that needs run-time work in `main` and pass it down.
 
@@ -595,7 +607,8 @@ that needs run-time work in `main` and pass it down.
 because their results depend on other tasks; `make_mut` stays. `Arc`,
 `sync::Weak`, and atomics are synchronization handles, so creating one takes
 `&Tasks` (7.4): `Arc::new(v, tasks)`, `Arc::downgrade(&a, tasks)`,
-`AtomicU64::new(0, tasks)`. Cloning needs nothing. `Rc` and `Cell` need no
+`AtomicU64::new(0, tasks)`; `core::sync::atomic` is `FX0520`. Cloning
+needs nothing. `Rc` and `Cell` need no
 capability, because they never leave their task.
 
 ### 6.5 Write-only sinks are not authority
@@ -606,7 +619,7 @@ return `Ok`), and `std::trace::span(name)` (a guard that closes on drop)
 write to sinks owned by the current task. They read nothing back, need no
 capability, never suspend, and keep a function authority-free.
 
-```tide
+```rust
 fn decode_user(row: &Row) -> Result<User, DecodeError> {      // still authority-free
     if row.version < 3 {
         warn!("legacy row format for user {}", row.id);
@@ -629,18 +642,30 @@ fn decode_user(row: &Row) -> Result<User, DecodeError> {      // still authority
 
 ### 6.6 `Pure` and authority-free functions
 
-`Pure` is a compiler-known auto trait: no authority is reachable from the
-type. **Not `Pure`**: the capability types and `File`, `TcpStream`, and other
+`Pure` (prelude) means no authority is reachable from the type. Std declares
+it with a blanket impl, so rustc accepts every bound; Tide's checker decides
+it structurally wherever a type meets a `Pure` bound or is coerced to a
+`Pure` trait object. **Not `Pure`**: the capability types and `File`, `TcpStream`, and other
 handles derived from them; synchronization handles (`Shared`, channel ends,
 `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any `Sync`
 type whose `&self` API can observe or cause mutation); raw pointers;
-`dyn Trait` without `+ Pure`; an unbounded type parameter. **Everything else
+a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded type
+parameter. **Everything else
 is `Pure` exactly when its parts are**, including references, collections,
 `Arena`, `Box`, `Rc`, `Cell`, `RefCell`, structs, enums, and closures. `Cell`,
 `RefCell`, and `Rc` are `Pure` because they are not `Sync`: their state
 never leaves one task. `Arc` is not, because drop timing can reveal
 scheduling (D7): authority-free and parallel code shares data by reference
 inside a scope instead.
+
+`dyn Trait + Pure` is not Rust (E0225). Declare a companion trait with a
+blanket impl and use its object, which upcasts to `&dyn Value`:
+
+```rust
+trait PureValue: Value + Pure {}
+impl<T: Value + Pure + ?Sized> PureValue for T {}
+fn show(v: &dyn PureValue) { .. }
+```
 
 A function or closure is **authority-free** when every parameter and capture
 type is `Pure`. It cannot do I/O or observe time, randomness, or other
@@ -654,7 +679,7 @@ authority-freedom a compile error (`FX0511`).
 | `join` closures (8) | `Pure + Send`; shared captures `Pure + Sync` |
 | `par_map`, `par_for`, `par_sort` (8) | closures `Fn + Pure + Send + Sync`; shared captures `Pure + Sync`; elements `Pure + Sync` (`par_map`) or `Pure + Send` |
 | `Shared<T>` payloads; `with` closures (7.4) | `T: Send + Pure`; closure `Pure` |
-| `static` (6.4) | `Owned + Sync + Pure` |
+| `static` (6.4) | `'static + Sync + Pure` |
 | functions a contract clause calls (10.1) | authority-free, `Pure + Sync` arguments, `&mut` only to clause-created temporaries |
 | `const fn` | authority-free, no `&mut` parameters |
 
@@ -687,7 +712,7 @@ simulation's main task, so it can spawn, wait, and read virtual time.
 | `#[sim_test(seeds = 200)] fn t(sim: SimRoot)` | runs the test once per seed with a fresh `SimRoot`; plain `#[sim_test]` runs 100 seeds; more parameters are generated (10.2) |
 | `sim.world.file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>)` | create a file (parents included) |
 | `sim.world.args(["prog", "a.txt"])`, `env_var(k, v)`, `stdin(bytes)` | program inputs; `args` as `env.args()` returns them |
-| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Owned)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.faults.net_drop(p: f64)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | per-packet network faults (below) |
 | `sim.faults.partition(&[&a], &[&b])`, `heal()` | cut links between node groups |
@@ -707,8 +732,7 @@ are provisional.)
 Semantics:
 
 - **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
-  time advances only when every task is blocked, then jumps to the next
-  timer, so a 30-second timeout test runs in milliseconds. Computation and
+  time advances only when every task is blocked, jumping to the next timer. Computation and
   `Clock`, `Rand`, `Env`, and `Tasks` calls take no virtual time; each file
   operation takes up to 1 ms and each network packet 1–10 ms, drawn from the
   seed (provisional). Bound `sim.elapsed()` by a deadline your code sets, or
@@ -722,7 +746,6 @@ Semantics:
   semantics-affecting build options, simulated setup, and injected inputs.
   Replay refuses to run if the source or build differs; otherwise it
   reproduces the run bit for bit.
-- **Errors** have the host's `io::ErrorKind`s.
 - **Packet loss.** `net_drop(p)` drops each packet independently with
   probability `p`. A UDP datagram is simply lost. TCP streams and
   `Net::get` retransmit, so loss shows up as delay: each loss of the same
@@ -736,7 +759,7 @@ Semantics:
   its newline (provisional).
 - **Node entries.** `restart` calls the entry again, so it is a `fn` item or
   an `Fn` closure, never `FnOnce`. It is `Send`, and its captures are
-  `Owned`, `Pure`, and `Sync`, so a run cannot change them; clone inside it
+  `'static`, `Pure`, and `Sync`, so a run cannot change them; clone inside it
   what each run consumes. Unlike `Root`, a `NodeRoot` is an ordinary value: pass it or its
   fields to helpers.
 - **Crashes.** A crash stops a node's tasks at their current scheduling
@@ -745,14 +768,13 @@ Semantics:
   directory entries may be lost or torn, as the seed decides. Crashing a
   node whose entry has returned is the same power cut (provisional). The
   test body itself cannot crash: put crash-tested code in a node.
-- **Restarts.** `restart(&node)` returns `()` and calls the entry again
-  with a fresh `NodeRoot` over the surviving disk and no surviving memory; a
-  running node is crashed first. A `NodeTask` follows its node across restarts: `run_until(&t)`
-  returns when some run of the entry returns, and panics if the node is
-  down with no restart scheduled. Dropping a `NodeTask` does not stop the
-  node, as with a `Task` (7.1). (All provisional.)
+- **Restarts.** `restart(&node)` crashes a running node, then calls the
+  entry again with a fresh `NodeRoot` over the surviving disk. A `NodeTask`
+  follows its node: `run_until(&t)` returns when some run of the entry
+  returns, and panics if the node is down with no restart scheduled.
+  Dropping it does not stop the node. (All provisional.)
 
-```tide
+```rust
 #[sim_test(seeds = 200)]
 fn acked_lines_survive_a_crash(sim: SimRoot) {
     let node = sim.node("db");
@@ -786,10 +808,10 @@ manifest:
 that seed against the current source, for example after a fix.
 `tide sim <bin> -- args` runs `main` under many seeds as one node.
 
-### 6.9 Ambient Rust calls and their fixes
+### 6.9 Ambient Rust calls and the admission allowlist
 
-All are `FX0501`; the fix uses a capability in scope or proposes adding the
-parameter.
+Ambient std calls are `FX0501`; the fix uses a capability in scope or
+proposes adding the parameter.
 
 | Rust | Tide |
 | --- | --- |
@@ -806,6 +828,15 @@ parameter.
 | `TcpStream::connect(a)` | `net.connect(a)` |
 | `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` |
 
+The checker admits only listed `core`, `alloc`, and std inherent items;
+everything else is `FX0520`, notably: hardware
+intrinsics (`core::arch`); raw pointer types and address observers
+(`addr()`, `{:p}`) without the `unsafe` grant; `core::sync::atomic`; float
+observers and math methods (4.3); I/O methods on std types (`Path::exists`,
+`metadata`; use `fs`); `io::Error::last_os_error`; timed waits such as
+`recv_timeout` (use `recv_deadline`); and `include_str!`, `env!`,
+`option_env!`.
+
 ### 6.10 Patterns
 
 **Thread a capability.** When a leaf starts needing authority, add the
@@ -816,7 +847,7 @@ path from a holder, test call sites included.
 **App-context struct.** For service code, bundle attenuated capabilities
 and clients built in `main`, and pass narrow pieces down:
 
-```tide
+```rust
 pub struct App { db: Db, files: Fs, clock: Clock }   // each already attenuated
 
 impl App {
@@ -838,11 +869,11 @@ operation; authority-free code never suspends. Write blocking-style code.
 
 ### 7.1 Scopes and tasks
 
-```tide
+```rust
 impl Tasks {
     fn scope<'env, T, E>(&'env self, body: impl FnOnce(Scope<'_, 'env, E>) -> Result<T, E>) -> Result<T, E>
         where E: From<TaskError> + Send;
-    fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + Owned) -> Result<T, Panicked>;
+    fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + 'static) -> Result<T, Panicked>;
     fn limit(&self, n: usize) -> Tasks;               // attenuation: at most n live children
     fn shield<T>(&self, f: impl FnOnce() -> T) -> T;   // ignore enclosing cancellation
     fn checkpoint(&self) -> Result<(), Cancelled>;
@@ -886,26 +917,23 @@ pub struct Panicked { pub message: String }          // (provisional)
   cancels the scope, and `scope` re-raises it in the calling task (above). A
   panic in the body cancels and joins the children, then continues
   unwinding. Only destructors observe data a panicking child was mutating.
-- **Isolation.** `tasks.spawn_isolated(move || ..)` runs an `Owned` closure
+- **Isolation.** `tasks.spawn_isolated(move || ..)` runs a `'static` closure
   as a new task, waits for it, and returns `Err(Panicked)` if it panicked;
-  it inherits the caller's cancellation. It is the only
-  place a panic becomes a value (servers: one per request, called from a
-  scoped child).
+  it inherits the caller's cancellation. It is the only place a panic
+  becomes a value (servers: one per request).
 - **Bounded concurrency.** `let tasks = root.tasks.limit(4);` then spawn one
   child per item: scopes from that `Tasks` run at most 4 children at once,
-  and `spawn` waits for a free slot (provisional; the wait is not a
-  checkpoint). A `spawn` still waiting when its scope is cancelled or its
-  deadline passes starts the child once a slot frees; the child sees the
-  cancellation at its first checkpoint, and `join` returns what it returns
-  (provisional).
+  and `spawn` waits for a free slot (not a checkpoint). A child whose
+  `spawn` waited past its scope's cancellation still starts, and sees the
+  cancellation at its first checkpoint (provisional).
 - **A scope passed down** (`fn serve<'s>(bg: Scope<'s, '_, E>, ..)`) outlives
   the function's locals, so its children must own their data (`move` with
-  owned values, `Owned`) or borrow what the signature ties to the scope
+  owned values) or borrow what the signature ties to the scope
   (`cfg: &'s Config`).
 - The task, not the OS thread, is the isolation unit: values that never
   leave a task need not be `Send` (an `Rc` inside one task is fine).
 
-```tide
+```rust
 fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
     -> Result<(Vec<u8>, Vec<u8>), FetchError>          // FetchError: #[from] TaskError, #[from] NetError
 {
@@ -961,7 +989,7 @@ on several sources (Rust's `select!`), send one enum through one channel.
 
 ### 7.4 `Shared<T>`
 
-```tide
+```rust
 impl<T: Send + Pure> Shared<T> {                   // std::sync
     fn new(v: T, tasks: &Tasks) -> Shared<T>;      // creation takes &Tasks (argument position provisional)
     fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
@@ -1004,7 +1032,7 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   library authors and are not `Pure`. `Mutex` and `RwLock` live in
   `std::sync::raw` and need the `unsafe` grant.
 
-```tide
+```rust
 use std::sync::{LockError, Shared};
 
 #[derive(Debug, Error)]
@@ -1051,7 +1079,7 @@ bound concurrency with `Tasks::limit` (7.1).
 | --- | --- |
 | `async fn f(..) -> T` | `fn f(net: &Net, ..) -> T` |
 | `x.await` | `x` (`FX0601`, safe fix deletes `.await` and `async`) |
-| `#[tokio::main] async fn main()` | `fn main(root: Root)` |
+| `#[tokio::main] async fn main()` | `#[tide::main] fn main(root: Root)` |
 | `tokio::spawn`, `thread::spawn` | `tasks.scope(\|s\| { s.spawn(..); .. })` (`FX0602`) |
 | `std::thread::scope` | `tasks.scope` (children return `Result`) |
 | `tokio::join!(a, b)` | two `spawn`s, two `join`s |
@@ -1066,7 +1094,7 @@ bound concurrency with `Tasks::limit` (7.1).
 
 Deterministic fork-join for authority-free code:
 
-```tide
+```rust
 use std::par::join;
 
 let (a, b) = join(|| parse(x), || parse(y));
@@ -1106,8 +1134,9 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
   `let _ = r;` to discard on purpose (provisional: Rust warns).
 - `#[derive(Error)]` replaces `thiserror` (2.2).
 - **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap`
-  on `None`, a violated contract, stack overflow) unwind the current task
-  and run destructors. A panic raised during that unwinding, for example in
+  on `None`, a violated contract) unwind the current task and run
+  destructors. Stack overflow aborts the process, as in Rust; under the
+  simulator it fails the seed. A panic raised during that unwinding, for example in
   a destructor, aborts the process. A panicking child makes its scope panic
   (7.1). There is no `catch_unwind` (`FX0701`); isolate risky work with
   `tasks.spawn_isolated`. A panic in the main task exits with code 101.
@@ -1121,13 +1150,15 @@ builds, erased in release, and used to drive property tests.
 
 | Clause | Where | Meaning |
 | --- | --- | --- |
-| `requires e` | after a fn signature (and `where`) | precondition, checked at entry; a failure blames the caller |
-| `ensures e` | after a fn signature | postcondition, checked at each return; a failure blames the callee |
-| `invariant e` | between a loop header and its body | checked at loop entry and exit; under `tide test`, also after every iteration |
+| `#[requires(e)]` | attribute on a fn | precondition, checked at entry; a failure blames the caller |
+| `#[ensures(e)]` | attribute on a fn | postcondition, checked at each return; a failure blames the callee |
+| `invariant!(e);` | first statements of a loop body | checked at loop entry (even for zero iterations) and exit; under `tide test`, also after every iteration |
 
-- **One expression per clause.** `requires a, b` is an error whose safe fix
-  splits it into two clauses. Repeated clauses of one kind, `invariant`
-  included, are conjoined in order.
+- **Loops.** The enclosing fn must carry `#[invariants]` or any contract
+  attribute, which rewrites its loops; elsewhere `invariant!` is an error.
+- **One expression per clause.** `#[requires(a, b)]` is an error whose safe
+  fix splits it into two attributes. Repeated clauses of one kind,
+  `invariant!` included, are conjoined in order.
 - **In `ensures`**, `result` is the return value (a contextual keyword): a
   place the clause reads but cannot move out of, so match on `&result` or
   use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
@@ -1171,28 +1202,26 @@ builds, erased in release, and used to drive property tests.
 - Trait methods may carry contracts; every impl is checked against them.
 - **Violations.** A clause that is false, or whose evaluation panics, is
   violated. Violations panic with `requires violated: <clause text>` (or
-  `ensures`, `invariant`) and the blamed span (provisional), so
+  `ensures`, `invariant`), the function's name, and the blamed span
+  (provisional), so
   `#[should_panic(expected = "requires violated")]` can target them.
 
-```tide
-pub fn max_index(xs: &[i64]) -> usize
-    requires xs.len() > 0
-    ensures result < xs.len()
-    ensures forall |i: usize| i < xs.len() ==> xs[result] >= xs[i]
-{
+```rust
+#[requires(xs.len() > 0)]
+#[ensures(result < xs.len())]
+#[ensures(forall |i: usize| i < xs.len() ==> xs[result] >= xs[i])]
+pub fn max_index(xs: &[i64]) -> usize {
     let mut best = 0;
-    for i in 1..xs.len()
-        invariant best < i
-    {
+    for i in 1..xs.len() {
+        invariant!(best < i);
         if xs[i] > xs[best] { best = i; }
     }
     best
 }
 
-pub fn push_all(dst: &mut Vec<i64>, src: &[i64])
-    ensures dst.len() == old(dst.len()) + src.len()
-    ensures forall |i: usize| i < src.len() ==> dst[old(dst.len()) + i] == src[i]
-{
+#[ensures(dst.len() == old(dst.len()) + src.len())]
+#[ensures(forall |i: usize| i < src.len() ==> dst[old(dst.len()) + i] == src[i])]
+pub fn push_all(dst: &mut Vec<i64>, src: &[i64]) {
     for x in src { dst.push(*x); }
 }
 ```
@@ -1216,7 +1245,7 @@ A quantified invariant costs a linear scan each time it is checked.
   for the other parameters, `seeds = N` sets the number of cases, and
   shrinking keeps the seed (provisional). `requires` and the vacuity floor
   apply to both forms.
-- **`requires`**, on a test or a tested function, filters and guides
+- **`#[requires]`**, on a test or a tested function, filters and guides
   generation. Conjuncts in a recognized shape are generated directly; the
   rest filter. Shapes: scalar
   ranges (`n <= 64`, `lo <= hi`), length bounds (`xs.len() > 0`), an index
@@ -1231,22 +1260,20 @@ A quantified invariant costs a linear scan each time it is checked.
   construct such inputs (`xs.sort()`), use a recognized shape, or give the
   type an `Arbitrary` impl.
 - **Generated contract tests** (04 §2.4). `tide test` also tests every
-  function that has an `ensures`, on generated inputs that satisfy its
-  `requires`, under the same vacuity floor. Capability parameters come from
-  a fresh `Root::sim(seed)`; a type with private fields is built through
-  random sequences of public constructor and method calls, which respect
-  their own `requires`. Each type parameter is instantiated at `i64` if it
-  meets the bounds, else at `String`. A function that cannot be generated
-  (a closure, `dyn`, or handle parameter; unmet bounds) is skipped and
-  reported as unchecked. `#[allow(vacuous, reason = "..")]` on a function
-  reports a vacuous generated test as unchecked instead of failing; review
-  shows it. (Instantiation, skipping, and `allow` are provisional.)
+  function with an `ensures` on generated inputs satisfying its `requires`,
+  under the same vacuity floor. Capabilities come from a fresh
+  `Root::sim(seed)`; a type with private fields is built by random public
+  constructor and method calls. Type parameters become `i64` if it meets
+  the bounds, else `String`. A function that cannot be generated (closure,
+  `dyn`, or handle parameters; unmet bounds) is skipped as unchecked.
+  `#[allow(vacuous, reason = "..")]` reports a vacuous generated test as
+  unchecked, visibly in review. (Instantiation, skipping, and `allow` are
+  provisional.)
 
-```tide
+```rust
 #[test]
-fn midpoint_stays_in_range(lo: u32, hi: u32)
-    requires lo <= hi
-{
+#[requires(lo <= hi)]
+fn midpoint_stays_in_range(lo: u32, hi: u32) {
     let mid = lo + (hi - lo) / 2;
     assert!(lo <= mid && mid <= hi);
 }
@@ -1266,9 +1293,10 @@ report it; never weaken it to get a green check.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync`/`Pure` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason (`unsafe impl Pure` conflicts with std's blanket impl) | `unsafe` grant |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
-| Raw pointer addresses | `p as usize`, `{:p}`, comparing, hashing, or printing raw pointers | `unsafe` grant |
+| Raw pointers | `*const T`, `*mut T`, `p as usize`, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
 authority (the capability types each public item can reach through its
@@ -1283,15 +1311,12 @@ check.
 
 ### 12.1 Files are modules
 
-- `src/main.tide` is a binary root, `src/lib.tide` a library root. Every `.tide`
-  file under `src/` is a module; the directory tree is the module tree
-  (`src/net/http.tide` is `crate::net::http`), with an optional `src/net.tide`
-  beside `src/net/`; no `mod.tide`.
-- You do not write `mod foo;`. If present, `mod foo;` is a no-op and
-  `pub mod foo;` sets visibility; a file module without one is private to
-  its parent. `mod foo;` with no file is `FX0910`; `#[path]` is `FX0911`.
-  (provisional)
-- `tide check path.tide` and `tide test path.tide` treat one file as a
+- As in Rust: `src/main.rs` is a binary root, `src/lib.rs` a library root,
+  and `mod net;` in a parent declares `src/net.rs` (or `src/net/mod.rs`);
+  `pub mod` sets visibility. The directory tree is the module tree
+  (`src/net/http.rs` is `crate::net::http`). `mod foo;` with no file is
+  `FX0910`; `#[path]` is `FX0911`.
+- `tide check path.rs` and `tide test path.rs` treat one file as a
   crate root, for single-file programs and exercises: a binary root if it
   defines `main`, otherwise a library root, where `println!` is lint
   `FX0508` (provisional).
@@ -1309,8 +1334,8 @@ check.
 
 The prelude is Rust's plus `Root`, the `Error` trait (`std::error::Error`,
 so `Box<dyn Error>` and `e.source()` need no import), and the derives
-`Error`, `Encode`, `Decode`, as 01's own example assumes; `Pure`, `Owned`,
-and `Secret` are in it too (provisional). Import everything else:
+`Error`, `Encode`, `Decode`, as 01's own example assumes, and the contract
+attributes; `Pure` and `Secret` are in it too (provisional). Import everything else:
 
 | Items | Path |
 | --- | --- |
@@ -1324,6 +1349,7 @@ and `Secret` are in it too (provisional). Import everything else:
 | `Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, `Panicked` | `std::task` |
 | `Shared`, `LockError`, `mpsc`, `Arc`; atomics | `std::sync`; `std::sync::atomic` |
 | `join` | `std::par` |
+| `float::{bits, min, max, total_cmp}`, `math::{sin, exp, ..}` | `std::float`, `std::math` |
 | `Arena`, `Id` | `std::arena` |
 | `Cow` | `std::borrow` |
 | `json` (`encode`, `decode`, `json::Error`) | `std::json` |
@@ -1371,6 +1397,10 @@ only = ["crate::net::*"]         # no other module may declare Net
 - Tide packages have no `build.rs`, install hooks, or code that runs at
   fetch or build time (`FX0915`). Code generators are programs you run
   explicitly (`tide run --bin gen`); commit their output.
+- Tide's driver runs rustc itself, not Cargo; `RUSTFLAGS` and unstable
+  features do not apply. A Rust package using a Tide crate adds
+  `std = { package = "tide_std" }` to its dependencies; Tide's `HashMap`,
+  `Arc`, and capabilities are distinct from Rust's.
 
 ## 13. Toolchain loop
 
@@ -1380,12 +1410,12 @@ only = ["crate::net::*"]         # no other module may declare Net
 | `tide fix` | Apply safe fixes; `--thread <Cap> --to <fn>` threads a capability. |
 | `tide test [filter] [--seed N] [--trace]` | Tests, property tests, and sim tests: diff, panic span, seed, shrunk input, replay command, event trace. |
 | `tide sim <bin> -- args` | Run `main` under many seeds; `tide sim --replay <manifest>` replays a run (6.8). |
-| `tide eval '<expr>'` | Evaluate an expression against the package in the interpreter. |
+| `tide eval '<expr>'` | Evaluate an expression against the package (a scratch crate built by rustc). |
 | `tide explain FX0201` | Explanation with a before/after example. |
 | `tide review <base>` | Trust diff (11). |
 | `tide fmt` | The one canonical format. |
 
-**Typed holes**: `todo!()` or `_?name` in expression position. `tide check`
+**Typed holes**: `todo!()` or `hole!(name)` in expression position. `tide check`
 checks the rest and reports each hole's expected type, bindings in scope,
 and candidate functions; use holes to build a function top-down.
 
@@ -1393,7 +1423,6 @@ and candidate functions; use holes to build a function top-down.
 
 | Rust habit | Tide | Code |
 | --- | --- | --- |
-| `T: 'static` | `T: Owned` | accepted; rewritten |
 | `trait Foo<'a>`, `for<'a>`, `type Item<'a>` | a lifetime on the method or impl, `Fn` sugar, owned items or indices | `FX0201`, `FX0404`, `FX0403` |
 | `impl Lexer { .. }` for `struct Lexer<'a>` | `impl Lexer<'_>` or `impl<'a> Lexer<'a>` | error with fix |
 | `fn new(s: &str) -> Self` in `impl<'a> P<'a>` | `fn new(s: &'a str) -> Self` | error with fix |
@@ -1401,12 +1430,14 @@ and candidate functions; use holes to build a function top-down.
 | Self-referential struct | indices, `Arena`, or owner and view apart | `FX0210` |
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
 | `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
-| `debug_assert_eq!`, `include_str!`, `env!` | `debug_assert!(a == b)`, a generated `const` | `FX0103` |
+| `debug_assert_eq!` | `debug_assert!(a == b)` | `FX0103` |
+| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)`; `fs.exists(path)` | `FX0520` |
 | `x as u8` (lossy), `n as f64` (`usize`) | `u8::try_from(x)?`, `x.truncate()`, `f64::round_from(n)` | `FX0301` |
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
 | `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (6.9) | `FX0501` |
 | `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
+| `fn main(root: Root)` without the attribute | `#[tide::main] fn main(root: Root)` | rustc E0580; safe fix |
 | `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
 | `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |
@@ -1421,11 +1452,11 @@ and candidate functions; use holes to build a function top-down.
 | `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `FX0612` |
 | `catch_unwind` | `tasks.spawn_isolated` | `FX0701` |
 | Ignoring a `Result` | `?`, handle it, or `let _ =` | `FX0702` |
-| `requires a, b` | `requires a` `requires b` | safe fix |
+| `#[requires(a, b)]` | `#[requires(a)]` `#[requires(b)]` | safe fix |
 | `unsafe` without a grant or `// SAFETY:` | add the grant; write the comment | `FX0901`, `FX0902` |
-| `mod foo;` for a missing file, `#[path]` | create `foo.tide`; move the file | `FX0910`, `FX0911` |
+| `mod foo;` for a missing file, `#[path]` | create `foo.rs`; move the file | `FX0910`, `FX0911` |
 | Unused `use`; `extern crate foo;` | delete | `FX0913`, `FX0912` safe |
-| `a.tide` uses `b`, `b.tide` uses `a` | move shared items to a third module | `FX0914` |
+| `a.rs` uses `b`, `b.rs` uses `a` | move shared items to a third module | `FX0914` |
 | `build.rs` | a generator you run; commit its output | `FX0915` |
 
 ## 15. Example programs
@@ -1434,8 +1465,8 @@ and candidate functions; use holes to build a function top-down.
 
 `lc [--min N] FILE...` counts lines with at least `N` characters per file.
 
-```tide
-// src/main.tide
+```rust
+// src/main.rs
 use std::fs::Fs;
 use std::io;
 use std::path::PathBuf;
@@ -1484,6 +1515,7 @@ fn run(fs: &Fs, opts: &Options) -> Result<String, CliError> {
     Ok(report)
 }
 
+#[tide::main]
 fn main(root: Root) -> ExitCode {
     let args: Vec<String> = root.env.args().collect();
     let fs = root.fs.read_only();                      // closures may not capture `root`
@@ -1512,8 +1544,8 @@ mod tests {
 
 ### 15.2 Bounded concurrent fetcher with a deadline
 
-```tide
-// src/main.tide
+```rust
+// src/main.rs
 use std::net::{Net, NetError, Url};
 use std::task::{TaskError, Tasks};
 use std::time::{Clock, Duration, Instant};
@@ -1544,6 +1576,7 @@ fn fetch_one(net: &Net, url: &Url, deadline: Instant) -> Outcome {
     }
 }
 
+#[tide::main]
 fn main(root: Root) -> Result<(), Box<dyn Error>> {
     let urls: Vec<Url> = root.env.args().skip(1).map(|a| Url::parse(&a)).collect::<Result<_, _>>()?;
     for (url, out) in urls.iter().zip(fetch_all(&root.tasks, &root.net, &root.clock, &urls, Duration::from_secs(5))?) {
@@ -1574,24 +1607,22 @@ an `Outcome`, so the scope returns `Ok` with one outcome per URL (7.2).
 
 ### 15.3 Contracts and a generic search
 
-```tide
-// src/search.tide
+```rust
+// src/search.rs
 use std::cmp::Ordering;
 
 /// Like `slice::binary_search`.
-pub fn binary_search<T: Ord + Pure + Sync>(xs: &[T], target: &T) -> Result<usize, usize>
-    requires xs.is_sorted()
-    ensures match result {
-        Ok(i) => i < xs.len() && xs[i] == *target,
-        Err(i) => i <= xs.len()
-            && (forall |j: usize| j < i ==> xs[j] < *target)
-            && (forall |j: usize| i <= j && j < xs.len() ==> xs[j] > *target),
-    }
-{
+#[requires(xs.is_sorted())]
+#[ensures(match result {
+    Ok(i) => i < xs.len() && xs[i] == *target,
+    Err(i) => i <= xs.len()
+        && (forall |j: usize| j < i ==> xs[j] < *target)
+        && (forall |j: usize| i <= j && j < xs.len() ==> xs[j] > *target),
+})]
+pub fn binary_search<T: Ord + Pure + Sync>(xs: &[T], target: &T) -> Result<usize, usize> {
     let (mut lo, mut hi) = (0, xs.len());
-    while lo < hi
-        invariant lo <= hi && hi <= xs.len()
-    {
+    while lo < hi {
+        invariant!(lo <= hi && hi <= xs.len());
         let mid = lo + (hi - lo) / 2;                   // (lo + hi) / 2 could overflow
         match xs[mid].cmp(target) {
             Ordering::Less => lo = mid + 1,
@@ -1602,12 +1633,11 @@ pub fn binary_search<T: Ord + Pure + Sync>(xs: &[T], target: &T) -> Result<usize
     Err(lo)
 }
 
-pub fn insert_sorted(xs: &mut Vec<i64>, x: i64)
-    requires xs.is_sorted()
-    ensures xs.is_sorted()
-    ensures xs.len() == old(xs.len()) + 1
-    ensures xs.contains(&x)
-{
+#[requires(xs.is_sorted())]
+#[ensures(xs.is_sorted())]
+#[ensures(xs.len() == old(xs.len()) + 1)]
+#[ensures(xs.contains(&x))]
+pub fn insert_sorted(xs: &mut Vec<i64>, x: i64) {
     let at = xs.partition_point(|&y| y < x);
     xs.insert(at, x);
 }
@@ -1625,23 +1655,19 @@ mod tests {
 }
 ```
 
-The `ensures` of `binary_search` uses `==` and `<` on `T`, which are `Eq`
-and `Ord` exactly as in code; its clauses use values of `T`, so `T` is
-bounded `Pure + Sync` (10.1). Its `requires` and quantified `ensures` are
-sampled: `tide test` checks them in linear time on its schedule (10.1), and
-release builds erase them. `tide test` also runs generated contract tests
-of both functions (10.2): `T` becomes
-`i64`, and `xs.is_sorted()` is a recognized shape, so sorted inputs are
-generated directly rather than filtered.
+`binary_search`'s clauses use `==` and `<` on `T` exactly as code does, so
+`T` is bounded `Pure + Sync` (10.1). Its `requires` and quantified
+`ensures` are sampled (10.1). Generated contract tests (10.2) run both
+functions with `T = i64`, and `xs.is_sorted()` is a recognized shape, so
+sorted inputs are generated rather than filtered.
 
 ## 16. Where the documents disagree
 
-The chapters are synchronized with 01 draft 3.5. These points remain open;
+The chapters are synchronized with 01 draft 3.7. These points remain open;
 this reference takes the reading shown.
 
 1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
-   `/`" and is silent on relative paths. This reference reads "rooted" as
-   the confinement root and resolves relative paths against the starting
+   `/`"; this reference resolves relative paths against the starting
    working directory (6.3).
 2. **`with_all`.** 01 D8 says cells are accessed only through `with` and
    `with2`; 02 §8.4 and 03 §6.5 add `with_all` under a provisional name.
@@ -1651,26 +1677,28 @@ this reference takes the reading shown.
 
 ## Appendix A. Later tiers (not in v0)
 
-From the tier table of 01 (draft 3.5). The chapters specify most of these.
+From the tier table of 01 (draft 3.7). The chapters specify most of these.
 
 **v1:**
 
-- **Proofs** (04): the `prove` mode and the `assert`/`test`/`prove` uses and
-  clause classes; `spec fn`, `proof fn`, `#[spec]`, `ghost let`,
-  `proof { }`, `assume`, `reveal`; views (`View`, `x@`) and spec types
-  (`int`, `nat`, `Seq`, `Set`, `Map`, `Multiset`); `final`; `decreases` and
-  `diverges`; type invariants; trait laws and abstract spec fns (`eq_spec`,
-  `cmp_spec`, `le`); closure contracts (`f.requires`); triggers, `by(..)`,
-  `#[opaque]`, `#[trusted]`; proof status and trust closures; `tide verify`.
+- **Proofs** (04): the `prove` mode and the `assert`/`test`/`prove` uses
+  (chosen in the manifest and by `#[contracts(..)]`) and clause classes;
+  `#[decreases(..)]`, `decreases!(..)`, `#[diverges]`; type invariants
+  (`#[invariant(..)]`); closure contracts (`requires!`/`ensures!` atop a
+  closure body; `f.requires`); `final`; `#[spec]`, `#[opaque]`, `#[trusted]`;
+  proof status; `tide verify`. Spec and proof items (`spec fn`, `proof fn`,
+  `law fn`, `ghost let`, `proof { }`, `assume`, views, `int`, `Seq`,
+  triggers) keep draft 3.5's grammar until respelled as Rust (01 D10).
 - **Authority**: exercised-authority tracking, the least-authority lint
   `FX0510`, and effect reporting for sinks; FFI (`extern`, the `ffi` grant,
-  `#[trusted_pure]`, `#[sim_model]`, `ThreadBound`); imported Rust crates
-  (`[rust-dependencies]`, symbol scan).
-- **Runtime and backends**: the evented runtime and stackless lowering; the
-  C-emitting release backend; production record and replay (D17).
+  `#[sim_model]`, `ThreadBound`); imported Rust crates, linked directly
+  behind wrappers that take capabilities (`[rust-dependencies]`, linked-symbol
+  scan).
+- **Runtime**: the evented runtime, whose lowering under D18 is open;
+  production record and replay (D17).
 - **Parallelism**: `par_reduce` with its canonical grouping, `Combine`,
   `Monoid`, `Sum`/`Product`/`Min`/`Max`.
-- **Memory**: field-borrow declarations (`&mut self.{pos}`).
+- **Memory**: field-borrow declarations, spelling open under D18.
 
 **Later:** the Bend tandem and `Accel` (D16); deferred overflow traps;
 automatic parallelization; `Shape` reflection; Polonius-precision borrows;

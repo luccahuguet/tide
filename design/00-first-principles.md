@@ -234,7 +234,7 @@ validation program (D0) has to settle it.
   led to Rust spelling wherever the meaning is the same (D1). The first E1
   pilot leaked no Rust habits but missed all three E1 thresholds, mostly
   through gaps in a reference that already uses about 74% of its token
-  budget, so the hypothesis stays open until E1 runs on the interpreter.
+  budget, so the hypothesis stays open until E1 runs on the first checked toolchain.
   Sources: `research/05-llm-code-empirics.md`,
   `research/09-adoption-interop-backends.md`,
   `reviews/round1-agent-usability.md` B1 and B7,
