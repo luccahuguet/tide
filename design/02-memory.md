@@ -697,12 +697,16 @@ the caller of a function that returns after a child failure (§12).
   captured places.
 - **The body** captures only `Pure` values and contains no `lock`; with
   `Pure` payloads it reaches no capability and no `Shared` handle (D8). The
-  result is `Result<R, Poisoned>`.
-- **Distinctness.** The runtime checks that the handles are pairwise
-  distinct before creating `x1` to `xn`; a duplicate panics, since two
-  `&mut` to one payload would be undefined behavior.
-- **Poisoning.** A panic in the body poisons the cells; their payloads are
-  then reachable only through std's explicit recovery API.
+  result is `Result<R, LockError>`, where `LockError` is `Aliased` or
+  `Poisoned` (D8; `03-authority-concurrency.md` LOCK-5).
+- **Distinctness.** Before acquiring anything, the runtime checks that the
+  handles are pairwise distinct, since two `&mut` to one payload would be
+  undefined behavior. If two handles name the same cell, `lock` returns
+  `Err(LockError::Aliased)` and the body does not run (D8, LOCK-2).
+- **Poisoning.** A panic in the body poisons the cells; a later `lock`
+  naming one returns `Err(LockError::Poisoned)` without running its body.
+  No safe API reads a poisoned payload; `cell.reset(v)` replaces it and
+  clears the poison (LOCK-6).
 - **Translation.** Mutex guards turned into `&'σ mut T` inside
   `for<'σ> FnOnce(&'σ mut T1, …) -> R`.
 

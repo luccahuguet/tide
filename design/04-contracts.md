@@ -289,6 +289,31 @@ arguments.
 Calling any other exec function in a spec is an error with two fixes: declare
 a `spec fn`, or mark the function `#[spec]` if it qualifies.
 
+### 1.7 Generic spec and proof functions
+
+Rule 3 of §1.5 constrains the parameter types a spec or proof function
+names concretely. A type parameter needs no `Pure` bound, so `le<T: Ord>`
+(§5.1), `sorted_by<T: Ord>` (§12.3), and the clauses of
+`selection_sort<T: Ord>` are legal as written:
+
+1. Ghost code reaches a value of a type parameter only through its view and
+   through the spec fns and laws of the parameter's bounds. All of these are
+   spec code, and trait methods are never callable in specs (§1.6), so no
+   exec method of the instantiated type runs and no effect can happen.
+2. At an instantiation with a type that is not `Pure`, the capabilities and
+   handles reachable from a value have opaque views (§1.4): specs can
+   compare them for identity but observe no world or shared state.
+3. The relaxation covers spec and proof functions only. A `#[spec]`
+   function runs as exec code, so §1.6 rule 2 still requires `Pure` bounds
+   on its type parameters.
+4. The operational law tests of §5.1, which run exec methods in place of
+   abstract spec fns, run only at `Pure` instantiations; elsewhere the laws
+   are `assumed`.
+
+This matches `03-authority-concurrency.md` §3.2, which classifies generic
+code per instantiation, and keeps D4's rule that an instantiation never
+produces a type error.
+
 ## 2. The three uses
 
 ### 2.1 Selecting a use
