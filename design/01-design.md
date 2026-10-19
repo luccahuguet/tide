@@ -291,7 +291,8 @@ serialization as the default (5–7x slower in prior art).
 
 - Every operation that reads or changes the outside world, or that can
   observe nondeterminism, is a method on a capability value: `Fs`, `Net`,
-  `Clock`, `Rand`, `Env`, `Stdin`, `Proc`, `Tasks`. The standard
+  `Clock`, `Rand`, `Env`, `Stdin`, `Proc`, `Tasks`, and `Accel` for Bend
+  kernels (D16). The standard
   library has no free functions that do I/O, read the time, draw randomness,
   read the environment, or spawn.
 - `main` may take `root: Root`, the only source of capabilities. `Root` can be
@@ -394,8 +395,9 @@ stackful execution internally.
   a counted assumption); for float addition it does not, and
   the canonical grouping is the definition.
 - If several parallel branches panic, the one first in sequential order is
-  reported.
-- Granularity is the runtime's job (heartbeat scheduling).
+  reported; the region may still diverge if a branch after it diverges.
+- Granularity is the runtime's job: lazy splitting first, with heartbeat
+  promotion only if benchmarks justify it.
 - An automatic parallelization pass for independent authority-free calls is
   behind a flag until benchmarks justify it.
 
