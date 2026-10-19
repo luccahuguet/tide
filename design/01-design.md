@@ -172,8 +172,11 @@ measurement rejected.
   (Rust's `T: 'static`). `dyn Trait` means `dyn Trait + Owned` unless written
   `dyn Trait from x`. A closure that captures a borrow is itself a borrowing
   value; a borrowing value may be returned or stored only where its origins are
-  named (`-> impl Fn() from xs`, a field with `from`). Detached tasks and
-  global registrations require `Owned`.
+  named (`-> impl Fn() from xs`, a field with `from`). Elision covers plain
+  references and borrowing structs, as in Rust; a returned `impl Trait` or
+  `dyn Trait` that borrows must name its origins. A task may borrow only data
+  that outlives the scope it is spawned into, so tasks spawned into a
+  long-lived scope capture `Owned` values.
 - **Drop check** uses Rust's conservative rule: data borrowed by a value with
   a destructor must strictly outlive that value; standard containers carry an
   audited exemption.
@@ -203,8 +206,9 @@ share one origin need an explicit `from` on the field
 - Nominal `struct` and `enum` with exhaustive `match`; `impl Trait` in
   argument and return position as in Rust.
 - Every item signature is annotated; inference is bidirectional and local to
-  a function body. No overloading: one function per name per scope, one
-  method per name per type. No polymorphic recursion.
+  a function body. No overloading: one function per name per scope and one
+  inherent method per name per type; trait methods with the same name are
+  disambiguated by trait path, as in Rust. No polymorphic recursion.
 - **Integers trap on overflow, division by zero, and over-wide shifts in every
   profile.** The trap may be reported late, but before the overflowed value
   influences any observable effect or leaves the enclosing loop or function,
@@ -263,7 +267,9 @@ Rejected: exceptions; draft 1's `from` keyword on variants (collides with
   visible; capability types can never be constructed this way.
 - `const fn` evaluation is authority-free, deterministic, fuel-limited, and
   cached; it computes values, never declarations or types.
-- Code generators are build steps that write ordinary source files.
+- Code generators are programs the developer runs explicitly; their output is
+  ordinary source that is committed and reviewed. Nothing generates code
+  during a build.
 
 Rejected: token and procedural macros (opaque to agents and tools, uncached,
 supply-chain holes); unrestricted compile-time execution; reflection-based
@@ -273,7 +279,7 @@ serialization as the default (5–7x slower in prior art).
 
 - Every operation that reads or changes the outside world, or that can
   observe nondeterminism, is a method on a capability value: `Fs`, `Net`,
-  `Clock`, `Rand`, `Env`, `Stdin`, `Proc`, `Tasks`, `Shared`. The standard
+  `Clock`, `Rand`, `Env`, `Stdin`, `Proc`, `Tasks`. The standard
   library has no free functions that do I/O, read the time, draw randomness,
   read the environment, or spawn.
 - `main` may take `root: Root`, the only source of capabilities. `Root` can be
@@ -291,9 +297,12 @@ serialization as the default (5–7x slower in prior art).
   builds; printing to stdout from a library package is a lint. Sink use is
   still reported as exercised effect in the trust surface, and `Secret<T>`
   values refuse `Debug` and `Display` so they cannot be logged by accident.
+- **Synchronization handles** (`Shared<T>` cells, channel ends, atomics, task
+  handles) are created without a capability, because they do not reach the
+  outside world, but they let tasks observe each other's timing.
 - **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
-  `Pure` if no capability, synchronization handle (channel ends, `Shared<T>`
-  handles, task handles), or foreign handle is reachable from it. A function
+  `Pure` if no capability, synchronization handle, or foreign handle is
+  reachable from it. A function
   is authority-free if all its parameter and capture types are `Pure`. An
   authority-free function cannot observe nondeterminism: its results depend
   only on its arguments.
