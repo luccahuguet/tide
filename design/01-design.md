@@ -335,9 +335,11 @@ serialization as the default (5–7x slower in prior art).
   builds; printing to stdout from a library package is a lint. Sink use is
   still reported as exercised effect in the trust surface, and `Secret<T>`
   values refuse `Debug` and `Display` so they cannot be logged by accident.
-- **Synchronization handles** (`Shared<T>` cells, channel ends, atomics, task
-  handles) are created without a capability, because they do not reach the
-  outside world, but they let tasks observe each other's timing.
+- **Synchronization handles** (`Shared<T>` cells, channel ends, atomics,
+  `Arc`, task handles) let tasks observe each other's timing and
+  cancellation, so creating one takes `&Tasks`. Authority-free code can
+  neither create nor receive them; `Rc` and `Cell` stay capability-free
+  because they never cross tasks.
 - **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
   `Pure` if no capability, synchronization handle, or foreign handle is
   reachable from it. `Arc` exposes no reference-count readers, and
