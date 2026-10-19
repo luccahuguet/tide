@@ -1,28 +1,29 @@
 # Tide
 
-**Rust's speed and safety, millisecond feedback, and code that cannot do more
-than its signature says.**
+**Code that cannot do more than its signature says, programs that replay bit
+for bit, and reviews that show what changed in what code may do, with Rust's
+speed and safety.**
 
 Tide is a systems language for software that AI agents write and humans have
 to trust.
 
-- **As fast as Rust, 10–100x faster to build.** Ownership without a garbage
-  collector and generics specialized like Rust's, but edits check in tens of
-  milliseconds instead of seconds: no proc macros, no build scripts, no
-  inference across signatures, no unbounded trait solver.
-- **Safer than Rust.** The same memory safety and data-race freedom, plus: no
-  code, in any dependency, can touch files, the network, or the clock unless
-  it is handed that authority; integer overflow never wraps silently; nothing
-  runs at build time.
+- **No ambient authority.** No code, in any dependency, can touch files, the
+  network, or the clock unless it is handed that authority, so a function's
+  signature bounds what it can do.
 - **Every program replays.** Any Tide program, dependencies included, runs
   under a seeded simulator and reproduces bit for bit, so concurrency bugs
   become ordinary failing tests.
 - **Review what changed in what code may do.** The compiler diffs authority,
   contracts, and `unsafe` holes between revisions, so reviewers see the risk
   before reading the code.
+- **As safe and fast as Rust.** The same memory safety and data-race freedom
+  without a garbage collector, and generics specialized like Rust's.
+  Integer overflow never wraps silently, and nothing runs at build time.
+- **Fast feedback.** Edits check in tens of milliseconds: no proc macros, no
+  build scripts, no inference across signatures, no unbounded trait solver.
 - **Already familiar.** Rust syntax wherever the meaning is the same,
-  including lifetimes, without macros or `async`/`await`. Contracts run as checks and
-  tests today and become proofs later.
+  including lifetimes, without macros or `async`/`await`. Contracts run as
+  checks and tests today and become proofs later.
 - **Works with Bend** for massively parallel, proved kernels.
 
 *Tide is in the design phase: the guarantees are what the design commits to,

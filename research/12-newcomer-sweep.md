@@ -38,7 +38,7 @@ Verdict confidence: H high, M medium, L low.
 
 | Project | What and state | Strongest idea | In Tide? | Verdict |
 | --- | --- | --- | --- | --- |
-| Lust | Typed Lua-like embeddable language in Rust with a dynasm trace JIT; 9 stars, "heavily WIP" [L1][L2] | Gas budget on compiled loops; typed extern stubs | Fuel for `const fn` only (D6) | Ignore (H) |
+| Lust (lust-lang.dev) | Typed Lua-like embeddable language in Rust with a dynasm trace JIT; 9 stars, "heavily WIP" [L1][L2] | Gas budget on compiled loops; typed extern stubs | Fuel for `const fn` only (D6) | Ignore (H) |
 | Roto | NLnet Labs' compiled, typed scripting language for Rust hosts; Cranelift JIT; hot reload [R1][R2] | Host registers the only types and functions a script can use | No embedding story | Open question |
 | Mog | Typed embedded language for LLM-written plugins; ~3,200-token spec; AOT native; Show HN, Mar 2026 [M1] | Agent-written code inherits the host's permissions | Capabilities, but no plugin host | Open question |
 | Hale | Concurrent systems language for model authors; v0.22 (30 Sep 2026), v0.25.1 (18 Oct 2026); 41 stars [H1][H2][H3] | Transitive effect certificates with budgets; architecture claims with countermodels; union-only policy sets | Partly (D7 `Pure`, D17 policies) | Adapt (M) |
@@ -51,6 +51,7 @@ Verdict confidence: H high, M medium, L low.
 | AILANG | Capability-effect language "written autonomously by AI agents" [A1] | Multi-model benchmark on every release | E1 at gates only (D0) | Adapt (M) |
 | CodeSpeak | Andrey Breslav's spec-as-source system; LLM compiles Markdown specs; alpha [C1][C2] | Specs versioned, code regenerated | Humans own specs (GOVERNANCE) | Ignore (H) |
 | Rue | Klabnik's affine-ownership language, "Implemented primarily by Claude"; 4,870 commits [U1][U2] | Spec rules traced to tests (989 of 997) | Partial rule IDs, no gate | Adopt (H) |
+| lust (Theo Browne) | Checker and compiler for a subset of valid Rust with an incremental daemon; dev builds emit C for `tcc`; 2,736 commits on `next` (Oct 2026) [LT1][LT2][LT3] | Warm edit checks 60–250x faster than `cargo check`, by rechecking only the edited body | Same cuts and edit-loop target (D12); Tide is not valid Rust | Confirms the speed target; speed is not a moat (H) |
 | Valen | Vale's successor; group borrowing; runs rustc as a library (Sep–Oct 2026) [V1][V2] | Direct calls into generic Rust with borrow checking across the boundary | C-ABI shims (D13) | Spike in v1 (L) |
 | Hylo, Carbon | Hylo: no 2026 release [Y1]; Carbon: safety strategy rewritten (p5914), 0.1 late 2026 [Y2] | Value semantics; fail-stop safety modes | Origins chosen instead (D2) | Ignore (H) |
 | Swift 6.2 | `-strict-memory-safety`, `unsafe` expressions (SE-0458) [S1]; lifetime dependencies still experimental [S2] | Per-expression audit marker | Trust holes (D11) | Ignore (M) |
@@ -147,6 +148,25 @@ did not examine.
   for closures), and it borrow checks across the boundary." Rust signatures do
   not say where returned references point, so Valen adds "wildcard descendant
   paths" [V2].
+- **lust**, by Theo Browne (no relation to the Lua-like Lust in F1), is "an
+  experiment" that compiles "a subset of Rust": "Every program lust accepts
+  must be valid Rust (rustc 1.99, edition 2024)" [LT1]. Theo's post calls it
+  "a subset of Rust that compiles 100x faster" [LT3]. The README's claim is
+  narrower: "a warm lust daemon checks a one-line edit inside a function
+  body about 60x to 250x faster than cargo check at the median", which it
+  calls "the best case"; signature edits take "4 to 10 s at p95", and "A
+  cold check is about 2.5x faster than cargo check with the same features"
+  [LT1]. It rejects proc macros, derives other than the built-in ones, and
+  generic associated types on purpose; `async` and `unsafe` are "Not
+  supported yet". "Most crates from crates.io will not compile", "It is not
+  a general Rust replacement", and lust-built binaries run 3.8x to 4.9x
+  slower than Cargo debug builds [LT1]. These figures are self-reported; this
+  sweep did not rerun them.
+  **Inference:** Tide's edit-loop target (D12) is reachable on a checked
+  subset of Rust without a new language. Fast builds support Tide's thesis
+  but do not distinguish it; the guarantees of D7, D15, and D11 do. A
+  checked subset with a capability std might also carry much of D7 and D15
+  while staying valid Rust (open question 7).
 - **Hylo** has no 2026 release; its 2025 ECOOP talk calls the design "a
   coherent system" [Y1]. **Carbon**'s p5914 requires temporal, spatial, and
   type errors to be rejected at compile time or caught with fail-stop
@@ -392,6 +412,10 @@ trust diff.
   per-obligation assurance [T1].
 - **Rue and Valen** occupy the lighter-Rust lane; Valen's Rust interop would
   undercut D13 if it matures [U1][V2].
+- **lust** shows the lighter-Rust lane can be a checked subset of valid Rust
+  at Tide's edit-loop speed [LT1]. It has no capability or determinism
+  story. It is the strongest evidence that Tide's speed pillar is not a
+  moat.
 - **Boruna, Plasm, Golem, and Obelisk** sell replay and evidence for agent
   workflows, not systems code [B1][P1][D10][D11].
 
@@ -416,6 +440,15 @@ trust diff.
 6. **E1 thresholds.** If long-horizon solve rates barely differ by language
    [F1], should D0's E1 and E2 thresholds weight token cost and iteration
    count more than pass rate?
+7. **New language or checked Rust subset.** lust accepts only valid Rust
+   [LT1]. Could Tide's guarantees ship as a checked subset of Rust with a
+   capability std, keeping rustc release builds and much of the crates
+   ecosystem? What does not fit today: `requires`/`ensures` syntax (it would
+   become attributes), `Pure`, `main(root: Root)`, overflow traps in release
+   (a build setting), and v1's field-borrow declarations and evented
+   runtime. 01's thesis says tools layered on Rust cannot give the
+   guarantees; that holds for Rust as a whole, not yet shown for a checked
+   subset.
 
 ---
 
@@ -423,6 +456,9 @@ trust diff.
 
 - [L1] https://lust-lang.dev/
 - [L2] https://github.com/ArchangelJTW/lust-lang
+- [LT1] https://github.com/t3dotgg/lust-lang (README, branch `next`, read 2026-10-19)
+- [LT2] https://x.com/aigeeknews/status/2112186488318509385
+- [LT3] https://x.com/theo/status/2110713238593908868
 - [R1] https://blog.nlnetlabs.nl/introducing-roto-a-compiled-scripting-language-for-rust/
 - [R2] https://roto.docs.nlnetlabs.nl/en/latest/overview/why_roto.html
 - [M1] https://news.ycombinator.com/item?id=47312728 (read via https://hn.svelte.dev/item/47312728)
