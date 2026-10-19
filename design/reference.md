@@ -94,7 +94,7 @@ spelling and meaning, plus Tide's own forms in the last row:
 | `panic!`, `todo!`, `unimplemented!`, `unreachable!` | As Rust. `todo!()` is also a typed hole (13). |
 | `dbg!` | As Rust. Error in release builds (`FX0507`). |
 | `error!`, `warn!`, `info!`, `debug!`, `trace!` | Write-only log sink (6.5). No `use` needed; `log::info!` and `tracing::info!` are accepted spellings (provisional). |
-| `invariant!`, `hole!` | Loop invariant (10.1); typed hole (13). |
+| `invariant!`, `hole!` | Loop invariant (10.1), rewritten by its function's attribute, not a macro you import; typed hole (13). |
 
 Anything else ending in `!` is `FX0103`, including `debug_assert_eq!`
 (write `debug_assert!(a == b)`), `concat!`, `thread_local!`,
@@ -1199,7 +1199,6 @@ builds, erased in release, and used to drive property tests.
   reported as unchecked, not failed. Release builds erase clauses.
 - **Visibility.** A `pub` function's contract may call only `pub` functions
   (Rust's private-in-public rule; provisional for v0).
-- Trait methods may carry contracts; every impl is checked against them.
 - **Violations.** A clause that is false, or whose evaluation panics, is
   violated. Violations panic with `requires violated: <clause text>` (or
   `ensures`, `invariant`), the function's name, and the blamed span
@@ -1398,9 +1397,10 @@ only = ["crate::net::*"]         # no other module may declare Net
   fetch or build time (`FX0915`). Code generators are programs you run
   explicitly (`tide run --bin gen`); commit their output.
 - Tide's driver runs rustc itself, not Cargo; `RUSTFLAGS` and unstable
-  features do not apply. A Rust package using a Tide crate adds
-  `std = { package = "tide_std" }` to its dependencies; Tide's `HashMap`,
-  `Arc`, and capabilities are distinct from Rust's.
+  features do not apply. A Rust package depends on a Tide crate as on any
+  crate; the Tide crate's generated `Cargo.toml` injects `tide_std` for that
+  crate alone. Tide's `HashMap`, `Arc`, channel ends, and capabilities are
+  distinct from Rust's.
 
 ## 13. Toolchain loop
 
@@ -1685,7 +1685,8 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
   (chosen in the manifest and by `#[contracts(..)]`) and clause classes;
   `#[decreases(..)]`, `decreases!(..)`, `#[diverges]`; type invariants
   (`#[invariant(..)]`); closure contracts (`requires!`/`ensures!` atop a
-  closure body; `f.requires`); `final`; `#[spec]`, `#[opaque]`, `#[trusted]`;
+  closure body; `f.requires`); trait-method contracts and their inheritance
+  by impls; `final`; `#[spec]`, `#[opaque]`, `#[trusted]`;
   proof status; `tide verify`. Spec and proof items (`spec fn`, `proof fn`,
   `law fn`, `ghost let`, `proof { }`, `assume`, views, `int`, `Seq`,
   triggers) keep draft 3.5's grammar until respelled as Rust (01 D10).

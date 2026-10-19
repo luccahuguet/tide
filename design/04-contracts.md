@@ -26,8 +26,11 @@ are toolchain attributes and `!` forms: `#[requires(..)]` and
 `#[ensures(..)]` on functions and loop `invariant!(..)` in v0; in v1
 `#[decreases(..)]` and `#[diverges]` on functions, `decreases!(..)` in
 loops, `#[invariant(..)]` on types, and `requires!(..)` and `ensures!(..)`
-in closures. They are proc macros owned by the toolchain and exported
-through Tide's std prelude (D6). v1's proof forms (`spec fn`, `proof fn`,
+in closures. The attributes are proc macros owned by the toolchain and
+exported through Tide's std prelude (D6); the `!` clause forms are
+recognized and removed by the enclosing function attribute and are not
+exported, since an attribute and a `!` macro cannot share a name (E0252),
+and an unrewritten one is a checker error with §1.2 rule 10's fix. v1's proof forms (`spec fn`, `proof fn`,
 `law fn`, `ghost let`, `proof { }` blocks, `x@`, `int` and `nat`,
 `#![trigger]`, `reveal`, `assume`) are still written here in draft 3.5's
 grammar, which is not Rust. D10 requires them to become attributes,
@@ -65,7 +68,7 @@ Rust code that uses `result` or `old` as an identifier keeps compiling.
 
 | Form | Where |
 | --- | --- |
-| `#[requires(..)]`, `#[ensures(..)]`; v1: `#[decreases(..)]`, `#[diverges]` | outer attributes on a function, trait method, or impl method |
+| `#[requires(..)]`, `#[ensures(..)]`; v1: `#[decreases(..)]`, `#[diverges]` | outer attributes on a function or inherent method; v1: a trait method or impl method |
 | `#[invariants]` | outer attribute on a function: rewrites its loops and closures without adding a clause |
 | `invariant!(..)`; v1: `decreases!(..)` | statements opening a loop body |
 | v1: `requires!(..)`, `ensures!(..)` | statements opening a closure's block body |
@@ -190,7 +193,7 @@ Rules that the grammar does not show:
 5. **`#[decreases]`** (v1) on a function bounds recursion; `decreases!` in
    a loop bounds iterations (§3.3). `#[diverges]` is legal only on exec
    functions.
-6. **Impls refine trait contracts.** An impl method inherits its trait
+6. **Impls refine trait contracts** (v1). An impl method inherits its trait
    method's contract and may weaken the precondition and strengthen the
    postcondition, never the reverse (§5.2).
 7. **Bodiless ghost functions.** A bodiless `spec fn` is uninterpreted, and its
@@ -416,7 +419,10 @@ rule CLAUSE-*n*.
    `old(v.get(10).cloned())`. In `requires`, a `&mut` parameter `x` and
    `*x` denote the entry value. In `ensures`, a bare `x` or `*x` of a
    `&mut` parameter denotes its value at return and `old(*x)` its value at
-   entry; other parameters denote their entry values.
+   entry; other parameters denote their entry values. A by-value parameter
+   that the body assigns or moves is read at entry through an implicit
+   `old(..)`, so it must be `Copy` or `Clone`; otherwise naming it in an
+   `ensures` is an error whose fix narrows it, as in `old(x.len())`.
 5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
    literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
    `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)
@@ -440,8 +446,8 @@ rule CLAUSE-*n*.
    one that exceeds it is reported as unchecked, not as failed. The report
    lists every clause a build or test run did not evaluate. Not yet
    implemented in the D18 spike: reporting a panic inside a clause as a
-   violation, and step budgets (`research/15-rust-dialect.md`, Spike
-   results).
+   violation, step budgets, and entry values of by-value parameters in
+   `ensures` (item 4) (`research/15-rust-dialect.md`, Spike results).
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
@@ -581,7 +587,8 @@ all of the following hold:
 4. deletion is decided per instantiation. A check deleted in generic code
    that relies on laws of the instantiated impls is deleted only where those
    laws are `proved`, and the build cache (D12) keys each instance on that
-   law status.
+   law status. How a build deletes one check under D18, where every profile
+   sets `-C overflow-checks=on`, is open until v1 (01 D10).
 
 Bounds checks follow the same rule but are deleted only under
 `release_delete_bounds_checks = true`, off by default in v1. A wrongly deleted

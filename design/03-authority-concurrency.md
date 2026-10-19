@@ -11,8 +11,8 @@ the design does not state, this chapter says so and lists it in §13.
 diff (§4.1, §4.3–§4.5); admission (§2.5); §6; the may-suspend flag (§7.1); `join`, `par_map`,
 and `par_for` (§8.1, §8.2, §8.4); the simulator with crash, restart, and
 durability (§9); the worked examples (§12). v1: exercised authority,
-effect reporting, and `FX0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`,
-and `ThreadBound` (§5); the evented runtime and its lowering (§7.2);
+effect reporting, and `FX0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`
+on foreign functions, and `ThreadBound` (§5); the evented runtime and its lowering (§7.2);
 `par_reduce` (§8.3); imported Rust crates (§11, RUST-1 to RUST-5). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
 by `reference.md`: `pct` scheduling and `--minimize` (§9). Draft 3 removed
@@ -654,7 +654,7 @@ runtimes tasks never migrate, so pinning is a no-op.
 
 The origin structure is `02-memory.md` §8.2; the names here are normative.
 
-```tide
+```rust
 impl Tasks {
     pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
         where E: From<TaskError> + Send, F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>;
@@ -773,7 +773,7 @@ checkpoints. `recv_deadline(t)` returns `Timeout` at `t`. Payloads must be
 
 ### 6.5 `Shared::with`
 
-```tide
+```rust
 impl<T: Send + Pure> Shared<T> {
     pub fn new(v: T, tasks: &Tasks) -> Shared<T>;
     pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
@@ -1235,8 +1235,9 @@ into its outputs; threads a crate spawns escape Tide scheduling. The trust
 surface marks each crate `rust: declared, scan-checked, unverified`.
 
 - **RUST-6. Rust consumers.** A Tide crate is a Rust crate, so Rust code
-  depends on it directly. The consumer's manifest injects Tide's std with
-  `std = { package = "tide_std" }`. Types Tide's std re-exports from Rust's
+  depends on it as on any crate; the consumer's manifest and its own `std`
+  are unchanged. The Tide crate's exported manifest injects Tide's std with
+  `std = { package = "tide_std" }`, for that crate alone. Types Tide's std re-exports from Rust's
   (`Vec`, `String`, `Box`, `Option`, `Result`, slices, `&str`) are the same
   types on both sides; Tide-owned types (`HashMap`, `HashSet`, `Arc`, the
   capability types) are distinct and need adapters at the boundary. A Rust

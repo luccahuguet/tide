@@ -123,7 +123,7 @@ or must argue for an explicit exception.
 | In-context learnability | a fresh agent given only the reference writes a fixed benchmark of small programs with a high first-check pass rate and converges on all of them within a few check iterations |
 | Incremental check | under 100 ms after a one-function edit in a 100,000-line project |
 | Cold check | under 2 s for 100,000 lines |
-| Debug build | a few seconds for 100,000 lines, linking included |
+| Debug build | set by E4 against rustc's debug profile under D18 (drafts up to 3.5 targeted a few seconds for 100,000 lines, linking included) |
 | Release performance | within roughly 10–20% of equivalent Rust on a standard benchmark set |
 | Authority | every function's possible effects derivable from its signature |
 | Verification | contracts on core library functions proven by the toolchain, with no proof required for ordinary code |

@@ -32,11 +32,11 @@ and the speed figures are targets, not measurements.*
 ## Status
 
 Tide is in the design phase; there is no compiler for this design. The
-decision record is `design/01-design.md` (draft 3.6). Syntax is provisional
+decision record is `design/01-design.md` (draft 3.7). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0). D18 makes
 Tide a checked dialect of Rust, compiled by a pinned rustc against Tide's
-std; its feasibility spike (`spikes/d18/`) passed, and its changes to the
-other decisions are not yet applied.
+std; its feasibility spike (`spikes/d18/`) passed, and draft 3.7 applies
+its changes to the other decisions.
 
 The repository holds no production code yet. `spikes/d18/` holds the
 throwaway feasibility spike for D18, and the early Rust scaffold from the
@@ -65,7 +65,7 @@ first design, which does not implement Tide, is kept in
 - [REFERENCES.md](REFERENCES.md): the languages, projects, papers, and data
   Tide draws on.
 
-Chapters 02–04 elaborate draft 3.5 and label which sections are v0 core and
+Chapters 02–04 elaborate draft 3.7 and label which sections are v0 core and
 which are later tiers; on any conflict, `01-design.md` and its tier table
 win.
 

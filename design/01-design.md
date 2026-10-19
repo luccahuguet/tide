@@ -21,7 +21,7 @@ without a garbage collector, zero-cost abstractions, algebraic data types,
 spelling wherever the meaning is the same, so a model's Rust knowledge
 transfers; under D18 every Tide program is a valid Rust crate. It removes
 what costs agents the most: user macros, async coloring, an unbounded trait
-system, and slow builds. It keeps Rust 2024's
+system, and slow edit loops. It keeps Rust 2024's
 lifetimes, minus the forms beyond D4's power ceiling.
 
 It adds guarantees that tools layered on Rust cannot give, because Rust code
@@ -51,7 +51,7 @@ thesis; they are not the headline. Proof-first, massively parallel pure
 computation is Bend's territory (D16).
 
 One line: authority you can read in a signature and whole-program
-deterministic replay, with Rust's guarantees and much faster builds.
+deterministic replay, with Rust's guarantees and a much faster edit loop.
 
 ## Positioning And Scope
 
@@ -79,8 +79,8 @@ later-tier feature, the tier table wins.
 
 | Tier | Contents |
 | --- | --- |
-| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; FFI with `#[trusted_pure]`; direct Rust crate import with RUST-2 wrappers; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
+| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
@@ -172,7 +172,7 @@ provisional until E1 meets its thresholds.
   moving a statement into another block. Generics use angle brackets and
   Rust's turbofish.
 - Source files are `.rs`. Modules are declared with `mod`, as in Rust;
-  `#[path]` and `extern crate` are errors (D12).
+  `#[path]` and `extern crate` are errors (`design/reference.md` §12.1).
 - A **fixed, compiler-implemented set of `!` forms** keeps Rust's most common
   macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
   `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,
@@ -340,8 +340,8 @@ operators.
   types are allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
-- Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`) as
-  making two impls disjoint.
+- Coherence never treats a missing auto or marker trait (`Send`, `Sync`,
+  `Pure`) as making two impls disjoint.
 - `dyn Trait` is always spelled out.
 - Traits may declare **laws** (D10), which impls must satisfy.
 
@@ -596,7 +596,10 @@ execution internally; it runs tasks on baton-passed threads.
   loop entry (also when the loop runs zero times) and at exit, and under
   `tide test` after every iteration. A closure's clauses (v1) are `requires!(..)` and `ensures!(..)`
   statements at the top of its block body, rewritten the same way, because
-  attributes on closure expressions are unstable Rust.
+  attributes on closure expressions are unstable Rust. The `!` clause forms
+  are not exported macros: the enclosing function attribute recognizes and
+  removes them, so they may share names with the attributes, and an
+  unrewritten one is a checker error.
   `result` names the
   return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
   value a returned or stored `&mut` holds when its borrow ends. A bare `*x` of
@@ -653,7 +656,7 @@ execution internally; it runs tasks on baton-passed threads.
   `Ord` or associativity for `par_reduce` operations. Under `prove` each impl
   proves them; under `test` they become property tests. Derived impls come
   with generated proofs.
-- Trait methods may carry contracts; impls may weaken preconditions and
+- Trait methods may carry contracts (v1); impls may weaken preconditions and
   strengthen postconditions, never the reverse.
 - **Spec quality.** The toolchain checks that preconditions are satisfiable,
   postconditions are not trivially true, and assumptions are not
@@ -734,11 +737,14 @@ execution internally; it runs tasks on baton-passed threads.
   content-addressed artifact cache instead of Cargo's build directory.
   Generics are monomorphized, as rustc does. An interpreter is built only if
   `tide eval`, E4's edit-to-test target, or v1's spec evaluation
-  (`by(compute)`, spec tests, counterexample replay) needs it.
+  (`by(compute)`, spec tests) needs it; counterexamples replay as debug-build
+  runs.
 - **Targets** for a 100,000-line project: edit to diagnostics around 30 ms
   typical, under 100 ms at the 95th percentile; edit to running tests under
-  1 s; clean debug build a few seconds; development-build runtime within 3x of
-  release; release runtime within 10–20% of equivalent Rust.
+  1 s; clean and incremental builds and development-build runtime set by E4
+  against rustc's debug profile (drafts up to 3.5 targeted a few seconds and
+  3x of release with their own backends); release runtime within 10–20% of
+  equivalent Rust.
 - The compiler is written in Rust and not self-hosted before 1.0.
 
 - **The origin cross-check is the build.** Because every Tide program is
@@ -771,10 +777,12 @@ lowering of Tide tasks); D18 reversed that.
   capabilities; a scan of the linked symbols checks the declaration; its
   build script, if any, runs sandboxed without network and with recorded
   outputs.
-- **Rust consumers** depend on a Tide crate as a Rust crate. Their manifest
-  injects Tide's std with `std = { package = "tide_std" }`; types Tide's std
+- **Rust consumers** depend on a Tide crate as on any Rust crate; their own
+  manifest and `std` are unchanged. The Tide crate's exported `Cargo.toml`
+  (D18) declares `std = { package = "tide_std" }`, so Cargo builds that
+  crate, and only it, against Tide's std. Types Tide's std
   re-exports from Rust's are shared, and Tide-owned types (`HashMap`,
-  `Arc`, capabilities) need adapters at the boundary.
+  `Arc`, channel ends, capabilities) need adapters at the boundary.
 
 ### D14. Toolchain contract for agents
 
@@ -905,7 +913,8 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   decides.
 - **The driver owns every rustc invocation.** It adds no user-controlled
   `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C` flags, runs no
-  build scripts or proc macros except the toolchain's, and keeps its own
+  build scripts or proc macros for Tide crates except the toolchain's
+  (imported Rust crates' build scripts run sandboxed, D13), and keeps its own
   content-addressed cache instead of Cargo's build directory. A generated
   `Cargo.toml` is an export for Rust consumers.
 - **rustc and LLVM are the release backend**, replacing D12's C backend and
@@ -913,8 +922,9 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   built only if `tide eval` or E4's edit-to-test target needs it.
 - **The gate passed** (2026-10-19): the spike met the seven criteria in
   `research/15-rust-dialect.md` at prototype scale. Its gaps (a panic
-  inside a clause, sampled-clause budgets, `a..=b` next-index binding) are
-  implementation work.
+  inside a clause, sampled-clause budgets, `a..=b` next-index binding,
+  entry values of by-value parameters in `ensures`, `loop {}` rewriting)
+  are implementation work.
 - **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.
@@ -972,7 +982,7 @@ pub fn parse_feed(body: &[u8]) -> Result<Vec<Entry>, json::Error> {
     json::decode(body)
 }
 
-/// Checked at run time under `assert`, fuzzed under `test`, proved under `prove`.
+/// Checked at run time under `assert`, fuzzed under `test`, proved under `prove` (v1).
 #[requires(xs.len() > 0)]
 #[ensures(result < xs.len())]
 #[ensures(forall |i: usize| i < xs.len() ==> xs[result] >= xs[i])]
@@ -981,7 +991,6 @@ pub fn max_index(xs: &[i64]) -> usize {
     for i in 1..xs.len() {
         invariant!(best < i);
         invariant!(forall |j: usize| j < i ==> xs[best] >= xs[j]);
-        decreases!(xs.len() - i);
         if xs[i] > xs[best] {
             best = i;
         }
@@ -1037,6 +1046,5 @@ fn feed_times_out() {
    stays small enough to read.
 7. (Lapsed under D18.) How the C-emitting release backend (D12,
    v1) implements unwinding for panics, which must drop values (D5): a flag
-  check after every call,
-   compiler-specific extensions, or abort in release builds. If none is
+   check after every call, compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.
