@@ -1,6 +1,6 @@
 # Tide Design
 
-Status: draft 3.1. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3.2. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
@@ -71,7 +71,7 @@ later-tier feature, the tier table wins.
 | Tier | Contents |
 | --- | --- |
 | v0 core | Rust surface and ownership with origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`requires`, `ensures`, loop `invariant`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the agent toolchain on the interpreter, then the Cranelift-class backend |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay (D17) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
@@ -131,6 +131,14 @@ The design is a hypothesis. Before syntax freezes, the project runs:
 - **E6 plumbing**: the same application written with capabilities by agents,
   measuring how often they pass `Root`-like bundles everywhere and how large
   the resulting trust diffs are.
+- **Conformance oracle**: every normative rule in the chapters carries an ID
+  (`TASK-2`, `PAR-1`, ...), and each ID is traced to conformance tests that
+  any implementation must pass, in the style of Rue. E1 reruns on every
+  release with a fresh held-out task set.
+- **Mechanized soundness**: before 1.0, the origin calculus (D2) and the
+  determinism of authority-free code (D7) are proved in Lean, with agent
+  help; a Lean proof of Move's borrow checker took about 27 days with Claude
+  Code (`research/12-newcomer-sweep.md`).
 
 Initial thresholds, revised as data arrives: on a 30-task suite, Tide
 first-check pass rate at least 0.8x the Rust rate and final pass rate at least
@@ -374,8 +382,14 @@ serialization as the default (5–7x slower in prior art).
   are no build scripts or install hooks. The lockfile records each package's
   public authority; an upgrade that widens it fails until approved (D13).
 - Tooling reports **declared and exercised authority** for every public item
-  and lints over-granted capabilities. `tide fix` can thread a capability
-  through a call chain.
+  and lints over-granted capabilities. For each exercised authority it shows
+  a witness path, the call chain that uses it. `tide fix` can thread a
+  capability through a call chain.
+- **Kernel enforcement** (v1): when `main` attenuates its `Root`, the runtime
+  installs the matching operating-system sandbox (Landlock and seccomp on
+  Linux) and drops what was not kept, so a bug or a malicious dependency
+  that escapes the type system still meets the kernel. A WASI target maps
+  capabilities onto component imports.
 
 Rejected: effect rows and effect variables; implicit capability resolution
 through `with` clauses; user-defined handlers and continuations in v1;
@@ -531,6 +545,12 @@ stackful execution internally.
   coverage**: which public items have contracts and at what status. Items
   without contracts still need ordinary review and tests; the trust diff
   narrows review, it does not replace it.
+- When a contract changes, `tide review` shows concrete inputs on which the
+  old and new contracts disagree, so approvers judge examples rather than
+  logic.
+- **Behavior diff** (v1): `tide review` reruns the same simulation seeds on
+  base and head and diffs the capability events each run produced, so
+  reviewers see what the change does, not only what it may do.
 - Contract hashes cover the bodies of every function a clause calls,
   transitively, so editing a predicate a contract relies on is a contract
   change.
@@ -650,6 +670,10 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 - Node entry points are `fn` items or `Fn` closures with `Owned` captures, so
   a restart reruns the entry against the node's durable storage and fresh
   volatile state.
+- **Plan roots** (v1): `tide run --plan` runs a program with real reads but
+  captured writes, network sends, and process spawns, prints the plan, and
+  applies it only after approval. Agent-operated tools get a dry run that is
+  exact rather than simulated.
 - A determinism self-check runs a seed twice and diffs the event traces.
 - Coverage: the build lists any reachable foreign effect with no simulator
   model.
@@ -686,7 +710,12 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   explore alternative schedules and faults from that point.
 - **Authority policies** (v0): a package can declare rules over module paths,
   such as `parser::* is authority-free` or `only net::* may use Net`, which
-  the checker enforces and the trust diff reports.
+  the checker enforces and the trust diff reports. Policies are append-only
+  across releases unless an approval (D11) removes one.
+- **Replay queries** (v1): recorded and simulated runs answer structured
+  questions such as which task last wrote a value or which capability call
+  returned an error, searching backward from the failure, which models handle
+  better than stepping forward.
 
 ## The Feel
 
