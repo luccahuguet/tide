@@ -44,11 +44,12 @@ Primary rule:
 Current operating model:
 
 * one OpenAI supervisor per PR
+* for code, tests, or scripts, converge finishes the change first and the supervisor then reviews the converged diff; docs-only design work uses review rounds instead
 * `xhigh` effort for core compiler, semantics, parser, type checker, ownership, effects, runtime, or spec-shaping changes
 * `high` effort for normal tooling, tests, infrastructure, docs, and maintenance PRs
-* human maintainer remains final merge authority
+* human maintainer remains final merge authority; overrides should be rare and recorded
 
-The supervisor reviews proposed changes against:
+The supervisor reads the diff, the touched files, the surrounding code needed for context, the relevant spec sections, and the relevant tests, and reviews the change against:
 
 * the existing codebase
 * the relevant Tide specs
@@ -57,16 +58,22 @@ The supervisor reviews proposed changes against:
 
 Required verdicts:
 
-* `reject`
-* `request_changes`
-* `approve_with_alternatives`
-* `approve`
+* `reject`: the direction is wrong because of correctness, architecture, safety, or spec violations
+* `request_changes`: the direction is acceptable, but the change is not ready to merge
+* `approve_with_alternatives`: the change is mergeable, but materially better options are worth presenting
+* `approve`: the change is ready to merge
 
-The supervisor should block on correctness, spec mismatch, regression risk, architecture damage, and unnecessary complexity.
+The supervisor should block on correctness, spec mismatch, regression risk, architecture damage, unclear ownership between components, unnecessary complexity, and tests too weak for the risk.
 
-The supervisor should not block on style-only preferences or speculative abstractions.
+The supervisor should not block on style-only preferences, speculative abstractions, refactors the PR does not need, or future-proofing without current code pressure.
 
-Detailed workflow and prompt guidance live in [AI_SUPERVISOR.md](./AI_SUPERVISOR.md).
+The review gives the verdict, its confidence, blocking findings, non-blocking improvements, alternative designs, the minimal patch for approval, and its reasoning. Every blocking finding cites files and states the concrete risk; a proposed change is the smallest patch that makes the PR acceptable.
+
+Escalate, by rerunning at `xhigh` or adding a second independent review, when the PR changes core semantics or safety invariants, the supervisor has low confidence, or the maintainer disagrees with the review.
+
+Record each pass in the PR discussion or maintainer notes: model, effort level, verdict, blocking findings, and any override.
+
+Give the supervisor this section as its brief.
 
 ## Operational Work Tracking
 

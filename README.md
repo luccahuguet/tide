@@ -144,9 +144,8 @@ Cited evidence behind the decisions, in [research/](research/):
 - [AGENTS.md](AGENTS.md): rules for agents working here, generated from a
   pinned protocol profile plus `.agent-protocols.local.md`.
 - [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
-  set architecture, write specifications, and review.
-- [AI_SUPERVISOR.md](AI_SUPERVISOR.md): the AI supervisor review every PR
-  needs before it merges.
+  set architecture, write specifications, and review; every PR needs an AI
+  supervisor verdict before it merges.
 - [BR_WORKFLOW.md](BR_WORKFLOW.md): how `br` tracks work and which `.beads/`
   files are committed.
 - Open work lives in beads (`.beads/issues.jsonl`), managed with `br`.
