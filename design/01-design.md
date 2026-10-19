@@ -259,8 +259,10 @@ generics.
   On that error path, every place the child borrowed mutably is treated as
   moved out: it must be reassigned before any use. A place behind a reference
   cannot be left moved out, so the function must reassign it or itself
-  panic; a half-updated value can never reach a caller. Every cell the child
-  held locked is poisoned.
+  panic; a half-updated value can never reach a caller. Abandoned values are
+  dropped, as in Rust's unwinding, so resources are released; `Drop` impls are
+  therefore verified without assuming their type's invariant. Every cell the
+  child held locked is poisoned.
 
 Rejected: exceptions; draft 1's `from` keyword on variants (collides with
 `String::from`, `reviews/round1-agent-usability.md` B2).
@@ -353,8 +355,9 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   destructors; operations that consume a value return it inside the error.
 - **Shared mutable state** is message passing over channels, or
   `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send + Pure`.
-  The lock acquires all named cells atomically in a global order and checks
-  at run time that the handles are distinct. Acquisition is not a
+  The lock acquires all named cells atomically in a global order; if two
+  handles name the same cell, `lock` returns `Err(Aliased)` instead of
+  running the body. Acquisition is not a
   cancellation point. Its body may call only authority-free functions and may
   not contain `lock`; payloads are `Pure`, so they hold no `Shared` handles,
   and the body can neither suspend nor take another lock. A panicking body
@@ -386,8 +389,9 @@ stackful execution internally.
 - `par_map` and `par_for` equal their sequential versions.
 - `par_reduce` is defined by a canonical balanced grouping that depends only
   on input length, so results are bitwise identical on any core count. When
-  the operation's trait carries a proved or tested associativity law, the
-  result also equals the sequential fold; for float addition it does not, and
+  the operation's trait carries a proved associativity law, the result also
+  equals the sequential fold (a merely tested law gives that equality only as
+  a counted assumption); for float addition it does not, and
   the canonical grouping is the definition.
 - If several parallel branches panic, the one first in sequential order is
   reported.
@@ -438,7 +442,8 @@ stackful execution internally.
   possible response of the world.
 - Specs never affect typing or code generation, except that proved facts may
   delete runtime checks. Release builds erase specs unless asked to keep them.
-- Solver stability: bodies are opaque to callers by default; quantifiers need
+- Solver stability: executable function bodies are opaque to callers by
+  default (`spec fn` bodies are transparent); quantifiers need
   triggers; nonlinear and bit-vector reasoning stays in marked blocks; the
   solver version is pinned; CI checks proof stability under seed changes.
 - Interactive proofs are out of v1; the escape hatch is `#[trusted]` with a
@@ -448,7 +453,7 @@ stackful execution internally.
 
 - Each package interface exports, per public item, its signature, declared and
   exercised authority, contracts, and **proof status**: proved, tested, or
-  assumed.
+  assumed, always shown with its assumptions (`proved, assuming 2`).
 - Trust holes are counted transitively: `unsafe`, `#[trusted]`,
   `#[trusted_pure]`, `assume`, foreign calls, unproved impls of laws, and
   unproved dependency contracts that a proof relies on.
@@ -471,7 +476,9 @@ stackful execution internally.
 - A module is a file or an inline `mod` block; the module tree follows the
   directory tree. Imports are explicit; cycles and unused imports are errors.
 - Each module compiles to an interface artifact (signatures, layouts,
-  contracts, authority, proof status) with a content hash. Dependents read
+  contracts, public `spec fn` bodies, views, type invariants, laws,
+  authority, proof status, and which trait methods generic code calls) with a
+  content hash. Editing a public `spec fn` body is an interface change. Dependents read
   only their direct imports' interfaces; a body edit never re-checks
   dependents.
 - Checking, borrow checking, authority checking, and proving are per
