@@ -3,11 +3,10 @@
 Status: the agent-facing reference for the **v0 core** of Tide, as the
 tier table of `design/01-design.md` (draft 3, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
-`03-authority-concurrency.md`, and `04-contracts.md`, which still describe
-draft 2.1 in places. Appendix A lists what is not in v0; section 16 lists
-where v0 departs from the chapters and where the documents contradict each
-other. Syntax is provisional until the E1 gate (D0). Budget: under 25,000
-tokens, counted in CI (D14).
+`03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
+is not in v0; section 16 lists where the documents still disagree and which
+reading this reference takes. Syntax is provisional until the E1 gate (D0).
+Budget: under 25,000 tokens, counted in CI (D14).
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -63,8 +62,8 @@ edition):
 - **Closures and iterators**: capture inference, every `Iterator` adapter,
   `collect` into any `FromIterator`.
 - **Standard types** with their Rust API: scalars, `str`, `String`, slices,
-  arrays, tuples, `Option`, `Result`, `Vec`, `Box`, `Rc`, `Arc` (minus count
-  observers, 6.4), `Weak`, `Cell`, `RefCell`, `VecDeque`, `HashMap`,
+  arrays, tuples, `Option`, `Result`, `Vec`, `Box`, `Rc`, `Arc` (created
+  with `&Tasks`, minus count observers, 6.4), `Weak`, `Cell`, `RefCell`, `VecDeque`, `HashMap`,
   `HashSet`, `BTreeMap`, `BTreeSet`, `BinaryHeap`, `Cow`, `Path`, `PathBuf`,
   `Duration`, `Instant`, `SystemTime`, `std::cmp`, `std::ops`, `std::mem`,
   `std::fmt`, `std::convert`, and the `std::io` traits and types (`Read`,
@@ -113,18 +112,24 @@ fn parse_cases() {
 
 The derive set is closed: `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`,
 `Clone`, `Copy`, `Debug`, `Default` (as Rust), `Error`, `Encode`, `Decode`.
-All are in the prelude; remove `use thiserror::Error;` and `use serde::..`.
+All are in the prelude, and so is the `Error` trait itself (12.3); remove
+`use thiserror::Error;`, `use std::error::Error;`, and `use serde::..`.
 
-- **`Error`** has `thiserror` semantics, built in: `#[error("..")]` on the
-  type or each variant generates `Display`; `#[from]` on a single-field
-  variant generates `From` and, as in thiserror, also marks the field as the
-  `source` (provisional); `#[source]` (or a field named `source`) sets
-  `Error::source`; `#[error(transparent)]` forwards both.
+- **`Error`** has `thiserror` semantics, built in: `#[error("..")]` on a
+  struct, an enum, or each variant generates `Display`; `#[from]` on a
+  single-field variant generates `From` and, as in thiserror, also marks the
+  field as the `source`; `#[source]` (or a field named `source`) sets
+  `Error::source`; `#[error(transparent)]` forwards both. If you print the
+  `source()` chain, leave the source out of each message (no `{0}`), or it
+  prints twice.
 - **`Encode`/`Decode`** are compiler-generated serialization. v0 supports
   JSON only: `std::json::encode(&v) -> Vec<u8>` and
   `std::json::decode::<T>(&bytes) -> Result<T, json::Error>`. Keys:
   `#[codec(rename = "..")]`, `#[codec(rename_all = "camelCase")]`,
-  `#[codec(default)]`, `#[codec(skip)]` (provisional: serde's spelling).
+  `#[codec(default)]`, `#[codec(skip)]`. Spellings and defaults are serde's
+  (provisional): a missing `Option` field decodes as `None` without
+  `#[codec(default)]`, and enums are externally tagged
+  (`{"Set":{"key":"a"}}`, `"Clear"`).
 - `Serialize`/`Deserialize`/`thiserror::Error` are `FX0102` with safe fixes.
 
 ```tide
@@ -214,12 +219,15 @@ Rules:
   and applies to **every elided origin position** in the type before it. To
   target an inner one, parenthesize: `&mut (&str from v)`.
 - A bare list `from a, b` is allowed only at the end of a return type.
-  Elsewhere `from` takes one origin, and a comma ends it, so
-  `Result<Token from Self.src, LexError>` has two type arguments; write
-  several origins as `from (a, b)`.
+  Elsewhere, at any nesting depth, `from` takes one origin, and a comma ends
+  it, so `Result<Token from Self.src, LexError>` has two type arguments;
+  write several origins as `from (a, b)`.
 - Places are a parameter or `self`, then fields and `*` (no calls or
   indexing). `from self.src` is the field's origin, not the `&mut self`
   borrow; that is how a token from `&mut self` survives the next call.
+  `Self.src` in an impl's associated type names the same origin. In a body,
+  `let src = self.src;` copies the reference out, and `&src[a..b]` keeps
+  origin `self.src`, as in Rust.
   `from *self` is what the value behind `&self` borrows; a plain elided
   `-> &str` on `&self` borrows the reference itself.
 - `from p` where `p` holds no borrow (`from self.pos`, `pos: usize`) is an
@@ -334,8 +342,9 @@ assert!(g.get(b).is_none());      // stale handle: None, never a dangling read
 `Debug` (provisional), so it works as a `HashSet`/`HashMap` key. `Arena`
 methods: `new`, `insert(T) -> Id<T>`, `get(id) -> Option<&T>`, `get_mut`,
 `remove(id) -> Option<T>`, `get_disjoint_mut([a, b]) -> Option<[&mut T; 2]>`,
-`len`, `Index`/`IndexMut` (panic on a stale id); `contains(id) -> bool` and
-`iter() -> impl Iterator<Item = (Id<T>, &T)>` (provisional).
+`len`, `Index`/`IndexMut` (panic on a stale id); `Default`,
+`contains(id) -> bool`, and `iter() -> impl Iterator<Item = (Id<T>, &T)>`
+(provisional). `Arena<T>` is `Pure` when `T` is.
 
 ## 4. Integers, floats, conversions
 
@@ -425,7 +434,7 @@ do, in every dependency.
 | `Env` (`std::env`) | `args() -> impl Iterator<Item = String>` (program name first), `var(k) -> Result<String, VarError>`, `vars()`, `current_dir() -> io::Result<PathBuf>` | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line(&mut String) -> io::Result<usize>`, `lines() -> impl Iterator<Item = io::Result<String>>`, `read_to_string(&mut String)`, `read_to_end(&mut Vec<u8>)`, `is_terminal()` | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (Rust's builder: `.arg`, `.args`, `.env`, `.current_dir`, `.output()`, `.status()`, `.spawn()`), `exit(code: i32) -> !` | `only(["git", ..])` |
-| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point` (7.1) | `limit(n) -> Tasks` |
+| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point` (7.1); creating synchronization handles (7.3, 7.4) | `limit(n) -> Tasks` |
 
 Calling conventions:
 
@@ -439,10 +448,11 @@ Calling conventions:
   clone has the same authority; provisional) and `Send + Sync`, so scoped
   children may borrow them. They are not `Pure` (6.6). Pass them by
   reference: `fs: &Fs`.
-- **Attenuation** returns a narrower capability of the same type. Only
-  `dir` can fail, so only `dir` returns `io::Result`. `only` takes any
-  iterable of strings (provisional), so `main` can attenuate to hosts
-  computed at run time.
+- **Attenuation** returns a narrower capability of the same type, so
+  attenuations chain: `root.net.only([..]).no_bind()`. Only `dir` can fail,
+  so only `dir` returns `io::Result`. `Net::only` takes `"host:port"`
+  entries in any iterable of strings (provisional), so `main` can
+  attenuate to hosts computed at run time.
 - Every capability error type has a cancellation case whose
   `is_cancelled()` is true (7.2).
 
@@ -482,10 +492,10 @@ impl Fs {                                         // every method takes &self; p
     fn read(&self, p) -> io::Result<Vec<u8>>;
     fn read_to_string(&self, p) -> io::Result<String>;
     fn write(&self, p, data: impl AsRef<[u8]>) -> io::Result<()>;   // create or truncate; not durable
-    fn write_synced(&self, p, data) -> io::Result<()>;              // durable when it returns
+    fn write_synced(&self, p, data: impl AsRef<[u8]>) -> io::Result<()>;   // durable when it returns
     fn open(&self, p) -> io::Result<File>;                          // read only
     fn create(&self, p) -> io::Result<File>;                        // write; create or truncate
-    fn open_with(&self, p, opts: &OpenOptions) -> io::Result<File>; // append, create_new, read+write (provisional name)
+    fn open_with(&self, p, opts: &OpenOptions) -> io::Result<File>; // append, create_new, read+write
     fn sync_dir(&self, p) -> io::Result<()>;                        // make p's entries durable
     fn create_dir_all(&self, p) -> io::Result<()>;
     fn exists(&self, p) -> bool;
@@ -494,8 +504,8 @@ impl Fs {                                         // every method takes &self; p
     fn read_only(&self) -> Fs;
 }
 impl File {        // io::Read, io::Write, io::Seek, also for &File
-    fn sync(&self) -> io::Result<()>;                  // D7; `sync_all`, `sync_data` accepted (provisional)
-    fn set_len(&self, n: u64) -> io::Result<()>;       // (provisional)
+    fn sync(&self) -> io::Result<()>;                  // D7; `sync_all`, `sync_data` accepted
+    fn set_len(&self, n: u64) -> io::Result<()>;       // truncate or extend; works in append mode
     fn metadata(&self) -> io::Result<Metadata>;
     fn close(self) -> io::Result<()>;
 }
@@ -503,33 +513,48 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 
 - **`OpenOptions`** is Rust's builder (`read`, `write`, `append`,
   `truncate`, `create`, `create_new`) without its ambient `open` method
-  (`FX0501`): `fs.open_with("kv.log",
-  OpenOptions::new().read(true).append(true).create(true))?`.
+  (`FX0501`): `fs.open_with("events",
+  OpenOptions::new().read(true).append(true).create(true))?`. As in POSIX,
+  such a file reads from offset 0, and every write goes to the end.
 - **A `File` carries the authority of the `Fs` that opened it**; its methods
   need no other capability.
-- **Paths.** An attenuated `Fs` resolves every path beneath its directory.
-  An absolute path, or a `..` or symlink that would leave the directory,
-  fails with `ErrorKind::PermissionDenied` (provisional kind). `root.fs`
-  accepts absolute paths and resolves relative ones against the starting
-  working directory (provisional; `/` under simulation). A `Mode::Read` `Fs`
+- **Paths.** `root.fs` is rooted at `/`, so it reaches every path; a
+  relative path resolves against the working directory the process started
+  in (provisional; under simulation that is `/`, so
+  `sim.world.file("a.txt", ..)` creates `/a.txt`). `read_only()` keeps the
+  same base. `fs.dir(p, mode)` resolves `p` like any path and returns an
+  `Fs` rooted at it, which resolves relative paths beneath `p`; an absolute
+  path, or a `..` or symlink that would leave `p`, fails with
+  `ErrorKind::PermissionDenied` (provisional kind). A `Mode::Read` `Fs`
   returns `PermissionDenied` on writes. Missing files give `NotFound`, as in
   Rust. To attenuate to a directory that may not exist yet, call
   `create_dir_all` first.
 - **Durability** (D7, D15). Writes are durable only once synced:
   `file.sync()` for a file's contents, `fs.sync_dir(dir)` for the
   directory entries changed by `create`, `rename`, `remove_file`, or a new
-  subdirectory. `write_synced` syncs the file and its entry (provisional).
+  subdirectory. `write_synced` syncs the file and its entry.
   After a crash, anything not synced may be lost or torn (6.8). An
   acknowledged write is therefore: write, `sync()`, and, the first time a
   file or directory is created, `sync_dir` of its parent.
+- **Torn tails.** A crash can leave a partial last record. Cut it off
+  before appending again, or the next acknowledged record is glued to the
+  torn bytes and lost on the next read.
 
 ```tide
 pub struct Log { file: File }
 
 impl Log {
+    /// Opens or creates `events`, dropping a torn tail left by a crash.
     pub fn open(dir: &Fs) -> io::Result<Log> {
-        let file = dir.open_with("log", OpenOptions::new().read(true).append(true).create(true))?;
+        let mut file = dir.open_with("events", OpenOptions::new().read(true).append(true).create(true))?;
         dir.sync_dir(".")?;                           // the new entry survives a crash
+        let mut text = Vec::new();
+        file.read_to_end(&mut text)?;
+        let keep = text.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        if keep < text.len() {
+            file.set_len(keep as u64)?;               // never acknowledged, so safe to drop
+            file.sync()?;
+        }
         Ok(Log { file })
     }
     /// Durable when it returns Ok; acknowledge only after that.
@@ -537,12 +562,11 @@ impl Log {
         writeln!(self.file, "{line}")?;
         self.file.sync()
     }
-    /// Complete lines only: a torn last line is ignored.
     pub fn lines(&mut self) -> io::Result<Vec<String>> {
+        self.file.seek(SeekFrom::Start(0))?;
         let mut s = String::new();
         self.file.read_to_string(&mut s)?;
-        let done = s.rfind('\n').map_or("", |i| &s[..i]);
-        Ok(done.lines().map(String::from).collect())
+        Ok(s.lines().map(String::from).collect())
     }
 }
 ```
@@ -563,7 +587,11 @@ value in `main` and pass it down.
 (but unspecified). For untrusted keys use
 `HashMap::with_hasher(RandomState::from_rand(&rand))`. `Arc` has no
 `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, or `into_inner`,
-because their results depend on other tasks; `make_mut` stays.
+because their results depend on other tasks; `make_mut` stays. `Arc`,
+`sync::Weak`, and atomics are synchronization handles, so creating one takes
+`&Tasks` (7.4): `Arc::new(v, tasks)`, `Arc::downgrade(&a, tasks)`,
+`AtomicU64::new(0, tasks)`. Cloning needs nothing. `Rc` and `Cell` need no
+capability, because they never leave their task.
 
 ### 6.5 Write-only sinks are not authority
 
@@ -603,7 +631,7 @@ handles derived from them; synchronization handles (`Shared`, channel ends,
 type whose `&self` API can observe or cause mutation); raw pointers;
 `dyn Trait` without `+ Pure`; an unbounded type parameter. **Everything else
 is `Pure` exactly when its parts are**, including references, collections,
-`Box`, `Rc`, `Cell`, `RefCell`, structs, enums, and closures. `Cell`,
+`Arena`, `Box`, `Rc`, `Cell`, `RefCell`, structs, enums, and closures. `Cell`,
 `RefCell`, and `Rc` are `Pure` because they are not `Sync`: their state
 never leaves one task. `Arc` is not, because drop timing can reveal
 scheduling (D7): authority-free and parallel code shares data by reference
@@ -631,7 +659,9 @@ authority-freedom a compile error (`FX0511`).
 `Denied` (a host outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)`
 (a non-2xx response), and `Io(io::Error)`; `is_cancelled()` and
 `is_transient()` (timeouts, resets, refusals, 5xx) classify them
-(provisional beyond `Timeout` and `Cancelled`). `Url::parse(&str) ->
+(provisional beyond `Timeout` and `Cancelled`; every variant but `Status`
+and `Io` is a unit variant). `NetError` is not `PartialEq`, since it can
+hold an `io::Error`: test it with `matches!`. `Url::parse(&str) ->
 Result<Url, UrlError>`; `Url` has the `url` crate's accessors (`host_str`,
 `port_or_known_default`, `path`, `as_str`) and `Display`. `TcpStream`
 implements `io::Read` and `io::Write`, also for `&TcpStream`.
@@ -642,46 +672,73 @@ Every capability has a deterministic simulated version. `Root::sim(seed)`
 returns a `SimRoot` (`std::sim`) with `Root`'s capability fields, all
 simulated (pass `&sim.fs`, `&sim.net`, `&sim.clock`, `&sim.tasks` to the code
 under test), plus `sim.world` (setup), `sim.faults` (fault
-injection), `sim.node(name)` (crashable nodes), and inspection methods. The
-test body runs as the simulation's main task.
+injection), `sim.node(name)` (crashable nodes), and inspection methods.
+`Root::sim` works in any test, plain or property: the test body runs as the
+simulation's main task, so it can spawn, wait, and read virtual time.
 
 | Item | Effect |
 | --- | --- |
-| `#[sim_test(seeds = 200)] fn t(sim: SimRoot)` | runs the test once per seed with a fresh `SimRoot`; plain `#[sim_test]` runs 100 seeds |
-| `sim.world.file(path, contents)` | create a file (parents included) |
+| `#[sim_test(seeds = 200)] fn t(sim: SimRoot)` | runs the test once per seed with a fresh `SimRoot`; plain `#[sim_test]` runs 100 seeds; more parameters are generated (10.2) |
+| `sim.world.file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>)` | create a file (parents included) |
 | `sim.world.args(["prog", "a.txt"])`, `env_var(k, v)`, `stdin(bytes)` | program inputs; `args` as `env.args()` returns them |
-| `sim.world.http("host:port", \|req\| Reply::ok(body))` | a simulated HTTP peer; `Reply::ok(b).after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Owned)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
-| `sim.faults.net_drop(p)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | network faults; under `net_drop` an operation is delayed and fails with `NetError::Timeout` at its deadline (provisional) |
+| `sim.faults.net_drop(p: f64)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | per-packet network faults (below) |
 | `sim.faults.partition(&[&a], &[&b])`, `heal()` | cut links between node groups |
 | `sim.faults.disk_error("/data", p, io::ErrorKind::Other)` | I/O errors on paths with that prefix |
-| `sim.faults.torn_writes(on)` | whether a crash may keep a torn prefix of unsynced writes (provisional default: on, per D15) |
+| `sim.faults.torn_writes(on)` | whether a crash may keep a torn prefix of unsynced writes (default on, D15) or only lose them |
 | `sim.faults.crash(&node)`, `restart(&node)`, `at(t, Fault::crash(&node))` | crash or restart now, or schedule any `Fault` at virtual time `t` |
 | `sim.faults.fault_point(name, p)` | probability that `tasks.fault_point(name)` returns `true` |
 | `sim.node("kv") -> SimNode` | a node with its own disk, address (`"kv"` resolves to it), clock, and tasks |
-| `node.start(entry) -> NodeTask<T, E>` | runs `entry: FnOnce(NodeRoot) -> Result<T, E>`, which is `Owned + Send` and captures only `Pure` data; `NodeRoot` has `Root`'s fields |
+| `node.start(entry) -> NodeTask<T, E>` | runs `entry(NodeRoot) -> Result<T, E>` as the node's main task; `NodeRoot` has `Root`'s fields |
 | `node.fs() -> Fs` | the node's disk, for inspection after a crash |
 | `sim.run_for(d)`, `sim.run_until(&node_task) -> Result<T, E>` | drive the world |
-| `sim.elapsed() -> Duration`, `sim.records() -> Vec<Record>`, `sim.trace()` | virtual time; sink records (`node`, `level`, `message`); the event trace |
+| `sim.elapsed() -> Duration`, `sim.records() -> Vec<Record>`, `sim.trace()` | virtual time; sink records; the event trace |
 
-(`SimNode`, `NodeTask`, and `Record` are provisional names.)
+(`SimNode`, `NodeTask`, `Request`, `Record`, and the setup parameter types
+are provisional.)
 
 Semantics:
 
 - **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
   time advances only when every task is blocked, then jumps to the next
-  timer, so a 30-second timeout test runs in milliseconds. Computation takes
-  no virtual time; capability operations take small seed-chosen latencies.
-  If no task can ever run again, the run fails with a deadlock report.
+  timer, so a 30-second timeout test runs in milliseconds. Computation and
+  `Clock`, `Rand`, `Env`, and `Tasks` calls take no virtual time; each file
+  operation takes up to 1 ms and each network packet 1–10 ms, drawn from the
+  seed (provisional). Bound `sim.elapsed()` by a deadline your code sets, or
+  with slack. If no task can ever run again, the run fails with a deadlock
+  report.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
   interleaving, so each seed explores a schedule and replays bit for bit.
 - **Errors** have the host's `io::ErrorKind`s.
+- **Packet loss.** `net_drop(p)` drops each packet independently with
+  probability `p`. A UDP datagram is simply lost. TCP streams and
+  `Net::get` retransmit, so loss shows up as delay: each loss of the same
+  packet waits a retransmission timeout, 200 ms and doubling (provisional).
+  An operation fails only when its own deadline passes (`Timeout`) or its
+  scope is cancelled (`Cancelled`).
+- **Records.** Every sink record, `println!` output included, enters
+  `sim.records()` with its node, and stays there if the node later crashes.
+  A `Record` has `node: String`, `time: Duration`, `sink: Sink` (`Out`,
+  `Err`, `Dbg`, or `Log(Level)`), and `message: String`, one line without
+  its newline (provisional).
+- **Node entries.** `restart` calls the entry again, so it is a `fn` item or
+  an `Fn` closure, never `FnOnce`. It is `Owned + Send` and captures only
+  `Pure` data; clone inside it what each run consumes. Unlike `Root`, a
+  `NodeRoot` is an ordinary value: pass it or its fields to helpers.
 - **Crashes.** A crash stops a node's tasks at their current scheduling
-  points without running destructors. Only synced data survives (6.3);
-  unsynced writes and directory entries may be lost or torn, as the seed
-  decides. `restart` reruns the entry over the surviving disk. The test body
-  itself cannot crash: put crash-tested code in a node.
+  points without running destructors, frees its memory, and resets its
+  peers' connections. Only synced data survives (6.3); unsynced writes and
+  directory entries may be lost or torn, as the seed decides. Crashing a
+  node whose entry has returned is the same power cut (provisional). The
+  test body itself cannot crash: put crash-tested code in a node.
+- **Restarts.** `restart(&node)` returns `()` and calls the entry again
+  with a fresh `NodeRoot` over the surviving disk; a running node is crashed
+  first. A `NodeTask` follows its node across restarts: `run_until(&t)`
+  returns when some run of the entry returns, and panics if the node is
+  down with no restart scheduled. Dropping a `NodeTask` does not stop the
+  node, as with a `Task` (7.1). (All provisional.)
 
 ```tide
 #[sim_test(seeds = 200)]
@@ -698,6 +755,7 @@ fn acked_lines_survive_a_crash(sim: SimRoot) {
         Ok::<(), io::Error>(())
     });
     sim.faults.at(Duration::from_millis(20), Fault::crash(&node));
+    sim.faults.at(Duration::from_millis(40), Fault::restart(&node));   // reruns the entry
     sim.run_for(Duration::from_secs(1));
     let disk = node.fs();
     disk.create_dir_all("/data").unwrap();
@@ -780,7 +838,7 @@ impl<E> Scope<E> {                                    // Copy + Send + Sync: pas
     fn cancel(self);
 }
 impl<U, E> Task<U, E> { fn join(self) -> Result<U, E>; }
-pub enum TaskError { Cancelled, DeadlineExceeded }
+pub enum TaskError { Cancelled, DeadlineExceeded }  // Debug, Clone, Copy, PartialEq, Eq, Error (provisional)
 pub struct Panicked { pub message: String }          // (provisional)
 ```
 
@@ -796,7 +854,8 @@ pub struct Panicked { pub message: String }          // (provisional)
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives
-  `Task<Result<Vec<u8>, NetError>, E>`.
+  `Task<Result<Vec<u8>, NetError>, E>`. Since `E: From<TaskError>`, a
+  scope's error enum needs a `#[from] TaskError` variant.
 - **`join`** returns the child's `Ok` value, or `Err(TaskError::Cancelled
   .into())` if the child failed, panicked, or was cancelled (the scope
   reports the real cause). So `x.join()?` in the body is the normal form.
@@ -808,13 +867,16 @@ pub struct Panicked { pub message: String }          // (provisional)
   panicking child was mutating.
 - **Isolation.** `tasks.spawn_isolated(move || ..)` runs an `Owned` closure
   as a new task, waits for it, and returns `Err(Panicked)` if it panicked;
-  it inherits the caller's cancellation (both provisional). It is the only
+  it inherits the caller's cancellation. It is the only
   place a panic becomes a value (servers: one per request, called from a
   scoped child).
 - **Bounded concurrency.** `let tasks = root.tasks.limit(4);` then spawn one
   child per item: scopes from that `Tasks` run at most 4 children at once,
   and `spawn` waits for a free slot (provisional; the wait is not a
-  checkpoint).
+  checkpoint). A `spawn` still waiting when its scope is cancelled or its
+  deadline passes starts the child once a slot frees; the child sees the
+  cancellation at its first checkpoint, and `join` returns what it returns
+  (provisional).
 - **A scope passed down** (`fn serve(bg: Scope<E>, ..)`) outlives the
   function's locals, so its children must own their data (`move` with owned
   values, `Owned`) or borrow what the signature ties to the scope
@@ -856,9 +918,8 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
   child still return `Ok`, for example because children turned cancellation
   errors into values, `scope` returns `Ok` with the partial results. If any
   of them returns `Err` after the deadline, the scope fails and `scope`
-  returns `Err(TaskError::DeadlineExceeded.into())` (provisional: the
-  deadline is reported as the cause). `s.cancel()` behaves the same, with
-  `TaskError::Cancelled`. When a scope deadline and an operation deadline
+  returns `Err(TaskError::DeadlineExceeded.into())`. `s.cancel()` behaves
+  the same, with `TaskError::Cancelled`. When a scope deadline and an operation deadline
   coincide, the operation sees the cancellation.
 - **Soft.** Authority-free computation, `Shared::with*`, and joins are never
   interrupted; cancellation is observed at the next checkpoint.
@@ -867,8 +928,9 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
 
 ### 7.3 Channels
 
-Channels are Rust's `std::sync::mpsc`: `channel()` (unbounded; a lint in
-libraries, `FX0608`), `sync_channel(n)`, `Sender: Clone`, `send`,
+Channels are Rust's `std::sync::mpsc`, except that creating one takes
+`&Tasks` (7.4): `channel(tasks)` (unbounded; a lint in libraries, `FX0608`),
+`sync_channel(n, tasks)`, `Sender: Clone`, `send`,
 `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, and a `Receiver` that
 iterates until every sender drops. `recv` and `send` on a full
 `sync_channel` are checkpoints. Payloads must be `Send`. A `Receiver` has
@@ -879,7 +941,7 @@ on several sources (Rust's `select!`), send one enum through one channel.
 
 ```tide
 impl<T: Send + Pure> Shared<T> {                   // std::sync
-    fn new(tasks: &Tasks, v: T) -> Shared<T>;      // handles let tasks observe each other, so creation takes &Tasks
+    fn new(v: T, tasks: &Tasks) -> Shared<T>;      // creation takes &Tasks (argument position provisional)
     fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
     fn with2<U: Send + Pure, R>(a: &Shared<T>, b: &Shared<U>,
         f: impl FnOnce(&mut T, &mut U) -> R + Pure) -> Result<R, LockError>;
@@ -895,18 +957,27 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   same cell. It is `Send + Sync` but not `Pure`; children may borrow
   `&Shared<T>`. Payloads are `Send + Pure` (`FX0606`), so a cell never holds
   a capability, channel end, or another `Shared`.
+- **Creating a handle takes `&Tasks`.** Cells, channel ends, `Arc`, and
+  atomics let tasks observe each other's timing (D7), so every constructor
+  takes `&Tasks`, last: `Shared::new(v, tasks)`, `channel(tasks)`,
+  `Arc::new(v, tasks)`. Cloning needs nothing. Authority-free code can
+  neither create nor receive a handle. In a test, take them from a
+  simulator: `let sim = Root::sim(0);`, then `Shared::new(v, &sim.tasks)`.
 - `with2` and `with_all` acquire all their cells atomically in a global
   order, so they cannot deadlock. If two operands are the same cell, the
   call returns `Err(LockError::Aliased)` without running `f`; test identity
-  first with `Shared::same(&a, &b)`.
+  first with `Shared::same(&a, &b)`. On an empty slice, `with_all` runs `f`
+  on an empty slice.
 - `f` must be `Pure`. It therefore captures no capability, channel end, or
   `Shared` handle, so it cannot do I/O, suspend, or nest another `with`
   (`FX0603`). Logging is allowed; printing is a lint (`FX0607`). `return`
   and `?` inside `f` leave `f`, as in any closure.
 - Acquisition waits FIFO per cell and is not a checkpoint: it still works in
   a cancelled scope.
-- A panic in `f` poisons every cell it held; later calls return
-  `Err(LockError::Poisoned)` without running `f`. `reset(v)` clears it.
+- A panic in `f`, an overflow trap included, poisons every cell it held;
+  later calls return `Err(LockError::Poisoned)` without running `f`.
+  `reset(v)` clears it. Check everything that can fail before the first
+  write.
 - Atomics (`std::sync::atomic`, sequentially consistent only) exist for
   library authors and are not `Pure`. `Mutex` and `RwLock` live in
   `std::sync::raw` and need the `unsafe` grant.
@@ -918,6 +989,8 @@ use std::sync::{LockError, Shared};
 pub enum BankError {
     #[error("insufficient funds")]
     Insufficient,
+    #[error("balance overflow")]
+    Overflow,
     #[error("lock: {0}")]
     Lock(#[from] LockError),
 }
@@ -929,14 +1002,16 @@ pub fn transfer(from: &Shared<Account>, to: &Shared<Account>, amount: u64) -> Re
         return Ok(());                                  // otherwise Err(Aliased)
     }
     Shared::with2(from, to, |a, b| {
-        a.balance = a.balance.checked_sub(amount).ok_or(BankError::Insufficient)?;
-        b.balance += amount;                            // traps on overflow: keep totals bounded
+        let debited = a.balance.checked_sub(amount).ok_or(BankError::Insufficient)?;
+        let credited = b.balance.checked_add(amount).ok_or(BankError::Overflow)?;
+        a.balance = debited;                            // no write until both checks pass,
+        b.balance = credited;                           // and nothing here can trap
         Ok(())
     })?                                                 // LockError -> BankError via #[from]
 }
 
-pub fn total(accounts: &[Shared<Account>]) -> Result<u64, LockError> {
-    Shared::with_all(accounts, |xs| xs.iter().map(|a| a.balance).sum())   // one consistent snapshot
+pub fn total(accounts: &[Shared<Account>]) -> Result<u128, LockError> {
+    Shared::with_all(accounts, |xs| xs.iter().map(|a| a.balance as u128).sum())   // one snapshot; cannot overflow
 }
 ```
 
@@ -977,7 +1052,10 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
 ```
 
 - `join` is in `std::par`. `par_map`, `par_for`, and `par_sort` (stable) are
-  inherent slice methods and need no import.
+  inherent slice methods and need no import:
+  `fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>`
+  and `fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)`
+  (provisional bounds).
 - Closures must be `Pure + Send` (`FX0610`); shared captures must be
   `Pure + Sync` (`FX0611`: not `&RefCell`, `&Rc`, `&Arc`, or a capability).
   Disjoint `&mut` splits (`split_at_mut`) are fine.
@@ -985,6 +1063,8 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
   including sink output order. Under simulation they run on real cores.
 - To reduce, `par_map` the expensive part and fold the results
   sequentially; `par_reduce` is v1 (Appendix A).
+- Branches cannot do I/O. For concurrent I/O, spawn children in a
+  `tasks.limit(n)` scope (7.1).
 - If several branches panic, the first in sequential order is reported,
   buffered sink output from later branches is discarded, and the panic
   propagates in the enclosing task.
@@ -1013,18 +1093,25 @@ builds, erased in release, and used to drive property tests.
 | --- | --- | --- |
 | `requires e` | after a fn signature (and `where`) | precondition, checked at entry; a failure blames the caller |
 | `ensures e` | after a fn signature | postcondition, checked at each return; a failure blames the callee |
-| `invariant e` | between a loop header and its body | checked before the first iteration, after each, and at exit |
+| `invariant e` | between a loop header and its body | checked at loop entry and exit; under `tide test`, also after every iteration |
 
 - **One expression per clause.** `requires a, b` is an error whose safe fix
-  splits it into two clauses; repeated clauses are conjoined in order.
-- **In `ensures`**, `result` is the return value (a contextual keyword) and
-  `old(e)` is `e` evaluated at entry. A `&mut` parameter `v` (or `*v`)
+  splits it into two clauses. Repeated clauses of one kind, `invariant`
+  included, are conjoined in order.
+- **In `ensures`**, `result` is the return value (a contextual keyword): a
+  place the clause reads but cannot move out of, so match on `&result` or
+  use `result.as_ref()` unless it is `Copy` (provisional). `old(e)` is `e`
+  evaluated at entry. A `&mut` parameter `v` (or `*v`)
   means its value at return; `old(*v)` its value at entry. `old` snapshots
   only what the clause reads and never calls `Clone`.
 - **Clause expressions** are ordinary Rust boolean expressions that must be
   authority-free: they may call any function or trait method whose arguments
-  are `Pure` (`xs.len()`, `x.cmp(y)`, your own `is_sorted(xs)`), never a
-  capability or `Shared`. Type parameters need no `Pure` bound; at an
+  are `Pure` (`xs.len()`, `x.cmp(y)`, your own `is_valid(x)`) and closures
+  whose captures are `Pure` (`xs.iter().all(|x| *x <= self.max)`),
+  never a capability or `Shared`. Exception (provisional): `len()`,
+  `is_empty()`, and `Shared::same` on a slice or `Vec` of handles, which
+  observe nothing another task can change, so `requires i < cells.len()`
+  is legal. Type parameters need no `Pure` bound; at an
   instantiation with a non-`Pure` type, a clause that calls its methods is
   skipped and reported as unchecked (provisional).
   `==`, `<`, and arithmetic mean exactly what they mean in code, including
@@ -1034,12 +1121,16 @@ builds, erased in release, and used to drive property tests.
   `exists |i: T| guard && p`, where `guard` bounds the binder as
   `lo <= i && i < hi` (an unsigned binder implies `0 <= i`) or
   `c.contains(&i)`. An unbounded quantifier is an error. A quantifier body
-  extends as far right as possible, so write
+  extends as far right as possible: to the end of the clause, or of the
+  enclosing parentheses or `match` arm. So write
   `result == (exists |i: usize| i < xs.len() && xs[i] == x)`. Rust's
   `(0..n).all(|i| ..)` works too.
 - **Visibility.** A `pub` function's contract may call only `pub` functions
   (Rust's private-in-public rule; provisional for v0).
 - Trait methods may carry contracts; every impl is checked against them.
+- **Violations** panic with `requires violated: <clause text>` (or
+  `ensures`, `invariant`) and the blamed span (provisional), so
+  `#[should_panic(expected = "requires violated")]` can target them.
 
 ```tide
 pub fn max_index(xs: &[i64]) -> usize
@@ -1065,7 +1156,8 @@ pub fn push_all(dst: &mut Vec<i64>, src: &[i64])
 ```
 
 In a `for x in a..b` loop, an invariant sees `x` as the next iteration's
-index: `x == a` before the first iteration and `x == b` at exit.
+index: `x == a` before the first iteration and `x == max(a, b)` at exit.
+A quantified invariant costs a linear scan each time it is checked.
 
 ### 10.2 Property tests
 
@@ -1073,15 +1165,40 @@ index: `x == a` before the first iteration and `x == b` at exit.
   generates and shrinks inputs. Generated types: integers, floats, `bool`,
   `char`, `String`, `Vec`, arrays, tuples, `Option`, `Result`, maps, sets,
   and structs and enums whose fields can all be generated, or that
-  implement `Arbitrary`.
-- A `seed: u64` parameter is an ordinary generated input that combines with
-  the others; for one fresh simulator per seed, use `#[sim_test]` (6.8).
-- `requires` on a test filters and guides generation. A run with fewer than
-  100 accepted cases fails as `vacuous`; an early `return` counts as a pass,
-  so prefer `requires`. A rare condition (a random `Vec` is seldom sorted)
-  makes the test vacuous: construct such inputs instead (`xs.sort()`).
-- `tide test` also calls each authority-free function that has `ensures`
-  on generated inputs that satisfy its `requires` (provisional for v0).
+  implement `Arbitrary`. A `&T` or `&mut T` parameter is generated as a `T`
+  and borrowed (`&str` from a `String`).
+- **With a simulator.** A `seed: u64` parameter is an ordinary generated
+  input, and `Root::sim(seed)` in the body gives each case its own
+  simulator (6.8). `#[sim_test] fn t(sim: SimRoot, sizes: Vec<u16>)` is
+  shorthand for that: each case gets a fresh `SimRoot` plus generated values
+  for the other parameters, `seeds = N` sets the number of cases, and
+  shrinking keeps the seed (provisional). `requires` and the vacuity floor
+  apply to both forms.
+- **`requires`**, on a test or a tested function, filters and guides
+  generation. Conjuncts in a recognized shape are generated directly; the
+  rest filter. Shapes: scalar
+  ranges (`n <= 64`, `lo <= hi`), length bounds (`xs.len() > 0`), an index
+  below a length (`i < xs.len()`), `xs.is_sorted()`, `xs.contains(&x)`,
+  `o.is_some()`, and `x == c` (provisional spellings). Your own predicate,
+  such as `is_valid(x)`, only filters. An early `return` counts as a pass,
+  so prefer `requires`.
+- **Vacuity.** `tide test` runs a property test until 100 cases (or `N`,
+  for `seeds = N`) satisfy its `requires`. If under 1% of generated cases
+  do, it fails the test as `vacuous` and names the conjunct that rejected
+  most. A rare condition (a random `Vec` is seldom sorted) causes it:
+  construct such inputs (`xs.sort()`), use a recognized shape, or give the
+  type an `Arbitrary` impl.
+- **Generated contract tests** (04 §2.4). `tide test` also tests every
+  function that has an `ensures`, on generated inputs that satisfy its
+  `requires`, under the same vacuity floor. Capability parameters come from
+  a fresh `Root::sim(seed)`; a type with private fields is built through
+  random sequences of public constructor and method calls, which respect
+  their own `requires`. Each type parameter is instantiated at `i64` if it
+  meets the bounds, else at `String`. A function that cannot be generated
+  (a closure, `dyn`, or handle parameter; unmet bounds) is skipped and
+  reported as unchecked. `#[allow(vacuous, reason = "..")]` on a function
+  reports a vacuous generated test as unchecked instead of failing; review
+  shows it. (Instantiation, skipping, and `allow` are provisional.)
 
 ```tide
 #[test]
@@ -1128,8 +1245,10 @@ check.
   `pub mod foo;` sets visibility; a file module without one is private to
   its parent. `mod foo;` with no file is `FX0910`; `#[path]` is `FX0911`.
   (provisional)
-- `tide check path.tide` checks one file as a crate root (provisional), for
-  single-file programs and exercises.
+- `tide check path.tide` and `tide test path.tide` treat one file as a
+  crate root, for single-file programs and exercises: a binary root if it
+  defines `main`, otherwise a library root, where `println!` is lint
+  `FX0508` (provisional).
 
 ### 12.2 Imports
 
@@ -1142,8 +1261,10 @@ check.
 
 ### 12.3 Prelude and std paths
 
-The prelude is Rust's plus `Root`, `Pure`, `Owned`, `Secret`, and the
-derives `Error`, `Encode`, `Decode` (provisional). Import everything else:
+The prelude is Rust's plus `Root`, the `Error` trait (`std::error::Error`,
+so `Box<dyn Error>` and `e.source()` need no import), and the derives
+`Error`, `Encode`, `Decode`, as 01's own example assumes; `Pure`, `Owned`,
+and `Secret` are in it too (provisional). Import everything else:
 
 | Items | Path |
 | --- | --- |
@@ -1155,13 +1276,13 @@ derives `Error`, `Encode`, `Decode` (provisional). Import everything else:
 | `Stdin`, and `io::{self, Read, Write, BufRead, ..}` | `std::io` |
 | `Proc`, `Command`, `ExitCode` | `std::process` |
 | `Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, `Panicked` | `std::task` |
-| `Shared`, `LockError`, `Lazy`, `mpsc` | `std::sync` |
+| `Shared`, `LockError`, `Lazy`, `mpsc`, `Arc`; atomics | `std::sync`; `std::sync::atomic` |
 | `join` | `std::par` |
 | `Arena`, `Id` | `std::arena` |
 | `Cow` | `std::borrow` |
 | `json` (`encode`, `decode`, `json::Error`) | `std::json` |
 | `span` | `std::trace` |
-| `SimRoot`, `NodeRoot`, `SimNode`, `NodeTask`, `Faults`, `Fault`, `Reply`, `Record` | `std::sim` (test code only) |
+| `SimRoot`, `NodeRoot`, `SimNode`, `NodeTask`, `Faults`, `Fault`, `Request`, `Reply`, `Record`, `Sink` | `std::sim` (test code only) |
 | `Ordering`, `HashMap`, `BTreeMap`, `PathBuf`, ... | as Rust |
 
 `Faults` is the type of `sim.faults`; you rarely name it, and there is no
@@ -1249,6 +1370,7 @@ and candidate functions; use holes to build a function top-down.
 | `thread::spawn`, `tokio::spawn` | `tasks.scope(\|s\| s.spawn(..))` | `FX0602` |
 | I/O or a nested `with` inside a `Shared::with` closure | do it before or after | `FX0603` |
 | `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `FX0604` |
+| `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `FX0505` |
 | `tokio::select!` | a channel of an enum, deadlines | `FX0605` |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `FX0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `FX0610`, `FX0611` |
@@ -1411,14 +1533,9 @@ an `Outcome`, so the scope returns `Ok` with one outcome per URL (7.2).
 // src/search.tide
 use std::cmp::Ordering;
 
-/// Public, so public contracts may call it.
-pub fn is_sorted<T: Ord>(xs: &[T]) -> bool {
-    xs.windows(2).all(|w| w[0] <= w[1])
-}
-
 /// Like `slice::binary_search`.
 pub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Result<usize, usize>
-    requires is_sorted(xs)
+    requires xs.is_sorted()
     ensures match result {
         Ok(i) => i < xs.len() && xs[i] == *target,
         Err(i) => i <= xs.len()
@@ -1441,8 +1558,8 @@ pub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Result<usize, usize>
 }
 
 pub fn insert_sorted(xs: &mut Vec<i64>, x: i64)
-    requires is_sorted(xs)
-    ensures is_sorted(xs)
+    requires xs.is_sorted()
+    ensures xs.is_sorted()
     ensures xs.len() == old(xs.len()) + 1
     ensures xs.contains(&x)
 {
@@ -1465,69 +1582,31 @@ mod tests {
 
 The `ensures` of `binary_search` uses `==` and `<` on `T`, which are `Eq`
 and `Ord` exactly as in code. In debug and test builds each call checks the
-quantified `ensures` in linear time; release builds erase it.
+quantified `ensures` in linear time; release builds erase it. `tide test`
+also runs generated contract tests of both functions (10.2): `T` becomes
+`i64`, and `xs.is_sorted()` is a recognized shape, so sorted inputs are
+generated directly rather than filtered.
 
-## 16. Contradictions found
+## 16. Where the documents disagree
 
-### 16.1 Chapters that still describe draft 2.1
+The chapters are synchronized with 01 draft 3. These points remain open;
+this reference takes the reading shown.
 
-01 draft 3 records these v0 changes, but the chapters have not caught up;
-this reference follows 01:
-
-1. `Frozen` is removed; `Pure + Sync` replaces it (02 §8.5, §9; 03 §3, §8).
-2. The `lock` keyword and `sync::lock_all` are replaced by `Shared::with`
-   and `with2` (03 §6.5, 02 §8.4, 04 §4.4). `with_all` (7.4) is this
-   reference's provisional rename of `lock_all`.
-3. A child's panic propagates through its scope, `spawn_isolated` is the
-   only recovery point, and the moved-out rule is gone (02 §8.3, 03 §6.2).
-   `TaskError` therefore loses 03's `Panicked(String)` variant.
-4. v0 contracts are executable only (section 10). There `*v` of a `&mut`
-   parameter in `ensures` means the value at return, which 04 §1.2 rule 4
-   makes an error; it becomes an error again when `final` arrives in v1.
-5. v0 overflow traps are precise; 04 §3.2 and 03 still assume deferred
-   traps.
-
-### 16.2 Contradictions between documents
-
-1. **`par_reduce`.** The v0 scope note relayed during this revision keeps
-   `par_reduce` in v0 with an unspecified grouping; 01's tier table puts it
-   in v1. This reference follows 01.
-2. **`Arc` and `Pure`.** 01 D7 makes `Arc` a synchronization handle (not
-   `Pure`); 02 §9 and 03 §3.1 make `Arc` `Pure` and `Frozen` when its
-   contents are. This reference follows 01.
-3. **Sink arguments.** 01 D7 says format arguments are always evaluated;
-   03 SINK-3 says only when the level is enabled. This reference follows 01.
+1. **Node entries.** 03 §9.5 types the entry `FnOnce`, yet `restart`
+   reruns it. This reference requires a `fn` item or an `Fn` closure (6.8).
+2. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
+   `/`" and is silent on relative paths. This reference reads "rooted" as
+   the confinement root and resolves relative paths against the starting
+   working directory (6.3).
+3. **`with_all`.** 01 D8 says cells are accessed only through `with` and
+   `with2`; 02 §8.4 and 03 §6.5 add `with_all` under a provisional name.
+   Kept (7.4).
 4. **`#[pure]`.** 03 §3.2 settles it (`FX0511`); 01 still lists it as open
-   question 4. Kept here.
-5. **Scope deadlines.** D8 says a deadline fails the scope only if a child
-   returns the cancellation as its error, so partial results are possible;
-   03 TASK-4 and its §12.2 example fail the scope with `DeadlineExceeded`
-   even when the body returns `Ok`. This reference follows D8 (7.2).
-6. **File durability API.** D7 names `File::sync` and `Dir::sync_dir` and
-   promises append; 03 §1.1 has `File::sync_all` and `Fs::write_synced`, but
-   no append, no directory sync, and no `Dir` type. This reference uses
-   `file.sync()` (accepting `sync_all`/`sync_data`), `Fs::sync_dir`, and
-   `Fs::open_with` (6.3).
-7. **Torn writes.** D15 says unsynced writes "may be lost or torn, as the
-   seed decides"; 03 §9.4 makes tearing a fault enabled by
-   `torn_writes(on)`. This reference keeps the knob, default on.
-8. **Spec equality** (v1). D10 calls spec `==` "model equality", which 04
-   §1.4 defines as view equality, while 04 §1.3 makes `==` structural and
-   spells view equality `a@ == b@`. They differ for types with a custom
-   `View`.
-9. **`Pure` in generic spec fns** (v1). 04 §1.5 rule 3 and 03 §3.5 require
-   `Pure` parameters, but 04's own `le<T: Ord>` and `sorted_by<T: Ord>`
-   omit the bound. Resolved by the new 04 §1.7.
-10. **`lock` aliasing.** 02 §8.4 said a duplicate operand panics and `lock`
-    returns `Result<R, Poisoned>`, against D8 draft 2.1 and 03 LOCK-2. Fixed
-    in 02 §8.4.
-11. **Names.** 02 §8.2 calls the task handle `Handle<T>` and the scope
-    error `ScopeError` (marked illustrative); 03 uses `Task<U, E>` and
-    `TaskError`. The previous reference called the arena handle `Handle<T>`;
-    02 §10.9 says `Id<T>`, adopted here.
-12. **Node entry results.** 03 §9.5 types a node entry as
-    `-> Result<(), E>`, but 03 §12.3 reads a value from
-    `run_until(&client)`. This reference uses `-> Result<T, E>` (6.8).
+   question 4. Kept (6.6).
+5. **What v0 clauses may call.** 01 D10's spec-language bullet allows only
+   `spec fn`s and `#[spec]` functions proved total, which exist only in v1.
+   04's tier note and this reference let v0 clauses call authority-free
+   functions (10.1).
 
 ## Appendix A. Later tiers (not in v0)
 
