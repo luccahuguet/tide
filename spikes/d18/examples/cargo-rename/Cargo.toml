@@ -1,0 +1,14 @@
+# Probe: can Cargo itself inject the facade as `std` by renaming a dependency?
+[package]
+name = "rename_probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+std = { package = "tide_std", path = "../../facade" }
+
+[workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(probe_bad)'] }

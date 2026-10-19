@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Driver flag gate (A3): the only way a Tide crate reaches rustc. User flags must come from a fixed
+# set; everything else (-L, --sysroot, --cfg, -C, -Z, @argfiles, --extern of undeclared crates,
+# attached `--flag=value` spellings not listed) is rejected. The gate then adds its own flags.
+#   env: TIDE_DEPS="name ..." declared dependencies (from the manifest in a real toolchain)
+#        TIDE_FACADE_RLIB, TIDE_FACADE_DEPS  facade std (optional; real std when unset)
+#        TIDE_POLICY  policy file (default: ../policy.txt)
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+reject() { echo "tide-rustc: rejected flag: $*" >&2; exit 2; }
+declared=" ${TIDE_DEPS:-} "
+args=() src=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --crate-name|--out-dir|-o) [ $# -ge 2 ] || reject "$1 (missing value)"; args+=("$1" "$2"); shift 2 ;;
+    --crate-type)
+      case "${2:-}" in lib|bin) args+=("$1" "$2"); shift 2 ;; *) reject "$1 ${2:-}" ;; esac ;;
+    --edition)
+      [ "${2:-}" = 2024 ] || reject "$1 ${2:-}"; shift 2 ;;
+    --emit=metadata|--emit=link) args+=("$1"); shift ;;
+    --extern)
+      name="${2:-}"; name="${name%%=*}"
+      [ "$name" != std ] && [[ "$declared" == *" $name "* ]] || reject "$1 ${2:-}"
+      args+=("$1" "$2"); shift 2 ;;
+    -*|@*) reject "$1" ;;
+    *.rs) [ -z "$src" ] || reject "second source file $1"; src="$1"; shift ;;
+    *) reject "$1" ;;
+  esac
+done
+[ -n "$src" ] || { echo "tide-rustc: no source file" >&2; exit 2; }
+# Driver-owned flags. -Zallow-features= makes `#![feature(..)]` an error on the nightly driver.
+own=(--edition 2024 -C overflow-checks=on -F unsafe_code -Zallow-features= "--tide-policy=${TIDE_POLICY:-$here/../policy.txt}")
+if [ -n "${TIDE_FACADE_RLIB:-}" ]; then
+  own+=(--extern "std=$TIDE_FACADE_RLIB" -L "dependency=$TIDE_FACADE_DEPS")
+fi
+exec "$here/tide-admit" "${own[@]}" "${args[@]}" "$src"

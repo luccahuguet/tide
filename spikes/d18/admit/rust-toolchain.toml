@@ -1,0 +1,5 @@
+# Pinned nightly for rustc_private (rustc 1.99.0-nightly 771916f90, commit-date 2026-08-08;
+# rustup dist date 2026-08-09). Needs the rustc-dev component.
+[toolchain]
+channel = "nightly-2026-08-09"
+components = ["rustc-dev", "rust-src"]

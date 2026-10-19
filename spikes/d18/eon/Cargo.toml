@@ -1,0 +1,9 @@
+# D18 spike: trimmed copy of Eon's workspace manifest (~/pjs/eon/eon at
+# 2332d4b), keeping only Orbit and orbit-protocol. Member sources are copied
+# unchanged; Cargo.lock is Eon's, so dependency versions match.
+[workspace]
+members = [
+    "orbit",
+    "orbit/crates/protocol",
+]
+resolver = "3"

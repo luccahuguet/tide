@@ -32,11 +32,14 @@ and the speed figures are targets, not measurements.*
 ## Status
 
 Tide is in the design phase; there is no compiler for this design. The
-decision record is `design/01-design.md` (draft 3.5). Syntax is provisional
-until the E1 learnability experiment meets its thresholds (D0).
+decision record is `design/01-design.md` (draft 3.6). Syntax is provisional
+until the E1 learnability experiment meets its thresholds (D0). D18 makes
+Tide a checked dialect of Rust, compiled by stock rustc against Tide's std,
+once a feasibility spike passes; until then the new-language design stands.
 
-The repository holds no code yet. The early Rust scaffold from the first
-design, which does not implement Tide, is kept in
+The repository holds no production code yet. `spikes/d18/` holds the
+throwaway feasibility spike for D18, and the early Rust scaffold from the
+first design, which does not implement Tide, is kept in
 `archive/v0-design/scaffold/`.
 
 ## Reading Guide
@@ -46,7 +49,7 @@ design, which does not implement Tide, is kept in
 - [design/00-first-principles.md](design/00-first-principles.md): the problem
   statement, hard constraints, measurable targets, and hypotheses H1–H7 with
   their verdicts.
-- [design/01-design.md](design/01-design.md): the decision record (D0–D17)
+- [design/01-design.md](design/01-design.md): the decision record (D0–D18)
   and the tier table; it owns every decision.
 - [design/reference.md](design/reference.md): the agent-facing reference for
   the v0 core, written as a delta from Rust, under a 25,000-token budget.
@@ -97,6 +100,9 @@ Cited evidence behind the decisions, in [research/](research/):
   from a language, ranked, and where Tide meets or misses each need.
 - `14-autoresearch.md`: Karpathy's autonomous experiment loop, why it does
   not fit Tide's design work, and where it fits once the checker exists.
+- `15-rust-dialect.md`: whether Tide should ship as a checked dialect of
+  Rust, compiled by stock rustc against Tide's std; per-feature
+  classification, experiments, Eon as a test case, and a recommendation.
 
 ### Reviews and Trials
 
@@ -108,7 +114,8 @@ Cited evidence behind the decisions, in [research/](research/):
   tier split. Rounds 3–7 (consistency and second-model reviews) checked
   drafts 3 to 3.3 until no v0-blocking objection remained. Round 8 reviewed
   the switch to Rust lifetime syntax and led D2 to take Rust 2024's rules
-  whole.
+  whole. `dialect-codex.md` is the second-model review of
+  `research/15-rust-dialect.md`.
 - [trials/](trials/): E1 learnability trials. A fresh agent that saw only a
   reference wrote the programs, and `grading.md` grades them without a
   compiler against the normative chapters.

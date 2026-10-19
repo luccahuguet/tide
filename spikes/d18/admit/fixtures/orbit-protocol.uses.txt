@@ -1,0 +1,239 @@
+admit  alloc::alloc::Global
+admit  alloc::borrow::ToOwned::to_owned
+admit  alloc::boxed::Box
+admit  alloc::boxed::Box::<T>::new
+admit  alloc::slice::<impl [T]>::to_vec
+admit  alloc::string::FromUtf8Error
+admit  alloc::string::String
+admit  alloc::string::String::as_bytes
+admit  alloc::string::String::from_utf8
+admit  alloc::string::String::len
+admit  alloc::vec::Vec
+admit  alloc::vec::Vec::<T, A>::extend_from_slice
+admit  alloc::vec::Vec::<T, A>::is_empty
+admit  alloc::vec::Vec::<T, A>::len
+admit  alloc::vec::Vec::<T, A>::push
+admit  alloc::vec::Vec::<T>::new
+admit  alloc::vec::Vec::<T>::with_capacity
+admit  core::array::TryFromSliceError
+admit  core::array::iter::IntoIter
+admit  core::char::methods::<impl char>::from_u32
+admit  core::clone::AssertParamIsClone
+admit  core::clone::Clone
+admit  core::clone::Clone::clone
+admit  core::clone::TrivialClone
+admit  core::cmp::AssertParamIsEq
+admit  core::cmp::Eq
+admit  core::cmp::PartialEq
+admit  core::cmp::PartialEq::eq
+admit  core::cmp::PartialEq::ne
+admit  core::convert::From
+admit  core::convert::From::from
+admit  core::convert::Infallible
+admit  core::convert::TryFrom::try_from
+admit  core::convert::TryInto::try_into
+admit  core::default::Default
+admit  core::default::Default::default
+admit  core::error::Error
+REJECT core::f32::<impl f32>::from_bits
+REJECT core::f32::<impl f32>::to_bits
+admit  core::fmt::Arguments
+admit  core::fmt::Arguments::<'a>::from_str_nonconst
+admit  core::fmt::Arguments::<'a>::new
+admit  core::fmt::Debug
+admit  core::fmt::Display
+admit  core::fmt::Error
+admit  core::fmt::Formatter
+admit  core::fmt::Formatter::<'a>::debug_c_like_enum_write_str
+admit  core::fmt::Formatter::<'a>::debug_struct_field1_finish
+admit  core::fmt::Formatter::<'a>::debug_struct_field2_finish
+admit  core::fmt::Formatter::<'a>::debug_struct_field3_finish
+admit  core::fmt::Formatter::<'a>::debug_struct_field4_finish
+admit  core::fmt::Formatter::<'a>::debug_struct_field5_finish
+admit  core::fmt::Formatter::<'a>::debug_struct_fields_finish
+admit  core::fmt::Formatter::<'a>::debug_tuple_field1_finish
+admit  core::fmt::Formatter::<'a>::write_fmt
+admit  core::fmt::Formatter::<'a>::write_str
+admit  core::fmt::Result
+admit  core::fmt::macros::Debug
+admit  core::fmt::rt::Argument
+admit  core::fmt::rt::Argument::<'_>::new_display
+admit  core::fmt::rt::Argument::<'_>::new_lower_hex
+admit  core::intrinsics::discriminant_value
+admit  core::intrinsics::unreachable
+admit  core::iter::adapters::enumerate::Enumerate
+admit  core::iter::traits::collect::IntoIterator::into_iter
+admit  core::iter::traits::iterator::Iterator::any
+admit  core::iter::traits::iterator::Iterator::enumerate
+admit  core::iter::traits::iterator::Iterator::next
+admit  core::macros::assert_eq
+admit  core::macros::builtin::cfg
+admit  core::macros::builtin::const_format_args
+admit  core::macros::builtin::derive
+admit  core::macros::builtin::format_args
+admit  core::macros::debug_assert_eq
+admit  core::macros::matches
+admit  core::macros::panic
+admit  core::macros::unreachable
+admit  core::macros::write
+admit  core::marker::Copy
+admit  core::marker::StructuralPartialEq
+admit  core::mem::size_of
+admit  core::num::<impl i16>::from_le_bytes
+admit  core::num::<impl i16>::is_negative
+admit  core::num::<impl i16>::to_le_bytes
+admit  core::num::<impl i16>::unsigned_abs
+admit  core::num::<impl i32>::from_le_bytes
+admit  core::num::<impl i32>::to_le_bytes
+admit  core::num::<impl u16>::MAX
+admit  core::num::<impl u16>::from_le_bytes
+admit  core::num::<impl u16>::to_le_bytes
+admit  core::num::<impl u32>::MAX
+admit  core::num::<impl u32>::checked_add
+admit  core::num::<impl u32>::checked_mul
+admit  core::num::<impl u32>::from_le_bytes
+admit  core::num::<impl u32>::to_le_bytes
+admit  core::num::<impl u64>::from_le_bytes
+admit  core::num::<impl u64>::to_le_bytes
+admit  core::num::<impl usize>::MAX
+admit  core::num::<impl usize>::checked_add
+admit  core::num::<impl usize>::checked_mul
+admit  core::num::<impl usize>::saturating_mul
+admit  core::num::error::TryFromIntError
+admit  core::ops::bit::Not::not
+admit  core::ops::control_flow::ControlFlow
+admit  core::ops::control_flow::ControlFlow::Break
+admit  core::ops::control_flow::ControlFlow::Continue
+admit  core::ops::deref::Deref
+admit  core::ops::function::FnOnce
+admit  core::ops::function::FnOnce::call_once
+admit  core::ops::index::Index::index
+admit  core::ops::range::Range
+admit  core::ops::range::RangeFrom
+admit  core::ops::range::RangeInclusive
+admit  core::ops::range::RangeInclusive::<Idx>::contains
+admit  core::ops::range::RangeInclusive::<Idx>::new
+admit  core::ops::range::RangeTo
+admit  core::ops::try_trait::FromResidual::from_residual
+admit  core::ops::try_trait::Try::branch
+admit  core::option::Option
+admit  core::option::Option::<T>::and_then
+admit  core::option::Option::<T>::as_deref
+admit  core::option::Option::<T>::as_ref
+admit  core::option::Option::<T>::expect
+admit  core::option::Option::<T>::is_none
+admit  core::option::Option::<T>::is_some
+admit  core::option::Option::<T>::is_some_and
+admit  core::option::Option::<T>::map_or
+admit  core::option::Option::<T>::ok_or
+admit  core::option::Option::None
+admit  core::option::Option::Some
+admit  core::panic::panic_2021
+admit  core::panic::unreachable_2021
+admit  core::panicking::AssertKind
+admit  core::panicking::AssertKind::Eq
+admit  core::panicking::assert_failed
+admit  core::panicking::panic_fmt
+admit  core::result::Result
+admit  core::result::Result::<T, E>::expect
+admit  core::result::Result::<T, E>::map
+admit  core::result::Result::<T, E>::map_err
+admit  core::result::Result::<T, E>::unwrap_or
+admit  core::result::Result::Err
+admit  core::result::Result::Ok
+admit  core::slice::<impl [T]>::get
+admit  core::slice::<impl [T]>::is_empty
+admit  core::slice::<impl [T]>::iter
+admit  core::slice::<impl [T]>::len
+admit  core::slice::iter::Iter
+admit  core::slice::iter::IterMut
+admit  core::str::<impl str>::as_bytes
+admit  core::str::<impl str>::chars
+admit  core::str::<impl str>::contains
+admit  core::str::<impl str>::is_empty
+admit  core::str::<impl str>::len
+admit  core::str::converts::from_utf8
+admit  core::str::error::Utf8Error
+admit  core::str::iter::Chars
+admit  impl alloc::borrow::ToOwned for str
+admit  impl core::alloc::Allocator for alloc::alloc::Global
+admit  impl core::clone::Clone for &T
+admit  impl core::clone::Clone for [T; N]
+admit  impl core::clone::Clone for alloc::alloc::Global
+admit  impl core::clone::Clone for alloc::boxed::Box<T, A>
+admit  impl core::clone::Clone for alloc::string::String
+admit  impl core::clone::Clone for alloc::vec::Vec<T, A>
+admit  impl core::clone::Clone for bool
+admit  impl core::clone::Clone for char
+admit  impl core::clone::Clone for core::option::Option<T>
+admit  impl core::clone::Clone for i16
+admit  impl core::clone::Clone for i32
+admit  impl core::clone::Clone for i8
+admit  impl core::clone::Clone for u16
+admit  impl core::clone::Clone for u32
+admit  impl core::clone::Clone for u64
+admit  impl core::clone::Clone for u8
+admit  impl core::clone::Clone for usize
+admit  impl core::cmp::PartialEq for alloc::boxed::Box<T, A>
+admit  impl core::cmp::PartialEq for alloc::string::String
+admit  impl core::cmp::PartialEq for bool
+admit  impl core::cmp::PartialEq for char
+admit  impl core::cmp::PartialEq for core::option::Option<T>
+admit  impl core::cmp::PartialEq for i16
+admit  impl core::cmp::PartialEq for i32
+admit  impl core::cmp::PartialEq for i8
+admit  impl core::cmp::PartialEq for str
+admit  impl core::cmp::PartialEq for u16
+admit  impl core::cmp::PartialEq for u64
+admit  impl core::cmp::PartialEq for u8
+admit  impl core::cmp::PartialEq for usize
+admit  impl core::cmp::PartialEq<&B> for &A
+admit  impl core::cmp::PartialEq<[U; N]> for [T; N]
+admit  impl core::cmp::PartialEq<[U; N]> for [T]
+admit  impl core::cmp::PartialEq<alloc::vec::Vec<U, A2>> for alloc::vec::Vec<T, A1>
+admit  impl core::cmp::PartialOrd for f32
+admit  impl core::cmp::PartialOrd for i16
+admit  impl core::cmp::PartialOrd for i32
+admit  impl core::convert::From<bool> for u16
+admit  impl core::convert::From<bool> for u8
+admit  impl core::convert::From<bool> for usize
+admit  impl core::convert::From<char> for u32
+admit  impl core::convert::From<u16> for f32
+admit  impl core::convert::From<u16> for u32
+admit  impl core::convert::From<u16> for usize
+admit  impl core::convert::From<u8> for u16
+admit  impl core::convert::TryFrom<&[T]> for [T; N]
+admit  impl core::convert::TryFrom<u32> for usize
+admit  impl core::convert::TryFrom<usize> for u16
+admit  impl core::convert::TryFrom<usize> for u32
+admit  impl core::convert::TryInto<U> for T
+admit  impl core::default::Default for alloc::vec::Vec<T>
+admit  impl core::default::Default for core::option::Option<T>
+admit  impl core::default::Default for u16
+admit  impl core::default::Default for u64
+admit  impl core::default::Default for u8
+admit  impl core::fmt::Debug for core::array::TryFromSliceError
+admit  impl core::fmt::Debug for core::num::error::TryFromIntError
+admit  impl core::fmt::Debug for usize
+admit  impl core::fmt::Display for &T
+admit  impl core::fmt::Display for str
+admit  impl core::fmt::Display for u16
+admit  impl core::fmt::Display for u64
+admit  impl core::fmt::Display for u8
+admit  impl core::fmt::Display for usize
+admit  impl core::fmt::LowerHex for &T
+admit  impl core::fmt::LowerHex for u16
+admit  impl core::fmt::LowerHex for u8
+admit  impl core::iter::traits::iterator::Iterator for core::slice::iter::Iter<'a, T>
+admit  impl core::iter::traits::iterator::Iterator for core::str::iter::Chars<'a>
+admit  impl core::marker::Copy for u8
+admit  impl core::ops::bit::Not for &bool
+admit  impl core::ops::deref::Deref for alloc::string::String
+admit  impl core::ops::index::Index<I> for [T; N]
+admit  impl core::ops::index::Index<I> for [T]
+admit  impl core::ops::index::Index<I> for alloc::vec::Vec<T, A>
+admit  impl core::slice::index::SliceIndex<[T]> for core::ops::range::Range<usize>
+admit  impl core::slice::index::SliceIndex<[T]> for core::ops::range::RangeFrom<usize>
+admit  impl core::slice::index::SliceIndex<[T]> for core::ops::range::RangeTo<usize>
+admit  impl core::slice::index::SliceIndex<[T]> for usize
+admit  impl core::str::pattern::Pattern for char

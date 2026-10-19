@@ -1,0 +1,14 @@
+[package]
+name = "tide-admit"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[[bin]]
+name = "tide-admit"
+path = "src/main.rs"
+
+[workspace]

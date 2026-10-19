@@ -1,0 +1,16 @@
+[package]
+name = "tide_std"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "D18 spike: Tide's facade std, injected with --extern std= (throwaway)"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+libm = "=0.2.16"
+tide_macros = { path = "../macros" }
+
+# Its own workspace, so no parent manifest is consulted.
+[workspace]

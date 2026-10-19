@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# A5: every distinct core/alloc/std item orbit-protocol (extracted into fixtures/) uses, compiled
+# against the real std, with its verdict under policy.txt. Writes fixtures/orbit-protocol.uses.txt.
+set -uo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$here"
+../scripts/fetch-eon.sh || exit 1
+mkdir -p target/spike
+scripts/tide-admit --tide-policy=policy.txt --tide-report=fixtures/orbit-protocol.uses.txt \
+  --edition 2024 --crate-type lib --crate-name orbit_protocol --emit=metadata \
+  -o target/spike/orbit.rmeta fixtures/orbit-protocol/src/lib.rs 2>&1 | grep -E '^error' | sort | uniq -c
+echo "distinct items: $(wc -l <fixtures/orbit-protocol.uses.txt)" \
+  "(paths: $(grep -vc ' impl ' fixtures/orbit-protocol.uses.txt), impls: $(grep -c ' impl ' fixtures/orbit-protocol.uses.txt))," \
+  "rejected: $(grep -c '^REJECT' fixtures/orbit-protocol.uses.txt)"

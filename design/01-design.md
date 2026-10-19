@@ -3,8 +3,9 @@
 Status: draft 3.5. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
 3.4 returned D2 to Rust's lifetime spelling after the origin trial
-(`trials/e1-origins/`), and draft 3.5 takes Rust 2024's lifetimes whole
-after review rounds 8 to 10. This
+(`trials/e1-origins/`); draft 3.5 takes Rust 2024's lifetimes whole
+after review rounds 8 to 10; and draft 3.6 adopts the checked Rust dialect
+as the v0 direction, gated by a feasibility spike (D18). This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -21,9 +22,10 @@ transfers. It removes what costs agents the most: user macros, async
 coloring, an unbounded trait system, and slow builds. It keeps Rust 2024's
 lifetimes, minus the forms beyond D4's power ceiling.
 
-It adds guarantees that a language can only make if it is designed for them
-from the start, and that tools layered on Rust cannot give, because Rust code
-can reach the outside world from anywhere:
+It adds guarantees that tools layered on Rust cannot give, because Rust code
+can reach the outside world from anywhere through Rust's std. Tide gets them
+by compiling checked Rust against its own std and admitting only the `core`
+and `alloc` items that cannot reach the world (D18):
 
 1. **No ambient authority.** Code touches the world only through capability
    values it is handed. A function's signature bounds what it can do; code
@@ -54,10 +56,12 @@ deterministic replay, with Rust's guarantees and much faster builds.
 - **v0 target**: command-line tools, developer tooling, and infrastructure
   components (agents, proxies, storage engines, schedulers). Blocking and
   thread runtimes plus the simulator; the evented runtime follows.
-- **Rust coexistence**: Tide builds C-ABI libraries with generated Rust
-  binding crates, and imports synchronous Rust leaf crates through generated
-  shims. Async Rust ecosystems (tokio, axum) and lifetime-heavy APIs
-  (serde's `'de`) are out of scope for interop.
+- **Rust coexistence**: under D18 a Tide crate is a Rust crate: Rust code
+  depends on it directly, sharing the std types Tide re-exports, and Tide
+  links synchronous Rust crates directly as trust holes behind capability
+  wrappers. Until D18's spike passes, the fallback is C-ABI libraries with
+  generated binding crates and shims. Async Rust ecosystems (tokio, axum) and
+  lifetime-heavy APIs (serde's `'de`) are out of scope for interop.
 - **Bend tandem, not competition**: Tide is the effectful, authority-checked
   shell; Bend 2 owns proved, massively parallel kernels (D16).
 - **Evidence-gated**: the thesis is tested by the validation program (D0)
@@ -661,7 +665,8 @@ stackful execution internally.
   test oracle, not a backend.
 
 Rejected: Rust emission as the release backend (53 s clean builds, coupling
-to rustc's borrow precision, no route to stackless lowering of Tide tasks);
+to rustc's borrow precision, no route to stackless lowering of Tide tasks),
+a rejection D18 reverses if its spike passes;
 witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 1.0.
 
@@ -677,7 +682,8 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   `ffi`), and the lockfile records each package's public authority and trust
   holes. Widening either needs approval (D11).
 - **Rust crates** are imported through generated C-ABI shims for synchronous
-  APIs. Each imported crate declares its authority in the manifest; the shim
+  APIs; under D18 they link directly, behind the same capability wrappers
+  (RUST-2). Each imported crate declares its authority in the manifest; the shim
   requires those capabilities; a symbol scan of the compiled crate checks the
   declaration; its build script, if any, runs sandboxed without network and
   with recorded outputs.
@@ -779,6 +785,58 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   returned an error, searching backward from the failure, which models handle
   better than stepping forward.
 
+### D18. A checked dialect of Rust (v0 direction, gated)
+
+Owner decision, 2026-10-19 (bead `fx-enq`; study
+`research/15-rust-dialect.md`; review `reviews/dialect-codex.md`).
+
+- **Every Tide program is a valid Rust 2024 crate** that a pinned stock
+  rustc compiles, with Tide's meaning, against Tide's std. The driver passes
+  that std as `std` (`--extern std=`), so rustc's std injection loads it and
+  the real std's paths cannot be named.
+- **Tide's checker gates every crate before rustc runs.** It owns the
+  subset, authority, `Pure`, contracts, FX diagnostics, and the trust diff.
+  It also enforces an **admission allowlist** over `core`, `alloc`, and std's
+  inherent methods. That closes what the std swap leaves open: safe hardware
+  queries, address observers, atomics created without `Tasks`, and float
+  methods. The checker must resolve names, methods, impls, and constants as
+  the pinned rustc does.
+- **The driver owns every rustc invocation.** It adds no user-controlled
+  `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C` flags, runs no
+  build scripts or proc macros except the toolchain's, and keeps its own
+  content-addressed cache instead of Cargo's build directory. A generated
+  `Cargo.toml` is an export for Rust consumers.
+- **rustc and LLVM are the release backend**, replacing D12's C backend and
+  its Cranelift-class backend; open question 7 lapses. An interpreter is
+  built only if `tide eval` or E4's edit-to-test target needs it.
+- **The gate.** A bounded feasibility spike must meet the seven acceptance
+  criteria in `research/15-rust-dialect.md` before v0 implementation
+  planning commits to this direction. Until it passes, the other decisions
+  keep their current text. If it fails, the new-language design stands.
+- **What changes when the spike passes.**
+  - D1: contract, loop-invariant, and `main` spellings; declared modules;
+    `.rs` files.
+  - D2: no `T: Owned` rewrite.
+  - D3: float observers and math through Tide functions.
+  - D5: stack overflow aborts.
+  - D7: the allowlist, `#[trusted_pure]` instead of `unsafe impl Pure`, and
+    companion traits instead of `dyn Trait + Pure`.
+  - D10: attribute contracts.
+  - D12: the backends, and the origin cross-check becoming the build itself.
+  - D13: direct Rust import.
+  - D14: the typed-hole spelling.
+  - The tier table.
+- **Reversal conditions:**
+  - the spike fails a criterion with no workable fix;
+  - E1 rejects the attribute spellings;
+  - v1's evented runtime cannot be built without exposing coloring to users
+    (`research/15-rust-dialect.md` lists its requirements).
+
+Rejected for now: keeping the new-language path as the v0 direction. Its
+first demo is not shown to be cheaper, and after the demo it must build an
+interpreter, two native backends, and C-ABI interop that rustc and direct
+linking provide.
+
 ## The Feel
 
 ```tide
@@ -877,7 +935,7 @@ fn feed_times_out() {
 5. The interpreter's role in `tide test` once the development backend exists.
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
-7. How the C-emitting release backend (D12, v1) implements unwinding for
-   panics, which must drop values (D5): a flag check after every call,
+7. (Lapses if D18's spike passes.) How the C-emitting release backend (D12,
+   v1) implements unwinding for panics, which must drop values (D5): a flag check after every call,
    compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.

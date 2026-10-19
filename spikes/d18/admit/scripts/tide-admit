@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run the tide-admit driver (needs the pinned nightly's librustc_driver at runtime).
+set -euo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+sysroot="$(rustc +nightly --print sysroot)"
+LD_LIBRARY_PATH="$sysroot/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$here/target/release/tide-admit" "$@"

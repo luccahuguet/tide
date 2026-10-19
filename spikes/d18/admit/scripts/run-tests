@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# D18 spike checks for tide-admit (A2 admission, A3 flag gate, A4 Pure).
+# Each test file marks the lines that must get an FX diagnostic with `// FX05..`; a file passes
+# when the diagnosed lines equal the marked lines (none for tests/pos).
+# Usage: scripts/run-tests [--facade]   (--facade also reruns pos/neg against a nightly build of
+#                                         spikes/d18/facade, built into admit/target/facade)
+set -uo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$here"
+cargo +nightly build --release --quiet || exit 1
+out="$here/target/spike"
+mkdir -p "$out"
+rustc +nightly --edition 2024 --crate-type rlib --crate-name minifacade \
+  -o "$out/libminifacade.rlib" tests/minifacade/lib.rs || exit 1
+fails=0
+pass() { printf 'PASS  %s\n' "$*"; }
+fail() { printf 'FAIL  %s\n' "$*"; fails=$((fails + 1)); }
+
+# check <label> <file> [driver args...]
+check() {
+  local label="$1" file="$2"; shift 2
+  local log code want got
+  log="$(scripts/tide-admit --tide-policy=policy.txt --edition 2024 --crate-type bin \
+    --emit=metadata -o "$out/x.rmeta" "$@" "$file" 2>&1)"; code=$?
+  want="$(grep -n '// .*FX05' "$file" | cut -d: -f1 | sort -n | tr '\n' ' ')"
+  got="$(awk -v f="$file" '/^error: FX05/ {fx=1; next}
+          fx && $1 == "-->" { split($2, a, ":"); if (a[1] == f) print a[2]; fx=0 }' <<<"$log" \
+    | sort -nu | tr '\n' ' ')"
+  local ok_exit=1
+  if [ -z "$want" ]; then [ $code = 0 ] || ok_exit=0; else [ $code != 0 ] || ok_exit=0; fi
+  if [ "$want" = "$got" ] && [ $ok_exit = 1 ]; then
+    pass "$label $file: $(grep -c '^error: FX05' <<<"$log") FX diagnostics on lines [${got% }]"
+  else
+    printf '%s\n' "$log"; fail "$label $file: wanted lines [${want% }], got [${got% }], exit $code"
+  fi
+}
+
+echo "--- A2: admission against the real std"
+for f in tests/pos/*.rs tests/neg/*.rs; do check real "$f"; done
+
+echo "--- A4: Pure companion supertrait"
+mf=(--extern "minifacade=$out/libminifacade.rlib")
+if rustc +nightly --edition 2024 "${mf[@]}" -o "$out/companion" tests/pure/companion.rs 2>/dev/null \
+  && "$out/companion"; then
+  pass "plain rustc compiles and runs tests/pure/companion.rs (companion spelling is valid Rust)"
+else
+  fail "plain rustc rejected tests/pure/companion.rs"
+fi
+check pure tests/pure/companion.rs "${mf[@]}"
+
+echo "--- A3: driver flag gate"
+if scripts/tide-rustc --crate-type bin --emit=metadata -o "$out/x.rmeta" tests/pos/ordinary.rs; then
+  pass "accepted: tide-rustc --crate-type bin --emit=metadata -o X tests/pos/ordinary.rs"
+else fail "ordinary invocation rejected"; fi
+TIDE_DEPS=minifacade scripts/tide-rustc --crate-type bin --emit=metadata -o "$out/x.rmeta" \
+  --extern "minifacade=$out/libminifacade.rlib" tests/pure/companion.rs >/dev/null 2>&1
+[ $? = 1 ] && pass "accepted: declared --extern minifacade=... (reaches the checker, which fails it)" \
+  || fail "declared --extern was not passed through"
+for bad in "-L /tmp" "--cfg x" "-C opt-level=3" "--sysroot /tmp" "--extern evil=/tmp/libevil.rlib" \
+  "--extern std=/tmp/libstd.rlib" "-Zunpretty=hir" "--edition 2021" "@args.txt"; do
+  # shellcheck disable=SC2086
+  msg="$(scripts/tide-rustc --crate-type bin $bad tests/pos/ordinary.rs 2>&1)"; code=$?
+  [ $code = 2 ] && pass "rejected $bad: $msg" || fail "flag $bad was not rejected (exit $code)"
+done
+log="$(scripts/tide-rustc --crate-type bin --emit=metadata -o "$out/x.rmeta" tests/gate/feature.rs 2>&1)"
+grep -q E0725 <<<"$log" && pass "rejected #![feature(..)] via the gate's -Zallow-features=" \
+  || { printf '%s\n' "$log"; fail "#![feature] was accepted"; }
+
+if [ "${1:-}" = --facade ]; then
+  echo "--- A2 again, against a nightly build of spikes/d18/facade (injected as std)"
+  ft="$here/target/facade"
+  cargo +nightly build --quiet --locked --offline --manifest-path ../facade/Cargo.toml \
+    --target-dir "$ft" || exit 1
+  mkdir -p "$ft/deps-flat"
+  find "$ft/debug/build" \( -name '*.rlib' -o -name '*.so' \) -exec ln -sf {} "$ft/deps-flat/" \;
+  fx=(--extern "std=$ft/debug/libtide_std.rlib" -L "dependency=$ft/deps-flat")
+  for f in tests/pos/*.rs tests/neg/*.rs; do
+    [ "$f" = tests/neg/std_fs.rs ] && continue # the facade has no std::fs::read; rustc rejects it
+    check facade "$f" "${fx[@]}"
+  done
+fi
+
+echo "--- $fails failure(s)"
+[ $fails = 0 ]

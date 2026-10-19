@@ -1,0 +1,14 @@
+[package]
+name = "tide_macros"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "D18 spike: Tide contract and entry macros (throwaway)"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "=1.0.107"
+quote = "=1.0.47"
+syn = { version = "=2.0.119", features = ["full", "visit-mut"] }

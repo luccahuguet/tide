@@ -1,0 +1,81 @@
+# Tide admission policy, D18 spike. Keys are canonical (defining-crate) def paths as printed by
+# tide-admit, impl keys `impl <Trait> for <SelfTy>`, and the pseudo-items `*const T`/`*mut T`.
+# `*` matches any run of characters. deny wins over allow. Items of the local crate and of
+# `trusted` crates are not checked; every other crate (core, alloc, real std, ...) is.
+# Impls from checked crates are admitted when their trait and self-type head are admitted
+# (unless denied), so impls need no allow lines of their own.
+
+trusted tide_std                    # the facade std (spikes/d18/facade)
+trusted minifacade                  # stand-in facade for the Pure tests
+
+# ---- Pure (FX0510)
+pure-trait minifacade::Pure
+impure minifacade::Fs
+impure minifacade::Shared
+impure core::sync::atomic::*
+impure alloc::sync::*
+impure std::*                       # every real-std ADT (files, sockets, Mutex, ...)
+
+# ---- deny (F2 leaks and ambient authority)
+deny core::arch::*                  # __cpuid and other safe intrinsics
+deny core::core_arch::*
+deny std::arch::*
+deny core::sync::*                  # atomics: synchronization without Tasks
+deny alloc::sync::*                 # Arc, sync::Weak
+deny core::ptr::*                   # addr(), expose_provenance(), ...
+deny core::fmt::Pointer*            # {:p}
+deny core::fmt::rt::Argument::<'_>::new_pointer
+deny core::f32::*                   # inherent float observers and math (facade math:: instead)
+deny core::f64::*
+deny std::f32::*
+deny std::f64::*
+deny core::macros::builtin::include*
+deny core::macros::builtin::env
+deny core::macros::builtin::option_env
+deny std::*                         # the real std is never admitted; the facade is `std`
+
+# ---- allow: core
+allow core::option::*
+allow core::result::*
+allow core::clone::*
+allow core::cmp::*
+allow core::convert::*
+allow core::default::*
+allow core::marker::*
+allow core::ops::*
+allow core::iter::*
+allow core::fmt::*
+allow core::str::*
+allow core::slice::*
+allow core::char::*
+allow core::array::*
+allow core::error::*
+allow core::num::*                  # integer inherent methods (checked_*, wrapping_*, ...)
+allow core::cell::*
+allow core::borrow::*
+allow core::hash::*
+allow core::alloc::Allocator
+allow core::panicking::*
+allow core::panic::panic_2021          # panic!/unreachable! expansions
+allow core::panic::unreachable_2021
+allow core::mem::size_of
+allow core::macros::*               # assert!, matches!, write!, format_args!, derive
+allow core::fmt::macros::*
+allow core::hint::must_use
+allow core::intrinsics::discriminant_value   # derive(PartialEq) expansion
+allow core::intrinsics::unreachable          # derive expansions
+allow core::mem::maybe_uninit::MaybeUninit   # vec! expansion
+
+# ---- allow: alloc
+allow alloc::vec::*
+allow alloc::string::*
+allow alloc::boxed::*
+allow alloc::collections::*
+allow alloc::rc::*
+allow alloc::fmt::*
+allow alloc::macros::*
+allow alloc::slice::*
+allow alloc::str::*
+allow alloc::borrow::*
+allow alloc::alloc::Global
+allow alloc::intrinsics::write_box_via_move  # vec! expansion
