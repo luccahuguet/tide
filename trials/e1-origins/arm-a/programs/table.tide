@@ -1,0 +1,118 @@
+// Task 8: table
+// Package path: src/lib.tide
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TableError {
+    #[error("line 1: missing header line")]
+    MissingHeader,
+    #[error("line {line}: expected {expected} fields, found {found}")]
+    FieldCount { line: usize, expected: usize, found: usize },
+}
+
+/// Tab-separated text with a header line. The header and every cell are
+/// slices of the parsed text; `rows` shares `header`'s origin.
+#[derive(Debug)]
+pub struct Table {
+    header: Vec<&str>,
+    rows: Vec<Vec<&str from header>>,
+}
+
+impl Table {
+    /// Parses `text`: the first line is the header, and every later line must
+    /// have as many fields as the header. A trailing newline is allowed.
+    pub fn parse(text: &str) -> Result<Table, TableError> {
+        let mut lines = text.lines();
+        let header: Vec<&str> = lines.next().ok_or(TableError::MissingHeader)?.split('\t').collect();
+        let mut rows = Vec::new();
+        for (index, line) in lines.enumerate() {
+            let row: Vec<&str> = line.split('\t').collect();
+            if row.len() != header.len() {
+                return Err(TableError::FieldCount {
+                    line: index + 2,
+                    expected: header.len(),
+                    found: row.len(),
+                });
+            }
+            rows.push(row);
+        }
+        Ok(Table { header, rows })
+    }
+
+    /// The cells of column `name`, top to bottom; `None` for an unknown column.
+    pub fn column(&self, name: &str) -> Option<impl Iterator<Item = &str from self.rows> from self> {
+        let index = self.index_of(name)?;
+        Some(self.rows.iter().map(move |row| row[index]))
+    }
+
+    /// Consumes the table and returns the cells of column `name`. The cells
+    /// borrow the text, so they outlive the table.
+    pub fn into_column(self, name: &str) -> Option<Vec<&str from self.rows>> {
+        let index = self.index_of(name)?;
+        Some(self.rows.into_iter().map(|row| row[index]).collect())
+    }
+
+    /// The rows for which `pred` holds, in order.
+    pub fn rows_where(&self, mut pred: impl FnMut(&[&str]) -> bool) -> Vec<&[&str from self.rows]> {
+        self.rows.iter().map(Vec::as_slice).filter(|&row| pred(row)).collect()
+    }
+
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.header.iter().position(|h| *h == name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = "name\tlang\tstars\nferox\ttide\t12\nripgrep\trust\t40\nzola\trust\t15\n";
+
+    #[test]
+    fn column_iterates_cells_or_rejects_unknown_names() {
+        let table = Table::parse(SAMPLE).unwrap();
+        let langs: Vec<&str> = table.column("lang").unwrap().collect();
+        assert_eq!(langs, vec!["tide", "rust", "rust"]);
+        assert!(table.column("license").is_none());
+    }
+
+    #[test]
+    fn field_count_errors_carry_the_line_number() {
+        assert_eq!(
+            Table::parse("a\tb\n1\t2\n3\n").err(),
+            Some(TableError::FieldCount { line: 3, expected: 2, found: 1 })
+        );
+        assert_eq!(
+            Table::parse("a\tb\n1\t2\t3").err(),
+            Some(TableError::FieldCount { line: 2, expected: 2, found: 3 })
+        );
+        assert_eq!(Table::parse("").err(), Some(TableError::MissingHeader));
+        assert!(Table::parse("a\tb\n1\t2").is_ok()); // no trailing newline
+        assert!(Table::parse("a\tb\n1\t2\n").is_ok()); // trailing newline
+    }
+
+    #[test]
+    fn into_column_outlives_the_table() {
+        let text = String::from(SAMPLE);
+        let names = {
+            let table = Table::parse(&text).unwrap();
+            table.into_column("name").unwrap()
+        }; // the table is gone; the cells borrow `text`
+        assert_eq!(names, vec!["ferox", "ripgrep", "zola"]);
+
+        let table = Table::parse(&text).unwrap();
+        assert_eq!(table.into_column("license"), None);
+    }
+
+    #[test]
+    fn rows_where_returns_matching_rows() {
+        let table = Table::parse(SAMPLE).unwrap();
+        let rust_rows = table.rows_where(|row| row[1] == "rust");
+        assert_eq!(
+            rust_rows,
+            vec![&["ripgrep", "rust", "40"][..], &["zola", "rust", "15"][..]]
+        );
+        let popular = table.rows_where(|row| row[2].parse::<u32>().is_ok_and(|stars| stars > 14));
+        assert_eq!(popular.len(), 2);
+        assert!(table.rows_where(|_| false).is_empty());
+    }
+}

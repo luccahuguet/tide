@@ -1,0 +1,224 @@
+// Task 9, logscan: src/main.tide
+use std::env::Env;
+use std::fs::Fs;
+use std::process::ExitCode;
+
+const USAGE: &str = "usage: logscan <path> [--level LEVEL]";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Level {
+    Error,
+    Warn,
+    Info,
+    Debug,
+}
+
+impl Level {
+    /// Every level, in report order.
+    const ALL: [Level; 4] = [Level::Error, Level::Warn, Level::Info, Level::Debug];
+
+    fn parse(name: &str) -> Option<Level> {
+        match name {
+            "ERROR" => Some(Level::Error),
+            "WARN" => Some(Level::Warn),
+            "INFO" => Some(Level::Info),
+            "DEBUG" => Some(Level::Debug),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Level::Error => "ERROR",
+            Level::Warn => "WARN",
+            Level::Info => "INFO",
+            Level::Debug => "DEBUG",
+        }
+    }
+}
+
+/// One well-formed log line; `message` is a slice of the log text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Entry<'a> {
+    timestamp: u64,
+    level: Level,
+    message: &'a str,
+}
+
+/// A scanned log: its entries in file order and the number of malformed lines.
+#[derive(Debug, Default, PartialEq)]
+struct Scan<'a> {
+    entries: Vec<Entry<'a>>,
+    malformed: usize,
+}
+
+/// Parses every line of `text`. Authority-free: it is handed only the text.
+#[pure]
+fn parse_log(text: &str) -> Scan<'_> {
+    let mut scan = Scan::default();
+    for line in text.lines() {
+        match parse_line(line) {
+            Some(entry) => scan.entries.push(entry),
+            None => scan.malformed += 1,
+        }
+    }
+    scan
+}
+
+/// `<timestamp> <LEVEL> <message>`: the timestamp is ASCII digits that fit a
+/// `u64`, single spaces separate the fields, and the message may be empty.
+fn parse_line(line: &str) -> Option<Entry<'_>> {
+    let (timestamp, rest) = line.split_once(' ')?;
+    if timestamp.is_empty() || !timestamp.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (level, message) = rest.split_once(' ').unwrap_or((rest, ""));
+    Some(Entry { timestamp: timestamp.parse().ok()?, level: Level::parse(level)?, message })
+}
+
+/// The lines `logscan` prints for `scan`. Authority-free.
+fn report(scan: &Scan<'_>, level: Level) -> Vec<String> {
+    let mut lines: Vec<String> = Level::ALL
+        .iter()
+        .map(|&l| format!("{}: {}", l.name(), scan.entries.iter().filter(|e| e.level == l).count()))
+        .collect();
+    lines.push(format!("malformed: {}", scan.malformed));
+    let mut newest: Vec<&Entry<'_>> = scan.entries.iter().filter(|e| e.level == level).collect();
+    newest.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    lines.extend(newest.iter().take(3).map(|e| format!("{} {}", e.timestamp, e.message)));
+    lines
+}
+
+#[derive(Debug, PartialEq)]
+struct Options {
+    path: String,
+    level: Level,
+}
+
+/// `<path> [--level LEVEL]` after the program name; `None` for bad arguments.
+fn parse_args(args: &[String]) -> Option<Options> {
+    let mut path: Option<String> = None;
+    let mut level = Level::Error;
+    let mut rest = args.iter().skip(1);
+    while let Some(arg) = rest.next() {
+        if arg == "--level" {
+            level = Level::parse(rest.next()?)?;
+        } else if path.is_none() && !arg.starts_with('-') {
+            path = Some(arg.clone());
+        } else {
+            return None;
+        }
+    }
+    Some(Options { path: path?, level })
+}
+
+/// The whole program over the capabilities it uses: arguments from `env`,
+/// the log file through `fs`. Returns the exit code.
+fn run(env: &Env, fs: &Fs) -> u8 {
+    let args: Vec<String> = env.args().collect();
+    let Some(opts) = parse_args(&args) else {
+        eprintln!("{}", USAGE);
+        return 2;
+    };
+    let text = match fs.read_to_string(&opts.path) {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("logscan: cannot read {}: {e}", opts.path);
+            return 1;
+        }
+    };
+    for line in report(&parse_log(&text), opts.level) {
+        println!("{line}");
+    }
+    0
+}
+
+fn main(root: Root) -> ExitCode {
+    let env = root.env.args_only();
+    let fs = root.fs.read_only();
+    ExitCode::from(run(&env, &fs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sim::Sink;
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn parses_good_and_malformed_lines() {
+        let text = "100 INFO started\n\
+                    105 ERROR disk full\n\
+                    not a line\n\
+                    110 WARN slow  reply\n\
+                    -3 INFO negative\n\
+                    120 TRACE unknown level\n\
+                    \n\
+                    130 DEBUG\n\
+                    99999999999999999999999 ERROR too big\n";
+        let scan = parse_log(text);
+        assert_eq!(scan.malformed, 5);
+        assert_eq!(
+            scan.entries,
+            [
+                Entry { timestamp: 100, level: Level::Info, message: "started" },
+                Entry { timestamp: 105, level: Level::Error, message: "disk full" },
+                Entry { timestamp: 110, level: Level::Warn, message: "slow  reply" },
+                Entry { timestamp: 130, level: Level::Debug, message: "" },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_arguments() {
+        let x = |level| Some(Options { path: String::from("x.log"), level });
+        assert_eq!(parse_args(&strings(&["logscan", "x.log"])), x(Level::Error));
+        assert_eq!(parse_args(&strings(&["logscan", "--level", "WARN", "x.log"])), x(Level::Warn));
+        assert_eq!(parse_args(&strings(&["logscan", "x.log", "--level", "DEBUG"])), x(Level::Debug));
+        assert_eq!(parse_args(&strings(&["logscan"])), None);
+        assert_eq!(parse_args(&strings(&["logscan", "x.log", "--level"])), None);
+        assert_eq!(parse_args(&strings(&["logscan", "x.log", "--level", "LOUD"])), None);
+        assert_eq!(parse_args(&strings(&["logscan", "a.log", "b.log"])), None);
+        assert_eq!(parse_args(&strings(&["logscan", "--verbose", "x.log"])), None);
+    }
+
+    #[test]
+    fn whole_program_against_a_simulated_file() {
+        let sim = Root::sim(7);
+        sim.world.file(
+            "/var/log/app.log",
+            "1 ERROR a\n5 ERROR b\n3 WARN c\n9 ERROR d\n7 ERROR e\nbad line\n2 INFO f\n",
+        );
+        sim.world.args(["logscan", "/var/log/app.log"]);
+        assert_eq!(run(&sim.env, &sim.fs), 0);
+        let out: Vec<String> = sim
+            .records()
+            .into_iter()
+            .filter(|r| matches!(r.sink, Sink::Out))
+            .map(|r| r.message)
+            .collect();
+        assert_eq!(out, ["ERROR: 4", "WARN: 1", "INFO: 1", "DEBUG: 0", "malformed: 1", "9 d", "7 e", "5 b"]);
+    }
+
+    #[test]
+    fn bad_arguments_exit_2_with_usage() {
+        let sim = Root::sim(3);
+        sim.world.args(["logscan", "--level", "LOUD", "x.log"]);
+        assert_eq!(run(&sim.env, &sim.fs), 2);
+        assert!(sim.records().iter().any(|r| matches!(r.sink, Sink::Err) && r.message == USAGE));
+    }
+
+    #[test]
+    fn unreadable_file_exits_1() {
+        let sim = Root::sim(3);
+        sim.world.args(["logscan", "/missing.log"]);
+        assert_eq!(run(&sim.env, &sim.fs), 1);
+        assert!(sim
+            .records()
+            .iter()
+            .any(|r| matches!(r.sink, Sink::Err) && r.message.starts_with("logscan: cannot read /missing.log")));
+    }
+}

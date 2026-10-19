@@ -1,0 +1,110 @@
+// Task 5, highlight: src/lib.tide
+
+/// One keyword occurrence. `word` borrows the text and `keyword` borrows
+/// wherever the keyword list points, so the two can come from unrelated
+/// sources.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span<'t, 'k> {
+    /// The word, as a slice of the text.
+    pub word: &'t str,
+    /// The keyword it matched, as the keyword's own slice.
+    pub keyword: &'k str,
+    /// Byte offset of `word` in the text.
+    pub offset: usize,
+}
+
+/// Finds the words of a text that equal one of a fixed set of keywords.
+#[derive(Debug, Clone)]
+pub struct Highlighter<'k> {
+    keywords: Vec<&'k str>,
+    case_sensitive: bool,
+}
+
+impl<'k> Highlighter<'k> {
+    /// Copies the keyword slices, not the strings they point into. Without
+    /// `case_sensitive`, matching ignores ASCII case.
+    pub fn new(keywords: &[&'k str], case_sensitive: bool) -> Self {
+        Highlighter { keywords: keywords.to_vec(), case_sensitive }
+    }
+
+    /// A span for every word of `text` that equals a keyword. A word is a
+    /// maximal run of alphanumeric characters or `_`.
+    pub fn spans<'t>(&self, text: &'t str) -> Vec<Span<'t, 'k>> {
+        let mut spans = Vec::new();
+        let mut pos = 0;
+        while let Some(skipped) = text[pos..].find(is_word_char) {
+            let start = pos + skipped;
+            let end = text[start..].find(|c: char| !is_word_char(c)).map_or(text.len(), |len| start + len);
+            let word = &text[start..end];
+            if let Some(keyword) = self.keyword_for(word) {
+                spans.push(Span { word, keyword, offset: start });
+            }
+            pos = end;
+        }
+        spans
+    }
+
+    fn keyword_for(&self, word: &str) -> Option<&'k str> {
+        self.keywords.iter().copied().find(|keyword| {
+            if self.case_sensitive {
+                *keyword == word
+            } else {
+                keyword.eq_ignore_ascii_case(word)
+            }
+        })
+    }
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spans_for_texts_made_and_dropped_in_a_loop() {
+        let config = String::from("keywords = fn, let, Match");
+        let (_, list) = config.split_once('=').unwrap();
+        let keywords: Vec<&str> = list.split(',').map(str::trim).collect();
+        let highlighter = Highlighter::new(&keywords, false);
+        for i in 0..3 {
+            let text = format!("let x{i} = fn_call(); LET y = match z;");
+            let spans = highlighter.spans(&text);
+            let words: Vec<&str> = spans.iter().map(|s| s.word).collect();
+            let matched: Vec<&str> = spans.iter().map(|s| s.keyword).collect();
+            let offsets: Vec<usize> = spans.iter().map(|s| s.offset).collect();
+            assert_eq!(words, ["let", "LET", "match"]);
+            assert_eq!(matched, ["let", "let", "Match"]);
+            assert_eq!(offsets, [0, 20, 28]);
+        }
+    }
+
+    #[test]
+    fn spans_outlive_the_highlighter() {
+        let config = String::from("alpha beta");
+        let text = String::from("Beta then alpha_beta and alpha.");
+        let spans = {
+            let keywords: Vec<&str> = config.split(' ').collect();
+            let highlighter = Highlighter::new(&keywords, true);
+            highlighter.spans(&text)
+        };
+        assert_eq!(spans, [Span { word: "alpha", keyword: "alpha", offset: 25 }]);
+    }
+
+    #[test]
+    fn offsets_are_bytes_and_case_folding_is_ascii_only() {
+        let keywords = ["straße", "if"];
+        let spans = Highlighter::new(&keywords, false).spans("é IF STRASSE Straße");
+        assert_eq!(
+            spans,
+            [
+                Span { word: "IF", keyword: "if", offset: 3 },
+                Span { word: "Straße", keyword: "straße", offset: 14 },
+            ]
+        );
+        let exact = Highlighter::new(&keywords, true).spans("IF if");
+        assert_eq!(exact, [Span { word: "if", keyword: "if", offset: 3 }]);
+    }
+}

@@ -1,0 +1,108 @@
+// Task 3, diff_lines: src/lib.tide
+use std::collections::HashSet;
+
+/// The first line at which two texts differ. A line missing from one side
+/// is `""`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Difference<'a, 'b> {
+    /// 1-based line number.
+    pub line: usize,
+    /// The line of the first text, as a slice of it.
+    pub first: &'a str,
+    /// The line of the second text, as a slice of it.
+    pub second: &'b str,
+}
+
+/// `None` if `a` and `b` have identical lines, else their first difference.
+pub fn first_difference<'a, 'b>(a: &'a str, b: &'b str) -> Option<Difference<'a, 'b>> {
+    let (mut left, mut right) = (a.lines(), b.lines());
+    let mut line = 1;
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return None,
+            (Some(x), Some(y)) if x == y => line += 1,
+            (first, second) => {
+                return Some(Difference { line, first: first.unwrap_or(""), second: second.unwrap_or("") });
+            }
+        }
+    }
+}
+
+/// The lines of `a` that occur nowhere in `b`, in order, as slices of `a`.
+pub fn only_in_first<'a>(a: &'a str, b: &str) -> Vec<&'a str> {
+    let in_b: HashSet<&str> = b.lines().collect();
+    a.lines().filter(|line| !in_b.contains(*line)).collect()
+}
+
+/// The longest line, counted in characters, that occurs in both texts, as a
+/// slice of `a`; the first such line of `a` on ties.
+pub fn longest_common_line<'a>(a: &'a str, b: &str) -> Option<&'a str> {
+    let in_b: HashSet<&str> = b.lines().collect();
+    let mut best: Option<(&'a str, usize)> = None;
+    for line in a.lines().filter(|line| in_b.contains(*line)) {
+        let len = line.chars().count();
+        if best.map_or(true, |(_, best_len)| len > best_len) {
+            best = Some((line, len));
+        }
+    }
+    best.map(|(line, _)| line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_difference_cases() {
+        assert_eq!(first_difference("a\nb\nc", "a\nb\nc"), None);
+        assert_eq!(first_difference("a\n", "a"), None);
+        assert_eq!(first_difference("", ""), None);
+        assert_eq!(
+            first_difference("a\nb\nc", "a\nx\nc"),
+            Some(Difference { line: 2, first: "b", second: "x" })
+        );
+        assert_eq!(first_difference("a\nb", "a"), Some(Difference { line: 2, first: "b", second: "" }));
+        assert_eq!(first_difference("a", "a\nb"), Some(Difference { line: 2, first: "", second: "b" }));
+        // A missing line and an empty line both read as "", but they differ.
+        assert_eq!(first_difference("a", "a\n\n"), Some(Difference { line: 2, first: "", second: "" }));
+    }
+
+    #[test]
+    fn only_in_first_keeps_order_and_repeats() {
+        assert_eq!(only_in_first("one\ntwo\nthree\none", "two\nfour"), ["one", "three", "one"]);
+        assert!(only_in_first("same", "same").is_empty());
+    }
+
+    #[test]
+    fn only_in_first_outlives_b() {
+        let a = String::from("keep\nshared\nalso kept");
+        let lines = {
+            let b = String::from("shared\nother");
+            only_in_first(&a, &b)
+        };
+        assert_eq!(lines, ["keep", "also kept"]);
+    }
+
+    #[test]
+    fn longest_common_line_cases() {
+        assert_eq!(longest_common_line("x\nlong line\nmid", "mid\nlong line\nzz"), Some("long line"));
+        assert_eq!(longest_common_line("ab\ncd", "cd\nab"), Some("ab"));
+        assert_eq!(longest_common_line("a", "b"), None);
+    }
+
+    #[test]
+    fn longest_common_line_outlives_b() {
+        let a = String::from("short\na much longer line");
+        let found = {
+            let b = String::from("a much longer line\nshort");
+            longest_common_line(&a, &b)
+        };
+        assert_eq!(found, Some("a much longer line"));
+    }
+
+    #[test]
+    fn a_text_never_differs_from_itself(text: String) {
+        assert_eq!(first_difference(&text, &text), None);
+        assert!(only_in_first(&text, &text).is_empty());
+    }
+}

@@ -1,0 +1,98 @@
+// Task 4: merge_words
+// Package path: src/lib.tide
+
+/// The whitespace-separated words of `text`, sorted, as slices of `text`.
+pub fn sorted_words(text: &str) -> Vec<&str>
+    ensures result.is_sorted()
+{
+    let mut words: Vec<&str> = text.split_whitespace().collect();
+    words.sort();
+    words
+}
+
+/// Merges two sorted slices into one sorted `Vec` of the same string slices.
+/// Stable: on equal words, those from `a` come first.
+pub fn merge_sorted(a: &[&str], b: &[&str]) -> Vec<&str from (*a, *b)>
+    requires a.is_sorted()
+    requires b.is_sorted()
+    ensures result.len() == a.len() + b.len()
+    ensures result.is_sorted()
+{
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        if b[j] < a[i] {
+            out.push(b[j]);
+            j += 1;
+        } else {
+            out.push(a[i]);
+            i += 1;
+        }
+    }
+    out.extend_from_slice(&a[i..]);
+    out.extend_from_slice(&b[j..]);
+    out
+}
+
+/// Removes adjacent duplicates in place.
+pub fn dedup_adjacent(words: &mut Vec<&str>)
+    ensures words.len() <= old(words.len())
+    ensures forall |i: usize| 1 <= i && i < words.len() ==> words[i - 1] != words[i]
+{
+    words.dedup();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sorted_words_splits_on_any_whitespace() {
+        assert_eq!(
+            sorted_words("  the quick\tbrown\nfox  the "),
+            vec!["brown", "fox", "quick", "the", "the"]
+        );
+        assert!(sorted_words(" \n ").is_empty());
+    }
+
+    #[test]
+    fn merged_words_outlive_the_intermediate_vecs() {
+        let first = String::from("pear apple fig");
+        let second = String::from("kiwi apple banana");
+        let merged = {
+            let a = sorted_words(&first);
+            let b = sorted_words(&second);
+            merge_sorted(&a, &b)
+        }; // `a` and `b` are dropped; `merged` borrows `first` and `second`
+        assert_eq!(merged, vec!["apple", "apple", "banana", "fig", "kiwi", "pear"]);
+    }
+
+    #[test]
+    fn dedup_removes_only_adjacent_repeats() {
+        let mut words = vec!["a", "a", "b", "a", "c", "c", "c"];
+        dedup_adjacent(&mut words);
+        assert_eq!(words, vec!["a", "b", "a", "c"]);
+    }
+
+    #[test]
+    fn merge_then_dedup() {
+        let text = String::from("b a c");
+        let other = String::from("c b d");
+        let a = sorted_words(&text);
+        let b = sorted_words(&other);
+        let mut merged = merge_sorted(&a, &b);
+        dedup_adjacent(&mut merged);
+        assert_eq!(merged, vec!["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn merging_sorted_vectors_is_sorted_with_the_summed_length(mut a: Vec<String>, mut b: Vec<String>) {
+        a.sort();
+        b.sort();
+        let a_words: Vec<&str> = a.iter().map(String::as_str).collect();
+        let b_words: Vec<&str> = b.iter().map(String::as_str).collect();
+        let merged = merge_sorted(&a_words, &b_words);
+        assert_eq!(merged.len(), a.len() + b.len());
+        assert!(merged.is_sorted());
+    }
+}

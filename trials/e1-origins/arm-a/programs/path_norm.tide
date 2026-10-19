@@ -1,0 +1,115 @@
+// Task 2: path_norm
+// Package path: src/lib.tide
+
+/// One lexical piece of a `/`-separated path. `Normal` borrows the path text.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Component {
+    Root,
+    CurDir,
+    ParentDir,
+    Normal(&str),
+}
+
+/// The components of `path`: `Root` for a leading `/`, then one component
+/// per name. Repeated slashes collapse and a trailing slash adds nothing.
+pub fn components(path: &str) -> impl Iterator<Item = Component> {
+    let root = if path.starts_with('/') { Some(Component::Root) } else { None };
+    root.into_iter().chain(names(path).map(classify))
+}
+
+/// `path` with `.` dropped and each `..` removing the name before it. A
+/// leading `..` of a relative path is kept; a `..` right after the root is
+/// dropped. Every returned name is a slice of `path`.
+pub fn normalize(path: &str) -> Vec<&str> {
+    let absolute = path.starts_with('/');
+    let mut out: Vec<&str> = Vec::new();
+    for name in names(path) {
+        match name {
+            "." => {}
+            ".." => {
+                if out.last().is_some_and(|&last| last != "..") {
+                    out.pop();
+                } else if !absolute {
+                    out.push(name);
+                }
+            }
+            _ => out.push(name),
+        }
+    }
+    out
+}
+
+/// The non-empty names between slashes.
+fn names(path: &str) -> impl Iterator<Item = &str> {
+    path.split('/').filter(|s| !s.is_empty())
+}
+
+fn classify(name: &str) -> Component {
+    match name {
+        "." => Component::CurDir,
+        ".." => Component::ParentDir,
+        _ => Component::Normal(name),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn components_of_a_messy_absolute_path() {
+        let got: Vec<Component> = components("/a//b/./../c/").collect();
+        assert_eq!(
+            got,
+            vec![
+                Component::Root,
+                Component::Normal("a"),
+                Component::Normal("b"),
+                Component::CurDir,
+                Component::ParentDir,
+                Component::Normal("c"),
+            ]
+        );
+        assert_eq!(
+            components("x/").collect::<Vec<_>>(),
+            vec![Component::Normal("x")]
+        );
+    }
+
+    #[test]
+    fn normalizes_absolute_paths() {
+        assert_eq!(normalize("/a//b/./../c/"), vec!["a", "c"]);
+        assert_eq!(normalize("/../a"), vec!["a"]);
+        assert!(normalize("/..").is_empty());
+        assert!(normalize("/a/../..").is_empty());
+    }
+
+    #[test]
+    fn normalizes_relative_paths() {
+        assert_eq!(normalize("../../x"), vec!["..", "..", "x"]);
+        assert_eq!(normalize("a/../../b"), vec!["..", "b"]);
+        assert_eq!(normalize("./a/./b/../c"), vec!["a", "c"]);
+        assert!(normalize("a/..").is_empty());
+        assert!(normalize("").is_empty());
+    }
+
+    #[test]
+    fn components_outlive_the_iterator_that_made_them() {
+        let path = String::from("/usr/./lib/../share");
+        let parts: Vec<Component> = {
+            let mut iter = components(&path);
+            assert_eq!(iter.next(), Some(Component::Root));
+            iter.collect()
+        }; // the iterator is gone; the components borrow `path`
+        assert_eq!(
+            parts,
+            vec![
+                Component::Normal("usr"),
+                Component::CurDir,
+                Component::Normal("lib"),
+                Component::ParentDir,
+                Component::Normal("share"),
+            ]
+        );
+    }
+}

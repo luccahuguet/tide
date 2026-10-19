@@ -1,0 +1,126 @@
+// Task 2, path_norm: src/lib.tide
+
+/// One lexical piece of a `/`-separated path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Component<'a> {
+    /// A leading `/`.
+    Root,
+    /// `.`
+    CurDir,
+    /// `..`
+    ParentDir,
+    /// Any other name, as a slice of the path.
+    Normal(&'a str),
+}
+
+/// The components of `path`, in order. Repeated slashes collapse, and a
+/// trailing slash adds nothing.
+pub fn components(path: &str) -> impl Iterator<Item = Component<'_>> {
+    let root = path.starts_with('/').then_some(Component::Root);
+    let names = path.split('/').filter(|name| !name.is_empty()).map(|name| match name {
+        "." => Component::CurDir,
+        ".." => Component::ParentDir,
+        name => Component::Normal(name),
+    });
+    root.into_iter().chain(names)
+}
+
+/// The names of `path` after lexical normalization, as slices of `path`:
+/// `.` is dropped, `..` removes the previous name, a leading `..` of a
+/// relative path is kept, and `..` directly after the root is dropped.
+///
+/// It splits `path` itself rather than using `components`, so that a kept
+/// `..` is also a slice of `path`.
+pub fn normalize(path: &str) -> Vec<&str> {
+    let absolute = path.starts_with('/');
+    let mut names: Vec<&str> = Vec::new();
+    for name in path.split('/') {
+        match name {
+            "" | "." => {}
+            ".." => {
+                if names.last().is_some_and(|prev| *prev != "..") {
+                    names.pop();
+                } else if !absolute {
+                    names.push(name);
+                }
+            }
+            _ => names.push(name),
+        }
+    }
+    names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn components_of_a_messy_path() {
+        let got: Vec<Component<'_>> = components("/a//b/./../c/").collect();
+        assert_eq!(
+            got,
+            [
+                Component::Root,
+                Component::Normal("a"),
+                Component::Normal("b"),
+                Component::CurDir,
+                Component::ParentDir,
+                Component::Normal("c"),
+            ]
+        );
+    }
+
+    #[test]
+    fn edge_components() {
+        assert_eq!(components("").count(), 0);
+        assert_eq!(components("/").collect::<Vec<_>>(), [Component::Root]);
+        assert_eq!(components("x/").collect::<Vec<_>>(), [Component::Normal("x")]);
+    }
+
+    #[test]
+    fn normalize_absolute_and_relative() {
+        assert_eq!(normalize("/a//b/./../c/"), ["a", "c"]);
+        assert_eq!(normalize("/.."), Vec::<&str>::new());
+        assert_eq!(normalize("/../a/../../b"), ["b"]);
+        assert_eq!(normalize("../../x"), ["..", "..", "x"]);
+        assert_eq!(normalize("a/../../b/./c"), ["..", "b", "c"]);
+        assert_eq!(normalize("./a/b/.."), ["a"]);
+        assert_eq!(normalize(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn collected_components_outlive_their_iterator() {
+        let path = String::from("/usr/./lib/../bin");
+        let collected: Vec<Component<'_>> = {
+            let mut iter = components(&path);
+            assert_eq!(iter.next(), Some(Component::Root));
+            iter.collect()
+        };
+        assert_eq!(
+            collected,
+            [
+                Component::Normal("usr"),
+                Component::CurDir,
+                Component::Normal("lib"),
+                Component::ParentDir,
+                Component::Normal("bin"),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalized_names_are_clean(picks: Vec<u8>, absolute: bool) {
+        const PARTS: [&str; 4] = ["a", ".", "..", ""];
+        let mut path = String::from(if absolute { "/" } else { "" });
+        for &pick in &picks {
+            path.push_str(PARTS[usize::from(pick % 4)]);
+            path.push('/');
+        }
+        let names = normalize(&path);
+        let ups = names.iter().take_while(|name| **name == "..").count();
+        assert!(names[ups..].iter().all(|name| *name == "a"), "path {path:?}");
+        if absolute {
+            assert_eq!(ups, 0, "path {path:?}");
+        }
+    }
+}

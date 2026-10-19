@@ -1,0 +1,77 @@
+// Task 6, filters: src/lib.tide
+
+/// True for words that are not in `banned`. The closure borrows `banned`;
+/// nothing is cloned.
+pub fn not_banned(banned: &[String]) -> impl Fn(&str) -> bool + '_ {
+    move |word: &str| banned.iter().all(|b| b != word)
+}
+
+/// True for words of at least `n` characters.
+pub fn min_len(n: usize) -> impl Fn(&str) -> bool {
+    move |word: &str| word.chars().count() >= n
+}
+
+/// A list of word filters. A filter may borrow data the caller owns for `'a`.
+pub struct Pipeline<'a> {
+    filters: Vec<Box<dyn Fn(&str) -> bool + 'a>>,
+}
+
+impl<'a> Pipeline<'a> {
+    pub fn new() -> Self {
+        Pipeline { filters: Vec::new() }
+    }
+
+    pub fn add(&mut self, filter: impl Fn(&str) -> bool + 'a) {
+        self.filters.push(Box::new(filter));
+    }
+
+    /// The words that pass every filter, in order, as the same string slices.
+    pub fn apply<'w>(&self, words: &[&'w str]) -> Vec<&'w str> {
+        words.iter().copied().filter(|&word| self.filters.iter().all(|f| f(word))).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipeline_result_outlives_the_pipeline() {
+        let text = String::from("the quick brown fox jumps over the lazy dog");
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let banned: Vec<String> = vec![String::from("fox"), String::from("lazy")];
+        let kept = {
+            let mut pipeline = Pipeline::new();
+            pipeline.add(not_banned(&banned));
+            pipeline.add(min_len(4));
+            pipeline.apply(&words)
+        };
+        assert_eq!(kept, ["quick", "brown", "jumps", "over"]);
+        assert_eq!(banned.len(), 2); // still the caller's: the filter only borrowed it
+    }
+
+    #[test]
+    fn filters_on_their_own() {
+        let banned = vec![String::from("x")];
+        let allowed = not_banned(&banned);
+        assert!(allowed("y"));
+        assert!(!allowed("x"));
+        let long = min_len(3);
+        assert!(long("héé"));
+        assert!(!long("hé"));
+    }
+
+    #[test]
+    fn custom_filter_borrowing_a_local() {
+        let stop = String::from("over");
+        let mut pipeline = Pipeline::new();
+        pipeline.add(|word: &str| word != stop);
+        assert_eq!(pipeline.apply(&["up", "over", "down"]), ["up", "down"]);
+    }
+
+    #[test]
+    fn empty_pipeline_keeps_everything() {
+        let pipeline = Pipeline::new();
+        assert_eq!(pipeline.apply(&["a", "b"]), ["a", "b"]);
+    }
+}

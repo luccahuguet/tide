@@ -1,0 +1,120 @@
+// Task 8, table: src/lib.tide
+
+/// Why `Table::parse` rejected its input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum TableError {
+    /// The text is empty, so line 1 holds no header.
+    #[error("line 1: missing header")]
+    MissingHeader,
+    /// A row whose field count differs from the header's.
+    #[error("line {line}: expected {expected} fields, found {found}")]
+    FieldCount { line: usize, expected: usize, found: usize },
+}
+
+impl TableError {
+    /// The 1-based line the error refers to.
+    pub fn line(&self) -> usize {
+        match self {
+            TableError::MissingHeader => 1,
+            TableError::FieldCount { line, .. } => *line,
+        }
+    }
+}
+
+/// Tab-separated text with a header line. The header and every cell are
+/// slices of the text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Table<'a> {
+    header: Vec<&'a str>,
+    rows: Vec<Vec<&'a str>>,
+}
+
+impl<'a> Table<'a> {
+    /// Parses `text`; the first line is the header, and a trailing newline is
+    /// allowed.
+    pub fn parse(text: &'a str) -> Result<Self, TableError> {
+        let mut lines = text.lines();
+        let header: Vec<&'a str> = lines.next().ok_or(TableError::MissingHeader)?.split('\t').collect();
+        let mut rows = Vec::new();
+        for (index, line) in lines.enumerate() {
+            let row: Vec<&'a str> = line.split('\t').collect();
+            if row.len() != header.len() {
+                return Err(TableError::FieldCount { line: index + 2, expected: header.len(), found: row.len() });
+            }
+            rows.push(row);
+        }
+        Ok(Table { header, rows })
+    }
+
+    /// The cells of column `name`, top to bottom, or `None` for an unknown
+    /// column.
+    pub fn column(&self, name: &str) -> Option<impl Iterator<Item = &'a str> + '_> {
+        let index = self.index_of(name)?;
+        Some(self.rows.iter().map(move |row| row[index]))
+    }
+
+    /// Consumes the table and returns the cells of column `name`, or `None`
+    /// for an unknown column. The cells borrow the text, not the table.
+    pub fn into_column(self, name: &str) -> Option<Vec<&'a str>> {
+        let index = self.index_of(name)?;
+        Some(self.rows.into_iter().map(|row| row[index]).collect())
+    }
+
+    /// The rows for which `pred` is true, in order.
+    pub fn rows_where(&self, pred: impl Fn(&[&str]) -> bool) -> Vec<&[&'a str]> {
+        self.rows.iter().map(Vec::as_slice).filter(|&row| pred(row)).collect()
+    }
+
+    fn index_of(&self, name: &str) -> Option<usize> {
+        self.header.iter().position(|&h| h == name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TSV: &str = "name\tlang\tyear\nferris\trust\t2015\ntide\ttide\t2026\nduke\tjava\t1995\n";
+
+    #[test]
+    fn column_by_name() {
+        let table = Table::parse(TSV).unwrap();
+        assert_eq!(table.column("lang").unwrap().collect::<Vec<_>>(), ["rust", "tide", "java"]);
+        assert!(table.column("missing").is_none());
+    }
+
+    #[test]
+    fn errors_carry_the_line() {
+        let err = Table::parse("a\tb\n1\t2\n3\n").unwrap_err();
+        assert_eq!(err, TableError::FieldCount { line: 3, expected: 2, found: 1 });
+        assert_eq!(err.line(), 3);
+        assert_eq!(err.to_string(), "line 3: expected 2 fields, found 1");
+        assert_eq!(Table::parse("a\tb\n1\t2\t3").unwrap_err().line(), 2);
+        assert_eq!(Table::parse("").unwrap_err(), TableError::MissingHeader);
+    }
+
+    #[test]
+    fn one_trailing_newline_is_optional() {
+        assert_eq!(Table::parse("k\tv\na\t1\n"), Table::parse("k\tv\na\t1"));
+        assert_eq!(Table::parse("k\tv\na\t1\n\n").unwrap_err().line(), 3);
+    }
+
+    #[test]
+    fn into_column_outlives_the_table() {
+        let text = String::from(TSV);
+        let years = {
+            let table = Table::parse(&text).unwrap();
+            table.into_column("year").unwrap()
+        };
+        assert_eq!(years, ["2015", "2026", "1995"]);
+        assert_eq!(Table::parse(&text).unwrap().into_column("missing"), None);
+    }
+
+    #[test]
+    fn rows_matching_a_predicate() {
+        let table = Table::parse(TSV).unwrap();
+        let old = table.rows_where(|row| row[2] < "2000");
+        assert_eq!(old, [["duke", "java", "1995"]]);
+        assert!(table.rows_where(|row| row[1] == "cobol").is_empty());
+    }
+}

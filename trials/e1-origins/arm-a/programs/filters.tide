@@ -1,0 +1,81 @@
+// Task 6: filters
+// Package path: src/lib.tide
+
+/// True for words not in `banned`. The closure borrows `banned`; nothing is cloned.
+pub fn not_banned(banned: &[String]) -> impl Fn(&str) -> bool from banned {
+    move |word: &str| !banned.iter().any(|b| b == word)
+}
+
+/// True for words of at least `n` characters.
+pub fn min_len(n: usize) -> impl Fn(&str) -> bool {
+    move |word: &str| word.chars().count() >= n
+}
+
+/// A list of word filters. The filters may borrow data the caller owns, so
+/// a `Pipeline` has one origin: whatever its filters borrow.
+pub struct Pipeline {
+    filters: Vec<Box<dyn Fn(&str) -> bool + '_>>,
+}
+
+impl Pipeline {
+    pub fn new() -> Self {
+        Pipeline { filters: Vec::new() }
+    }
+
+    pub fn add(&mut self, filter: impl Fn(&str) -> bool from self.filters) {
+        self.filters.push(Box::new(filter));
+    }
+
+    /// The words that pass every filter, in order, as the same slices. They
+    /// borrow what `words` borrows, not the pipeline.
+    pub fn apply(&self, words: &[&str]) -> Vec<&str from *words> {
+        words
+            .iter()
+            .copied()
+            .filter(|&word| self.filters.iter().all(|f| f(word)))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_filter_alone() {
+        let banned = vec![String::from("spam")];
+        let allowed = not_banned(&banned);
+        assert!(allowed("eggs"));
+        assert!(!allowed("spam"));
+
+        let long = min_len(4);
+        assert!(long("abcd"));
+        assert!(!long("abc"));
+        assert!(!long("äöü")); // three characters, six bytes
+    }
+
+    #[test]
+    fn pipeline_result_outlives_the_pipeline() {
+        let text = String::from("the quick brown fox jumps over the lazy dog");
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let banned: Vec<String> = vec![String::from("fox"), String::from("lazy")];
+        let kept = {
+            let mut pipeline = Pipeline::new();
+            pipeline.add(not_banned(&banned));
+            pipeline.add(min_len(4));
+            pipeline.apply(&words)
+        }; // the pipeline and its boxed filters are dropped here
+        assert_eq!(kept, vec!["quick", "brown", "jumps", "over"]);
+    }
+
+    #[test]
+    fn pipeline_accepts_ad_hoc_borrowing_closures() {
+        let prefix = String::from("b");
+        let words = ["bat", "cat", "bee", "b"];
+        let mut pipeline = Pipeline::new();
+        assert_eq!(pipeline.apply(&words), vec!["bat", "cat", "bee", "b"]); // no filters: all pass
+        pipeline.add(|w: &str| w.starts_with(prefix.as_str()));
+        pipeline.add(min_len(2));
+        assert_eq!(pipeline.apply(&words), vec!["bat", "bee"]);
+    }
+}

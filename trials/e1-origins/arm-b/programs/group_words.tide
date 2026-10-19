@@ -1,0 +1,81 @@
+// Task 7, group_words: src/lib.tide
+use std::collections::BTreeMap;
+
+/// Punctuation trimmed from both ends of every word.
+const TRIMMED: &[char] = &['.', ',', ';', ':', '!', '?'];
+
+/// The words of `text` grouped by their lowercased first character, each
+/// group in text order, as slices of `text`. Words are whitespace-separated,
+/// with `.,;:!?` trimmed from both ends; empty words are skipped.
+pub fn group_by_initial(text: &str) -> BTreeMap<char, Vec<&str>> {
+    let mut groups: BTreeMap<char, Vec<&str>> = BTreeMap::new();
+    for word in text.split_whitespace().map(|w| w.trim_matches(TRIMMED)) {
+        if let Some(first) = word.chars().next() {
+            let key = first.to_lowercase().next().unwrap_or(first);
+            groups.entry(key).or_default().push(word);
+        }
+    }
+    groups
+}
+
+/// The key and words of the largest group, the smallest key on ties, or
+/// `None` for an empty map.
+pub fn largest_group<'m, 't>(groups: &'m BTreeMap<char, Vec<&'t str>>) -> Option<(char, &'m [&'t str])> {
+    let mut best: Option<(char, &'m [&'t str])> = None;
+    for (&key, words) in groups {
+        if best.map_or(true, |(_, group)| words.len() > group.len()) {
+            best = Some((key, words.as_slice()));
+        }
+    }
+    best
+}
+
+/// Every word longer than `n` characters, in key order, as slices of the
+/// original text, so the result does not borrow the map.
+pub fn words_longer_than<'t>(groups: &BTreeMap<char, Vec<&'t str>>, n: usize) -> Vec<&'t str> {
+    groups.values().flatten().copied().filter(|word| word.chars().count() > n).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEXT: &str = "Apple, avocado! banana; Cherry: apricot? b ... !?";
+
+    #[test]
+    fn groups_by_lowercased_initial() {
+        let groups = group_by_initial(TEXT);
+        assert_eq!(groups.keys().copied().collect::<Vec<_>>(), ['a', 'b', 'c']);
+        assert_eq!(groups[&'a'], ["Apple", "avocado", "apricot"]);
+        assert_eq!(groups[&'b'], ["banana", "b"]);
+        assert_eq!(groups[&'c'], ["Cherry"]);
+    }
+
+    #[test]
+    fn lowercases_non_ascii_initials() {
+        let groups = group_by_initial("Élan éclair");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[&'é'], ["Élan", "éclair"]);
+    }
+
+    #[test]
+    fn largest_group_prefers_the_smallest_key() {
+        let groups = group_by_initial(TEXT);
+        assert_eq!(largest_group(&groups), Some(('a', &["Apple", "avocado", "apricot"][..])));
+        let tied = group_by_initial("beta alpha");
+        assert_eq!(largest_group(&tied), Some(('a', &["alpha"][..])));
+        let empty: BTreeMap<char, Vec<&str>> = BTreeMap::new();
+        assert_eq!(largest_group(&empty), None);
+    }
+
+    #[test]
+    fn long_words_outlive_the_map() {
+        let text = String::from(TEXT);
+        let long = {
+            let groups = group_by_initial(&text);
+            words_longer_than(&groups, 5)
+        };
+        assert_eq!(long, ["avocado", "apricot", "banana", "Cherry"]);
+        assert!(words_longer_than(&group_by_initial(&text), 10).is_empty());
+    }
+}

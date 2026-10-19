@@ -1,0 +1,165 @@
+// Task 1: ini
+// Package path: src/lib.tide
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum IniError {
+    #[error("line {line}: unclosed `[` in a section header")]
+    UnclosedSection { line: usize },
+    #[error("line {line}: expected `key = value`")]
+    MissingEquals { line: usize },
+    #[error("line {line}: empty key")]
+    EmptyKey { line: usize },
+}
+
+/// A parsed INI document. Every section name, key, and value is a slice of
+/// the parsed text, so they outlive the `Ini` itself.
+#[derive(Debug)]
+pub struct Ini {
+    sections: Vec<Section>,
+}
+
+/// `entries` borrows from the same origin as `name`, so an `Ini` has one origin.
+#[derive(Debug)]
+struct Section {
+    name: &str,
+    entries: Vec<(&str, &str) from name>,
+}
+
+/// Parses INI text. Blank lines and lines starting with `;` or `#` are
+/// ignored; entries before the first header go to the section `""`; a
+/// repeated header continues the earlier section.
+pub fn parse(src: &str) -> Result<Ini, IniError> {
+    let mut sections: Vec<Section> = Vec::new();
+    let mut current: Option<usize> = None;
+    for (index, raw) in src.lines().enumerate() {
+        let line_no = index + 1;
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('[') {
+            let name = rest
+                .strip_suffix(']')
+                .ok_or(IniError::UnclosedSection { line: line_no })?;
+            current = Some(section_index(&mut sections, name.trim()));
+            continue;
+        }
+        let (key, value) = line
+            .split_once('=')
+            .ok_or(IniError::MissingEquals { line: line_no })?;
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(IniError::EmptyKey { line: line_no });
+        }
+        let at = *current.get_or_insert_with(|| section_index(&mut sections, ""));
+        sections[at].entries.push((key, value.trim()));
+    }
+    Ok(Ini { sections })
+}
+
+/// The index of the section called `name`, appending it if it is new.
+fn section_index(sections: &mut Vec<Section from name>, name: &str) -> usize {
+    match sections.iter().position(|s| s.name == name) {
+        Some(i) => i,
+        None => {
+            sections.push(Section { name, entries: Vec::new() });
+            sections.len() - 1
+        }
+    }
+}
+
+impl Ini {
+    /// The value of `key` in `section`, as a slice of the source text. When a
+    /// key repeats, the last assignment wins.
+    pub fn get(&self, section: &str, key: &str) -> Option<&str from *self> {
+        self.entries(section)
+            .iter()
+            .rev()
+            .find(|(k, _)| *k == key)
+            .map(|&(_, v)| v)
+    }
+
+    /// Section names in order of first appearance.
+    pub fn section_names(&self) -> impl Iterator<Item = &str from *self> from self {
+        self.sections.iter().map(|s| s.name)
+    }
+
+    /// The `(key, value)` pairs of `section` in source order; empty for an
+    /// unknown section.
+    pub fn entries(&self, section: &str) -> &[(&str, &str) from *self] {
+        match self.sections.iter().find(|s| s.name == section) {
+            Some(s) => s.entries.as_slice(),
+            None => &[],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> String {
+        [
+            "top = level",
+            "; a comment",
+            "",
+            "[server]",
+            "host = example.org ",
+            "   # an indented comment",
+            "port=8080",
+            "[ client ]",
+            "  retries = 3",
+        ]
+        .join("\n")
+    }
+
+    #[test]
+    fn parses_two_sections_and_a_headerless_entry() {
+        let src = sample();
+        let ini = parse(&src).unwrap();
+        assert_eq!(ini.section_names().collect::<Vec<_>>(), vec!["", "server", "client"]);
+        assert_eq!(ini.get("", "top"), Some("level"));
+        assert_eq!(ini.get("server", "host"), Some("example.org"));
+        assert_eq!(ini.get("server", "port"), Some("8080"));
+        assert_eq!(ini.get("client", "retries"), Some("3"));
+        assert_eq!(ini.get("client", "host"), None);
+        assert_eq!(ini.get("nowhere", "host"), None);
+        assert_eq!(
+            ini.entries("server").to_vec(),
+            vec![("host", "example.org"), ("port", "8080")]
+        );
+        assert!(ini.entries("nowhere").is_empty());
+    }
+
+    #[test]
+    fn reports_each_error_with_its_line_number() {
+        assert_eq!(
+            parse("[a]\nk = v\n[broken\n").err(),
+            Some(IniError::UnclosedSection { line: 3 })
+        );
+        assert_eq!(
+            parse("; fine\n\njust text\n").err(),
+            Some(IniError::MissingEquals { line: 3 })
+        );
+        assert_eq!(parse("[a]\n  = value\n").err(), Some(IniError::EmptyKey { line: 2 }));
+        assert_eq!(IniError::EmptyKey { line: 2 }.to_string(), "line 2: empty key");
+    }
+
+    #[test]
+    fn a_value_outlives_the_ini() {
+        let src = String::from("[db]\nuser = admin\n");
+        let user = {
+            let ini = parse(&src).unwrap();
+            ini.get("db", "user").unwrap()
+        }; // `ini` is dropped here; `user` borrows `src`
+        assert_eq!(user, "admin");
+    }
+
+    #[test]
+    fn repeated_keys_and_sections() {
+        let ini = parse("[a]\nk = 1\n[b]\nx = y\n[a]\nk = 2\n").unwrap();
+        assert_eq!(ini.get("a", "k"), Some("2"));
+        assert_eq!(ini.entries("a").to_vec(), vec![("k", "1"), ("k", "2")]);
+        assert_eq!(ini.section_names().collect::<Vec<_>>(), vec!["a", "b"]);
+    }
+}

@@ -1,0 +1,87 @@
+// Task 3: diff_lines
+// Package path: src/lib.tide
+
+use std::collections::HashSet;
+
+/// The first line at which `a` and `b` differ: its 1-based number, the line
+/// of `a`, and the line of `b`, where a missing line is `""`. `None` when
+/// both texts have the same lines.
+pub fn first_difference(a: &str, b: &str) -> Option<(usize, &str from a, &str from b)> {
+    let mut left = a.lines();
+    let mut right = b.lines();
+    let mut line = 0;
+    loop {
+        line += 1;
+        match (left.next(), right.next()) {
+            (None, None) => return None,
+            (x, y) if x == y => {}
+            (x, y) => return Some((line, x.unwrap_or(""), y.unwrap_or(""))),
+        }
+    }
+}
+
+/// The lines of `a`, in order, that occur nowhere in `b`. They borrow only `a`.
+pub fn only_in_first(a: &str, b: &str) -> Vec<&str from a> {
+    let in_b: HashSet<&str> = b.lines().collect();
+    a.lines().filter(|line| !in_b.contains(line)).collect()
+}
+
+/// The longest line (in characters) that occurs in both texts, as a slice of
+/// `a`; the first such line of `a` on ties.
+pub fn longest_common_line(a: &str, b: &str) -> Option<&str from a> {
+    let in_b: HashSet<&str> = b.lines().collect();
+    let mut best: Option<&str> = None;
+    for line in a.lines().filter(|line| in_b.contains(line)) {
+        let longer = match best {
+            None => true,
+            Some(current) => line.chars().count() > current.chars().count(),
+        };
+        if longer {
+            best = Some(line);
+        }
+    }
+    best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_difference_reports_the_line_and_both_sides() {
+        assert_eq!(first_difference("x\ny\n", "x\ny"), None);
+        assert_eq!(first_difference("x\ny\nz", "x\nY\nz"), Some((2, "y", "Y")));
+        assert_eq!(first_difference("x\ny", "x"), Some((2, "y", "")));
+        assert_eq!(first_difference("", "new"), Some((1, "", "new")));
+    }
+
+    #[test]
+    fn only_in_first_outlives_b() {
+        let a = String::from("keep\nshared\nalso keep\nshared\n");
+        let unique = {
+            let b = String::from("shared\nother\n");
+            only_in_first(&a, &b)
+        }; // `b` is dropped here
+        assert_eq!(unique, vec!["keep", "also keep"]);
+    }
+
+    #[test]
+    fn longest_common_line_prefers_the_first_of_a_on_ties() {
+        assert_eq!(
+            longest_common_line("ab\ncd\nlonger line\n", "cd\nlonger line\nab\n"),
+            Some("longer line")
+        );
+        assert_eq!(longest_common_line("ab\ncd\n", "cd\nab\n"), Some("ab"));
+        assert_eq!(longest_common_line("a\nb\n", "c\n"), None);
+    }
+
+    #[test]
+    fn longest_common_line_outlives_b() {
+        let a = String::from("short\na much longer line\n");
+        let best = {
+            let b = String::from("a much longer line\nshort\n");
+            longest_common_line(&a, &b)
+        };
+        assert_eq!(best, Some("a much longer line"));
+    }
+}

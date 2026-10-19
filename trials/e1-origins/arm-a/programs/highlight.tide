@@ -1,0 +1,118 @@
+// Task 5: highlight
+// Package path: src/lib.tide
+
+/// Finds keyword occurrences. It keeps the caller's keyword slices (not
+/// copies of the strings), so it borrows whatever they point into.
+pub struct Highlighter {
+    keywords: Vec<&str>,
+    case_sensitive: bool,
+}
+
+/// One keyword occurrence. `word` borrows the searched text; `keyword` is the
+/// keyword's own slice and borrows the keyword source. They are separate
+/// origins, so a span can mix a short-lived text with long-lived keywords.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub word: &str,
+    pub keyword: &str,
+    pub offset: usize,
+}
+
+impl Highlighter {
+    pub fn new(keywords: &[&str], case_sensitive: bool) -> Highlighter from *keywords {
+        Highlighter { keywords: keywords.to_vec(), case_sensitive }
+    }
+
+    /// A span for every word of `text` that equals a keyword (ignoring ASCII
+    /// case unless case-sensitive). A word is a maximal run of alphanumeric
+    /// characters or `_`; `offset` is its byte offset in `text`.
+    pub fn spans(&self, text: &str) -> Vec<Span from { word: text, keyword: self.keywords }> {
+        let mut spans = Vec::new();
+        let mut start: Option<usize> = None;
+        // A trailing non-word sentinel closes a word that ends the text.
+        for (i, c) in text.char_indices().chain([(text.len(), ' ')]) {
+            let in_word = c.is_alphanumeric() || c == '_';
+            match start {
+                None if in_word => start = Some(i),
+                Some(s) if !in_word => {
+                    start = None;
+                    let word = &text[s..i];
+                    if let Some(keyword) = self.keyword_for(word) {
+                        spans.push(Span { word, keyword, offset: s });
+                    }
+                }
+                _ => {}
+            }
+        }
+        spans
+    }
+
+    /// The first keyword that `word` matches.
+    fn keyword_for(&self, word: &str) -> Option<&str from self.keywords> {
+        self.keywords.iter().copied().find(|k| {
+            if self.case_sensitive {
+                *k == word
+            } else {
+                k.eq_ignore_ascii_case(word)
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn texts_come_and_go_while_keywords_stay() {
+        let config = String::from("fn, let, IF, match");
+        let keywords: Vec<&str> = config.split(',').map(str::trim).collect();
+        let highlighter = Highlighter::new(&keywords, false);
+        let mut matched_words: Vec<String> = Vec::new();
+        let mut matched_keywords: Vec<&str> = Vec::new();
+        for source in ["let x = 1;", "if ready { match x {} }", "fnord fn_ x_fn fn"] {
+            let text = String::from(source); // dropped at the end of each iteration
+            let spans = highlighter.spans(&text);
+            for span in &spans {
+                assert_eq!(&text[span.offset..span.offset + span.word.len()], span.word);
+                assert!(span.word.eq_ignore_ascii_case(span.keyword));
+                matched_words.push(span.word.to_string());
+            }
+            // Keywords borrow `config`, not `text`, so they may leave the loop.
+            matched_keywords.extend(spans.iter().map(|s| s.keyword));
+        }
+        assert_eq!(matched_words, vec!["let", "if", "match", "fn"]);
+        assert_eq!(matched_keywords, vec!["let", "IF", "match", "fn"]);
+    }
+
+    #[test]
+    fn spans_outlive_the_highlighter() {
+        let config = String::from("alpha beta");
+        let keywords: Vec<&str> = config.split_whitespace().collect();
+        let text = String::from("beta, gamma; alpha!");
+        let spans = {
+            let highlighter = Highlighter::new(&keywords, true);
+            highlighter.spans(&text)
+        }; // the highlighter is dropped here
+        assert_eq!(
+            spans,
+            vec![
+                Span { word: "beta", keyword: "beta", offset: 0 },
+                Span { word: "alpha", keyword: "alpha", offset: 13 },
+            ]
+        );
+    }
+
+    #[test]
+    fn case_sensitivity_and_word_boundaries() {
+        let sensitive = Highlighter::new(&["Foo"], true);
+        let found = sensitive.spans("foo Foo FOO Foo_bar");
+        assert_eq!(found, vec![Span { word: "Foo", keyword: "Foo", offset: 4 }]);
+
+        let relaxed = Highlighter::new(&["Foo"], false);
+        let offsets: Vec<usize> = relaxed.spans("foo Foo FOO Foo_bar").iter().map(|s| s.offset).collect();
+        assert_eq!(offsets, vec![0, 4, 8]);
+
+        assert!(Highlighter::new(&[], false).spans("anything at all").is_empty());
+    }
+}

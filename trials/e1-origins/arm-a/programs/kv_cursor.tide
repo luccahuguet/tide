@@ -1,0 +1,217 @@
+// Task 10: kv_cursor
+// Package path: src/lib.tide
+
+use std::fmt;
+
+/// A forward-only cursor over a string. Every slice it returns borrows the
+/// source, not the cursor.
+pub struct Cursor {
+    src: &str,
+    pos: usize,
+}
+
+impl Cursor {
+    pub fn new(src: &str) -> Cursor {
+        Cursor { src, pos: 0 }
+    }
+
+    /// The next character, without consuming it.
+    pub fn peek(&self) -> Option<char> {
+        self.src[self.pos..].chars().next()
+    }
+
+    /// Consumes and returns the next character.
+    pub fn bump(&mut self) -> Option<char> {
+        let c = self.peek()?;
+        self.pos += c.len_utf8();
+        Some(c)
+    }
+
+    pub fn at_end(&self) -> bool {
+        self.pos == self.src.len()
+    }
+
+    /// Skips whitespace other than `\n`, which separates pairs.
+    pub fn skip_ws(&mut self) {
+        self.eat_while(|c| c != '\n' && c.is_whitespace());
+    }
+
+    /// The byte offset of the next character in the source.
+    pub fn offset(&self) -> usize {
+        self.pos
+    }
+
+    /// Consumes characters while `pred` holds and returns them as a slice of
+    /// the source, which stays usable after the cursor is gone.
+    pub fn eat_while(&mut self, mut pred: impl FnMut(char) -> bool) -> &str from self.src {
+        let start = self.pos;
+        while let Some(c) = self.peek() {
+            if !pred(c) {
+                break;
+            }
+            self.pos += c.len_utf8();
+        }
+        let src = self.src;
+        &src[start..self.pos]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    EmptyKey,
+    MissingEquals,
+    UnterminatedQuote,
+}
+
+impl fmt::Display for ParseErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            ParseErrorKind::EmptyKey => "empty key",
+            ParseErrorKind::MissingEquals => "missing `=`",
+            ParseErrorKind::UnterminatedQuote => "unterminated quote",
+        })
+    }
+}
+
+/// `offset` is the byte offset in the parsed source: the `=` with no key
+/// before it, the place where `=` was expected, or the opening quote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("{kind} at byte {offset}")]
+pub struct ParseError {
+    pub offset: usize,
+    pub kind: ParseErrorKind,
+}
+
+/// Parses `key=value` pairs separated by `;` or newlines, with optional
+/// spaces around keys, values, and separators, and appends them to `out` as
+/// slices of `src`. A value may be double-quoted (no escapes; it ends at the
+/// line). Returns the number of pairs appended. On error nothing is appended.
+pub fn parse_pairs(src: &str, out: &mut Vec<(&str, &str) from src>) -> Result<usize, ParseError>
+    ensures match result {
+        Ok(n) => out.len() == old(out.len()) + n,
+        Err(_) => out.len() == old(out.len()),
+    }
+{
+    let before = out.len();
+    match append_pairs(src, out) {
+        Ok(()) => Ok(out.len() - before),
+        Err(e) => {
+            out.truncate(before);
+            Err(e)
+        }
+    }
+}
+
+fn append_pairs(src: &str, out: &mut Vec<(&str, &str) from src>) -> Result<(), ParseError> {
+    let mut cur = Cursor::new(src);
+    loop {
+        cur.skip_ws();
+        match cur.peek() {
+            None => return Ok(()),
+            Some(';' | '\n') => {
+                cur.bump(); // an empty entry
+                continue;
+            }
+            Some(_) => {}
+        }
+        let key_start = cur.offset();
+        let key = cur.eat_while(|c| !matches!(c, '=' | ';' | '\n')).trim_end();
+        if cur.peek() != Some('=') {
+            return Err(ParseError { offset: cur.offset(), kind: ParseErrorKind::MissingEquals });
+        }
+        if key.is_empty() {
+            return Err(ParseError { offset: key_start, kind: ParseErrorKind::EmptyKey });
+        }
+        cur.bump();
+        cur.skip_ws();
+        let value = if cur.peek() == Some('"') {
+            let quote = cur.offset();
+            cur.bump();
+            let inner = cur.eat_while(|c| c != '"' && c != '\n');
+            if cur.bump() != Some('"') {
+                return Err(ParseError { offset: quote, kind: ParseErrorKind::UnterminatedQuote });
+            }
+            inner
+        } else {
+            cur.eat_while(|c| c != ';' && c != '\n').trim_end()
+        };
+        out.push((key, value));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appends_to_a_vector_holding_a_pair_from_another_string() {
+        let first = String::from("lang = tide");
+        let second = String::from(" name = \"kv cursor\" ; level=3\nempty=\n\n  last = x y  ;");
+        let mut pairs = Vec::new();
+        assert_eq!(parse_pairs(&first, &mut pairs), Ok(1));
+        assert_eq!(parse_pairs(&second, &mut pairs), Ok(4));
+        assert_eq!(
+            pairs,
+            vec![
+                ("lang", "tide"),
+                ("name", "kv cursor"),
+                ("level", "3"),
+                ("empty", ""),
+                ("last", "x y"),
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_each_error_kind_with_its_offset() {
+        let mut pairs = vec![("kept", "yes")];
+        assert_eq!(
+            parse_pairs("a=1; =2", &mut pairs),
+            Err(ParseError { offset: 5, kind: ParseErrorKind::EmptyKey })
+        );
+        assert_eq!(
+            parse_pairs("a=1\nbogus\nc=3", &mut pairs),
+            Err(ParseError { offset: 9, kind: ParseErrorKind::MissingEquals })
+        );
+        assert_eq!(
+            parse_pairs("a=\"open", &mut pairs),
+            Err(ParseError { offset: 2, kind: ParseErrorKind::UnterminatedQuote })
+        );
+        assert_eq!(
+            parse_pairs("a=\"split\nline\"", &mut pairs),
+            Err(ParseError { offset: 2, kind: ParseErrorKind::UnterminatedQuote })
+        );
+        assert_eq!(pairs, vec![("kept", "yes")]); // failed parses append nothing
+        assert_eq!(
+            ParseError { offset: 5, kind: ParseErrorKind::EmptyKey }.to_string(),
+            "empty key at byte 5"
+        );
+    }
+
+    #[test]
+    fn eaten_text_outlives_its_cursor() {
+        let src = String::from("  héllo, world");
+        let word = {
+            let mut cur = Cursor::new(&src);
+            cur.skip_ws();
+            assert_eq!(cur.offset(), 2);
+            let word = cur.eat_while(char::is_alphanumeric);
+            assert_eq!(cur.peek(), Some(','));
+            word
+        }; // the cursor is dropped here; `word` borrows `src`
+        assert_eq!(word, "héllo");
+    }
+
+    #[test]
+    fn bump_steps_over_whole_characters() {
+        let mut cur = Cursor::new("é=1");
+        assert!(!cur.at_end());
+        assert_eq!(cur.bump(), Some('é'));
+        assert_eq!(cur.offset(), 2);
+        assert_eq!(cur.bump(), Some('='));
+        assert_eq!(cur.bump(), Some('1'));
+        assert!(cur.at_end());
+        assert_eq!(cur.bump(), None);
+        assert_eq!(cur.peek(), None);
+    }
+}
