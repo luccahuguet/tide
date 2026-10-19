@@ -1,6 +1,6 @@
 # Ferox Design
 
-Status: draft 2.1. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
@@ -58,6 +58,26 @@ deterministic replay, with Rust's guarantees and much faster builds.
   shell; Bend 2 owns proved, massively parallel kernels (D16).
 - **Evidence-gated**: the thesis is tested by the validation program (D0)
   before syntax freezes.
+
+## Tiers
+
+Round 2 found that closing every review hole with a new rule had made the
+full design heavier than Rust (`reviews/round2-simplicity.md`). The design is
+therefore split into tiers. **v0 core** is what ships first and what
+`design/reference.md` teaches; later tiers are designed so v0 does not block
+them, but they are not part of v0. Where a decision below describes a
+later-tier feature, the tier table wins.
+
+| Tier | Contents |
+| --- | --- |
+| v0 core | Rust surface and ownership with origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`requires`, `ensures`, loop `invariant`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the agent toolchain on the interpreter, then the Cranelift-class backend |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay (D17) |
+| Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
+
+v0 removes these from draft 2: the `Frozen` trait (`Pure + Sync` covers it),
+the `lock` keyword (replaced by `Shared::with` methods), `par { }` blocks
+(replaced by the library `join`), and the moved-out rule (a child task's panic
+propagates to its scope, as in Rust's `std::thread::scope`).
 
 ## Evidence That Shaped The Design
 
@@ -217,9 +237,9 @@ share one origin need an explicit `from` on the field
   inherent method per name per type; trait methods with the same name are
   disambiguated by trait path, as in Rust. No polymorphic recursion.
 - **Integers trap on overflow, division by zero, and over-wide shifts in every
-  profile.** The trap may be reported late, but before the overflowed value
-  influences any observable effect or leaves the enclosing loop or function,
-  so the optimizer can batch checks in vectorized loops. A proof may delete a
+  profile.** v0 traps are precise. Deferred reporting, which lets the
+  optimizer batch checks in vectorized loops, is a later tier that must first
+  show the writes it delays are unobservable. A proof may delete a
   runtime check only if every fact it relies on is either proved inside the
   same build or still checked at run time; a `pub` precondition that a deleted
   check depends on stays checked at function entry.
@@ -255,14 +275,14 @@ generics.
   `Box<dyn Error>` works.
 - Results are must-use.
 - Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
-  current task. A structured scope observes a child's panic as an error value.
-  On that error path, every place the child borrowed mutably is treated as
-  moved out: it must be reassigned before any use. A place behind a reference
-  cannot be left moved out, so the function must reassign it or itself
-  panic; a half-updated value can never reach a caller. Abandoned values are
-  dropped, as in Rust's unwinding, so resources are released; `Drop` impls are
-  therefore verified without assuming their type's invariant. Every cell the
-  child held locked is poisoned.
+  current task. A child task's panic propagates to its scope, which panics in
+  turn, as with Rust's `std::thread::scope`; no code ever observes data a
+  panicking task was mutating. Recovery happens only at
+  `Tasks::spawn_isolated`, which takes an `Owned` closure and returns
+  `Result<T, Panicked>`. Abandoned values are dropped, as in Rust's unwinding,
+  so resources are released; `Drop` impls are therefore verified without
+  assuming their type's invariant. A cell whose `Shared::with` closure
+  panicked is poisoned.
 
 Rejected: exceptions; draft 1's `from` keyword on variants (collides with
 `String::from`, `reviews/round1-agent-usability.md` B2).
@@ -309,7 +329,9 @@ serialization as the default (5–7x slower in prior art).
   `eprint!`, `eprintln!`, `dbg!`, and the built-in `log` and `trace` APIs write
   to sinks owned by the current task and configured by `main`. They cannot
   read anything back, they do not affect purity, and inside `par` their output
-  is buffered and emitted in sequential order. `dbg!` is an error in release
+  is buffered and emitted in sequential order. Arguments of sink forms are
+  always evaluated, whatever log level is enabled, so configuration cannot
+  change results or panics. `dbg!` is an error in release
   builds; printing to stdout from a library package is a lint. Sink use is
   still reported as exercised effect in the trust surface, and `Secret<T>`
   values refuse `Debug` and `Display` so they cannot be logged by accident.
@@ -319,15 +341,17 @@ serialization as the default (5–7x slower in prior art).
 - **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
   `Pure` if no capability, synchronization handle, or foreign handle is
   reachable from it. `Arc` exposes no reference-count readers, and
-  `sync::Weak` is a synchronization handle, so shared ownership cannot leak
-  timing into authority-free code. A function
+  `Arc` and `sync::Weak` are synchronization handles, because drop timing and
+  conditional cloning can reveal scheduling; authority-free code shares data
+  by reference inside scopes instead. Classification is structural over every
+  reachable type, including closure captures and generic arguments. A function
   is authority-free if all its parameter and capture types are `Pure`. An
   authority-free function cannot observe nondeterminism: its results depend
   only on its arguments.
-- **Frozen data.** `Frozen` is a second compiler-known auto trait: a type is
-  `Frozen` if it has no interior mutability reachable through shared
-  references (no `Cell`, `RefCell`, atomics). `par` (D9) combines `Pure` with
-  `Frozen`; memoization and `const fn` additionally forbid `&mut`
+- Parallel code (D9) requires `Pure + Send` closures and `Pure + Sync` shared
+  captures: `Pure` excludes atomics and synchronization handles, and `Sync`
+  excludes `Cell` and `RefCell`, so no interior mutability is observable
+  across branches. Memoization and `const fn` additionally forbid `&mut`
   parameters. A call through a closure or `dyn` value may suspend exactly when
   that value's type is not `Pure`.
 - **Foreign calls carry authority.** `extern` declarations are allowed only in
@@ -359,16 +383,16 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   children but fails the scope only if a child returns the cancellation as its
   error, so a scope can collect partial results; suspended work unwinds and runs
   destructors; operations that consume a value return it inside the error.
-- **Shared mutable state** is message passing over channels, or
-  `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send + Pure`.
-  The lock acquires all named cells atomically in a global order; if two
-  handles name the same cell, `lock` returns `Err(Aliased)` instead of
-  running the body. Acquisition is not a
-  cancellation point. Its body may call only authority-free functions and may
-  not contain `lock`; payloads are `Pure`, so they hold no `Shared` handles,
-  and the body can neither suspend nor take another lock. A panicking body
-  poisons the cells, and `lock` returns `Result`. A cell's invariant is its
-  payload type's invariant.
+- **Shared mutable state** is message passing over channels, or `Shared<T>`
+  cells with `T: Send + Pure`, accessed only through `Shared::with(&a, |x|
+  ...)` and `Shared::with2(&a, &b, |x, y| ...)`. `with2` acquires both cells
+  atomically in a global order and returns `Err(Aliased)` if they are the
+  same cell. The closure must be `Pure`, so it can hold no capability and no
+  `Shared` handle: it can neither suspend nor acquire another cell, which
+  makes this primitive deadlock-free. Acquisition is not a cancellation point.
+  A panicking closure poisons the cells; both methods return
+  `Result<R, LockError>`. A cell's invariant is its payload type's
+  invariant.
 - Data-race freedom comes from ownership plus `Send` and `Sync`, derived
   structurally. The task, not the OS thread, is the isolation unit; values
   that never leave a task need not be `Send`.
@@ -389,9 +413,9 @@ stackful execution internally.
 
 ### D9. Parallelism: deterministic, with defined grouping
 
-- `par { a(), b() }`, `join`, and parallel iterators run closures that are
-  authority-free and `Send`, capturing shared data only if it is `Frozen`, or
-  holding disjoint `&mut` splits.
+- `join(|| a(), || b())`, `par_map`, and `par_for` are library functions.
+  They run `Pure + Send` closures that capture shared data only if it is
+  `Pure + Sync`, or that hold disjoint `&mut` splits.
 - `par_map` and `par_for` equal their sequential versions.
 - `par_reduce` is defined by a canonical balanced grouping that depends only
   on input length, so results are bitwise identical on any core count. When
@@ -400,7 +424,8 @@ stackful execution internally.
   a counted assumption); for float addition it does not, and
   the canonical grouping is the definition.
 - If several parallel branches panic, the one first in sequential order is
-  reported; the region may still diverge if a branch after it diverges.
+  reported, and buffered sink output from later branches is discarded; the
+  region may still diverge if a branch after it diverges.
 - Granularity is the runtime's job: lazy splitting first, with heartbeat
   promotion only if benchmarks justify it.
 - An automatic parallelization pass for independent authority-free calls is
@@ -485,7 +510,9 @@ stackful execution internally.
 - Each module compiles to an interface artifact (signatures, layouts,
   contracts, public `spec fn` bodies, views, type invariants, laws,
   authority, proof status, and which trait methods generic code calls) with a
-  content hash. Editing a public `spec fn` body is an interface change. Dependents read
+  content hash. Editing a public `spec fn` body is an interface change, and
+  every `const fn` body evaluated at compile time is part of its consumers'
+  cache keys. Dependents read
   only their direct imports' interfaces; a body edit never re-checks
   dependents.
 - Checking, borrow checking, authority checking, and proving are per
@@ -599,6 +626,20 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   as an external claim at a lower trust level than a Ferox proof.
 - Deterministic `par` lets Ferox and Bend implementations of one kernel be
   tested against each other.
+
+### D17. Record, replay, and authority policies
+
+- **Production record and replay** (v1): a binary can run with a recording
+  root that logs every capability response to a compact trace. Replaying the
+  trace under the simulator reproduces the run bit for bit, so an agent can
+  debug a production incident deterministically, add a test from it, and
+  verify a fix against the recorded inputs. Traces are queryable structured
+  data. `Secret<T>` values are redacted at record time.
+- **Snapshot and branch** (later): the simulator can snapshot a run and
+  explore alternative schedules and faults from that point.
+- **Authority policies** (v0): a package can declare rules over module paths,
+  such as `parser::* is authority-free` or `only net::* may use Net`, which
+  the checker enforces and the trust diff reports.
 
 ## The Feel
 
