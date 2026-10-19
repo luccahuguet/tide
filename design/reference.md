@@ -1,7 +1,7 @@
 # Tide for Rust Programmers
 
 Status: the agent-facing reference for the **v0 core** of Tide, as the
-tier table of `design/01-design.md` (draft 3, the decision record) defines
+tier table of `design/01-design.md` (draft 3.1, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
@@ -384,8 +384,10 @@ context. `round_from` and float `TryFrom` are provisional names.
 
 ### 4.3 Floats
 
-IEEE 754 as Rust; `to_bits()` returns one canonical NaN pattern, so results
-match across targets. `f64` is not `Eq` or `Ord`; use `total_cmp`.
+IEEE 754 as Rust; `to_bits()` returns one canonical NaN pattern, and `sin`,
+`exp`, `powf`, and the other math functions come from one library that std
+ships for every target, so results match across targets. `f64` is not `Eq`
+or `Ord`; use `total_cmp`.
 
 ## 5. Traits and generics
 
@@ -405,7 +407,9 @@ are rejected:
 | Polymorphic recursion | `fn f<T>(x: T) { f(vec![x]) }` | `FX0407` | an enum or `Box<dyn ..>` |
 | Two inherent methods with one name | two `fn new` | `FX0408` | distinct names |
 
-Trait methods are namespaced by trait, as in Rust, so `Display::fmt` and
+A missing auto trait never makes impls disjoint: `impl<T: Pure> K for T`
+and `impl K for Net` overlap (`FX0402`), though `Net` is not `Pure`. Trait
+methods are namespaced by trait, as in Rust, so `Display::fmt` and
 `Debug::fmt` coexist. A returned `impl Trait` exposes only the auto traits
 it names: write `-> impl Iterator<Item = u8> + Send` if callers need `Send`.
 
@@ -576,12 +580,9 @@ impl Log {
 Safe code has no mutable globals and no thread-locals: no `static mut`, no
 `static` holding atomics, `Mutex`, `OnceLock`, or `Cell`, no
 `thread_local!`, no `lazy_static!` (`FX0502`). A `static` must be
-`Owned + Sync + Pure`; `const` is as Rust. A lazily built table is allowed
-when its builder is an authority-free `fn`:
-`static TABLE: Lazy<Table> = Lazy::new(build_table);`
-(`std::sync::Lazy`, provisional path). `Lazy<T>` is `Pure` when `T` is,
-because forcing it yields the same value in every task. Otherwise build the
-value in `main` and pass it down.
+`Owned + Sync + Pure`, and its value is computed at compile time by
+`const fn`; `const` is as Rust. There are no lazy statics: build a value
+that needs run-time work in `main` and pass it down.
 
 `HashMap::new()` uses a fixed hash key, so iteration order is deterministic
 (but unspecified). For untrusted keys use
@@ -646,10 +647,11 @@ authority-freedom a compile error (`FX0511`).
 
 | Use | Requires |
 | --- | --- |
-| `join`, `par_map`, `par_for` closures (8) | `Pure + Send`; shared captures `Pure + Sync` |
+| `join` closures (8) | `Pure + Send`; shared captures `Pure + Sync` |
+| `par_map`, `par_for` closures (8) | `Fn + Pure + Send + Sync`; shared captures `Pure + Sync` |
 | `Shared<T>` payloads; `with` closures (7.4) | `T: Send + Pure`; closure `Pure` |
 | `static` (6.4) | `Owned + Sync + Pure` |
-| contract clauses (10) | authority-free |
+| functions a contract clause calls (10.1) | authority-free, `Pure + Sync` arguments, `&mut` only to clause-created temporaries |
 | `const fn` | authority-free, no `&mut` parameters |
 
 ### 6.7 Network
@@ -710,7 +712,10 @@ Semantics:
   report.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
-  interleaving, so each seed explores a schedule and replays bit for bit.
+  interleaving, so each seed explores a schedule. Parallel regions (8) run
+  sequentially. Each run writes a replay manifest (seed, commit, toolchain,
+  target, simulated setup, injected faults), from which it replays bit for
+  bit.
 - **Errors** have the host's `io::ErrorKind`s.
 - **Packet loss.** `net_drop(p)` drops each packet independently with
   probability `p`. A UDP datagram is simply lost. TCP streams and
@@ -724,9 +729,10 @@ Semantics:
   `Err`, `Dbg`, or `Log(Level)`), and `message: String`, one line without
   its newline (provisional).
 - **Node entries.** `restart` calls the entry again, so it is a `fn` item or
-  an `Fn` closure, never `FnOnce`. It is `Owned + Send` and captures only
-  `Pure` data; clone inside it what each run consumes. Unlike `Root`, a
-  `NodeRoot` is an ordinary value: pass it or its fields to helpers.
+  an `Fn` closure, never `FnOnce`. It is `Send`, and its captures are
+  `Owned`, `Pure`, and `Sync`, so a run cannot change them; clone inside it
+  what each run consumes. Unlike `Root`, a `NodeRoot` is an ordinary value: pass it or its
+  fields to helpers.
 - **Crashes.** A crash stops a node's tasks at their current scheduling
   points without running destructors, frees its memory, and resets its
   peers' connections. Only synced data survives (6.3); unsynced writes and
@@ -734,8 +740,8 @@ Semantics:
   node whose entry has returned is the same power cut (provisional). The
   test body itself cannot crash: put crash-tested code in a node.
 - **Restarts.** `restart(&node)` returns `()` and calls the entry again
-  with a fresh `NodeRoot` over the surviving disk; a running node is crashed
-  first. A `NodeTask` follows its node across restarts: `run_until(&t)`
+  with a fresh `NodeRoot` over the surviving disk and no surviving memory; a
+  running node is crashed first. A `NodeTask` follows its node across restarts: `run_until(&t)`
   returns when some run of the entry returns, and panics if the node is
   down with no restart scheduled. Dropping a `NodeTask` does not stop the
   node, as with a `Task` (7.1). (All provisional.)
@@ -848,9 +854,12 @@ pub struct Panicked { pub message: String }          // (provisional)
   anything that outlives the `scope` call, and every capability, `Shared`
   handle, and `Scope` is `Send + Sync`, so `s.spawn(|| Ok(net.get(u, d)))`
   may borrow `net`.
-- **Failure.** A child fails when it returns `Err`; the body fails when it
-  returns `Err`. The first failure cancels the scope (body, children, nested
-  scopes), and `scope` returns that error after every child finishes. Later
+- **Failure.** A child or the body fails when it returns `Err`. The first
+  failure cancels the scope (body, children, nested scopes). Once every
+  child has finished, `scope` re-raises the panic of the earliest-spawned
+  panicking child, if any; otherwise it returns the error of the
+  earliest-spawned failing child, if any (`DeadlineExceeded` if the scope's
+  own deadline cancelled it, 7.2); otherwise the body's result. Other
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives
@@ -861,10 +870,9 @@ pub struct Panicked { pub message: String }          // (provisional)
   reports the real cause). So `x.join()?` in the body is the normal form.
   Dropping a `Task` without joining is allowed.
 - **Panics propagate** as in Rust's `std::thread::scope`: a child's panic
-  cancels the scope, and once every child has finished, `scope` panics in
-  the calling task with the child's message. A panic in the body cancels and
-  joins the children, then continues unwinding. Nothing ever observes data a
-  panicking child was mutating.
+  cancels the scope, and `scope` re-raises it in the calling task (above). A
+  panic in the body cancels and joins the children, then continues
+  unwinding. Only destructors observe data a panicking child was mutating.
 - **Isolation.** `tasks.spawn_isolated(move || ..)` runs an `Owned` closure
   as a new task, waits for it, and returns `Err(Panicked)` if it panicked;
   it inherits the caller's cancellation. It is the only
@@ -916,10 +924,11 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
   (a nested scope uses the earliest of its ancestors'). When it passes, the
   scope is cancelled, but that alone is not a failure: if the body and every
   child still return `Ok`, for example because children turned cancellation
-  errors into values, `scope` returns `Ok` with the partial results. If any
-  of them returns `Err` after the deadline, the scope fails and `scope`
-  returns `Err(TaskError::DeadlineExceeded.into())`. `s.cancel()` behaves
-  the same, with `TaskError::Cancelled`. When a scope deadline and an operation deadline
+  errors into values, `scope` returns `Ok` with the partial results. A child
+  that returns `Err` after the deadline is reported as
+  `Err(TaskError::DeadlineExceeded.into())` (7.1); the body's own `Err` is
+  returned unchanged. `s.cancel()` cancels the same way but reports the
+  child's own error. When a scope deadline and an operation deadline
   coincide, the operation sees the cancellation.
 - **Soft.** Authority-free computation, `Shared::with*`, and joins are never
   interrupted; cancellation is observed at the next checkpoint.
@@ -1019,7 +1028,9 @@ pub fn total(accounts: &[Shared<Account>]) -> Result<u128, LockError> {
 
 The binary's manifest picks the runtime (`[bin] runtime = "threads"`, the
 default, or `"blocking"`); tests and `tide sim` use the simulator.
-Libraries never choose and behave the same under all of them.
+Libraries never choose and behave the same under all of them. `threads`
+runs one OS thread per task, so blocked tasks never starve runnable ones;
+bound concurrency with `Tasks::limit` (7.1).
 
 ### 7.6 Porting async Rust
 
@@ -1054,20 +1065,23 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
 - `join` is in `std::par`. `par_map`, `par_for`, and `par_sort` (stable) are
   inherent slice methods and need no import:
   `fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>`
-  and `fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)`
-  (provisional bounds).
-- Closures must be `Pure + Send` (`FX0610`); shared captures must be
+  and `fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)`.
+- `join` closures must be `Pure + Send`; `par_map`, `par_for`, and
+  `par_sort` closures are shared by branches, so they must also be `Fn` and
+  `Sync` (no owned `Cell`) (`FX0610`). Shared captures must be
   `Pure + Sync` (`FX0611`: not `&RefCell`, `&Rc`, `&Arc`, or a capability).
   Disjoint `&mut` splits (`split_at_mut`) are fine.
-- `join`, `par_map`, and `par_for` equal their sequential versions,
-  including sink output order. Under simulation they run on real cores.
+- When no branch panics, `join`, `par_map`, and `par_for` equal their
+  sequential versions, including sink output order. Under simulation they
+  run sequentially.
 - To reduce, `par_map` the expensive part and fold the results
   sequentially; `par_reduce` is v1 (Appendix A).
 - Branches cannot do I/O. For concurrent I/O, spawn children in a
   `tasks.limit(n)` scope (7.1).
-- If several branches panic, the first in sequential order is reported,
-  buffered sink output from later branches is discarded, and the panic
-  propagates in the enclosing task.
+- If a branch panics, the panic propagates in the enclosing task, and data
+  the region could write is left unspecified (but memory-safe); only
+  destructors see it. If several panic, the first in sequential order is
+  reported, and buffered sink output from later branches is discarded.
 
 ## 9. Errors and panics
 
@@ -1104,18 +1118,19 @@ builds, erased in release, and used to drive property tests.
   evaluated at entry. A `&mut` parameter `v` (or `*v`)
   means its value at return; `old(*v)` its value at entry. `old` snapshots
   only what the clause reads and never calls `Clone`.
-- **Clause expressions** are ordinary Rust boolean expressions that must be
-  authority-free: they may call any function or trait method whose arguments
-  are `Pure` (`xs.len()`, `x.cmp(y)`, your own `is_valid(x)`) and closures
-  whose captures are `Pure` (`xs.iter().all(|x| *x <= self.max)`),
-  never a capability or `Shared`. Exception (provisional): `len()`,
-  `is_empty()`, and `Shared::same` on a slice or `Vec` of handles, which
-  observe nothing another task can change, so `requires i < cells.len()`
-  is legal. Type parameters need no `Pure` bound; at an
-  instantiation with a non-`Pure` type, a clause that calls its methods is
-  skipped and reported as unchecked (provisional).
-  `==`, `<`, and arithmetic mean exactly what they mean in code, including
-  overflow traps; widen (`a as u128 + b as u128`) when a sum might overflow.
+- **Clause expressions** are ordinary Rust boolean expressions, evaluated
+  as code: `==`, `<`, and arithmetic mean exactly what they mean in code,
+  including overflow traps; widen (`a as u128 + b as u128`) when a sum might
+  overflow. Evaluation is read-only: a clause may call only authority-free
+  functions whose arguments are `Pure + Sync` and that take `&mut` only to
+  temporaries the clause creates (`xs.len()`, `x.cmp(y)`,
+  `xs.iter().all(|x| *x > 0)`, your own `is_valid(x)`, closures capturing
+  such data). So a clause cannot reach a capability, `Shared`, `Cell`, or
+  `RefCell`, not even `cells.len()` on a slice of handles, and cannot call
+  `Iterator::all` or `any`, which take `&mut self`: write `forall` or
+  `exists`. Type parameters need no bound; at an instantiation whose types
+  are not `Pure + Sync`, a clause that calls their methods is reported as
+  unchecked (provisional).
 - **Added syntax**, clauses only: `a ==> b` (implication, lowest precedence,
   right-associative); `forall |i: T| guard ==> p` and
   `exists |i: T| guard && p`, where `guard` bounds the binder as
@@ -1123,12 +1138,20 @@ builds, erased in release, and used to drive property tests.
   `c.contains(&i)`. An unbounded quantifier is an error. A quantifier body
   extends as far right as possible: to the end of the clause, or of the
   enclosing parentheses or `match` arm. So write
-  `result == (exists |i: usize| i < xs.len() && xs[i] == x)`. Rust's
-  `(0..n).all(|i| ..)` works too.
+  `result == (exists |i: usize| i < xs.len() && xs[i] == x)`.
+- **When clauses run.** A clause is *sampled* if it has a quantifier,
+  compares or snapshots a whole collection, or calls anything but scalar
+  operators and std's constant-time accessors (`len`, `is_empty`, indexing,
+  `get`, `is_some`); other clauses are *checked*. Debug builds evaluate
+  checked clauses at the points in the table; `tide test` also checks
+  sampled clauses, on each function's first 64 calls and then calls 128,
+  256, and so on, each under a step budget. One that runs over budget is
+  reported as unchecked, not failed. Release builds erase clauses.
 - **Visibility.** A `pub` function's contract may call only `pub` functions
   (Rust's private-in-public rule; provisional for v0).
 - Trait methods may carry contracts; every impl is checked against them.
-- **Violations** panic with `requires violated: <clause text>` (or
+- **Violations.** A clause that is false, or whose evaluation panics, is
+  violated. Violations panic with `requires violated: <clause text>` (or
   `ensures`, `invariant`) and the blamed span (provisional), so
   `#[should_panic(expected = "requires violated")]` can target them.
 
@@ -1214,7 +1237,10 @@ fn midpoint_stays_in_range(lo: u32, hi: u32)
 
 `tide review` shows each public item's contract text. Weakening or
 removing a contract of a public item, like widening authority, needs human
-approval (11). If a contract or `#[protected]` test looks wrong, stop and
+approval (11). A contract's hash covers the bodies of every function its
+clauses call, transitively, and v0 has no solver to tell weakening from
+strengthening, so any such change needs approval, except adding a contract
+where there was none. If a contract or `#[protected]` test looks wrong, stop and
 report it; never weaken it to get a green check.
 
 ## 11. Unsafe, trust holes, and review
@@ -1223,6 +1249,7 @@ report it; never weaken it to get a green check.
 | --- | --- | --- |
 | Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync`/`Pure` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
+| Raw pointer addresses | `p as usize`, `{:p}`, comparing, hashing, or printing raw pointers | `unsafe` grant |
 
 `tide review <base>` prints the trust diff: public signatures, declared
 authority (the capability types each public item can reach through its
@@ -1276,7 +1303,7 @@ and `Secret` are in it too (provisional). Import everything else:
 | `Stdin`, and `io::{self, Read, Write, BufRead, ..}` | `std::io` |
 | `Proc`, `Command`, `ExitCode` | `std::process` |
 | `Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, `Panicked` | `std::task` |
-| `Shared`, `LockError`, `Lazy`, `mpsc`, `Arc`; atomics | `std::sync`; `std::sync::atomic` |
+| `Shared`, `LockError`, `mpsc`, `Arc`; atomics | `std::sync`; `std::sync::atomic` |
 | `join` | `std::par` |
 | `Arena`, `Id` | `std::arena` |
 | `Cow` | `std::borrow` |
@@ -1362,7 +1389,7 @@ and candidate functions; use holes to build a function top-down.
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
 | `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (6.9) | `FX0501` |
-| `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | values built in `main`; `Lazy` with a pure builder | `FX0502` |
+| `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
 | `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
 | `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |
@@ -1581,36 +1608,31 @@ mod tests {
 ```
 
 The `ensures` of `binary_search` uses `==` and `<` on `T`, which are `Eq`
-and `Ord` exactly as in code. In debug and test builds each call checks the
-quantified `ensures` in linear time; release builds erase it. `tide test`
-also runs generated contract tests of both functions (10.2): `T` becomes
+and `Ord` exactly as in code. Its `requires` and quantified `ensures` are
+sampled: `tide test` checks them in linear time on its schedule (10.1), and
+release builds erase them. `tide test` also runs generated contract tests
+of both functions (10.2): `T` becomes
 `i64`, and `xs.is_sorted()` is a recognized shape, so sorted inputs are
 generated directly rather than filtered.
 
 ## 16. Where the documents disagree
 
-The chapters are synchronized with 01 draft 3. These points remain open;
+The chapters are synchronized with 01 draft 3.1. These points remain open;
 this reference takes the reading shown.
 
-1. **Node entries.** 03 §9.5 types the entry `FnOnce`, yet `restart`
-   reruns it. This reference requires a `fn` item or an `Fn` closure (6.8).
-2. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
+1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
    `/`" and is silent on relative paths. This reference reads "rooted" as
    the confinement root and resolves relative paths against the starting
    working directory (6.3).
-3. **`with_all`.** 01 D8 says cells are accessed only through `with` and
+2. **`with_all`.** 01 D8 says cells are accessed only through `with` and
    `with2`; 02 §8.4 and 03 §6.5 add `with_all` under a provisional name.
    Kept (7.4).
-4. **`#[pure]`.** 03 §3.2 settles it (`FX0511`); 01 still lists it as open
+3. **`#[pure]`.** 03 §3.2 settles it (`FX0511`); 01 still lists it as open
    question 4. Kept (6.6).
-5. **What v0 clauses may call.** 01 D10's spec-language bullet allows only
-   `spec fn`s and `#[spec]` functions proved total, which exist only in v1.
-   04's tier note and this reference let v0 clauses call authority-free
-   functions (10.1).
 
 ## Appendix A. Later tiers (not in v0)
 
-From the tier table of 01 (draft 3). The chapters specify most of these.
+From the tier table of 01 (draft 3.1). The chapters specify most of these.
 
 **v1:**
 

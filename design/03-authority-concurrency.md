@@ -2,7 +2,7 @@
 
 Status: draft 1 of the normative chapter for D7, D8, D9, D15, D16, and the
 Rust-import part of D13 in `design/01-design.md`, synchronized with its draft
-3. That document owns the decisions; this chapter turns them into rules a
+3.1. That document owns the decisions; this chapter turns them into rules a
 compiler, runtime, and simulator can implement. Where a rule needs a decision
 the design does not state, this chapter says so and lists it in §13.
 
@@ -136,7 +136,7 @@ the same way for all runtimes.
 ```toml
 [bin]
 runtime = "threads"        # threads (default) | blocking | evented (v1)
-workers = "cores"          # threads and evented
+workers = "cores"          # evented only (v1)
 par-threads = "cores"      # the join/par_* pool (§8); 1 makes them sequential
 ```
 
@@ -148,12 +148,15 @@ the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
 | Runtime | Tasks run as | Suspension is | Code generation |
 | --- | --- | --- | --- |
 | `blocking` | the main thread, plus one OS thread per child, created at spawn and joined at scope exit | a blocking syscall or futex wait | ordinary functions |
-| `threads` | OS threads from a pool; a task stays on one thread for life | a blocking syscall or futex wait | ordinary functions |
+| `threads` | one OS thread per task for its whole life (v0); a finished task's thread may be reused | a blocking syscall or futex wait | ordinary functions |
 | `evented` (v1) | M:N on per-core workers with work stealing; reactor on io_uring, else epoll, kqueue, or IOCP, chosen at startup | a return to the scheduler | may-suspend functions become state machines (§7) |
 | simulator | one task at a time under a seeded scheduler | a scheduling point | baton-passed OS threads, the interpreter, or the evented lowering (§9.1) |
 
 No runtime runs children inline, so a library that spawns is correct under
-all four; they differ in cost, not meaning.
+all four; they differ in cost, not meaning. Because `threads` gives every
+live task its own OS thread, blocked tasks never starve a runnable one, and
+production cannot deadlock where the simulator makes progress (D8).
+`Tasks::limit(n)` bounds concurrency where a program needs a bound.
 
 Capability types are concrete: production binaries link only the real
 implementation, so capability calls are direct and attenuation is a policy
@@ -187,17 +190,19 @@ N1). Test builds add the simulator behind one predictable branch.
 
 - **GLOBAL-1.** A `static` must be `Owned + Sync + Pure` (`FX0502`). There is
   no `static mut` in safe code.
-- **GLOBAL-2.** `static T: Lazy<Table> = Lazy::new(build);` is allowed when
-  `build` is an authority-free `fn` and `Table` meets GLOBAL-1. It runs at
-  most once and yields the same value whichever task forces it, so the static
-  is observably immutable. A panic in `build` poisons it for every later
-  access.
+- **GLOBAL-2.** v0 has no lazy statics (D7). A static's initializer is
+  evaluated at compile time by `const fn` (D6); a value that needs run-time
+  initialization is built in `main` and passed down. Nothing runs on first
+  access, so no initializer can print, panic, wait, or differ between tasks
+  or simulated nodes.
 - **GLOBAL-3.** Safe code has no thread-locals and no task-locals. The
   runtime's per-task state (cancellation, deadline, sink buffers, frame
   stack) is reachable only through the operations in this chapter.
-- **GLOBAL-4.** Addresses are unobservable in safe code: no pointer-to-integer
-  casts, no `{:p}`, and `Hash` on a reference hashes the referent.
-  `ptr::eq` and `Shared::same` compare identity without exposing it.
+- **GLOBAL-4.** Raw pointer addresses are observable only in packages
+  granted `unsafe` (D15): pointer-to-integer casts, `{:p}`, and raw pointers'
+  `PartialOrd`, `Ord`, `Hash`, and `Debug` compile only there. `Hash` on a
+  reference hashes the referent. `ptr::eq` and `Shared::same` compare
+  identity without exposing it.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
   deterministic though unspecified. Maps keyed by untrusted input take a key
   from `Rand`: `HashMap::with_hasher(RandomState::from_rand(&rand))`.
@@ -214,7 +219,7 @@ What replaces each use of global state:
 
 | Rust habit | Tide |
 | --- | --- |
-| `lazy_static!`, `LazyLock`, `OnceLock` tables | `const`, or a lazy static under GLOBAL-2 |
+| `lazy_static!`, `LazyLock`, `OnceLock` tables | a `const` or `static` computed by `const fn`, or a value built in `main` and passed by reference (GLOBAL-2) |
 | a global cache, memo table, or interner | a value owned by the caller and passed by `&mut`; in concurrent code, a `Shared<Cache>` |
 | `#[global_allocator]` | the binary's manifest; allocator thread caches belong to the runtime |
 | per-core counters | `metrics` output (§2.4); a `Shared` or atomic when the program must read the value back |
@@ -365,20 +370,20 @@ its last release and `make_mut` run user code at timing-dependent points
 - absence of sink output, or of mutation through `&mut` parameters and
   task-private cells;
 - memoizability, which also needs `Pure + Sync` parameters and no `&mut`;
-- safety for parallel branches, which also needs `Send` and `Pure + Sync`
-  shared captures;
+- safety for parallel branches, which also needs `Send` (and `Sync` for a
+  closure called from several branches) and `Pure + Sync` shared captures;
 - constant time or freedom from timing side channels.
 
 ### 3.5 Where each property is required
 
 | Use | Requires |
 | --- | --- |
-| `join`, `par_*` closures | `Pure + Send`; shared captures `Pure + Sync`; mutable captures disjoint |
+| `join` closures; `par_*` closures | `FnOnce + Pure + Send`; `Fn + Pure + Send + Sync`; for both, shared captures `Pure + Sync` and mutable captures disjoint |
 | compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters; a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
-| `static`, lazy statics | `Owned + Sync + Pure` |
+| `static` (computed at compile time, GLOBAL-2) | `Owned + Sync + Pure` |
 | `Shared<T>` payloads | `T: Send + Pure` |
 | `Shared::with` closures | `Pure`, so every call in them is authority-free |
-| contract clauses (v0) | authority-free (`reference.md` §10.1) |
+| contract clauses (v0) | calls only to authority-free functions with no `&mut` parameters and `Pure + Sync` argument types (`04-contracts.md` §1.8) |
 | `spec fn`, `#[spec]` functions (v1) | as `04-contracts.md` §1.5–§1.7: concrete parameter types `Pure`; type parameters of spec and proof fns need no bound |
 | foreign callbacks (v1) | authority-free (§5.3) |
 
@@ -597,16 +602,28 @@ no code after `scope` sees a place a panicking child was mutating; when
 
 - **TASK-1. Failure and panics.** A child or the body fails when it returns
   `Err`. A child's panic propagates as in Rust's `std::thread::scope`: it
-  cancels the scope, and once every child has finished, `scope` panics in the
-  calling task with the child's message. A panic in the body cancels and
-  joins the children, then continues unwinding. The only recovery point is
-  `tasks.spawn_isolated(f)`: it runs the `Owned` closure `f` as a new task,
-  waits for it, inherits the caller's cancellation, and returns
-  `Err(Panicked)` if `f` panicked (D5).
-- **TASK-2. First failure wins.** The first failure (in real time, or in
-  scheduler order under the simulator) cancels the scope, its body, and its
-  nested scopes. `scope` returns after every child has finished, with that
-  failure converted into `E`; later failures go to one `debug!` record.
+  cancels the scope, and once every child has finished, `scope` re-raises a
+  child's panic in the calling task (TASK-2 picks which). A panic in the body
+  cancels and joins the children, then continues unwinding. The only
+  recovery point is `tasks.spawn_isolated(f)`: it runs the `Owned` closure
+  `f` as a new task, waits for it, inherits the caller's cancellation, and
+  returns `Err(Panicked)` if `f` panicked (D5).
+- **TASK-2. Scope results.** The first failure or child panic (in real
+  time, or in scheduler order under the simulator) cancels the scope, its
+  body, and its nested scopes. Unless the body panicked (TASK-1), `scope`
+  then waits for every child and decides its outcome by one precedence rule
+  (D8):
+  1. if any child panicked, it re-raises the panic of the earliest-spawned
+     panicking child;
+  2. otherwise, if any child failed, it returns the error of the
+     earliest-spawned failing child, except that a child cancelled by the
+     scope's own deadline is reported as `E::from(TaskError::DeadlineExceeded)`
+     (TASK-4);
+  3. otherwise it returns the body's result, `Ok` or `Err`.
+
+  Spawn order, not timing, chooses among failed children, and the runtime
+  never inspects `E`. Failures and panics the rule does not report go to one
+  `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
   keeps doing so. Operations that consume a value return it inside the error
@@ -615,13 +632,17 @@ no code after `scope` sees a place a panicking child was mutating; when
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
-  cancelled (TASK-3), but expiry alone is not a failure (D8). The scope fails only if a child (or the
-  body) returns the cancellation as its error; `scope` then reports
-  `TaskError::DeadlineExceeded`. If every child and the body return `Ok`, for
-  example because children turned cancellation into values, `scope` returns
-  the partial results. `cancel()` behaves the same with
-  `TaskError::Cancelled`. When a scope deadline and an operation's own
-  deadline fall on the same instant, the scope's cancellation is observed.
+  cancelled (TASK-3), but expiry alone is not a failure (D8). A child that
+  returns `Err` after the scope's own deadline (set on this scope, not an
+  ancestor) has cancelled the scope counts as cancelled by that deadline; if
+  it is the earliest-spawned failing child, `scope` returns
+  `E::from(TaskError::DeadlineExceeded)` (TASK-2). The rule never rewrites
+  the body's error. If every child and the body return `Ok`, for example
+  because children turned cancellation into values, `scope` returns the
+  partial results. `cancel()` cancels the scope in the same way, and a
+  failing child's own error is reported. When a scope deadline and an
+  operation's own deadline fall on the same instant, the scope's
+  cancellation is observed.
 - **TASK-5. What cancellation cannot interrupt.** Authority-free
   computation, `Shared::with` acquisition and closures, foreign calls, and
   joins.
@@ -643,7 +664,7 @@ no code after `scope` sees a place a panicking child was mutating; when
   returns only when the child has finished. It returns the child's `Ok`
   value, or `Err(TaskError::Cancelled.into())` if the child failed,
   panicked, or was cancelled; the scope reports the actual failure, or
-  panics (TASK-1). A join waits no longer
+  panics (TASK-2). A join waits no longer
   than the child, and in a cancelled scope the child is itself cancelled.
 - Dropping a `Task` without joining is allowed; its failure still reaches the
   scope.
@@ -724,8 +745,10 @@ simultaneously and so require `Send`.
 
 - **SUSP-1.** A function instance is classified may-suspend if and only if,
   after monomorphization, some parameter or capture type is not `Pure`. A call
-  through a closure or `dyn` value may suspend exactly when that value's
-  type is not `Pure`. This is the semantic rule and the interface flag;
+  through a closure, function pointer, or `dyn` value may suspend exactly
+  when the callee value's type or any argument's type is not `Pure` (D7):
+  a captureless closure or a `fn` pointer is `Pure`, but `f(net, url)` still
+  passes `&Net`. This is the semantic rule and the interface flag;
   authority-free code never suspends.
 - **SUSP-2.** Generic code is classified per instance. `map(xs, |x| f(net, x))`
   gets a may-suspend instance because the closure captures `&Net`;
@@ -779,20 +802,27 @@ lowering.
 
 `join(f, g)` (`std::par`) runs two closures and returns both results; slices
 offer `par_map`, `par_for`, `par_chunks_mut`, `par_sort` (stable), and, in
-v1, `par_reduce` (§8.3). Draft 2's `par { }` block is removed (D9). Each
-closure must be `Pure + Send` (`FX0610`), may capture shared data only if it
-is `Pure + Sync` (`FX0611`), and may hold disjoint `&mut` splits. Branches
+v1, `par_reduce` (§8.3). Draft 2's `par { }` block is removed (D9).
+`join`'s closures are `FnOnce + Pure + Send`, each called once. The slice
+methods call one closure from several branches at once, so it must be
+`Fn + Pure + Send + Sync` (D9), and so must `par_sort`'s comparator: `Sync`
+rules out a moved-in `Cell` or `RefCell` that two branches could mutate
+(`FX0610`). Every closure may capture shared data only if it is
+`Pure + Sync` (`FX0611`), and may hold disjoint `&mut` splits. Branches
 may borrow the enclosing frame, because `join` returns only after both
 finish. A branch is not a task: it has no checkpoints and cannot be
 cancelled.
 
 ### 8.2 Semantics
 
-- **PAR-1.** A parallel call's values, its writes through `&mut`, and its
-  sink output are identical to sequential evaluation with branches left to
-  right (and, in v1, `par_reduce` defined by the canonical grouping G(n),
-  §8.3), on any core count, runtime, or schedule. Two qualifications:
-  resource exhaustion, and divergence (PAR-2).
+- **PAR-1.** When no branch panics, a parallel call's values, its writes
+  through `&mut`, and its sink output are identical to sequential evaluation
+  with branches left to right (and, in v1, `par_reduce` defined by the
+  canonical grouping G(n), §8.3), on any core count, runtime, or schedule,
+  up to resource exhaustion. When a branch panics, the panic propagates (D5)
+  as PAR-2 says, and every place the region could write has unspecified,
+  memory-safe contents that only destructors observe (D9): a branch to the
+  right of the panic may or may not have written before it stopped.
 - **PAR-2.** If several branches panic, the panic first in sequential order
   is reported and propagates in the enclosing task; a later branch's panic
   waits for every branch to its left, and buffered sink output from branches
@@ -802,7 +832,10 @@ cancelled.
   reaching one, the region may diverge where the sequential program would
   have panicked.
 - **PAR-3.** Floating-point code is never contracted to FMA or reassociated
-  unless written so (`mul_add`), and `to_bits` canonicalizes NaN (D3).
+  unless written so (`mul_add`), and `to_bits` canonicalizes NaN (D3). std
+  ships one math library for every target (D15), so `sin`, `exp`, `ln`,
+  `powf`, and the other functions beyond IEEE's basic operations never call
+  the platform's libm.
   The automatic parallelization pass (later tier) only runs independent
   authority-free calls in parallel; it never regroups a fold.
 
@@ -839,8 +872,9 @@ by `par-threads`, shared with evented workers (v1) and reduced by any
 by lazy binary splitting: a fork exposes its right branch only when the
 local deque runs low. Heartbeat promotion, checked at forks and block
 boundaries so loops need no polling, replaces it if E5 justifies it.
-Scheduling is unobservable, so the policy can change freely. Under the
-simulator, parallel branches run on real cores.
+When no branch panics, scheduling is unobservable, so the policy can change
+freely. Under the simulator, parallel regions run sequentially, branches in
+sequential order (D9), so a seed replays exactly even when a branch panics.
 
 ## 9. Deterministic Simulation
 
@@ -851,8 +885,9 @@ it: baton-passed OS threads, one runnable at a time (default for
 `tide test`); the evented lowering on one thread (default for long
 `tide sim` runs, once the evented runtime exists in v1); and the
 interpreter. Decisions happen at the same points in each, and v0 overflow
-traps are precise in every engine (D3), so a seed yields one trace in all of
-them; conformance tests check it.
+traps are precise in every engine (D3), and every engine runs parallel
+regions sequentially (§8.4), so a seed yields one trace in all of them;
+conformance tests check it.
 
 ### 9.2 `Root::sim`
 
@@ -904,20 +939,22 @@ faults at random rates.
 
 `sim.node("b")` creates a node with its own filesystem, network address
 (`"b"` resolves to it), clock skew, environment, and task tree.
-`node.start(entry)` runs `entry: FnOnce(NodeRoot) -> Result<T, E>`, a
-closure that is `Owned + Send` and captures only `Pure` data, and returns a
-handle to the node's task; a `NodeRoot` has `Root`'s capability fields.
-Nodes share no memory and interact only through the simulated network and
-filesystem.
+`node.start(entry)` runs `entry(NodeRoot) -> Result<T, E>` as the node's
+main task and returns a handle to it; a `NodeRoot` has `Root`'s capability
+fields. The entry is a `fn` item or an `Fn` closure with `Owned` captures
+(D15); the closure is also `Send`, and its captures are `Pure + Sync`, so a
+run can change nothing it captured. Nodes share no memory and interact only
+through the simulated network and filesystem.
 
 A crash is not a cancellation: the node's tasks stop at their current
 scheduling points without running destructors, its memory is freed, and
 peers' connections reset after a modeled delay. Only data made durable by
 `sync` or `sync_dir` (§1.1) survives; other writes and directory entries may
 be lost or torn, as the seed decides (D15, §9.4). `restart` reruns the entry
-over the surviving disk. `sim.run_for(d)` and `sim.run_until(&handle)`,
-which returns the entry's `Result<T, E>`, drive the world; `node.fs()`
-inspects a node's disk.
+with a fresh `NodeRoot` over the surviving durable storage; no volatile
+state survives. `sim.run_for(d)` and `sim.run_until(&handle)`, which returns
+the entry's `Result<T, E>`, drive the world; `node.fs()` inspects a node's
+disk.
 
 ### 9.6 `tide sim`
 
@@ -925,6 +962,7 @@ inspects a node's disk.
 tide sim [<bin> -- args | --test <name>] [--seeds N | --seed S] [--time 10m]
           [--strategy random|pct] [--faults swarm|none|<plan.toml>]
           [--minimize] [--allow-unmodeled] [--json]
+tide sim --replay <manifest>
 ```
 
 `<bin>` runs `main` as a single node with a simulated root. Output is one
@@ -936,15 +974,20 @@ NDJSON record per failing seed and a summary:
  "failure":{"type":"panic","message":"acked k17 missing on backup",
             "span":"src/kv.tide:121:13","node":"client","task":"0"},
  "faults":["partition#1 at 0.200s"],
- "replay":"tide sim --test kv::tests::acked_writes_survive --seed 3141",
+ "replay":"tide sim --replay target/sim/acked_writes_survive-3141.manifest.json",
  "trace":"target/sim/acked_writes_survive-3141.ndjson","trace_hash":"9f2c…"}
 ```
 
 Each trace event records virtual time, node, task, kind (`cap`, `sched`,
 `fault`, `sink`, `spawn`, `exit`, `cancel`, `cell`, `chan`, `assert`), the
-operation with its source span, its arguments, and its result. A seed
-replays bit for bit given the same commit and toolchain. `--minimize` (not
-in v0 per `reference.md`) delta-debugs the fault plan and the scheduler's
+operation with its source span, its arguments, and its result.
+
+Every simulated run writes a **replay manifest** (D15): the seed, commit,
+toolchain version, target, the simulated root's configuration (program
+arguments, environment, files, scheduler strategy, and fault plan), and
+every injected input. `tide sim --replay` reruns exactly what a manifest
+records, so a failing seed replays bit for bit. `--minimize` (not in v0
+per `reference.md`) delta-debugs the fault plan and the scheduler's
 preemptions toward a shorter failing trace.
 
 ### 9.7 Determinism self-check
@@ -965,7 +1008,7 @@ calls from an unmodeled crate fail with `EPERM` (v1). Runs that use
 `--allow-unmodeled` are marked non-replayable.
 
 Not simulated: CPU time and performance; memory exhaustion; stack depth;
-the interleaving inside parallel branches (their results are deterministic);
+parallel speed-up (parallel regions run sequentially, §8.4);
 hardware faults beyond injected disk errors; foreign code's internals and
 threads; kernel behavior beyond the models; signals; timing side channels;
 real child processes, which need a `sim.world.proc` model.
@@ -1219,10 +1262,11 @@ mod tests {
 }
 ```
 
-During the partition the replication deadline fires, the `connect` or
-`frame::read` in `put`'s scope returns its cancellation as an error, so the
-scope fails with `DeadlineExceeded` (TASK-4), `put` returns `Err`, and the
-client gets `Fail`. A panicking `handle` would make the server's scope panic
+During the partition the replication deadline fires, and the `connect` or
+`frame::read` in `put`'s scope returns its cancellation as an error. The body
+returns that error through `?`; the scope has no children, so `scope`
+returns the body's result (TASK-2), `put` returns `Err`, and the client gets
+`Fail`. A panicking `handle` would make the server's scope panic
 (TASK-1); a server that must survive one runs each request through
 `tasks.spawn_isolated` with owned data. A version that acknowledged before replicating
 fails on some seed with the §9.6 record, and its replay command reproduces the
@@ -1304,12 +1348,9 @@ write means an early `?` never leaves a half-applied transfer.
 
 ### 13.2 Changes this chapter needs elsewhere
 
-Draft 3 and the current reference apply this chapter's earlier requests:
+Draft 3.1 and the current reference apply this chapter's earlier requests:
 `LockError` with `Aliased`, `TaskError::DeadlineExceeded`, shielded joins,
-lazy splitting in D9 with PAR-2's divergence qualification, and `Accel` in
-D7. Outstanding:
+lazy splitting in D9 with PAR-2's divergence qualification, `Accel` in D7,
+and `Shared::new` taking `&Tasks`. Outstanding:
 
-- `reference.md` §7.4 says `Shared::new(v)` needs no capability. D7 makes
-  creating any synchronization handle take `&Tasks`; this chapter follows D7
-  (§1.2), and the reference should change.
 - 01's open question 4 is answered by `#[pure]` and `FX0511` (§3.2).

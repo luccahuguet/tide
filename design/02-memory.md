@@ -1,6 +1,6 @@
 # Tide Memory: Ownership and Origins
 
-Status: draft 1, synchronized with draft 3. This chapter elaborates D2 of
+Status: draft 1, synchronized with draft 3.1. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
 definition the checker implements. Section 13 records the edits it asked of
 `01-design.md`.
@@ -385,7 +385,8 @@ Rust: `struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`.
   `&'static str`, so `struct ParseError { msg: &'static str }` is `Owned`.
 - The types of consts and statics are `Owned`. Statics are also `Sync` and
   `Pure` (`03-authority-concurrency.md` GLOBAL-1), since D7 allows no mutable
-  globals.
+  globals. v0 has no lazy statics: a static's value is computed at compile
+  time by `const fn` (D7).
 - `Owned` is required by `Box<dyn Trait>` contents (§5.1), `dyn Any`, values
   handed to tasks that outlive their creator (§8.2), and global
   registrations.
@@ -698,8 +699,9 @@ Translation: the shape of `std::thread::scope`, with `'env` taken to be the
 
 Draft 3 removes draft 2's moved-out rule (D5). A child's panic propagates to
 its scope as in Rust's `std::thread::scope`: the scope cancels the other
-children, joins them all, and then panics in the calling task, so no code
-after the `scope` call runs. A panic in `body` itself cancels and joins the
+children, joins them all, and then re-raises in the calling task the panic
+of the earliest-spawned panicking child (D8, `03-authority-concurrency.md`
+TASK-2), so no code after the `scope` call runs. A panic in `body` itself cancels and joins the
 children, then continues unwinding. A child that returns `Err` has finished
 normally, like any function that returns an error.
 
@@ -745,13 +747,21 @@ every value valid memory, as unwinding does in Rust.
 
 ### 8.5 `join`, `par_map`, `par_for`
 
-`join(f, g)`, `par_map` and `par_for` take `Pure + Send` closures. Their
+`join(f, g)` takes two `FnOnce + Pure + Send` closures, each called once.
+`par_map` and `par_for` call one closure from several branches at once, so
+it is shared and must be `Fn + Pure + Send + Sync` (D9): without `Sync`, a
+`move` closure owning a `Cell` would let two branches race on it. Their
 shared captures must be `Pure + Sync`; mutable captures must be disjoint
 `&mut` borrows, which the borrow checker verifies as usual. The branches may
 borrow the enclosing frame, because `join` returns only after both finish. In
 Rust this is the shape of `rayon::join`. `Pure + Sync` is stricter than
 `Sync`; that serves determinism, not memory safety. Draft 2's `par { }`
 block is removed (D9).
+
+If a branch panics, the panic propagates (D5), and the places the region
+could write through `&mut` hold unspecified but valid values: a branch may or
+may not have written before it stopped. Only destructors observe them, as
+after a panicking child (§8.3).
 
 ## 9. `Pure`
 
@@ -764,6 +774,11 @@ trust hole. It is **deep**:
 - recursive types take the greatest fixed point;
 - opaque and `dyn` types have exactly the auto traits their bounds state;
 - a type parameter is `Pure` only if it is bounded by it.
+
+Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`, `Owned`)
+as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
+`impl K for Net` overlap, although `Net` is not `Pure`. So a private-field
+edit that changes a type's auto traits cannot create or remove an overlap.
 
 ### `Pure`: no authority reachable
 
@@ -816,9 +831,9 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 
 | Use | Requires |
 | --- | --- |
-| `join`, `par_map`, `par_for` | `Pure + Send` closures, `Pure + Sync` shared captures |
+| `join`; `par_map`, `par_for` | `FnOnce + Pure + Send` closures; `Fn + Pure + Send + Sync` closures; both with `Pure + Sync` shared captures |
 | memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7) |
-| statics | `Owned + Sync + Pure` |
+| statics (computed at compile time) | `Owned + Sync + Pure` |
 | `Shared` payloads; `with` closures | `Send + Pure`; `Pure` |
 
 ## 10. Worked examples

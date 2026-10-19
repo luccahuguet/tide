@@ -477,7 +477,8 @@ stackful execution internally.
   only through `f.requires(args)` and `f.ensures(args, r)`.
 - In v0, executable clauses use code semantics: machine integers that trap,
   and `==` through `PartialEq`. Clauses may call only authority-free
-  functions that take no `&mut` and whose argument types are `Pure + Sync`,
+  functions whose argument types are `Pure + Sync` and that take `&mut` only
+  to temporaries the clause itself creates (so `xs.iter().all(...)` works),
   so evaluating a clause cannot change program state. A clause whose
   evaluation panics counts as a violation; a sampled clause that exceeds its
   step budget is reported as unchecked, not as failed. In `ensures`, a bare

@@ -1,6 +1,6 @@
 # Tide Contracts
 
-Status: draft 1, synchronized with draft 3. This chapter is the normative
+Status: draft 1, synchronized with draft 3.1. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
 `design/01-design.md`. It elaborates those decisions and must not contradict
 them. Where it needs a decision changed, it says so in the last section;
@@ -8,15 +8,16 @@ until `01-design.md` changes, the decision there wins.
 
 **Tier** (01's Tiers table). v0 core: executable `requires`, `ensures`, loop
 `invariant`, `old`, `result`, and bounded quantifiers, checked at run time in
-debug and test builds and driving property tests: the parts of §1.1–§1.3
-that cover them, §2.3, §2.4 with its vacuity floor, release erasure (§2.6,
-first paragraph), and approval of weakened contracts (§11, without its
-solver checks). v0 clauses call authority-free functions directly
-(`reference.md` §10.1). v1: `prove` and per-item uses (§2.1, §2.5), clause
-classes (§2.2), check deletion (§2.6), `spec fn`, `proof fn`, `#[spec]`,
-views (§1.4–§1.7), total correctness and `decreases` (§3), `final` and type
-invariants (§4), laws and trait contracts (§5), closure contracts (§6),
-§7–§10, and proof status and trust closures.
+debug and test builds and driving property tests. §1.8 is the one normative
+statement of what a v0 clause means; v0 also uses the grammar of §1.1–§1.2
+for those forms, §2.3 and §2.4 as §1.8 applies them, release erasure (§2.6,
+first paragraph), and approval of changed contracts (§11, without its solver
+checks). v1: `prove` and per-item uses (§2.1, §2.5), the spec language of
+§1.3–§1.7 (`spec fn`, `proof fn`, `#[spec]`, views, mathematical integers,
+model equality), clause classes as §2.2 defines them, check deletion (§2.6),
+total correctness and `decreases` (§3), `final` and type invariants (§4),
+laws and trait contracts (§5), closure contracts (§6), §7–§10, and proof
+status and trust closures.
 Later: deferred overflow traps (§3.2); interactive-proof export (§13). v0
 overflow traps are precise.
 
@@ -161,10 +162,11 @@ Rules that the grammar does not show:
    have a parameter named `result`; the safe fix renames it.
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
-   parameter means its value at return (`reference.md` §10.1). From v1, a
-   bare `*x` is an error with two machine-applicable fixes, `old(*x)` and
-   `final(*x)` (§4.1), and `tide fix` rewrites v0 clauses to `final(*x)`.
-5. **`decreases`** on a function bounds recursion; on a loop it bounds
+   parameter means its value at return (§1.8). From v1, a bare `*x` is an
+   error with two machine-applicable fixes, `old(*x)` and `final(*x)`
+   (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
+   is executable, and otherwise reports it for a manual choice.
+5. **`decreases`** (v1) on a function bounds recursion; on a loop it bounds
    iterations (§3.3). `diverges` is legal only on exec functions.
 6. **Impls refine trait contracts.** An impl method inherits its trait
    method's contract and may weaken the precondition and strengthen the
@@ -179,11 +181,14 @@ Rules that the grammar does not show:
 
 ### 1.3 Spec expressions
 
-A spec expression is an executable expression without assignment, `&mut`,
-loops, `return`, `break`, `?`, closures (spec lambdas excepted), or `!` forms
-other than `vec![...]` used as a literal. It calls only `spec fn`s, built-in
-spec operations, and `#[spec]` functions (§1.6). It adds the forms in §1.2.
-Its meaning is the same in all three uses:
+This section is the spec language of the `prove` tier (v1); a v0 clause
+means what §1.8 says. A spec expression is an executable expression without
+assignment, `&mut`, loops, `return`, `break`, `?`, closures (spec lambdas
+excepted), or `!` forms other than `vec![...]` used as a literal. It calls
+only `spec fn`s, built-in spec operations, and `#[spec]` functions (§1.6). It
+adds the forms in §1.2. Under `prove` it means the following; a clause that
+runs as a check keeps §1.8's code semantics, and the compiler warns where
+the two readings differ (D10):
 
 - **Integers.** Reads of machine integers widen to `int`. `+ - * / %` and
   unary `-` compute in `int` and never overflow. `/` and `%` truncate toward
@@ -210,10 +215,10 @@ Its meaning is the same in all three uses:
   `x@` needs the invariant of `x` (§4.2); a value passed where `nat` is
   expected needs to be non-negative. `&&`, `||`, `==>`, `if`, and `match`
   supply the context for their right-hand parts. Under `prove`, the condition
-  is an obligation discharged once where the expression is written. Under
-  `assert` and `test`, a violated condition stops evaluation and is reported
-  as `spec_error` against the clause's author. Spec evaluation never panics
-  the program and never changes program state.
+  is an obligation discharged once where the expression is written. When the
+  clause runs as a check, a violated condition panics during evaluation,
+  which counts as a violation of the clause (§1.8). Evaluating a clause never
+  changes program state (§1.8).
 
 ### 1.4 Spec types and views
 
@@ -331,6 +336,64 @@ This matches `03-authority-concurrency.md` §3.2, which classifies generic
 code per instantiation, and keeps D4's rule that an instantiation never
 produces a type error.
 
+### 1.8 v0 clause semantics
+
+This section is the whole meaning of a v0 clause (D10). v0 has no spec
+language, so in v0 this section replaces §1.3–§1.7 and §2.2.
+
+1. **Forms.** v0 has `requires`, `ensures`, and loop `invariant` clauses,
+   with `result`, `old(e)`, `==>`, and `forall` and `exists` over a bounded
+   binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
+   `exists`), with `lo` and `hi` free of `x`, or `c.contains(&x) ==> p`; an
+   unsigned binder implies `0 <= x`. An unbounded quantifier is an error.
+   `decreases`, `diverges`, `final`, type invariants, and the spec language
+   of §1.3–§1.7 are v1.
+2. **Code semantics.** A clause is a Rust boolean expression, typed and
+   evaluated as code: machine integers that trap on overflow, and `==` and
+   `<` through `PartialEq` and `PartialOrd`. So
+   `fn widen(a: u8, b: u8) -> u16 ensures result == a + b` is a type error;
+   write `result == a as u16 + b as u16`. Mathematical integers and model
+   equality apply only under `prove` (v1).
+3. **Read-only evaluation.** A clause calls only authority-free functions
+   whose argument types are `Pure + Sync` and that take `&mut` only to
+   temporaries created inside the clause, such as the iterator in
+   `xs.iter().all(|x| *x > 0)`; no `&mut` reaches a place that exists
+   outside the clause's own evaluation. The rule
+   covers methods, trait methods, the operator impls behind `==`, `<`, and
+   indexing, and calls inside closure literals in the clause. `Sync`
+   excludes `Cell`, `RefCell`, and `Rc`, and `Pure` excludes capabilities
+   and handles, so evaluating a clause cannot change program state: a build
+   that erases clauses differs only by the missing checks. `Iterator::all`
+   and `any` take `&mut self`; a clause uses `forall` and `exists` instead.
+   Generic clauses are classified per instantiation (D4): where an argument
+   type is not `Pure + Sync`, the clause is not evaluated and is reported as
+   unchecked (provisional).
+4. **`old` and `&mut` parameters.** `old(e)` is `e` evaluated at entry. The
+   evaluator snapshots each maximal subexpression of `e` that mentions no
+   `result` or bound variable, so `old(v.len())` costs one word, and it
+   never calls `Clone`. In `requires`, a `&mut` parameter `x` and `*x` denote
+   the entry value. In `ensures`, a bare `x` or `*x` of a `&mut` parameter
+   denotes its value at return and `old(*x)` its value at entry; other
+   parameters denote their entry values.
+5. **Classes.** A clause is `sampled` if its cost can grow with the size of
+   a value or is unknown: it contains a quantifier, `==` or `old` over a
+   collection, or a call to any function other than operators on scalars
+   and std's constant-time accessors (`len`, `is_empty`, indexing, `get`,
+   `is_some`, `is_ok`, and similar). Every other clause is `checked`.
+6. **When clauses run.** Debug builds evaluate `checked` clauses: `requires`
+   at entry, `ensures` at each return, and loop invariants at loop entry and
+   exit (§2.3). `tide test` also evaluates `sampled` clauses on §2.4's
+   schedule, evaluates loop invariants after every iteration, and runs
+   generated tests (§2.4). Release builds erase clauses (§2.6).
+7. **Outcomes.** A clause that evaluates to `false` is a violation, and so is
+   a clause whose evaluation panics; a violation panics (D5) and blames the
+   caller for `requires` and the callee for `ensures` and invariants. Each
+   evaluation of a `sampled` clause has a step budget, and one that exceeds
+   it is reported as unchecked, not as failed. The report lists every clause
+   a build or test run did not evaluate.
+8. **Approval.** A contract's hash covers the bodies of every function its
+   clauses call, transitively (D11, §11).
+
 ## 2. The three uses
 
 ### 2.1 Selecting a use
@@ -343,10 +406,10 @@ behavior for whatever it has not proved. The trust surface records each item's
 use. Setting a module or item below its package's use, or lowering the
 package's use, is a downgrade and needs approval (D11, §11).
 
-### 2.2 Clause classes
+### 2.2 Clause classes (v1)
 
 The compiler gives every clause one class, the same in every use, and
-`tide check` reports it per clause.
+`tide check` reports it per clause. v0 classes are §1.8 item 5.
 
 - **`proof-only`** if the clause contains an unbounded quantifier, `choose`, a
   call to an uninterpreted spec fn, `final` of a prophetic borrow (§4.1),
@@ -376,13 +439,13 @@ Debug and test builds evaluate `checked` clauses:
 
 - `requires` at callee entry; a failure blames the call site;
 - `ensures` at each return; a failure blames the callee;
-- type invariants at the exits of functions in the type's defining module that
-  produce a value of the type or hold `&mut` to one (§4.2);
+- type invariants (v1) at the exits of functions in the type's defining
+  module that produce a value of the type or hold `&mut` to one (§4.2);
 - loop invariants at loop entry and at loop exit.
 
-The evaluator uses unbounded integers and persistent sequences, linked into
-debug builds. Overflow traps are precise in v0 (§3.2), so a check never sees
-a wrapped value.
+Clauses are evaluated with §1.8's code semantics; overflow traps are precise
+(§3.2). In v1, an evaluator linked into debug builds also computes spec-only
+values such as views and `Seq`.
 
 ### 2.4 `test`
 
@@ -391,17 +454,19 @@ a wrapped value.
 **Sampled clauses.** At function boundaries, `sampled` clauses are evaluated
 on the first 64 calls of each function in a test run, then on calls 128, 256,
 512, and so on. Each evaluation has a step budget, and one that runs out is
-counted as `skipped`, never as checked. Packages can change both defaults.
+reported as unchecked, never as checked or failed (D10). Packages can change
+both defaults.
 
 **Loop invariants and measures.** Executable loop invariants are evaluated
 before the first iteration, after every iteration, and at exit. `sampled`
 invariants follow the geometric schedule over iterations, which turns
-`max_index`'s quadratic invariant into linear total work. Loop `decreases`
-measures are evaluated every iteration and must stay non-negative and
-strictly decrease. In `for x in a..b`, an invariant sees `x` as the index of
-the next iteration: it is checked with `x == a` before the first iteration,
-even when the range is empty, and with `x == max(a, b)` at exit. This is
-Dafny's rule, and `max_index` needs it to conclude `best < xs.len()`.
+`max_index`'s quadratic invariant into linear total work. In v1, loop
+`decreases` measures are evaluated every iteration and must stay
+non-negative and strictly decrease. In `for x in a..b`, an invariant sees
+`x` as the index of the next iteration: it is checked with `x == a` before
+the first iteration, even when the range is empty, and with
+`x == max(a, b)` at exit. This is Dafny's rule, and `max_index` needs it to
+conclude `best < xs.len()`.
 
 **Generated tests.** Every function with an `ensures`, and every law (§5),
 gets a property test.
@@ -981,25 +1046,29 @@ scaffolding and need no approval.
 
 **What is hashed.** Each root spec has a *spec-closure hash* over the
 normalized clauses, the signature (types, `from` origins, field-borrow sets),
-and, transitively, everything its meaning depends on: spec fn bodies (opaque
-and closed ones included), the bodies and contracts of `#[spec]` functions
-(their bodies define their spec meaning), views, invariants, type
-definitions, trait laws and trait method contracts, constants, and the
-standard library's spec catalog version. Names resolve to the content hashes
-of D14, so a rename leaves the hash unchanged and an edit to
-`spec fn is_sorted` changes it. Proofs, `proof fn` bodies, and other exec
-bodies are excluded.
+and, transitively, everything its meaning depends on: the bodies of every
+function a clause calls, including the impls behind operators such as `==`
+(D11); spec fn bodies (opaque and closed ones included); the contracts of
+`#[spec]` functions; views, invariants, type definitions, trait laws and
+trait method contracts, constants, and the standard library's spec catalog
+version. Names resolve to the content hashes of D14, so a rename leaves the
+hash unchanged, while an edit to `spec fn is_sorted`, or to an ordinary
+`fn covers` that a `requires` calls, changes it. Proofs and `proof fn`
+bodies are excluded, and so is the body of the specified function unless a
+clause calls it. Review lists the called functions whose bodies changed
+beside the contract.
 
 **Classifying changes.** For a changed root spec, the solver checks
 refinement between the old and new closures, renamed apart:
 `old.requires ==> new.requires`, and
 `old.requires && new.ensures ==> old.ensures`. A refinement, or a contract on
-a previously unspecified item, is listed in review without a gate. A
-weakened, incomparable, or undecided change needs approval and comes with a
-distinguishing example, a solver model replayed in the interpreter. As D11 lists, approval is needed
-for weakening or removing a contract, widening authority, adding a trust hole
-(including `diverges`), downgrading a use, and changing or unprotecting a
-`#[protected]` test.
+a previously unspecified item, is listed in review without a gate. v0 has
+no solver, so there every other changed hash is undecided. A weakened,
+incomparable, or undecided change needs approval and, in v1, comes with a
+distinguishing example, a solver model replayed in the interpreter. As D11
+lists, approval is needed for weakening or removing a contract, widening
+authority, adding a trust hole (including `diverges`), downgrading a use,
+and changing or unprotecting a `#[protected]` test.
 
 **Mechanism.** An approval record holds the item's stable ID, the old and new
 closure hashes, the change class, the approver's key ID, and a signature.
