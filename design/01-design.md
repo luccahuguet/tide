@@ -602,8 +602,9 @@ execution internally; it runs tasks on baton-passed threads.
   unrewritten one is a checker error.
   `result` names the
   return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
-  value a returned or stored `&mut` holds when its borrow ends. A bare `*x` of
-  a `&mut` parameter in `ensures` is an error: write `old(*x)` or `final(*x)`.
+  value a returned or stored `&mut` holds when its borrow ends. Under
+  `prove` (v1), a bare `*x` of a `&mut` parameter in `ensures` is an error:
+  write `old(*x)` or `final(*x)`.
 - **Spec language.** Specs call only `spec fn`s, the built-in spec types, and
   functions marked `#[spec]`, which must be authority-free and proved total;
   the standard library marks its pure accessors (`len`, indexing, `get`,

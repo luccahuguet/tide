@@ -421,11 +421,12 @@ rule CLAUSE-*n*.
    `&mut` parameter denotes its value at return and `old(*x)` its value at
    entry; other parameters denote their entry values. A `Copy` by-value
    parameter, a shared reference included, is copied at entry as it is. A
-   non-`Copy` by-value parameter that the body assigns, moves, or mutably
-   borrows (including through a `&mut` it holds) is snapshotted at entry
-   through an implicit `old(..)`, which counts as `old` for CLAUSE-5, so it
-   must be `Clone`; otherwise naming it in an `ensures` is an error whose
-   fix narrows it, as in `old(x.len())`.
+   non-`Copy` one is cloned at entry if it is `Clone`. If it is neither,
+   naming it in an `ensures` is an error when the body assigns, moves, or
+   mutably borrows it (including through a `&mut` it holds), and the fix
+   narrows it, as in `old(x.len())`. These implicit snapshots follow this
+   item's rules for `old` (the `Clone` restriction, panics as violations)
+   but do not change a clause's class (item 5).
 5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
    literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
    `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)

@@ -1169,9 +1169,10 @@ builds, erased in release, and used to drive property tests.
   of a type that is neither `Copy` nor `Clone` is an error. `e` cannot
   mention `result` or a quantifier's variable: write `old(*v)[i]`. A panic
   while snapshotting is a violation of that clause. Other parameters mean
-  their entry values: a `Copy` one is copied as it is; a non-`Copy` one the
-  body assigns, moves, or mutably borrows is snapshotted as if by `old`, so
-  it must be `Clone`, or narrow it (`old(x.len())`).
+  their entry values: a `Copy` one is copied and a `Clone` one cloned at
+  entry; one that is neither cannot be named if the body assigns, moves, or
+  mutably borrows it, through a `&mut` it holds included (narrow it:
+  `old(x.len())`). This does not change the clause's class.
 - **Clause expressions** are ordinary Rust boolean expressions, evaluated
   as code: `==`, `<`, and arithmetic mean exactly what they mean in code,
   including overflow traps; widen (`a as u128 + b as u128`) when a sum might
