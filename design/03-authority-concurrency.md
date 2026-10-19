@@ -33,7 +33,7 @@ provisional in `reference.md` are fixed here unless noted.
   `Child`). Every operation that reads or changes the outside world, or that
   observes nondeterminism, is a method on a capability.
 - **Synchronization handle**: a value through which tasks observe each other's
-  timing or cancellation: `Shared<T>`, channel ends, `Scope<E>`, `Task<U, E>`,
+  timing or cancellation: `Shared<T>`, channel ends, `Scope<'s, 'env, E>`, `Task<'s, U, E>`,
   `Arc<T>`, `sync::Weak<T>`, and atomics. Creating one takes `&Tasks` (D7), so
   authority-free code can neither create nor receive one; sharing it needs a
   spawn.
@@ -110,8 +110,8 @@ Notes:
 | --- | --- | --- |
 | `Shared<T>`, `T: Send + Pure` | `Shared::new(v, tasks)`, `clone()` (same cell), `Shared::same(&a, &b)`, `reset(v)`, `with`, `with2`, `with_all` (§6.5) | acquisition, not a checkpoint |
 | `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `send` on a full `sync_channel`, `recv`; both checkpoints |
-| `Scope<E>` | `spawn`, `set_deadline(t)`, `cancel()` | none |
-| `Task<U, E>` | `join` | yes, shielded (§6.3) |
+| `Scope<'s, 'env, E>` | `spawn`, `set_deadline(t)`, `cancel()` | none |
+| `Task<'s, U, E>` | `join` | yes, shielded (§6.3) |
 | `Arc<T>`, `sync::Weak<T>` | `Arc::new(v, tasks)`, `clone`, `make_mut`, `Arc::downgrade(&a, tasks)`, `upgrade` | none |
 | `std::sync::atomic::*` | `AtomicU64::new(v, tasks)` and the like; sequentially consistent `load`, `store`, `fetch_add`, `compare_exchange` | none |
 
@@ -592,7 +592,7 @@ impl Tasks {
     pub fn checkpoint(&self) -> Result<(), Cancelled>;
 }
 impl<'s, 'env, E> Scope<'s, 'env, E> {    // Copy; origin 's
-    pub fn spawn<U: Send, F>(self, f: F) -> Task<'s, U, E>
+    pub fn spawn<U: Send + 's, F>(self, f: F) -> Task<'s, U, E>
         where F: FnOnce() -> Result<U, E> + Send + 's;
     pub fn set_deadline(self, at: Instant);
     pub fn cancel(self);

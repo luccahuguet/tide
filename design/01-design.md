@@ -17,8 +17,8 @@ without a garbage collector, zero-cost abstractions, algebraic data types,
 `Result` and `?`, and "if it compiles, it probably works". It keeps Rust's
 spelling wherever the meaning is the same, so a model's Rust knowledge
 transfers. It removes what costs agents the most: user macros, async
-coloring, an unbounded trait system, and slow builds, and it narrows Rust's
-lifetimes to a subset without written outlives relations.
+coloring, an unbounded trait system, and slow builds. It keeps Rust 2024's
+lifetimes, minus the forms beyond D4's power ceiling.
 
 It adds guarantees that a language can only make if it is designed for them
 from the start, and that tools layered on Rust cannot give, because Rust code
@@ -170,8 +170,8 @@ provisional until E1 meets its thresholds.
   `todo!`, `unimplemented!`, `unreachable!`, `dbg!`, and the logging forms
   `error!`, `warn!`, `info!`, `debug!`, `trace!`. Users cannot define macros
   (D6).
-- Lifetimes keep Rust's spelling in an origin-equivalent subset; the few
-  forms outside it are errors with a suggested rewrite (D2).
+- Lifetimes are Rust 2024's, except the forms beyond D4's power ceiling
+  (D2).
 - Where Tide's meaning differs, the Rust spelling is rejected with a
   machine-applicable fix: `async`/`.await`
   (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
@@ -189,25 +189,23 @@ measurement rejected.
 
 - Every value has one owner; moves are the default for non-`Copy` types.
   References `&T` and `&mut T` follow Rust's shared-xor-mutable rule.
-- **Lifetimes keep Rust's spelling.** A lifetime names an **origin**: the
-  set of loans a borrow may come from (Polonius's reading).
-  - Rust's lifetime-elision rules apply unchanged, so
-    `fn get(&self, k: &str) -> Option<&V>` borrows from `self` exactly as in
-    Rust. A borrowing type in a signature elides its lifetimes as
-    `Lexer<'_>` or as bare `Lexer`, as in Rust.
-  - Otherwise signatures name lifetimes as in Rust:
-    `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str`, and
+- **Lifetimes are Rust 2024's.** Their syntax, elision, outlives bounds,
+  implied bounds, object-lifetime defaults, and return-position `impl
+  Trait` capture mean what they mean in Rust 2024. A lifetime names an
+  **origin**: the set of loans a borrow may come from (Polonius's reading).
+  - Elision: `fn get(&self, k: &str) -> Option<&V>` borrows from `self`;
     `fn next_word(&mut self) -> Option<&'a str>` in `impl<'a> Lexer<'a>`
     returns a borrow of the source, not of `self`.
-  - **Accepted:** lifetime parameters on structs, enums, impls, and
-    functions; `'_` and `'static`; type-outlives bounds in every spelling
-    (`T: 'a`, `T: Trait + 'a`, `impl Trait + 'a`, `dyn Trait + 'a`); and
-    the outlives relations that well-formed argument types imply
-    (`&'m BTreeMap<K, Vec<&'t str>>` lets a result be `&'m [&'t str]`).
-  - **Rejected with a suggested rewrite** (`FX0201`): written
-    lifetime-outlives bounds (`'a: 'b`), lifetime parameters on traits,
-    explicit `for<'a>`, and `+ use<..>`. `T: 'static` is accepted and
-    rewritten to `T: Owned`.
+  - Accepted as in Rust: lifetime parameters on structs, enums, impls, and
+    functions; `'_` and `'static`; outlives bounds (`'a: 'b`, `T: 'a`,
+    `+ 'a`); `+ use<..>`; and the relations that well-formed signature types
+    imply. A returned `impl Trait` captures every generic parameter in
+    scope, lifetimes included, unless `+ use<..>` lists fewer.
+  - Rejected (`FX0201`, `FX0403`, `FX0404`), because they lie beyond D4's
+    power ceiling: lifetime parameters on traits, explicit `for<'a>`
+    (higher-ranked lifetimes come from elision in `Fn` sugar and `fn`
+    pointer types), and generic associated types. `T: 'static` is accepted
+    and written `T: Owned` by the formatter.
 - **Borrowing types declare lifetime parameters as in Rust**:
   `struct Lexer<'a> { src: &'a str, pos: usize }`. Each parameter names one
   origin; fields that use one name share it, and fields from different
@@ -216,19 +214,14 @@ measurement rejected.
   Variance follows Rust: shared references are covariant, `&mut T` and
   cells are invariant in `T`.
 - **`'static` and `Owned`.** A type that borrows nothing except `'static`
-  data is `Owned` (Rust's `T: 'static`). Trait objects follow Rust's
-  object-lifetime defaults: `Box<dyn Trait>` is `Owned`, while `&'a dyn
-  Trait` is `dyn Trait + 'a`; any other borrowing object is written `dyn
-  Trait + 'a`. Closure-bound argument types are higher-ranked through `Fn`
-  sugar, which is how `Tasks::scope` is typed
-  (`impl FnOnce(Scope<'_, E>) -> Result<T, E>`). A closure that captures a
-  borrow is a borrowing value; it may be returned or stored only where its
-  lifetime is named (`-> impl Fn() + 'a`, a `Box<dyn Fn() + 'a>` field). A
-  returned `impl Trait` captures every lifetime its bounds name, elided or
-  written; with none it is `Owned` (Rust 2018's rule, not Rust 2024's
-  implicit capture). A task may borrow only data that outlives the scope it
-  is spawned into, so tasks spawned into a long-lived scope capture `Owned`
-  values.
+  data is `Owned` (Rust's `T: 'static`). `Box<dyn Trait>` is `Owned`, and
+  `&'a dyn Trait` is `dyn Trait + 'a`, by Rust's object-lifetime defaults.
+  `Tasks::scope` is typed like `std::thread::scope`:
+  `impl FnOnce(Scope<'_, 'env, E>) -> Result<T, E>`, where `Scope<'s, 'env,
+  E>` declares `'env: 's`, so the higher-ranked `'s` is bounded below by
+  the `&Tasks` borrow. A closure that captures a borrow is a borrowing
+  value. A task may borrow only data that outlives the scope it is spawned
+  into, so tasks spawned into a long-lived scope capture `Owned` values.
 - **Drop check** uses Rust's conservative rule: data borrowed by a value with
   a destructor must strictly outlive that value; standard containers carry an
   audited exemption.
@@ -249,7 +242,11 @@ needed about a third of the annotations, but both spellings passed 10 of 10
 programs on first check with no borrow-related error, Rust's predicted `'a`
 error class did not appear, and the `from` writer raised 14 origin
 questions against 5, six of them on forms its reference never showed. A
-tie goes to Rust's spelling under D1. Also rejected: draft 1's "one
+tie goes to Rust's spelling under D1. Draft 3.4 first kept a narrower
+subset (Rust 2018 capture; no `'a: 'b` or `use<..>`); round 8
+(`reviews/round8-consistency.md`) found that each deviation left programs
+without a spelling, so D2 takes Rust 2024's rules whole. Also rejected:
+draft 1's "one
 implicit region per type" (unsound through `&mut` or too restrictive,
 `reviews/round1-soundness.md` B1–B3); projections-only borrow return
 (unfamiliar); shared-mutable-alias models (unproven at scale).
@@ -257,9 +254,10 @@ implicit region per type" (unsound through `&mut` or too restrictive,
 Accepted costs: about 3.5 times as many lifetime annotations as `from`
 clauses on the trial's tasks (a declaration on every borrowing type and
 impl, and a name at every use); Rust's `&'a mut T<'a>` trap stays writable,
-as in Rust, though elision avoids it; a result that borrows from several
-inputs through an invariant position cannot use `'a: 'b` and must be
-restructured; self-referential structs need `unsafe`.
+as in Rust, though elision avoids it; Rust 2024's capture rule can
+over-capture, fixed with `+ use<..>`; self-referential structs need
+`unsafe`. The trial did not exercise outlives bounds, `use<..>`, or
+`Scope<'s, 'env, E>`; E1 must.
 
 ### D3. Types: small, decidable, explicit at boundaries
 
@@ -297,8 +295,8 @@ operators.
   constants, and `impl Trait for Type`. Impls live in the module of the type
   or the trait.
 - No overlapping impls, specialization, higher-kinded types, generic
-  associated types, rank-N types (higher-ranked lifetimes through `Fn`
-  sugar are allowed), negative bounds, or user auto traits. Impl
+  associated types, rank-N types (higher-ranked lifetimes from elision in
+  `Fn` sugar and `fn` pointer types are allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
 - Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`) as

@@ -669,7 +669,7 @@ For a `&mut` parameter `x`:
   because references are transparent in specs; the formatter writes `old(*x)`.
 - `final(*x)` is executable, the value `*x` holds when the function returns,
   only if the origin of `x`'s outer reference, named or given by elision,
-  occurs neither in the result type nor in a position under another `&mut`
+  occurs neither in the result type nor in the type of any other
   parameter. `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)` fails the
   second test: it can store `x` in `*s`, so the borrow outlives the call.
 - Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the
@@ -687,7 +687,7 @@ RustHornBelt proved sound; RustHorn is sound for a stored borrow only if its
 last use, the verifier learns that `final(*r)` equals the current `*r`, and
 the callee's `ensures` then determines `final(*x)`. Prophecies arise only
 from results that carry a `&mut` parameter's origin, a `&mut` parameter's
-origin shared with a position under another `&mut` parameter, and borrowing
+origin shared with another parameter's type, and borrowing
 types with `&mut` fields; ordinary `&mut` arguments need none.
 
 ```tide

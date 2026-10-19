@@ -28,9 +28,8 @@ The differences you will hit first:
    `println!` and `info!` still work anywhere.
 2. **No `async`.** Write blocking-style code; concurrency is structured
    scopes from the `Tasks` capability.
-3. **Lifetimes are Rust's, minus a few forms.** Elision works as in Rust;
-   where Rust needs `'a`, write it: `fn pick<'a>(a: &'a str, b: &str) -> &'a str`.
-   No `'a: 'b` bounds, lifetimes on traits, or explicit `for<'a>` (3.2).
+3. **Lifetimes are Rust 2024's**, except lifetime parameters on traits,
+   explicit `for<'a>`, and generic associated types (3.2).
 4. **Integers trap on overflow in every build**, and `as` only does lossless
    conversions.
 5. **Shared mutable state is `Shared<T>`** with closure methods
@@ -51,8 +50,8 @@ edition):
 - **Patterns**: all of Rust's, with exhaustiveness and binding modes.
 - **Ownership and borrowing**: moves, `Copy`, `Clone`, `Drop`, shared xor
   mutable references, NLL, two-phase borrows, reborrowing, deref coercion,
-  auto-ref, drop order, Rust's drop check, and lifetime syntax, minus
-  `'a: 'b` bounds and a few other forms (section 3).
+  auto-ref, drop order, Rust's drop check, and Rust 2024's lifetimes,
+  minus three forms (section 3).
 - **Traits and generics**: default methods, supertraits, associated types
   and consts, blanket impls, `impl Trait` in argument and return position,
   `dyn Trait` with Rust's object safety, operator traits, `Deref`,
@@ -173,12 +172,12 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
 
 ## 3. Lifetimes
 
-Tide has Rust's borrow checker and Rust's lifetime syntax for its common
-subset: lifetime parameters on structs, enums, impls, and functions, `'_`,
-`'static`, type-outlives bounds (`T: 'a`, `+ 'a`), and elision. Written
-`'a: 'b` bounds, lifetime parameters on traits, and explicit `for<'a>` are
-not part of Tide (3.2). Each lifetime names an **origin**, the set of loans
-a borrow may come from.
+Tide has Rust's borrow checker and Rust 2024's lifetimes: syntax, elision,
+outlives bounds, `+ use<..>`, implied bounds, object-lifetime defaults, and
+return-position `impl Trait` capture all mean what they mean in Rust 2024.
+Only lifetime parameters on traits, explicit `for<'a>`, and generic
+associated types are left out (3.2). Each lifetime names an **origin**, the
+set of loans a borrow may come from.
 
 ### 3.1 Elision is Rust's
 
@@ -186,7 +185,9 @@ Rust's elision rules apply unchanged: with one input lifetime, every elided
 output position gets it; with `&self` or `&mut self`, every elided output
 position gets `self`'s; otherwise an elided output lifetime is an error. A
 borrowing type in a signature elides its lifetimes as `'_` (`Token<'_>`);
-the bare name (`Token`) is also accepted, as in Rust.
+the bare name (`Token`) is also accepted, as in Rust. In an impl header,
+write `impl Collector<'_, '_>`; the bare `impl Collector` is an error, as in
+Rust.
 
 ```tide
 fn first_word(s: &str) -> &str                          // borrows s
@@ -226,18 +227,15 @@ Rules:
 - In a body, `let src = self.src;` copies the reference out, and
   `&src[a..b]` keeps lifetime `'a`, as in Rust. A plain elided `-> &str`
   on `&self` borrows the reference itself, not `'a`.
-- Type-outlives bounds are accepted in every spelling: `T: 'a`,
-  `T: Trait + 'a`, `impl Trait + 'a` (also in argument position), and
-  `dyn Trait + 'a`.
-- Relations that well-formed argument types imply need no bound:
+- Outlives bounds are Rust's: `'a: 'b`, `T: 'a`, `T: Trait + 'a`,
+  `impl Trait + 'a`, `dyn Trait + 'a`. A result can get a lifetime of its
+  own: `fn pick<'r, 'a: 'r, 'b: 'r>(v: &mut Vec<&'a str>, s: &'b str) -> &'r str`.
+- Relations that well-formed signature types imply need no bound:
   `&'m BTreeMap<char, Vec<&'t str>>` lets a result be `&'m [&'t str]`.
-- Not in Tide: written lifetime-outlives bounds (`'a: 'b`), lifetime
-  parameters on traits (`trait Parse<'a>`), explicit `for<'a>`, and
-  `+ use<..>` are `FX0201`, with a suggested rewrite: one shared lifetime, a
-  `+ 'a` bound, or a restructure. So a result that borrows from several
-  inputs, one of them behind `&mut` (`&mut Vec<&'a str>`), cannot get a
-  lifetime of its own; restructure. `T: 'static` is accepted and rewritten
-  to `T: Owned` (3.4).
+- Not in Tide, as beyond the power ceiling (5.1): lifetime parameters on
+  traits (`trait Parse<'a>`, `FX0201`), explicit `for<'a>` (`FX0404`), and
+  generic associated types (`FX0403`). `T: 'static` is accepted and written
+  `T: Owned` by `tide fmt` (3.4).
 - An elided output that cannot be resolved, or that elision ties to the
   wrong input, is `FX0202`; its fix suggests the named lifetime (often the
   impl's `'a`).
@@ -289,7 +287,8 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
   (7.1), children of a scope passed down (7.1), `Box<dyn Trait>` contents.
 - `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
   `&'a mut` it is `dyn Trait + 'a`. Everywhere else (`Box`, `Rc`, `Arc`,
-  fields, type arguments) it means `dyn Trait + Owned`. Write
+  fields, type arguments) it means `dyn Trait + Owned`, unless the
+  container's own `T: 'a` bound sets `'a`. Write
   `Box<dyn Trait + 'a>` for a borrowing object, for example
   `Box<dyn Fn(&Row) -> bool + 'a>` in a field of `struct Filter<'a>`.
 
@@ -297,15 +296,13 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
 
 Inside a body, closures and iterator chains work as in Rust. A closure that
 captures a borrow is a borrowing value; it may be returned or stored only
-where its lifetime is named.
+where its lifetime is named or captured.
 
-- A returned `impl Trait` borrows exactly the lifetimes its bounds name,
-  elided or written, including `+ 'a`; with none it is `Owned`. So
-  `fn adults(p: &[Person]) -> impl Iterator<Item = &Person>` needs nothing,
-  but `fn evens(xs: &[u32]) -> impl Iterator<Item = u32> + '_` and
-  `fn over(min: &u32) -> impl Fn(&Person) -> bool + '_` must name the
-  borrow (`FX0204`, safe fix). This is Rust 2018's rule, not Rust 2024's
-  implicit capture.
+- A returned `impl Trait` captures every generic parameter in scope,
+  lifetimes included, as in Rust 2024: `fn evens(xs: &[u32]) -> impl
+  Iterator<Item = u32>` and `fn over(min: &u32) -> impl Fn(&Person) -> bool`
+  need no annotation. To capture less, list what it captures:
+  `-> impl Fn() -> usize + use<'a>`.
 - Storing a closure in an `Owned` position (`Box<dyn Fn()>`,
   `spawn_isolated`) requires that it capture no borrows: `move` owned values
   in (`clone()`, `to_string()`), or write `+ 'a` (`FX0203`).
@@ -846,7 +843,7 @@ impl Tasks {
     fn checkpoint(&self) -> Result<(), Cancelled>;
 }
 impl<'s, 'env, E> Scope<'s, 'env, E> {               // Copy + Send + Sync: pass by value
-    fn spawn<U: Send>(self, f: impl FnOnce() -> Result<U, E> + Send + 's) -> Task<'s, U, E>;
+    fn spawn<U: Send + 's>(self, f: impl FnOnce() -> Result<U, E> + Send + 's) -> Task<'s, U, E>;
     fn set_deadline(self, at: Instant);
     fn cancel(self);
 }
@@ -874,7 +871,7 @@ pub struct Panicked { pub message: String }          // (provisional)
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives
-  `Task<Result<Vec<u8>, NetError>, E>`. Since `E: From<TaskError>`, a
+  `Task<'_, Result<Vec<u8>, NetError>, E>`. Since `E: From<TaskError>`, a
   scope's error enum needs a `#[from] TaskError` variant.
 - **`join`** returns the child's `Ok` value, or `Err(TaskError::Cancelled
   .into())` if the child failed, panicked, or was cancelled (the scope
@@ -1392,9 +1389,9 @@ and candidate functions; use holes to build a function top-down.
 | Rust habit | Tide | Code |
 | --- | --- | --- |
 | `T: 'static` | `T: Owned` | accepted; rewritten |
-| `'a: 'b`, `trait Foo<'a>`, `for<'a>`, `+ use<..>` | one shared lifetime, a `+ 'a` bound, or restructure | `FX0201` |
+| `trait Foo<'a>`, `for<'a>`, `type Item<'a>` | a lifetime on the method or impl, `Fn` sugar, owned items or indices | `FX0201`, `FX0404`, `FX0403` |
+| `impl Lexer { .. }` for `struct Lexer<'a>` | `impl Lexer<'_>` or `impl<'a> Lexer<'a>` | error with fix |
 | `fn new(s: &str) -> Self` in `impl<'a> P<'a>` | `fn new(s: &'a str) -> Self` | error with fix |
-| `-> impl Iterator<Item = u32>` capturing a borrow (Rust 2024 capture) | `-> impl Iterator<Item = u32> + '_` | `FX0204` safe |
 | `Box<dyn Fn()>` capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `FX0203` |
 | Self-referential struct | indices, `Arena`, or owner and view apart | `FX0210` |
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
