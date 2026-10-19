@@ -132,9 +132,11 @@ orig(S<ρ1..ρn; T1..Tm)      = {ρ1..ρn} ∪ orig(T1) ∪ … ∪ orig(Tm)   (
 orig((T1, …, Tn))           = orig(T1) ∪ … ∪ orig(Tn); arrays and slices likewise
 orig(dyn Trait + ρ) = {ρ}        orig(dyn Trait + Owned) = ∅
 orig(closure)               = the union of orig over its captured types
-orig(returned impl Trait)   = ∅ if its bounds state Owned (+ 'static); {ρ} if + ρ;
-                              otherwise its captured lifetimes ∪ orig of its
-                              captured type parameters (§5.2)
+orig(returned impl Trait)   = ∅ if its bounds state Owned (+ 'static); else {ρ} if
+                              they state exactly one lifetime ρ, written once or
+                              more; otherwise, including bounds that name two or
+                              more distinct lifetimes, its captured lifetimes ∪
+                              orig of its captured type parameters (§5.2)
 orig(T), T a type parameter = an abstract set
 orig(scalars, str, String, fn pointers, 'static references to Owned data) = ∅
 ```
@@ -163,7 +165,10 @@ PathType     ::= Path ['<' Lifetime (',' Lifetime)* [',' Type (',' Type)*] '>']
 Bound        ::= TraitBound | Lifetime            in `T: ..`, `impl ..`, `dyn ..`
 WherePred    ::= Type ':' Bound ('+' Bound)* | Lifetime ':' Lifetime ('+' Lifetime)*
 Capture      ::= 'use' '<' .. '>'                 only on a return-position `impl Trait`;
-                                   lists every type parameter in scope
+                                   lists every type parameter in scope and every
+                                   lifetime its bounds name, so it cannot be
+                                   written while an argument-position
+                                   `impl Trait` is in scope
 ```
 
 - A lifetime parameter is declared on the item that uses it: `fn f<'a, T>`,
@@ -432,7 +437,7 @@ the `Vec` can end while its elements' origin lives on.
 
 ### 5.1 `dyn Trait`
 
-D2 follows Rust's object-lifetime defaults: in a signature or field,
+D2 follows Rust's object-lifetime defaults: outside a body,
 `Box<dyn Trait>` is `Owned`, while `&dyn Trait` and `&mut dyn Trait` take
 the reference's origin. In detail:
 
@@ -440,7 +445,7 @@ the reference's origin. In detail:
   object's origin defaults to the reference's, which is Rust's
   `&'a (dyn Trait + 'a)`. `&mut dyn FnMut(&Node)` callbacks that capture
   locals depend on it.
-- **Everywhere else in signatures and fields**, including `Box`, `Rc`,
+- **Everywhere else outside a body**, including `Box`, `Rc`,
   `Arc`, and type arguments, `dyn Trait` is `dyn Trait + Owned`, unless the
   containing type's own `T: 'a` bound gives the default `'a`, as in Rust.
   Inside a body (`let` annotations, type arguments), an elided object
@@ -449,8 +454,9 @@ the reference's origin. In detail:
 - `dyn Trait + '_` is an elided origin and follows the elision rules. A
   field names a declared lifetime: `Box<dyn Fn(&Row) -> bool + 'p>`.
 - `dyn Trait + 'static` is `Owned`.
-- A `dyn` type has no auto traits unless it names them:
-  `dyn Fn() + Send + Pure`.
+- A `dyn` type is `Send`, `Sync`, `Pure`, or `ThreadBound` only if it
+  names them (`dyn Fn() + Send + Pure`); it is `Owned` when its object
+  lifetime is `'static`, stated or by default.
 
 ### 5.2 `impl Trait`
 
@@ -465,10 +471,14 @@ the reference's origin. In detail:
   annotation, and `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn()
   -> usize + use<'a>` releases the caller's `key` borrow at the call.
 - **Type parameters** are captured as in Rust.
-- **Auto traits.** An opaque type is `Send`, `Sync`, `Pure`, or in v1
-  `ThreadBound` only if its bounds state it. Rust's auto-trait leakage would
-  make dependents depend on the function's body, which D12 forbids. `Owned`
-  instead follows `orig` (§2.2, §3.7), as Rust's `'static` does.
+- **Auto traits.** An opaque type is `Send`, `Sync`, or `Pure` only if its
+  bounds state it, and the hidden type must then satisfy them. Rust's
+  auto-trait leakage would make dependents depend on the function's body,
+  which D12 forbids. In v1 a hidden type that is `ThreadBound` must be
+  returned as `impl Trait + ThreadBound`, as a `dyn` must name it
+  (`03-authority-concurrency.md` §5.4), so erasure cannot hide it from
+  pinning; the opaque type is then `ThreadBound`. `Owned` follows `orig`
+  (§2.2, §3.7), as Rust's `'static` does.
 
 ### 5.3 Closures
 
@@ -623,8 +633,9 @@ It depends on four conditions:
 1. Safe code can reach no thread-local state (D7).
 2. A task is pinned while a `ThreadBound` value is live across a suspension
    point, which the compiler knows from liveness. `ThreadBound` is
-   structural, and a `dyn` may hold it only as `dyn Trait + ThreadBound`, so
-   erasure cannot hide it (`03-authority-concurrency.md` §5.4).
+   structural, and a `dyn` or a returned `impl Trait` may hold it only as
+   `dyn Trait + ThreadBound` or `impl Trait + ThreadBound`, so erasure cannot
+   hide it (`03-authority-concurrency.md` §5.4).
 3. Foreign code that relies on thread identity is wrapped in `ThreadBound`
    types.
 4. Parallel branches (`join`, `par_map`, `par_for`) run simultaneously on

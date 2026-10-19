@@ -670,12 +670,14 @@ For a `&mut` parameter `x`:
 - `final(*x)` is executable, the value `*x` holds when the function returns,
   only if nothing else in the signature can hold `x`'s borrow past the call:
   the origin of `x`'s outer reference, named or given by elision, occurs in
-  no other parameter type and in no bound or where clause; it is not among
+  no other parameter type, and in no bound or where clause except on the
+  right of an outlives bound (`'a: 'r`, `T: 'r`); it is not among
   the result type's origins, counting the lifetimes a returned `impl Trait`
   captures (`02-memory.md` §2.2, §5.2); and no declared or implied bound makes
-  it outlive another origin (`'r: 'q`, that is `ρr ⊆ ρq`). The `'a: 'r` that
-  a borrowing pointee implies does not count.
-  `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)` fails: it can store `x` in `*s`, so the borrow outlives the
+  it outlive another origin (`'r: 'q`, that is `ρr ⊆ ρq`). A relation in
+  the other direction (`'a: 'r`, `T: 'r`), declared or implied by a borrowing
+  pointee, does not count. `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)`
+  fails: it can store `x` in `*s`, so the borrow outlives the
   call. So does `fn give<'q, 'r: 'q>(x: &'r mut i32) -> &'q mut i32`, whose
   bound lets `x` escape as the result.
 - Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the

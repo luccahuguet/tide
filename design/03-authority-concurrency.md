@@ -311,8 +311,8 @@ determinism claim here holds modulo exhaustion of memory, stack, or
 by `unsafe impl` in a package granted `unsafe`, and each such impl is a trust
 hole. It is deep: it looks through every field, private ones included, and
 through `Box` and `Rc`; recursive types take the greatest fixed point; `dyn`
-and `impl Trait` types have exactly the auto traits their bounds name; a type
-parameter has one only if bounded by it. `02-memory.md` §9 has the full
+and `impl Trait` types are `Pure`, `Send`, or `Sync` only if their bounds
+name it (`Owned` follows origins, `02-memory.md` §3.7); a type parameter has one only if bounded by it. `02-memory.md` §9 has the full
 table.
 
 **`Pure`** means that no authority is reachable. Not `Pure`:
@@ -566,9 +566,10 @@ declared `#[thread_bound]`, and imported Rust types that are not `Send`
 (§11). It is a compiler-known structural property: a type is `ThreadBound`
 if any component is, through fields, type arguments, and closure captures. A
 `ThreadBound` type is neither `Send`, `Sync`, nor `Pure`. A `ThreadBound`
-type may be coerced to `dyn Trait` only if the object type names
-`+ ThreadBound` (`Box<dyn Debug + ThreadBound>`); such an object pins like
-the concrete type, so erasure cannot hide the value from the liveness
+type may be coerced to `dyn Trait`, or be the hidden type of a returned
+`impl Trait`, only if the object or opaque type names `+ ThreadBound`
+(`Box<dyn Debug + ThreadBound>`, `-> impl Debug + ThreadBound`); such a
+value pins like the concrete type, so erasure cannot hide the value from the liveness
 analysis (round-2 consistency review B8). Under the evented runtime the
 compiler computes, from liveness, where a `ThreadBound` value is live across
 a suspension point and pins the task to its current worker over that range;

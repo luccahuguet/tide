@@ -215,7 +215,8 @@ measurement rejected.
   Variance follows Rust: shared references are covariant, `&mut T` and
   cells are invariant in `T`.
 - **`'static` and `Owned`.** A type that borrows nothing except `'static`
-  data is `Owned` (Rust's `T: 'static`). In a signature or field,
+  data is `Owned` (Rust's `T: 'static`). Outside a body (signatures,
+  fields, impl headers, associated types, consts and statics),
   `Box<dyn Trait>` is `Owned` and `&'a dyn Trait` is `dyn Trait + 'a`, by
   Rust's object-lifetime defaults; inside a body the object lifetime is
   inferred.
@@ -268,8 +269,9 @@ over-capture, fixed with `+ use<..>`; self-referential structs need
   `Box`, and `String` types with their Rust meaning. No null.
 - Nominal `struct` and `enum` with exhaustive `match`; `impl Trait` in
   argument and return position as in Rust, except that a returned
-  `impl Trait` exposes only the auto traits it names (`impl Iterator + Send`),
-  so a body edit cannot change what callers may assume.
+  `impl Trait` is `Send`, `Sync`, or `Pure` only if it names them
+  (`impl Iterator + Send`), so a body edit cannot change what callers may
+  assume; `Owned` follows what it borrows, as Rust's `'static` does.
 - Every item signature is annotated; inference is bidirectional and local to
   a function body. No overloading: one function per name per scope and one
   inherent method per name per type; trait methods with the same name are

@@ -287,7 +287,7 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
   (7.1), `Box<dyn Trait>` contents in a signature or field, and children of a scope passed down
   unless they borrow only what the signature ties to the scope (7.1).
 - `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
-  `&'a mut` it is `dyn Trait + 'a`. Elsewhere in signatures and fields
+  `&'a mut` it is `dyn Trait + 'a`. Elsewhere outside a body
   (`Box`, `Rc`, `Arc`, type arguments) it means `dyn Trait + Owned`, unless
   the container's own `T: 'a` bound sets `'a`; inside a body it is
   inferred. Write
@@ -412,8 +412,10 @@ are rejected:
 A missing auto trait never makes impls disjoint: `impl<T: Pure> K for T`
 and `impl K for Net` overlap (`FX0402`), though `Net` is not `Pure`. Trait
 methods are namespaced by trait, as in Rust, so `Display::fmt` and
-`Debug::fmt` coexist. A returned `impl Trait` exposes only the auto traits
-it names: write `-> impl Iterator<Item = u8> + Send` if callers need `Send`.
+`Debug::fmt` coexist. A returned `impl Trait` is `Send`, `Sync`,
+or `Pure` only if it names them: write `-> impl Iterator<Item = u8> + Send`
+if callers need `Send`. It is `Owned` when it captures no borrow, or when it
+states `+ Owned`.
 
 ### 5.2 Impl placement
 
