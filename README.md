@@ -26,9 +26,9 @@ Tide is in the design phase; there is no compiler for this design. The
 decision record is `design/01-design.md` (draft 3). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0).
 
-`crates/` holds an early Rust scaffold (seven crates, about 700 lines) from
-the archived first design; it does not implement the current design.
-`scripts/test/e2e_workspace_smoke.sh` builds and tests it.
+The repository holds no code yet. The early Rust scaffold from the first
+design, which does not implement Tide, is kept in
+`archive/v0-design/scaffold/`.
 
 ## Reading Guide
 

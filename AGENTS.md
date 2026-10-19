@@ -230,8 +230,7 @@ is the decision record and owns every language decision; the chapters in
 `design/` elaborate it and `design/reference.md` is the agent-loadable core
 reference. `research/` holds cited evidence, `reviews/` the adversarial
 reviews, and `trials/` the learnability experiments. `archive/v0-design/` holds
-the superseded first design; `crates/` holds an early bootstrap scaffold from
-it.
+the superseded first design and its early Rust scaffold.
 
 ### Governance
 
@@ -251,6 +250,5 @@ it.
 
 ### Verification
 
-`scripts/test/e2e_workspace_smoke.sh` runs `cargo test --workspace` and the
-CLI smoke checks of the early bootstrap scaffold, whose binary keeps
-the working name `ferox`.
+The repository holds no code until the v0 checker starts. Design changes are
+checked by review rounds and learnability trials (`design/01-design.md` D0).
