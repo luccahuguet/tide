@@ -1,6 +1,6 @@
 # Tide Design
 
-Status: draft 3. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3.1. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
@@ -266,6 +266,8 @@ operators.
   allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
+- Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`) as
+  making two impls disjoint.
 - `dyn Trait` is always spelled out.
 - Traits may declare **laws** (D10), which impls must satisfy.
 
@@ -329,7 +331,9 @@ serialization as the default (5–7x slower in prior art).
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
-- Safe code has no mutable globals and no thread-locals.
+- Safe code has no mutable globals, no thread-locals, and in v0 no lazy
+  statics: statics are evaluated at compile time by `const fn`, and anything
+  that needs run-time initialization is built in `main` and passed down.
 - **Write-only diagnostic sinks are not capabilities.** `print!`, `println!`,
   `eprint!`, `eprintln!`, `dbg!`, and the built-in `log` and `trace` APIs write
   to sinks owned by the current task and configured by `main`. They cannot
@@ -359,8 +363,9 @@ serialization as the default (5–7x slower in prior art).
   captures: `Pure` excludes atomics and synchronization handles, and `Sync`
   excludes `Cell` and `RefCell`, so no interior mutability is observable
   across branches. Memoization and `const fn` additionally forbid `&mut`
-  parameters. A call through a closure or `dyn` value may suspend exactly when
-  that value's type is not `Pure`.
+  parameters. A call through a closure, function pointer, or `dyn` value may
+  suspend exactly when the callee value's type or any argument's type is not
+  `Pure`.
 - **Foreign calls carry authority.** `extern` declarations are allowed only in
   packages granted `ffi`. Each foreign function is wrapped by a Tide
   signature that takes the capabilities it may use, or is marked
@@ -403,6 +408,15 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
 - Data-race freedom comes from ownership plus `Send` and `Sync`, derived
   structurally. The task, not the OS thread, is the isolation unit; values
   that never leave a task need not be `Send`.
+- **Scope results** follow one precedence rule once every child has
+  finished: if any child panicked, the scope re-raises the panic of the
+  earliest-spawned panicking child; otherwise, if any child failed, it
+  returns the error of the earliest-spawned failing child, where a
+  cancellation caused by the scope's own deadline is reported as
+  `DeadlineExceeded`; otherwise it returns the body's result.
+- In v0 the threads runtime runs one OS thread per task, so blocking tasks
+  cannot exhaust a pool and production cannot deadlock where the simulator
+  makes progress; `Tasks::limit` bounds concurrency when needed.
 - **The binary chooses the runtime**: blocking, threads, evented, or
   simulated. Libraries never choose. The compiler knows from signatures which
   functions may suspend; under the evented runtime it compiles them to
@@ -421,9 +435,15 @@ stackful execution internally.
 ### D9. Parallelism: deterministic, with defined grouping
 
 - `join(|| a(), || b())`, `par_map`, and `par_for` are library functions.
-  They run `Pure + Send` closures that capture shared data only if it is
-  `Pure + Sync`, or that hold disjoint `&mut` splits.
-- `par_map` and `par_for` equal their sequential versions.
+  `join` runs `Pure + Send` closures; `par_map` and `par_for` run
+  `Fn + Pure + Send + Sync` closures, because they call one closure from
+  several threads. Captured shared data must be `Pure + Sync`; `&mut` data
+  is reachable only through disjoint splits.
+- When no branch panics, `join`, `par_map`, and `par_for` equal their
+  sequential versions. When a branch panics, the panic propagates as in D5,
+  and data the region could write has unspecified (memory-safe) contents
+  that only destructors can observe. Under the simulator, parallel regions
+  run sequentially in sequential order, so runs stay reproducible.
 - `par_reduce` is defined by a canonical balanced grouping that depends only
   on input length, so results are bitwise identical on any core count. When
   the operation's trait carries a proved associativity law, the result also
@@ -456,7 +476,13 @@ stackful execution internally.
   model equality; quantifiers range over spec types. Closures appear in specs
   only through `f.requires(args)` and `f.ensures(args, r)`.
 - In v0, executable clauses use code semantics: machine integers that trap,
-  and `==` through `PartialEq`. Mathematical integers and model equality
+  and `==` through `PartialEq`. Clauses may call only authority-free
+  functions that take no `&mut` and whose argument types are `Pure + Sync`,
+  so evaluating a clause cannot change program state. A clause whose
+  evaluation panics counts as a violation; a sampled clause that exceeds its
+  step budget is reported as unchecked, not as failed. In `ensures`, a bare
+  `*x` of a `&mut` parameter means its value at return and `old(*x)` its
+  value at entry. Mathematical integers and model equality
   apply under `prove` (v1), and the compiler warns where a clause would read
   differently under the two.
 - **Uses**, chosen per package and overridable per item:
@@ -504,6 +530,9 @@ stackful execution internally.
   coverage**: which public items have contracts and at what status. Items
   without contracts still need ordinary review and tests; the trust diff
   narrows review, it does not replace it.
+- Contract hashes cover the bodies of every function a clause calls,
+  transitively, so editing a predicate a contract relies on is a contract
+  change.
 - **What needs approval**: weakening or removing a contract, widening
   authority, adding a trust hole (including `diverges`), downgrading a
   package or item from `prove` to `test` or `assert`, and changing a
@@ -612,8 +641,14 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   durable by `sync` or `sync_dir` may be lost or torn, as the seed decides.
 - `tide sim <binary>` runs a program's `main` under many seeds. A failure
   prints seed and commit and replays bit for bit, dependencies included.
-- Authority-free `par` regions run on real cores under simulation, because
-  their results are deterministic.
+- Every simulated run writes a replay manifest: seed, commit, toolchain
+  version, target, the simulated root's configuration (arguments,
+  environment, files), and all injected inputs. The standard library ships
+  one math library for every target, `to_bits` canonicalizes NaN, and raw
+  pointer addresses are observable only under an `unsafe` grant.
+- Node entry points are `fn` items or `Fn` closures with `Owned` captures, so
+  a restart reruns the entry against the node's durable storage and fresh
+  volatile state.
 - A determinism self-check runs a seed twice and diffs the event traces.
 - Coverage: the build lists any reachable foreign effect with no simulator
   model.
