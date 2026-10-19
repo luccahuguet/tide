@@ -57,6 +57,8 @@ design, which does not implement Tide, is kept in
   boundary, and Rust import.
 - [design/04-contracts.md](design/04-contracts.md): contracts, proof modes,
   and the trust surface.
+- [REFERENCES.md](REFERENCES.md): the languages, projects, papers, and data
+  Tide draws on.
 
 Chapters 02–04 elaborate draft 2.1 and still describe some later-tier
 features; on any conflict, `01-design.md` and its tier table win.
