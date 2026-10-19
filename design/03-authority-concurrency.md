@@ -13,7 +13,8 @@ and `par_for` (§8.1, §8.2, §8.4); the simulator with crash, restart, and
 durability (§9); the worked examples (§12). v1: exercised authority,
 effect reporting, and `FX0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`
 on foreign functions, and `ThreadBound` (§5); the evented runtime and its lowering (§7.2);
-`par_reduce` (§8.3); imported Rust crates (§11, RUST-1 to RUST-5). Later: the Bend boundary and
+`par_reduce` (§8.3); imported Rust crates and Rust consumers (§11, RUST-1
+to RUST-6). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
 by `reference.md`: `pct` scheduling and `--minimize` (§9). Draft 3 removed
 `Frozen` (now `Pure + Sync`), the `lock` keyword (now `Shared::with`, §6.5),
@@ -172,7 +173,8 @@ N1). Test builds add the simulator behind one predictable branch.
 - **ROOT-1.** `Root` may be named only as the parameter of the binary's
   `main`, written `#[tide::main] fn main(root: Root)`. rustc rejects
   parameters on a plain `main` (E0580); the attribute generates Rust's entry
-  point, which mints the `Root`.
+  point, which mints the `Root`. Every binary's `main` carries it, with or
+  without `root`; a `main` without it is `FX0512`, whose safe fix adds it.
 - **ROOT-2.** `root` cannot be passed, borrowed into a call, stored,
   returned, or captured (`FX0503`). Its fields can be moved or borrowed out
   one by one. Attenuation and wiring therefore happen in `main`, where review
@@ -244,8 +246,15 @@ determinism claim here holds modulo exhaustion of memory, stack, or
 
 - **PANIC-1. Stack overflow** aborts the process, as in Rust (D5): no
   destructors run and `spawn_isolated` cannot contain it. Under the
-  simulator it fails the seed. The depth at which it occurs is outside the
-  determinism claim.
+  simulator it fails the seed. v0's simulator runs in one process (§9.1),
+  so the abort is reported from outside it: the simulator writes each
+  seed's replay manifest before running the seed, and `tide test` and
+  `tide sim` run the binary as a child process. When the child aborts,
+  they report the seed whose manifest was in flight as failed, with its
+  replay command, and start a fresh child for the tests and seeds not yet
+  run. An abort from PANIC-2 is reported the same way. The depth at which
+  an overflow occurs is outside the determinism claim, so a replay may not
+  reproduce it.
 - **PANIC-2. Panic during unwinding.** A panic raised while a task is
   unwinding from another panic, for example in a destructor, aborts the
   process, as in Rust (D5).
@@ -945,7 +954,10 @@ cancelled.
   (ADMIT-1); std's `float::bits`, `float::min`, and `float::max` take their
   place, and its `math::sin`, `math::exp`, `math::ln`, `math::powf`, and the
   other functions beyond IEEE's basic operations use one math library for
-  every target (D15), never the platform's libm. Formatting, byte
+  every target (D15), never the platform's libm. Each covers `f32` and
+  `f64`. The basic operations `sqrt` and `mul_add` are correctly rounded,
+  so they stay methods, and `from_bits` observes nothing and stays
+  admitted (D3). Formatting, byte
   conversions, and foreign calls are audited against the same rule.
   The automatic parallelization pass (later tier) only runs independent
   authority-free calls in parallel; it never regroups a fold.
@@ -1145,8 +1157,8 @@ life = { bend = "=2.0.37", src = "kernels/", mode = "process" }  # "inproc" need
 
 ```rust
 #[bend(dep = "life", def = "Life.steps", reference = life_steps_ref)]
-#[ensures(result.is_ok() ==> result.unwrap().len() == board.len(),
-          by = bend_law("kernels/LAWS.bend", "steps_keep_size"))]
+#[ensures(result.is_ok() ==> result.unwrap().len() == board.len())]
+#[bend_law("kernels/LAWS.bend", "steps_keep_size")]
 pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendArray<u32>, BendFault>;
 ```
 
@@ -1179,20 +1191,21 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   runs the `reference` implementation if one is declared, and otherwise the
   real kernel outside virtual time, recording the result's hash. Latency is
   modeled, and `accel_crash` exercises the failure paths.
-- **Imported claims.** An `ensures` with `by = bend_law(..)` is accepted
-  only if Tide can
-  render it as a Bend law (first-order fragment), the pinned `bend` verdict
-  passes, and the verdict lists no foreign or `@unsafe` dependency. The claim
-  enters the trust surface as `external: bend` with version and hashes in the
-  lockfile. It never counts as Tide-proved; a Tide proof may use it only as
-  a counted assumption. Under `assert` and `test` the clause is still checked
-  at run time where executable.
+- **Imported claims.** `#[bend_law(file, law)]` attaches to the `ensures`
+  directly above it, which keeps that clause one expression (04 §1.2 rule 1).
+  The claim is accepted only if Tide can render the clause as a Bend law
+  (first-order fragment), the pinned `bend` verdict passes, and the verdict
+  lists no foreign or `@unsafe` dependency. The claim enters the trust surface
+  as `external: bend` with version and hashes in the lockfile. It never counts
+  as Tide-proved; a Tide proof may use it only as a counted assumption. Under
+  `assert` and `test` the clause is still checked at run time where
+  executable.
 - **Differential tests.** With a `reference`, `tide test` property-tests the
   kernel against it; deterministic `par_map` makes exact comparison meaningful.
 
 ## 11. Rust Crates
 
-Imports (RUST-1 to RUST-5) are v1; RUST-6 is the other direction.
+Imports (RUST-1 to RUST-5) are v1; RUST-6 is the other direction, also v1.
 
 ```toml
 [rust-dependencies]

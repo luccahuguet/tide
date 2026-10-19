@@ -80,7 +80,7 @@ later-tier feature, the tier table wins.
 | Tier | Contents |
 | --- | --- |
 | v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
@@ -188,7 +188,9 @@ provisional until E1 meets its thresholds.
     rewrites each loop so the invariant is checked as D10 specifies;
   - the entry point is `#[tide::main] fn main(root: Root)`, because rustc
     rejects parameters on a plain `main` (E0580); the attribute generates
-    Rust's entry point and mints the `Root` (D7);
+    Rust's entry point and mints the `Root` (D7). Every binary's `main`
+    carries it, so every binary starts the runtime and sinks and runs under
+    `tide sim`; a `main` without it is `FX0512`, whose safe fix adds it;
   - a typed hole is `todo!()` or `hole!(name)` (D14).
 - Lifetimes are Rust 2024's, except the forms beyond D4's power ceiling
   (D2).
@@ -322,9 +324,11 @@ over-capture, fixed with `+ use<..>`; self-referential structs need
   `signum`, `total_cmp`, `min`, `max`, `sin`, `exp`, and the rest) are
   outside the admission allowlist (D7). Tide's std provides functions in
   their place: `float::bits(x)`, `float::min(a, b)`, `float::max(a, b)`,
-  `math::sin(x)`, `math::exp(x)`. `float::min` and `float::max` order -0.0
-  below +0.0. Formatting, byte conversions, and foreign calls are audited
-  against the same rule.
+  `math::sin(x)`, `math::exp(x)`, each for `f32` and `f64`. `float::min`
+  and `float::max` order -0.0 below +0.0. `from_bits` builds a float and
+  observes nothing, so it stays admitted; so do `sqrt` and `mul_add`, which
+  IEEE 754 and Rust define as correctly rounded. Formatting, byte
+  conversions, and foreign calls are audited against the same rule.
 
 Rejected: signature inference, implicit conversions, overloading, custom
 operators.
@@ -358,7 +362,8 @@ generics.
 - Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
   current task. A panic raised while unwinding from another panic aborts the
   process. Stack overflow aborts the process, as in Rust; under the
-  simulator it fails the seed. A child task's panic propagates to its scope,
+  simulator it fails the seed, which the test driver reports from outside
+  the process (03 PANIC-1). A child task's panic propagates to its scope,
   which panics in turn, as with Rust's `std::thread::scope`; no code ever
   observes data a
   panicking task was mutating. Recovery happens only at
@@ -381,9 +386,13 @@ Rejected: exceptions; draft 1's `from` keyword on variants (collides with
   layout) for printing, diffing, and inspection. Constructing a value through
   `Shape` is allowed only for types that opt in and whose fields are all
   visible; capability types can never be constructed this way.
-- Derives `Error`, `Encode`, and `Decode`, the contract attributes, and
-  `#[tide::main]` are proc macros owned by the toolchain and exported through
-  Tide's std prelude; they are not user macros.
+- Derives `Error`, `Encode`, and `Decode`, the contract attributes,
+  `#[tide::main]`, and `#[test]` are proc macros owned by the toolchain and
+  exported through Tide's std prelude; they are not user macros. Tide's
+  `test` replaces Rust's built-in one, which rejects parameters, so a test
+  with parameters is a property test (`04-contracts.md` §2.4).
+  `#[error]`, `#[from]`, `#[source]`, and `#[codec]` are their derives'
+  helper attributes.
 - `const fn` evaluation is authority-free, deterministic, fuel-limited, and
   cached; it computes values, never declarations or types.
 - Code generators are programs the developer runs explicitly; their output is
@@ -602,9 +611,9 @@ execution internally; it runs tasks on baton-passed threads.
   unrewritten one is a checker error.
   `result` names the
   return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
-  value a returned or stored `&mut` holds when its borrow ends. Under
-  `prove` (v1), a bare `*x` of a `&mut` parameter in `ensures` is an error:
-  write `old(*x)` or `final(*x)`.
+  value a returned or stored `&mut` holds when its borrow ends. From v1, a
+  bare `*x` of a `&mut` parameter in `ensures` is an error: write `old(*x)`
+  or `final(*x)`.
 - **Spec language.** Specs call only `spec fn`s, the built-in spec types, and
   functions marked `#[spec]`, which must be authority-free and proved total;
   the standard library marks its pure accessors (`len`, indexing, `get`,
@@ -622,8 +631,10 @@ execution internally; it runs tasks on baton-passed threads.
   so evaluating a clause cannot change program state. A clause whose
   evaluation panics counts as a violation; a sampled clause that exceeds its
   step budget is reported as unchecked, not as failed. In `ensures`, a bare
-  `*x` of a `&mut` parameter means its value at return and `old(*x)` its
-  value at entry. `old(e)` evaluates `e` at entry and snapshots the value it
+  `*x` of a `&mut` parameter means the caller's referent at return, even
+  where the body reassigns the parameter (`cur = &mut n.next`), as v1's
+  `final(*x)` does, and `old(*x)` its value at entry. `old(e)` evaluates
+  `e` at entry and snapshots the value it
   denotes, copying `Copy` values and cloning others; `old` of a type that is
   neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
   counts as a violation of the clause that needed it. One skip rule decides
@@ -778,12 +789,12 @@ lowering of Tide tasks); D18 reversed that.
   capabilities; a scan of the linked symbols checks the declaration; its
   build script, if any, runs sandboxed without network and with recorded
   outputs.
-- **Rust consumers** depend on a Tide crate as on any Rust crate; their own
-  manifest and `std` are unchanged. The Tide crate's exported `Cargo.toml`
-  (D18) declares `std = { package = "tide_std" }`, so Cargo builds that
-  crate, and only it, against Tide's std. Types Tide's std
-  re-exports from Rust's are shared, and Tide-owned types (`HashMap`,
-  `Arc`, channel ends, capabilities) need adapters at the boundary.
+- **Rust consumers** (v1) depend on a Tide crate as on any Rust crate; their
+  own manifest and `std` are unchanged. The Tide crate's exported `Cargo.toml`
+  (D18) declares `std = { package = "tide_std" }`, so Cargo builds that crate,
+  and only it, against Tide's std. Types Tide's std re-exports from Rust's are
+  shared, and Tide-owned types (`HashMap`, `Arc`, channel ends, capabilities)
+  need adapters at the boundary.
 
 ### D14. Toolchain contract for agents
 
@@ -920,12 +931,17 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   `Cargo.toml` is an export for Rust consumers.
 - **rustc and LLVM are the release backend**, replacing D12's C backend and
   its Cranelift-class backend; open question 7 lapses. An interpreter is
-  built only if `tide eval` or E4's edit-to-test target needs it.
+  built only on D12's conditions.
 - **The gate passed** (2026-10-19): the spike met the seven criteria in
   `research/15-rust-dialect.md` at prototype scale. Its gaps (a panic
   inside a clause, sampled-clause budgets, `a..=b` next-index binding,
-  entry values of by-value parameters in `ensures`, `loop {}` rewriting)
-  are implementation work.
+  entry values of by-value parameters in `ensures`, `loop {}` rewriting,
+  and a `&mut` parameter the body reassigns, which its closure lowering
+  rejects with E0521) are implementation work. Its `tide-admit` reports
+  every failed `Pure` obligation as `FX0510`; the design reports one under
+  the code of the rule that needs `Pure` (`FX0502`, `FX0603`, `FX0606`,
+  `FX0611`, `FX0612`), and `FX0510` is the least-authority lint
+  (03 §4.2).
 - **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.
@@ -1041,11 +1057,15 @@ fn feed_times_out() {
 3. The simulator model for foreign effects and for imported Rust crates.
 4. Whether authority-free public functions should be declarable (`#[pure]`)
    so that adding authority is a visible breaking change.
-5. Whether `tide eval` or E4's edit-to-test target needs an interpreter
-   (D12, D18).
+5. Whether `tide eval`, E4's edit-to-test target, or v1's spec evaluation
+   needs an interpreter (D12, D18).
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
 7. (Lapsed under D18.) How the C-emitting release backend (D12,
    v1) implements unwinding for panics, which must drop values (D5): a flag
    check after every call, compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.
+8. How the core reference fits D14's 25,000 tokens: on Claude's tokenizer
+   it is over half again as long (count and method in its header). The
+   checker's test corpus does not depend on it; E1's held-out round does
+   (bead `fx-fbq`).

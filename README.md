@@ -19,7 +19,8 @@ to trust.
 - **As safe and fast as Rust.** The same memory safety and data-race freedom
   without a garbage collector, and generics specialized like Rust's.
   Integer overflow never wraps silently, and no package code runs at build
-  time beyond the toolchain's own proc macros.
+  time beyond the toolchain's own proc macros and, from v1, the sandboxed
+  build scripts of imported Rust crates.
 - **Fast feedback.** Edits check in tens of milliseconds: no user proc
   macros, no build scripts, no inference across signatures, no unbounded trait solver.
 - **Already familiar.** Rust syntax wherever the meaning is the same,

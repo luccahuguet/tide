@@ -6,7 +6,9 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
 reading this reference takes. Syntax is provisional until the E1 gate (D0).
-Budget: under 25,000 tokens, counted in CI (D14).
+Budget: under 25,000 tokens, counted in CI (D14). Measured 2026-10-19:
+39,140 tokens, over budget (01 open question 8). Method: `claude -p` input
+tokens with this file as the prompt, minus those of a one-character prompt.
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -74,7 +76,8 @@ edition):
   `Write`, `Seek`, `BufRead`, `BufReader`, `BufWriter`, `io::Error`,
   `io::ErrorKind`, `io::Result`). What changes is how you *obtain* I/O
   objects (from capabilities, section 6) and the default hasher (6.4).
-- **Testing**: `#[test]`, `#[should_panic(expected = "..")]`,
+- **Testing**: `#[test]` (Tide's std supplies it, so a test may take
+  parameters, 10.2), `#[should_panic(expected = "..")]`,
   `#[cfg(test)] mod tests { use super::*; .. }`, the `assert!` family.
 
 Source files end in `.rs`, and modules are declared with `mod` (12.1).
@@ -174,7 +177,8 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
 - Tide attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
   `#[tide::main]` (6.2), `#[pure]` (6.6), `#[sim_test]` (6.8),
   `#[requires]`, `#[ensures]`, `#[invariants]` (10.1), `#[protected]` and
-  `#[trusted_pure]` (11). They are toolchain proc macros, not user macros.
+  `#[trusted_pure]` (11). They are toolchain proc macros and their derives'
+  helper attributes, not user macros.
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
 
@@ -393,11 +397,13 @@ IEEE 754 as Rust, with native arithmetic. Rust leaves NaN bits and math
 precision unspecified, so the methods that read a float's sign or bits
 (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
 `total_cmp`, `min`, `max`) and the math methods (`sin`, `exp`, `powf`,
-`sqrt`, ...) are `FX0520` (6.9). Use std's functions:
+`ln`, ...) are `FX0520` (6.9). Use std's functions:
 `float::bits(x)` (any NaN reads as one canonical NaN), `float::min(a, b)`
 and `float::max(a, b)` (-0.0 below +0.0), and `math::sin(x)`,
 `math::exp(x)`, ..., from one library on every target (`use std::{float,
-math};`). Rounding and classification (`floor`, `ceil`, `round`, `trunc`,
+math};`), each for `f32` and `f64`. `f64::from_bits(u)`, `x.sqrt()`, and
+`x.mul_add(a, b)` are admitted: they observe nothing or are correctly
+rounded. Rounding and classification (`floor`, `ceil`, `round`, `trunc`,
 `abs`, `is_nan`, `is_finite`) stay methods (provisional). `f64` is not `Eq`
 or `Ord`; use `float::total_cmp(a, b)` (provisional name).
 
@@ -490,7 +496,8 @@ fn main(root: Root) -> Result<(), AppError> {
 - `Root` has public fields `fs`, `net`, `clock`, `rand`, `env`, `stdin`,
   `proc`, `tasks`, and `log` (sink configuration, 6.5).
 - The attribute generates Rust's parameterless entry point and mints
-  `root`. `main` takes `root: Root` or nothing, and returns `()`,
+  `root`; every binary's `main` needs it (`FX0512`, safe fix). `main` takes
+  `root: Root` or nothing, and returns `()`,
   `Result<(), E: Debug>`, or `std::process::ExitCode` (`ExitCode::SUCCESS`,
   `ExitCode::FAILURE`, `ExitCode::from(2u8)`), as in Rust. After `Err(e)`
   the program prints `Error: {e:?}` to stderr and exits with 1; to print
@@ -1133,11 +1140,12 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
 - Results are must-use: an ignored `Result` is an error (`FX0702`); write
   `let _ = r;` to discard on purpose (provisional: Rust warns).
 - `#[derive(Error)]` replaces `thiserror` (2.2).
-- **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap`
-  on `None`, a violated contract) unwind the current task and run
-  destructors. Stack overflow aborts the process, as in Rust; under the
-  simulator it fails the seed. A panic raised during that unwinding, for example in
-  a destructor, aborts the process. A panicking child makes its scope panic
+- **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap` on
+  `None`, a violated contract) unwind the current task and run destructors.
+  Stack overflow aborts the process, as in Rust; under the simulator,
+  `tide test` and `tide sim` report the seed that was running and continue
+  in a fresh process. A panic raised during that unwinding, for example in a
+  destructor, aborts the process. A panicking child makes its scope panic
   (7.1). There is no `catch_unwind` (`FX0701`); isolate risky work with
   `tasks.spawn_isolated`. A panic in the main task exits with code 101.
 
@@ -1150,8 +1158,8 @@ builds, erased in release, and used to drive property tests.
 
 | Clause | Where | Meaning |
 | --- | --- | --- |
-| `#[requires(e)]` | attribute on a fn | precondition, checked at entry; a failure blames the caller |
-| `#[ensures(e)]` | attribute on a fn | postcondition, checked at each return; a failure blames the callee |
+| `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`FX0801`) | precondition, checked at entry; a failure blames the caller |
+| `#[ensures(e)]` | as `requires` | postcondition, checked at each return; a failure blames the callee |
 | `invariant!(e);` | first statements of a loop body | checked at loop entry (even for zero iterations) and exit; under `tide test`, also after every iteration |
 
 - **Loops.** The enclosing fn must carry `#[invariants]` or any contract
@@ -1162,17 +1170,19 @@ builds, erased in release, and used to drive property tests.
 - **In `ensures`**, `result` is the return value (a contextual keyword): a
   place the clause reads but cannot move out of, so match on `&result` or
   use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
-  parameter `v` (or `*v`) means its value at return; `old(*v)` its value at
+  parameter `v` (or `*v`) means the caller's referent at return, even if
+  the body reassigns `v` (`v = &mut n.next`); `old(*v)` its value at
   entry. `old(e)` evaluates `e` at entry and snapshots the value: `Copy`
   values are copied, others cloned, and a reference snapshots its referent.
   So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`
   of a type that is neither `Copy` nor `Clone` is an error. `e` cannot
   mention `result` or a quantifier's variable: write `old(*v)[i]`. A panic
   while snapshotting is a violation of that clause. Other parameters mean
-  their entry values: a `Copy` one is copied and a `Clone` one cloned at
-  entry; one that is neither cannot be named if the body assigns, moves, or
-  mutably borrows it, through a `&mut` it holds included (narrow it:
-  `old(x.len())`). This does not change the clause's class.
+  their entry values: a `Copy` one is copied and a `Clone + Pure + Sync`
+  one cloned at entry (in generic code, if so bounded); any other cannot be
+  named if the body assigns, moves, or mutably borrows it, through a
+  `&mut` it holds included (narrow it, `old(x.len())`, or add the bound).
+  This does not change the clause's class.
 - **Clause expressions** are ordinary Rust boolean expressions, evaluated
   as code: `==`, `<`, and arithmetic mean exactly what they mean in code,
   including overflow traps; widen (`a as u128 + b as u128`) when a sum might
@@ -1401,10 +1411,7 @@ only = ["crate::net::*"]         # no other module may declare Net
   fetch or build time (`FX0915`). Code generators are programs you run
   explicitly (`tide run --bin gen`); commit their output.
 - Tide's driver runs rustc itself, not Cargo; `RUSTFLAGS` and unstable
-  features do not apply. A Rust package depends on a Tide crate as on any
-  crate; the Tide crate's generated `Cargo.toml` injects `tide_std` for that
-  crate alone. Tide's `HashMap`, `Arc`, channel ends, and capabilities are
-  distinct from Rust's.
+  features do not apply.
 
 ## 13. Toolchain loop
 
@@ -1441,7 +1448,7 @@ and candidate functions; use holes to build a function top-down.
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
 | `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (6.9) | `FX0501` |
 | `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
-| `fn main(root: Root)` without the attribute | `#[tide::main] fn main(root: Root)` | rustc E0580; safe fix |
+| `fn main()` or `fn main(root: Root)` without the attribute | `#[tide::main] fn main(root: Root)` | `FX0512` safe |
 | `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
 | `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |
@@ -1698,7 +1705,8 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
   `FX0510`, and effect reporting for sinks; FFI (`extern`, the `ffi` grant,
   `#[sim_model]`, `ThreadBound`); imported Rust crates, linked directly
   behind wrappers that take capabilities (`[rust-dependencies]`, linked-symbol
-  scan).
+  scan); Rust packages depending on a Tide crate through its generated
+  `Cargo.toml` (RUST-6).
 - **Runtime**: the evented runtime, whose lowering under D18 is open;
   production record and replay (D17).
 - **Parallelism**: `par_reduce` with its canonical grouping, `Combine`,

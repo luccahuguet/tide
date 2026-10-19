@@ -264,9 +264,10 @@ whole.
 - **Interfaces.** A module's interface artifact (D12) records each
   signature's lifetimes and their uses, outlives bounds, implied relations
   and field-borrow sets (§7). For each public type it records the named
-  origins with their variances, its declared and implied outlives relations, `'static` and the auto and marker traits (`Send`, `Sync`,
-  `Pure`, and in v1 `ThreadBound`) and a drop-check summary. A change to any of these is an
-  API change and appears in the trust diff.
+  origins with their variances, its declared and implied outlives
+  relations, `'static` and the auto and marker traits (`Send`, `Sync`,
+  `Pure`, and in v1 `ThreadBound`) and a drop-check summary. A change to
+  any of these is an API change and appears in the trust diff.
 - **Calls.** The callee's origins are instantiated freshly; argument
   coercion adds subset constraints by variance (§4); the signature's
   relations become constraints on the fresh origins. The callee's body is

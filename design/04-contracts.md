@@ -106,6 +106,7 @@ fn_clause   = "#[" "requires" "(" sexpr ")" "]"
             | "#[" "decreases" "(" sexpr { "," sexpr } ")" "]"  (* v1; lexicographic *)
             | "#[" "diverges" "]"                                (* v1 *)
             | "#[" "invariants" "]" ;              (* rewrites loops and closures only *)
+(* Trait and trait-impl methods: clauses are v1, FX0801 in v0 (rule 6) *)
 trait_fn    = { attr | fn_clause } "fn" ident generics? "(" params ")" ret?
               where? ( block | ";" ) ;
 impl_fn     = { attr | fn_clause } vis? "fn" ident generics? "(" params ")"
@@ -186,7 +187,8 @@ Rules that the grammar does not show:
    have a parameter named `result`; the safe fix renames it.
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
-   parameter means its value at return (§1.8). From v1, a bare `*x` is an
+   parameter means the caller's referent at return, even where the body
+   reassigns the parameter (§1.8, CLAUSE-4). From v1, a bare `*x` is an
    error with two machine-applicable fixes, `old(*x)` and `final(*x)`
    (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
    is executable, and otherwise reports it for a manual choice.
@@ -195,7 +197,9 @@ Rules that the grammar does not show:
    functions.
 6. **Impls refine trait contracts** (v1). An impl method inherits its trait
    method's contract and may weaken the precondition and strengthen the
-   postcondition, never the reverse (§5.2).
+   postcondition, never the reverse (§5.2). In v0 a clause on a trait
+   method or a trait-impl method is `FX0801`; the fix states it on a
+   function or inherent method that the impl calls.
 7. **Bodiless ghost functions.** A bodiless `spec fn` is uninterpreted, and its
    result type must be inhabited. A bodiless `proof fn` is an axiom and must
    carry `#[trusted(reason = "...")]`.
@@ -388,21 +392,21 @@ rule CLAUSE-*n*.
    write `result == a as u16 + b as u16`. Mathematical integers and model
    equality apply only under `prove` (v1).
 3. **CLAUSE-3. Read-only evaluation.** A clause calls only authority-free
-   functions whose argument types are `Pure + Sync` and that take `&mut`
-   only to temporaries created inside the clause, such as the iterator in
-   `xs.iter().all(|x| *x > 0)`; no `&mut` reaches a place that exists
-   outside the clause's own evaluation. The rule covers methods, trait
-   methods, the operator impls behind `==`, `<`, and indexing, the `Clone`
-   impls that `old` calls (item 4), and calls inside closure literals in the
+   functions whose argument types are `Pure + Sync` and that take `&mut` only
+   to temporaries created inside the clause, such as the iterator in
+   `xs.iter().all(|x| *x > 0)`; no `&mut` reaches a place that exists outside
+   the clause's own evaluation. The rule covers methods, trait methods, the
+   operator impls behind `==`, `<`, and indexing, the `Clone` impls that `old`
+   and item 4's entry snapshots call, and calls inside closure literals in the
    clause. `Sync` excludes `Cell`, `RefCell`, and `Rc`, and `Pure` excludes
    capabilities and handles, so evaluating a clause cannot change program
    state: a build that erases clauses differs only by the missing checks. A
-   clause in generic code is checked once, at its definition (D4), so a
-   value whose type mentions a type parameter `T` may reach a call only if
-   the definition bounds `T` by `Pure + Sync`, as generic definitions state
-   the properties they need (`03-authority-concurrency.md` §3.2). Without
-   the bound the clause is an error whose fix adds it; no instantiation
-   skips a clause.
+   clause in generic code is checked once, at its definition (D4), so a value
+   whose type mentions a type parameter `T` may reach a call only if the
+   definition bounds `T` by `Pure + Sync`, as generic definitions state the
+   properties they need (`03-authority-concurrency.md` §3.2). Without the
+   bound the clause is an error whose fix adds it; no instantiation skips a
+   clause.
 4. **CLAUSE-4. `old` and `&mut` parameters.** `old(e)` evaluates `e` at
    entry and snapshots the value it denotes (D10). A `Copy` value is copied
    and any other value is cloned, so `old(v.len())` costs one word and
@@ -418,15 +422,20 @@ rule CLAUSE-*n*.
    value that may not exist is snapshotted as an `Option`, as in
    `old(v.get(10).cloned())`. In `requires`, a `&mut` parameter `x` and
    `*x` denote the entry value. In `ensures`, a bare `x` or `*x` of a
-   `&mut` parameter denotes its value at return and `old(*x)` its value at
-   entry; other parameters denote their entry values. A `Copy` by-value
-   parameter, a shared reference included, is copied at entry as it is. A
-   non-`Copy` one is cloned at entry if it is `Clone`. If it is neither,
-   naming it in an `ensures` is an error when the body assigns, moves, or
-   mutably borrows it (including through a `&mut` it holds), and the fix
-   narrows it, as in `old(x.len())`. These implicit snapshots follow this
-   item's rules for `old` (the `Clone` restriction, panics as violations)
-   but do not change a clause's class (item 5).
+   `&mut` parameter denotes the caller's referent at return, as v1's
+   `final(*x)` does, even where the body reassigns the parameter
+   (`cur = &mut n.next`): the lowering passes the body a reborrow and reads
+   the caller's reference after it. `old(*x)` denotes the entry value.
+   Other parameters denote their entry values. Of these, a `Copy` one, a
+   shared reference included, is copied at entry as it is. A non-`Copy` one
+   is cloned at entry if it is `Clone + Pure + Sync`, the types whose
+   `Clone` item 3 admits; in generic code, if the definition bounds it so
+   (D4). Any other is read in place, so naming it in an `ensures` is an
+   error when the body assigns, moves, or mutably borrows it (including
+   through a `&mut` it holds). The fix narrows it, as in `old(x.len())`, or
+   in generic code adds the bound (`T: Clone + Pure + Sync`). These
+   implicit snapshots follow item 3 and treat a panic as a violation, as
+   `old` does, but do not change a clause's class (item 5).
 5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
    literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
    `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)
@@ -450,8 +459,10 @@ rule CLAUSE-*n*.
    one that exceeds it is reported as unchecked, not as failed. The report
    lists every clause a build or test run did not evaluate. Not yet
    implemented in the D18 spike: reporting a panic inside a clause as a
-   violation, step budgets, and entry values of by-value parameters in
-   `ensures` (item 4) (`research/15-rust-dialect.md`, Spike results).
+   violation, step budgets, entry values of by-value parameters in
+   `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
+   closure lowering rejects with E0521 (`research/15-rust-dialect.md`,
+   Spike results).
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
