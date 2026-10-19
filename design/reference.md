@@ -84,7 +84,7 @@ Source files end in `.rs`, and modules are declared with `mod` (12.1).
 ### 2.1 The fixed built-in `!` forms
 
 Users cannot define macros. Tide's std supplies exactly these, with Rust's
-spelling and meaning, plus Tide's own forms in the last row:
+spelling and meaning; the last row is Tide's own forms:
 
 | Form | Tide notes |
 | --- | --- |
@@ -420,7 +420,7 @@ are rejected:
 | Polymorphic recursion | `fn f<T>(x: T) { f(vec![x]) }` | `FX0407` | an enum or `Box<dyn ..>` |
 | Two inherent methods with one name | two `fn new` | `FX0408` | distinct names |
 
-A missing auto trait never makes impls disjoint: `impl<T: Pure> K for T`
+A missing auto or marker trait never makes impls disjoint: `impl<T: Pure> K for T`
 and `impl K for Net` overlap (`FX0402`), though `Net` is not `Pure`. Trait
 methods are namespaced by trait, as in Rust, so `Display::fmt` and
 `Debug::fmt` coexist. A returned `impl Trait` is `Send`, `Sync`,
@@ -1168,7 +1168,10 @@ builds, erased in release, and used to drive property tests.
   So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`
   of a type that is neither `Copy` nor `Clone` is an error. `e` cannot
   mention `result` or a quantifier's variable: write `old(*v)[i]`. A panic
-  while snapshotting is a violation of that clause.
+  while snapshotting is a violation of that clause. Other parameters mean
+  their entry values: a `Copy` one is copied as it is; a non-`Copy` one the
+  body assigns, moves, or mutably borrows is snapshotted as if by `old`, so
+  it must be `Clone`, or narrow it (`old(x.len())`).
 - **Clause expressions** are ordinary Rust boolean expressions, evaluated
   as code: `==`, `<`, and arithmetic mean exactly what they mean in code,
   including overflow traps; widen (`a as u128 + b as u128`) when a sum might

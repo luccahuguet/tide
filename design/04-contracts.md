@@ -419,10 +419,13 @@ rule CLAUSE-*n*.
    `old(v.get(10).cloned())`. In `requires`, a `&mut` parameter `x` and
    `*x` denote the entry value. In `ensures`, a bare `x` or `*x` of a
    `&mut` parameter denotes its value at return and `old(*x)` its value at
-   entry; other parameters denote their entry values. A by-value parameter
-   that the body assigns or moves is read at entry through an implicit
-   `old(..)`, so it must be `Copy` or `Clone`; otherwise naming it in an
-   `ensures` is an error whose fix narrows it, as in `old(x.len())`.
+   entry; other parameters denote their entry values. A `Copy` by-value
+   parameter, a shared reference included, is copied at entry as it is. A
+   non-`Copy` by-value parameter that the body assigns, moves, or mutably
+   borrows (including through a `&mut` it holds) is snapshotted at entry
+   through an implicit `old(..)`, which counts as `old` for CLAUSE-5, so it
+   must be `Clone`; otherwise naming it in an `ensures` is an error whose
+   fix narrows it, as in `old(x.len())`.
 5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
    literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
    `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)
@@ -530,7 +533,7 @@ the first iteration, even when the range is empty, and with
 `x == max(a, b)` at exit. This is Dafny's rule, and `max_index` needs it to
 conclude `best < xs.len()`. The function attribute's loop rewrite binds the
 next index; the D18 spike does so for `a..b` ranges, not yet for `a..=b` or
-general iterators.
+general iterators, and it does not yet rewrite `loop {}`.
 
 **Generated tests.** Every function with an `ensures`, and every law (§5),
 gets a property test.

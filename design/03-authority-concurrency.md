@@ -1239,8 +1239,8 @@ surface marks each crate `rust: declared, scan-checked, unverified`.
   are unchanged. The Tide crate's exported manifest injects Tide's std with
   `std = { package = "tide_std" }`, for that crate alone. Types Tide's std re-exports from Rust's
   (`Vec`, `String`, `Box`, `Option`, `Result`, slices, `&str`) are the same
-  types on both sides; Tide-owned types (`HashMap`, `HashSet`, `Arc`, the
-  capability types) are distinct and need adapters at the boundary. A Rust
+  types on both sides; Tide-owned types (`HashMap`, `HashSet`, `Arc`,
+  channel ends, the capability types) are distinct and need adapters at the boundary. A Rust
   caller gets capabilities only from a Tide-written entry point, and the
   closures and trait impls it passes in are unchecked trust holes (§3.1).
 

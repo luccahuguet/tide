@@ -172,7 +172,7 @@ provisional until E1 meets its thresholds.
   moving a statement into another block. Generics use angle brackets and
   Rust's turbofish.
 - Source files are `.rs`. Modules are declared with `mod`, as in Rust;
-  `#[path]` and `extern crate` are errors (`design/reference.md` §12.1).
+  `#[path]` and `extern crate` are errors (`design/reference.md` §12.1–§12.2).
 - A **fixed, compiler-implemented set of `!` forms** keeps Rust's most common
   macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
   `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,

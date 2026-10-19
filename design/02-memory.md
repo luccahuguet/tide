@@ -799,8 +799,8 @@ hole. It is **deep**:
   `Owned` alone follows `orig` (§3.7);
 - a type parameter is `Pure` only if it is bounded by it.
 
-Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`, `Owned`)
-as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
+Coherence never treats a missing auto or marker trait or bound (`Send`,
+`Sync`, `Pure`, `'static`) as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
 `impl K for Net` overlap, although `Net` is not `Pure`. So a private-field
 edit that changes a type's auto traits cannot create or remove an overlap.
 For `Pure`, the blanket impl makes rustc agree.
