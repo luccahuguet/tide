@@ -10,3 +10,11 @@
 last-touched
 *.tmp
 .br_history/
+*.db-journal
+*.db-wal*
+*-fsqlite-ns-gate
+*-fsqlite-ns-use
+*.vacuum-wal-cert*
+*.fsqlite-migration-state
+.br_recovery/
+beads.base.jsonl
