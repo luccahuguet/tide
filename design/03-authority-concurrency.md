@@ -16,10 +16,10 @@ on foreign functions, and `ThreadBound` (§5); the evented runtime and its lower
 `par_reduce` (§8.3); imported Rust crates and Rust consumers (§11, RUST-1
 to RUST-6). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
-by `reference-companion.md`: `pct` scheduling and `--minimize` (§9). Draft 3
-removed `Frozen` (now `Pure + Sync`), the `lock` keyword (now `Shared::with`, §6.5),
-`par { }` (now `join`, §8), and the moved-out rule (a child's panic
-propagates, §6.2).
+by `reference-companion.md`: `pct` scheduling and `--minimize` (§9).
+Draft 3 removed `Frozen` (now `Pure + Sync`), the `lock` keyword (now
+`Shared::with`, §6.5), `par { }` (now `join`, §8), and the moved-out rule (a
+child's panic propagates, §6.2).
 
 Related chapters: `02-memory.md` owns origins, `Send`/`Sync`, the typing of
 scopes and `Shared::with`, and the full `Pure` table (its §8–§9);

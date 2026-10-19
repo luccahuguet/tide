@@ -333,7 +333,7 @@ do, in every dependency.
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`, as `io::Stdin`'s (receivers `&self`, below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (Rust's builder), `exit(code: i32) -> !` | `only(["git", ..])` |
-| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
+| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
 - Every capability method takes `&self` (provisional): `&Rand` or `&Stdin`
   is enough. For many draws take `let mut rng = rand.rng();` once: a
