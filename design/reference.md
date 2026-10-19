@@ -869,7 +869,8 @@ pub struct Panicked { pub message: String }          // (provisional)
   earliest-spawned failing child, if any (`DeadlineExceeded` if the scope's
   own deadline cancelled it, 7.2); otherwise the body's result. An error a
   child returns after seeing the cancellation that a sibling's failure
-  caused is an echo, not a failure, so the root cause is reported. Other
+  caused is an echo, not a failure, so the root cause is reported; when the
+  body's own `Err` cancels the scope, the body's error is reported. Other
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives

@@ -638,7 +638,9 @@ no code after `scope` sees a place a panicking child was mutating; when
   2 reports the root cause. The runtime keeps one bit per child, set when a
   checkpoint in the child, or in a scope nested in it, returns a
   cancellation error that a sibling's failure caused; it never inspects
-  `E`. Spawn order, not timing, chooses among failed children. Failures,
+  `E`. When the body's own `Err` cancels the scope, the children's resulting
+  errors are echoes too, and the scope returns the body's error unless a
+  child panicked. Spawn order, not timing, chooses among failed children. Failures,
   echoes, and panics the rule does not report go to one `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
@@ -817,7 +819,8 @@ lowering.
 ### 8.1 Forms and admission
 
 `join(f, g)` (`std::par`) runs two closures and returns both results; slices
-offer `par_map`, `par_for`, `par_chunks_mut`, `par_sort` (stable), and, in
+offer `par_map`, `par_for`, `par_chunks_mut`, `par_sort` (a stable merge sort
+whose splits and merges depend only on the input length, D9), and, in
 v1, `par_reduce` (§8.3). Draft 2's `par { }` block is removed (D9).
 `join`'s closures are `FnOnce + Pure + Send`, each called once. The slice
 methods call one closure from several branches at once, so it must be
@@ -1394,7 +1397,3 @@ lazy splitting in D9 with PAR-2's divergence qualification, `Accel` in D7,
 and `Shared::new` taking `&Tasks`. Outstanding:
 
 - 01's open question 4 is answered by `#[pure]` and `FX0511` (§3.2).
-- D8's echo rule (TASK-2) covers cancellations caused by a sibling's
-  failure. When the body's own `Err` cancels the scope, a child's echo still
-  counts under rule 2 and replaces the body's error; D8 should say whether
-  the body's failure counts as a sibling's.

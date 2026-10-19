@@ -267,7 +267,7 @@ share one origin need an explicit `from` on the field
   (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
   `total_cmp`, hashing, formatting, foreign calls) treats any NaN as one
   canonical NaN, so observable results match across backends and targets
-  while arithmetic stays native.
+  while arithmetic stays native. `min` and `max` order -0.0 below +0.0.
 
 Rejected: signature inference, implicit conversions, overloading, custom
 operators.
@@ -470,6 +470,9 @@ stackful execution internally.
   rule: `par_map`, `par_for`, `par_chunks_mut`, and `par_sort` require
   elements that are `Pure` plus `Sync` when shared or `Send` when split or
   moved, so no branch can reach a `Shared` cell, a channel, or a capability.
+  `par_sort` is a stable merge sort whose splits and merges depend only on
+  the input length; that structure's left-to-right order is its sequential
+  order for panics and buffered sink output.
 - When no branch panics, `join`, `par_map`, and `par_for` equal their
   sequential versions. When a branch panics, the panic propagates as in D5,
   and data the region could write has unspecified (memory-safe) contents
@@ -521,7 +524,9 @@ stackful execution internally.
   when a clause runs: clauses built only from operators, literals, and
   standard-library accessors are `checked` in debug and test builds;
   quantifiers and clauses that call user-defined functions are `sampled`
-  and run under `tide test`, on every call and within their step budget, so
+  and run under `tide test`, on every call and within their step budget
+  (steps count evaluated operations, so exhausting a budget is
+  deterministic), so
   a clause's outcome depends only on its inputs and the build mode, never on
   how many times it has run. In generic code, a clause that passes a value of
   type `T` to a function requires `T: Pure + Sync`. Mathematical integers
