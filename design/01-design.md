@@ -298,6 +298,9 @@ serialization as the default (5–7x slower in prior art).
 - `main` may take `root: Root`, the only source of capabilities. `Root` can be
   named only in `main`; a simulated root (`Root::sim(seed)`) only in tests and
   in `ferox sim`.
+- Files support append and explicit durability (`File::sync`,
+  `Dir::sync_dir`); durability is part of the simulator's filesystem model
+  (D15).
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
@@ -352,7 +355,9 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   outlive them. Children may borrow from the parent. The first failure cancels
   siblings, then propagates. Joining a scope cannot be cancelled.
 - Cancellation is level-triggered with deadlines: capability operations in a
-  cancelled scope return `Err(Cancelled)`; suspended work unwinds and runs
+  cancelled scope return `Err(Cancelled)`. A scope deadline cancels the
+  children but fails the scope only if a child returns the cancellation as its
+  error, so a scope can collect partial results; suspended work unwinds and runs
   destructors; operations that consume a value return it inside the error.
 - **Shared mutable state** is message passing over channels, or
   `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send + Pure`.
@@ -565,7 +570,8 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   randomness, environment, task scheduling, and fault injection (drops,
   delays, partitions, disk errors, crashes and restarts of node scopes).
   Virtual time advances only when every task is blocked; a global deadlock is
-  reported with the blocked-task graph.
+  reported with the blocked-task graph. On a simulated crash, writes not made
+  durable by `sync` or `sync_dir` may be lost or torn, as the seed decides.
 - `ferox sim <binary>` runs a program's `main` under many seeds. A failure
   prints seed and commit and replays bit for bit, dependencies included.
 - Authority-free `par` regions run on real cores under simulation, because
