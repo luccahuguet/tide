@@ -162,15 +162,20 @@ measurement rejected.
     arguments several origins are parenthesized: `Vec<&str from (a, b)>`.
   - In an impl, `Self`'s origins are named by field:
     `impl Iterator for Lexer { type Item = &str from Self.src; ... }`.
-- **Types carry origins per reference field.** `struct Lexer { src: &str, pos:
-  usize }` is a borrowing type with one origin, named `src`. A struct gets one
-  origin per reference-typed field and inherits the origins of its type
-  arguments; `Vec<&str>` borrows what its elements borrow. There is no
+- **Types carry origins per reference position.** `struct Lexer { src: &str,
+  pos: usize }` is a borrowing type with one origin, named `src`. A struct gets
+  one origin per reference position in its fields (so `&mut T` holding a
+  borrowing `T` has two, avoiding Rust's `&'a mut T<'a>` trap) and inherits the
+  origins of its type arguments. A use site can bind origins by name with
+  `T from { src: place }`; `Vec<&str>` borrows what its elements borrow. There is no
   `<'a>` parameter list. Variance follows Rust: shared references are
   covariant, `&mut T` and cells are invariant in `T`.
 - **`'static` and `Owned`.** A type with no borrowed origins is `Owned`
-  (Rust's `T: 'static`). `dyn Trait` means `dyn Trait + Owned` unless written
-  `dyn Trait from x`. A closure that captures a borrow is itself a borrowing
+  (Rust's `T: 'static`). Trait objects follow Rust's object-lifetime defaults:
+  `Box<dyn Trait>` is `Owned`, while `&dyn Trait` and `&mut dyn Trait` take
+  the reference's origin; any other origin is written `dyn Trait from x`.
+  Closure-bound argument types may carry `from` (higher-ranked origins), which
+  is how `Tasks::scope` is typed. A closure that captures a borrow is itself a borrowing
   value; a borrowing value may be returned or stored only where its origins are
   named (`-> impl Fn() from xs`, a field with `from`). Elision covers plain
   references and borrowing structs, as in Rust; a returned `impl Trait` or
@@ -204,7 +209,9 @@ share one origin need an explicit `from` on the field
 - Rust's scalar, string, slice, array, tuple, `Option`, `Result`, `Vec`,
   `Box`, and `String` types with their Rust meaning. No null.
 - Nominal `struct` and `enum` with exhaustive `match`; `impl Trait` in
-  argument and return position as in Rust.
+  argument and return position as in Rust, except that a returned
+  `impl Trait` exposes only the auto traits it names (`impl Iterator + Send`),
+  so a body edit cannot change what callers may assume.
 - Every item signature is annotated; inference is bidirectional and local to
   a function body. No overloading: one function per name per scope and one
   inherent method per name per type; trait methods with the same name are
@@ -230,7 +237,8 @@ operators.
   constants, and `impl Trait for Type`. Impls live in the module of the type
   or the trait.
 - No overlapping impls, specialization, higher-kinded types, generic
-  associated types, rank-N types, negative bounds, or user auto traits. Impl
+  associated types, rank-N types (higher-ranked origins in closure bounds are
+  allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
 - `dyn Trait` is always spelled out.
@@ -249,8 +257,10 @@ generics.
 - Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
   current task. A structured scope observes a child's panic as an error value.
   On that error path, every place the child borrowed mutably is treated as
-  moved out (it must be reassigned before use), and every cell the child held
-  locked is poisoned, so no half-updated data is ever observed.
+  moved out: it must be reassigned before any use. A place behind a reference
+  cannot be left moved out, so the function must reassign it or itself
+  panic; a half-updated value can never reach a caller. Every cell the child
+  held locked is poisoned.
 
 Rejected: exceptions; draft 1's `from` keyword on variants (collides with
 `String::from`, `reviews/round1-agent-usability.md` B2).
@@ -302,7 +312,9 @@ serialization as the default (5–7x slower in prior art).
   outside world, but they let tasks observe each other's timing.
 - **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
   `Pure` if no capability, synchronization handle, or foreign handle is
-  reachable from it. A function
+  reachable from it. `Arc` exposes no reference-count readers, and
+  `sync::Weak` is a synchronization handle, so shared ownership cannot leak
+  timing into authority-free code. A function
   is authority-free if all its parameter and capture types are `Pure`. An
   authority-free function cannot observe nondeterminism: its results depend
   only on its arguments.
