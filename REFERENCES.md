@@ -147,6 +147,7 @@ Tide used it for.
 - [Go fix](https://go.dev/blog/gofix), Go blog. Compiler-owned migrations, because models resist new idioms (D14).
 - [rustc JSON diagnostics](https://doc.rust-lang.org/nightly/rustc/json.html). Machine-applicable fix labels (D14).
 - [A language for agents](https://lucumr.pocoo.org/2026/2/9/a-language-for-agents/), Ronacher, 2026. Practitioner brief: explicit effects, results, one check command.
+- [autoresearch](https://github.com/karpathy/autoresearch), Karpathy, 2026. A frozen evaluator, one mutable file, keep-or-revert on one metric; a later fit for checker speed and diagnostic text (D12, D14; research/14).
 
 ### Effects and Capabilities
 

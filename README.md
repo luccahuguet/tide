@@ -95,6 +95,8 @@ Cited evidence behind the decisions, in [research/](research/):
   adopted from them, and lust, a checked Rust subset with fast edit checks.
 - `13-agent-fleets.md`: what people running many agents and subagents need
   from a language, ranked, and where Tide meets or misses each need.
+- `14-autoresearch.md`: Karpathy's autonomous experiment loop, why it does
+  not fit Tide's design work, and where it fits once the checker exists.
 
 ### Reviews and Trials
 
