@@ -521,7 +521,9 @@ stackful execution internally.
   when a clause runs: clauses built only from operators, literals, and
   standard-library accessors are `checked` in debug and test builds;
   quantifiers and clauses that call user-defined functions are `sampled`
-  and run under `tide test`. In generic code, a clause that passes a value of
+  and run under `tide test`, on every call and within their step budget, so
+  a clause's outcome depends only on its inputs and the build mode, never on
+  how many times it has run. In generic code, a clause that passes a value of
   type `T` to a function requires `T: Pure + Sync`. Mathematical integers
   and model equality
   apply under `prove` (v1), and the compiler warns where a clause would read

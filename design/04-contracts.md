@@ -471,15 +471,18 @@ values such as views and `Seq`.
 `test` adds three things.
 
 **Sampled clauses.** At function boundaries, `sampled` clauses are evaluated
-on the first 64 calls of each function in a test run, then on calls 128, 256,
-512, and so on. Each evaluation has a step budget, and one that runs out is
-reported as unchecked, never as checked or failed (D10). Packages can change
-both defaults.
+on every call in a test run, so a clause's outcome depends only on its inputs
+and the build mode, never on how often the function has been called. Each
+evaluation has a step budget, and one that runs out is reported as
+unchecked, never as checked or failed (D10). Packages can change the
+budget.
 
 **Loop invariants and measures.** Executable loop invariants are evaluated
 before the first iteration, after every iteration, and at exit. `sampled`
-invariants follow the geometric schedule over iterations, which turns
-`max_index`'s quadratic invariant into linear total work. In v1, loop
+invariants are evaluated on iterations 1–64, 128, 256, and so on, a
+schedule that depends only on the iteration index and so stays the same for
+the same inputs; it turns `max_index`'s quadratic invariant into linear
+total work. In v1, loop
 `decreases` measures are evaluated every iteration and must stay
 non-negative and strictly decrease. In `for x in a..b`, an invariant sees
 `x` as the index of the next iteration: it is checked with `x == a` before
