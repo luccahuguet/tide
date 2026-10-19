@@ -2,8 +2,8 @@
 
 Status: draft 3.4. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
-3.4 returns D2 to Rust's lifetime spelling after the origin trial
-(`trials/e1-origins/`). This
+3.4 returns D2 to Rust 2024's lifetimes after the origin trial
+(`trials/e1-origins/`) and review rounds 8 and 9. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -201,11 +201,11 @@ measurement rejected.
     `+ 'a`); `+ use<..>`; and the relations that well-formed signature types
     imply. A returned `impl Trait` captures every generic parameter in
     scope, lifetimes included, unless `+ use<..>` lists fewer.
+    `T: 'static` is accepted and written `T: Owned` by the formatter.
   - Rejected (`FX0201`, `FX0403`, `FX0404`), because they lie beyond D4's
     power ceiling: lifetime parameters on traits, explicit `for<'a>`
     (higher-ranked lifetimes come from elision in `Fn` sugar and `fn`
-    pointer types), and generic associated types. `T: 'static` is accepted
-    and written `T: Owned` by the formatter.
+    pointer types), and generic associated types.
 - **Borrowing types declare lifetime parameters as in Rust**:
   `struct Lexer<'a> { src: &'a str, pos: usize }`. Each parameter names one
   origin; fields that use one name share it, and fields from different
@@ -295,8 +295,9 @@ operators.
   constants, and `impl Trait for Type`. Impls live in the module of the type
   or the trait.
 - No overlapping impls, specialization, higher-kinded types, generic
-  associated types, rank-N types (higher-ranked lifetimes from elision in
-  `Fn` sugar and `fn` pointer types are allowed), negative bounds, or user auto traits. Impl
+  associated types, lifetime parameters on traits, rank-N types
+  (higher-ranked lifetimes from elision in `Fn` sugar and `fn` pointer
+  types are allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
 - Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`) as

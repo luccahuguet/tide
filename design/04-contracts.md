@@ -668,10 +668,15 @@ For a `&mut` parameter `x`:
 - In `ensures`, `old(*x)` is the value at entry. `old(x)` means the same,
   because references are transparent in specs; the formatter writes `old(*x)`.
 - `final(*x)` is executable, the value `*x` holds when the function returns,
-  only if the origin of `x`'s outer reference, named or given by elision,
-  occurs neither in the result type nor in the type of any other
-  parameter. `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)` fails the
-  second test: it can store `x` in `*s`, so the borrow outlives the call.
+  only if nothing else in the signature can hold `x`'s borrow past the call:
+  the origin of `x`'s outer reference, named or given by elision, occurs in
+  no other parameter type and in no bound or where clause; it is not among
+  the result type's origins, counting the lifetimes a returned `impl Trait`
+  captures (`02-memory.md` §2.2, §5.2); and no declared or implied outlives
+  bound relates it to another origin. `fn stash<'r>(s: &mut Slot<'r>, x:
+  &'r mut i32)` fails: it can store `x` in `*s`, so the borrow outlives the
+  call. So does `fn give<'q, 'r: 'q>(x: &'r mut i32) -> &'q mut i32`, whose
+  bound lets `x` escape as the result.
 - Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the
   borrow ends. That covers a result that borrows from `x`
   (`fn f<'x>(x: &'x mut M) -> &'x mut V`, or a borrowing result with a
@@ -686,9 +691,10 @@ RustHornBelt proved sound; RustHorn is sound for a stored borrow only if its
 `final` is a prophecy. In the caller, when a returned borrow `r` ends at its
 last use, the verifier learns that `final(*r)` equals the current `*r`, and
 the callee's `ensures` then determines `final(*x)`. Prophecies arise only
-from results that carry a `&mut` parameter's origin, a `&mut` parameter's
-origin shared with another parameter's type, and borrowing
-types with `&mut` fields; ordinary `&mut` arguments need none.
+from results that carry or capture a `&mut` parameter's origin, a `&mut`
+parameter's origin that the signature relates to another parameter (one
+name, a bound, or `'r: 'q`), and borrowing types with `&mut` fields;
+ordinary `&mut` arguments need none.
 
 ```tide
 impl<K: Eq + Hash, V> Table<K, V> {

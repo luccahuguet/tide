@@ -132,6 +132,7 @@ orig(S<ρ1..ρn; T1..Tm)      = {ρ1..ρn} ∪ orig(T1) ∪ … ∪ orig(Tm)   (
 orig((T1, …, Tn))           = orig(T1) ∪ … ∪ orig(Tn); arrays and slices likewise
 orig(dyn Trait + ρ) = {ρ}        orig(dyn Trait + Owned) = ∅
 orig(closure)               = the union of orig over its captured types
+orig(returned impl Trait)   = its captured lifetimes ∪ orig of its captured type parameters (§5.2)
 orig(T), T a type parameter = an abstract set
 orig(scalars, str, String, fn pointers, 'static references to Owned data) = ∅
 ```
@@ -155,8 +156,9 @@ Generics     ::= '<' LtParam (',' LtParam)* [',' TypeParam (',' TypeParam)*] '>'
 LtParam      ::= Lifetime [':' Lifetime ('+' Lifetime)*]
 RefType      ::= '&' [Lifetime] ['mut'] Type
 PathType     ::= Path ['<' Lifetime (',' Lifetime)* [',' Type (',' Type)*] '>']
-Bound        ::= TraitBound | Lifetime | 'use' '<' .. '>'
-                                   in `T: ..`, `impl ..`, `dyn ..`, where clauses
+Bound        ::= TraitBound | Lifetime            in `T: ..`, `impl ..`, `dyn ..`
+WherePred    ::= Type ':' Bound ('+' Bound)* | Lifetime ':' Lifetime ('+' Lifetime)*
+Capture      ::= 'use' '<' .. '>'                 only on a return-position `impl Trait`
 ```
 
 - A lifetime parameter is declared on the item that uses it: `fn f<'a, T>`,
@@ -167,14 +169,14 @@ Bound        ::= TraitBound | Lifetime | 'use' '<' .. '>'
   them, as in Rust; in an impl header the bare name is an error (§2.5).
 - Outlives bounds are Rust's: `'a: 'b` declares `ρa ⊆ ρb`; `T: 'a`,
   `T: Trait + 'a`, `impl Trait + 'a`, and `dyn Trait + 'a` are type-outlives
-  bounds (§2.4 item 3). `+ use<..>` lists what a returned `impl Trait`
+  bounds (§2.4 item 3). `T: 'static` is accepted and written `T: Owned` by
+  the formatter (§3.7). `+ use<..>` lists what a returned `impl Trait`
   captures (§5.2).
 - **Not accepted** (`FX0201`, `FX0403`, `FX0404`, with a suggested
   rewrite), as beyond D4's power ceiling: lifetime parameters on traits
   (`trait Parse<'a>`), explicit `for<'a>` (higher-ranked lifetimes come from
   elision in `Fn` sugar and `fn` pointer types, §5.4), and generic
-  associated types (`type Item<'a>`). `T: 'static` is accepted and written
-  `T: Owned` by the formatter (§3.7).
+  associated types (`type Item<'a>`).
 
 ### 2.4 What a named lifetime means in each position
 
@@ -259,9 +261,11 @@ whole.
   relations become constraints on the fresh origins. The callee's body is
   never consulted.
 - **Bodies.** Signature origins are placeholders, and they are live at every
-  point of the body. Implied bounds come from the well-formedness of the
-  parameter and return types. Any other inclusion the body needs between
-  placeholders is an error, which names the lifetime to add or share.
+  point of the body. Inclusions between placeholders come from the
+  signature's declared outlives bounds and from the well-formedness of its
+  parameter and return types (§2.1, §2.4). Any other inclusion the body
+  needs is an error; its fix suggests the bound (`'a: 'b`) or a shared
+  lifetime, as rustc does.
 - **A local loan reaching a placeholder origin** (a returned reference to a
   local) conflicts with the local's storage death: "returns a value borrowed
   from local `x`".
@@ -431,9 +435,11 @@ detail:
   object's origin defaults to the reference's, which is Rust's
   `&'a (dyn Trait + 'a)`. `&mut dyn FnMut(&Node)` callbacks that capture
   locals depend on it.
-- **Everywhere else**, including `Box`, `Rc`, `Arc`, fields, type arguments
-  and annotations on `let`, `dyn Trait` is `dyn Trait + Owned`, unless the
+- **Everywhere else in signatures and fields**, including `Box`, `Rc`,
+  `Arc`, and type arguments, `dyn Trait` is `dyn Trait + Owned`, unless the
   containing type's own `T: 'a` bound gives the default `'a`, as in Rust.
+  Inside a body (`let` annotations, type arguments), an elided object
+  lifetime is inferred, as in Rust.
 - `dyn Trait + 'a` borrows from `'a` (§2.4 item 3).
 - `dyn Trait + '_` is an elided origin and follows the elision rules. A
   field names a declared lifetime: `Box<dyn Fn(&Row) -> bool + 'p>`.
@@ -447,8 +453,9 @@ detail:
   Rust.
 - **Return position.** As in Rust 2024, the opaque type captures every
   generic parameter in scope, lifetimes included, elided ones too;
-  `+ use<..>` lists the captured parameters instead. It is `Owned` only when
-  every captured parameter is. So
+  `+ use<..>` lists the captured parameters instead. It is `Owned` when
+  every captured parameter is, or when its bounds state `Owned`
+  (`+ 'static`), which the hidden type must then satisfy. So
   `fn evens(xs: &[u32]) -> impl Iterator<Item = u32>` borrows `xs` with no
   annotation, and `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn()
   -> usize + use<'a>` releases the caller's `key` borrow at the call.

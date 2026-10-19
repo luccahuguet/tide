@@ -232,10 +232,10 @@ Rules:
   own: `fn pick<'r, 'a: 'r, 'b: 'r>(v: &mut Vec<&'a str>, s: &'b str) -> &'r str`.
 - Relations that well-formed signature types imply need no bound:
   `&'m BTreeMap<char, Vec<&'t str>>` lets a result be `&'m [&'t str]`.
+- `T: 'static` is accepted and written `T: Owned` by `tide fmt` (3.4).
 - Not in Tide, as beyond the power ceiling (5.1): lifetime parameters on
   traits (`trait Parse<'a>`, `FX0201`), explicit `for<'a>` (`FX0404`), and
-  generic associated types (`FX0403`). `T: 'static` is accepted and written
-  `T: Owned` by `tide fmt` (3.4).
+  generic associated types (`FX0403`).
 - An elided output that cannot be resolved, or that elision ties to the
   wrong input, is `FX0202`; its fix suggests the named lifetime (often the
   impl's `'a`).
@@ -284,11 +284,13 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
 - `Owned` is a compiler-known auto trait: no borrowed lifetimes except
   `'static` (Rust's `T: 'static`, accepted and rewritten to `T: Owned`).
   Work that outlives the current function requires it: `spawn_isolated`
-  (7.1), children of a scope passed down (7.1), `Box<dyn Trait>` contents.
+  (7.1), `Box<dyn Trait>` contents, and children of a scope passed down
+  unless they borrow only what the signature ties to the scope (7.1).
 - `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
-  `&'a mut` it is `dyn Trait + 'a`. Everywhere else (`Box`, `Rc`, `Arc`,
-  fields, type arguments) it means `dyn Trait + Owned`, unless the
-  container's own `T: 'a` bound sets `'a`. Write
+  `&'a mut` it is `dyn Trait + 'a`. Elsewhere in signatures and fields
+  (`Box`, `Rc`, `Arc`, type arguments) it means `dyn Trait + Owned`, unless
+  the container's own `T: 'a` bound sets `'a`; inside a body it is
+  inferred. Write
   `Box<dyn Trait + 'a>` for a borrowing object, for example
   `Box<dyn Fn(&Row) -> bool + 'a>` in a field of `struct Filter<'a>`.
 
@@ -400,6 +402,7 @@ are rejected:
 | --- | --- | --- | --- |
 | Specialization, overlapping impls | `default fn` | `FX0402` | one impl per type; a newtype |
 | Generic associated types | `type Item<'a>` | `FX0403` | owned items or indices |
+| Lifetime parameters on traits | `trait Parse<'a>` | `FX0201` | a lifetime on the method or the impl |
 | Higher-ranked bounds beyond elision, HKTs | `for<'a> Fn(&'a T) -> &'a U` | `FX0404` | `Fn(&T) -> &U` |
 | Negative impls, user auto traits | `impl !Send for T` | `FX0405` | a `PhantomData<Rc<()>>` field |
 | Impl where-clause not smaller than its head | `impl<T> Foo for T where Vec<T>: Foo` | `FX0406` | bound `T` directly |
