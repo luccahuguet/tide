@@ -1,8 +1,16 @@
 # Ferox Memory: Ownership and Origins
 
-Status: draft 1. This chapter elaborates D2 of `design/01-design.md` (draft
-2.1) and the memory parts of D5, D7, D8 and D9, and it is the definition the
-checker implements. Section 13 lists the edits it needs in `01-design.md`.
+Status: draft 1, synchronized with draft 3. This chapter elaborates D2 of
+`design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
+definition the checker implements. Section 13 records the edits it asked of
+`01-design.md`.
+
+**Tier** (01's Tiers table). v0 core: §1–§6, §8 except task migration, §9,
+§10 and §11. v1: §7 (field-borrow declarations) and task migration under the
+evented runtime with `ThreadBound` pinning (§8.1, R1). Later:
+Polonius-precision borrows (§2.8, §12). Draft 3 removed `Frozen` (§9 now
+requires `Pure + Sync`), the `lock` keyword (§8.4, now `Shared::with`),
+`par { }` (§8.5, now `join`), and the moved-out rule (§8.3).
 
 Notation. Ferox code is in `ferox` blocks and Rust in `rust` blocks. In rules,
 `ρ`, `σ` and `τ` are origins, `ℓ` is a loan, and `p` and `q` are places.
@@ -47,8 +55,8 @@ place ::= x            a local variable or parameter
   declaration order. A value's fields drop in declaration order. Conditionally
   moved locals use drop flags. Assigning to an initialized place drops the old
   value first. Temporaries follow Rust 2024's rules.
-- `mem::forget` and `Box::leak` are safe: scopes, `lock` and `par` take
-  closures, not guards, so no guarantee depends on a destructor running.
+- `mem::forget` and `Box::leak` are safe: scopes, `Shared::with` and `join`
+  take closures, not guards, so no guarantee depends on a destructor running.
 
 ### 1.4 Borrows and loans
 
@@ -145,7 +153,8 @@ the value stored at `p`. This is what a place means after `from`:
 
 `from` is a contextual keyword. It is recognized after a type in signatures
 (parameter types, return types and where clauses), in field declarations, in
-`dyn` and `impl` types, and in associated-type definitions.
+`dyn` and `impl` types, in associated-type definitions, and in type
+annotations in a body.
 
 ```
 TypeFrom   ::= Type 'from' Origins
@@ -155,7 +164,7 @@ Origins    ::= Origin
 ReturnType ::= Type ['from' Origin (',' Origin)*]         a bare list only here
 Origin     ::= "'static" | Place | ('*')* 'Self' ('.' Field)+
 Place      ::= ('*')* Root ('.' Field)*
-Root       ::= a parameter name | 'self'
+Root       ::= a parameter name | 'self' | a sibling field (field declarations, §3.3)
 ```
 
 - `from` binds more loosely than `&`, `&mut` and `dyn`, so `&str from a` is
@@ -177,12 +186,18 @@ Root       ::= a parameter name | 'self'
 Every position reads the same way: the value at this position borrows from
 `P`. How that is enforced depends on who produces the value.
 
-1. **Output positions** are return types, the argument types of closure
-   bounds, and annotations in a body. Each affected position gets an origin
-   `ρ` with `σ ⊆ ρ` for every `σ` in `orig(P1) ∪ … ∪ orig(Pn)`: the value may
-   carry any loan of `P1` to `Pn`. In Rust this is a fresh `'r` with `'p: 'r`.
-   In a closure bound's argument type the origin stays higher-ranked, and the
-   closure may additionally assume the inclusion (§5.4).
+1. **Output positions** are return types and annotations in a body. When `P`
+   denotes exactly one origin, the affected positions **are** that origin, as
+   for parameter types (item 2); in Rust this reuses `P`'s lifetime. At a
+   covariant position this equals inclusion; at an invariant position, such
+   as the elements in `-> &mut Vec<&str from Self.lx.src>` (Rust's
+   `&mut Vec<&'a str>`), it is the only reading a body can satisfy. A union
+   `from P1, …, Pn` gets an origin `ρ` with `σ ⊆ ρ` for every `σ` in
+   `orig(P1) ∪ … ∪ orig(Pn)`: the value may carry any loan of `P1` to `Pn`. In
+   Rust this is a fresh `'r` with `'p: 'r`. A union at an invariant position
+   is an error whose diagnostic offers each single origin. In a closure
+   bound's argument type, `from P` is always an inclusion and the origin stays
+   higher-ranked (§5.4).
 2. **Parameter types.** The affected positions **are** the origin of `P`,
    which must denote exactly one origin. In Rust this reuses `P`'s lifetime
    parameter. Arguments are coerced at the call site, so at a covariant
@@ -227,16 +242,20 @@ formatter rewrites them. A lifetime `'a` maps exactly when each use can be
 rewritten as follows:
 
 - a later parameter use becomes `from` the first place that carries `'a`;
-- a return-type use becomes `from` every place that carries `'a`;
+- a return-type use becomes `from` every place that carries `'a`: one place
+  identifies the position with it (§2.4), several form a union;
 - a struct use becomes `from` the first field that carries `'a`;
 - an impl use becomes `Self.f`, where `f` is the field that introduces `'a`;
 - `F: 'a` becomes `f: F from <place>`.
 
-The result is at least as general as the Rust signature: a shared `'a` over
-two inputs and the output becomes the union `from a, b`. These are rejected,
-with suggested origins: outlives bounds beyond what well-formedness implies,
-explicit `for<'a>`, lifetime parameters on traits, and lifetimes that no
-parameter or field carries.
+The result accepts every body the Rust signature accepts: `-> &mut Vec<&'a
+str>` with `'a` carried by `self.lx.src` becomes the identification `from
+Self.lx.src`, and a shared `'a` over two inputs and a covariant output
+becomes the union `from a, b`, which is at least as general. These are
+rejected, with suggested origins: outlives bounds beyond what well-formedness
+implies, explicit `for<'a>`, lifetime parameters on traits, lifetimes that no
+parameter or field carries, and an `'a` carried by several inputs that also
+appears at an invariant output position.
 
 ### 2.7 Modular checking
 
@@ -244,7 +263,7 @@ parameter or field carries.
   signature's origin positions, identifications, inclusions, implied bounds
   and field-borrow sets (§7). For each public type it records the named
   origins with their variances, the auto traits (`Owned`, `Send`, `Sync`,
-  `Pure`, `Frozen`) and a drop-check summary. A change to any of these is an
+  `Pure`, and in v1 `ThreadBound`) and a drop-check summary. A change to any of these is an
   API change and appears in the trust diff.
 - **Calls.** The callee's origins are instantiated freshly; argument
   coercion adds subset constraints by variance (§4); the signature's
@@ -263,8 +282,8 @@ parameter or field carries.
 
 ### 2.8 Precision
 
-v1 accepts a body exactly when Rust's NLL borrow checker accepts its
-translation (§11). The field-borrow declarations of §7 translate exactly.
+v0 accepts a body exactly when Rust's NLL borrow checker accepts its
+translation (§11). The field-borrow declarations of §7 (v1) translate exactly.
 
 In NLL terms, subset constraints hold at every point of the body, and a
 loan is live where its origin is live and reachable from the borrow without a
@@ -365,7 +384,8 @@ Rust: `struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`.
 - `&'static T` is `Owned` when `T` is. String literals have type
   `&'static str`, so `struct ParseError { msg: &'static str }` is `Owned`.
 - The types of consts and statics are `Owned`. Statics are also `Sync` and
-  `Frozen`, since D7 allows no mutable globals.
+  `Pure` (`03-authority-concurrency.md` GLOBAL-1), since D7 allows no mutable
+  globals.
 - `Owned` is required by `Box<dyn Trait>` contents (§5.1), `dyn Any`, values
   handed to tasks that outlive their creator (§8.2), and global
   registrations.
@@ -434,9 +454,9 @@ the `Vec` can end while its elements' origin lives on.
 
 ### 5.1 `dyn Trait`
 
-D2 sets `dyn Trait` to mean `dyn Trait + Owned`. It also says Rust's elision
-rules apply unchanged, and Rust's elision rules include default object
-bounds. This chapter resolves the two as follows:
+D2 follows Rust's object-lifetime defaults: `Box<dyn Trait>` is `Owned`,
+while `&dyn Trait` and `&mut dyn Trait` take the reference's origin. In
+detail:
 
 - **Directly behind a reference** (`&dyn Trait`, `&mut dyn Trait`), the
   object's origin defaults to the reference's, which is Rust's
@@ -485,7 +505,7 @@ bounds. This chapter resolves the two as follows:
   closure is `Owned` exactly when every captured value is `Owned`.
 - Where `Owned` is required (`Box<dyn Fn()>`, a task that outlives its
   creator, a global registration), the usual fix is `move` plus owning the
-  data (`to_string()`, `clone()`, `Arc`).
+  data (`to_string()`, `clone()`, or an `Arc`, created with `&Tasks`).
 
 ### 5.4 Higher-ranked origins
 
@@ -537,7 +557,7 @@ A user type with `impl Drop` gets the conservative rule; the fix is to keep
 the destructor on an inner owned type. Thanks to the exemption, a
 `Vec<&str>` does not keep its elements' loans alive until it is dropped.
 
-## 7. Field-borrow declarations
+## 7. Field-borrow declarations (v1)
 
 **Syntax.** A method receiver may name the fields it borrows:
 
@@ -566,9 +586,10 @@ union of its field borrows. `from self.f` keeps its meaning from §2.2.
   `&mut` to `&`, is compatible. Adding a field or strengthening a mode is a
   breaking change.
 - Trait methods cannot declare field borrows, because traits know no fields.
-- If a type has an `invariant` that spans fields (D10), a field-borrow method
-  may not mutate any field that the invariant mentions
-  (`reviews/round1-soundness.md` B10(d)).
+- If a type has `invariant` clauses (D10, v1), a field-borrow method assumes
+  and owes each clause whose footprint lies inside its declared set, ignores
+  each clause disjoint from it, and is rejected if it splits a clause's
+  footprint (`04-contracts.md` §4.2; `reviews/round1-soundness.md` B10(d)).
 
 **Translation (exact).** The method becomes an associated function taking
 one reference per field, and the call site passes `&mut x.pos, &x.src`, which
@@ -590,18 +611,21 @@ structurally, as in Rust:
 | `&mut T` | if `T: Send` | if `T: Sync` |
 | `Arc<T>` | if `T: Send + Sync` | if `T: Send + Sync` |
 | `Shared<T>` | yes | yes |
-| `Sender<T>`; `Receiver<T>` | if `T: Send` | `Sender` if `T: Send`; `Receiver` no |
-| capabilities, `Scope` | yes | yes |
+| `Sender<T>`, `SyncSender<T>`; `Receiver<T>` | if `T: Send` | senders if `T: Send`; `Receiver` no |
+| `Task<U, E>` | if `U, E: Send` | if `U, E: Send` |
+| capabilities, `Scope<E>`, atomics | yes | yes |
 
 `unsafe impl Send` is allowed in packages granted `unsafe`, and each one is a
 trust hole.
 
 **Task boundaries** require `Send` (by value) or `Sync` (by reference): a
 spawned child's captures, so the closure is `Send`; channel messages;
-`Shared` payloads; a child's result; and `par` branches.
+`Shared` payloads; a child's result; and the branches of `join`, `par_map`
+and `par_for`.
 
-**Task isolation (D8).** A task may migrate between OS threads at a
-suspension point while it holds values that are not `Send`. The argument:
+**Task isolation (D8).** Under the evented runtime (v1), a task may migrate
+between OS threads at a suspension point while it holds values that are not
+`Send`; v0's blocking and thread runtimes never migrate a task. The argument:
 
 - Every way to share or transfer a value between tasks requires `Send` or
   `Sync`, so a value that is not `Send` is reachable from one task only.
@@ -612,27 +636,32 @@ It depends on four conditions:
 
 1. Safe code can reach no thread-local state (D7).
 2. A task is pinned while a `ThreadBound` value is live across a suspension
-   point, which the compiler knows from liveness.
+   point, which the compiler knows from liveness. `ThreadBound` is
+   structural, and a `dyn` may hold it only as `dyn Trait + ThreadBound`, so
+   erasure cannot hide it (`03-authority-concurrency.md` §5.4).
 3. Foreign code that relies on thread identity is wrapped in `ThreadBound`
    types.
-4. `par` branches run simultaneously on several threads, so they require
-   `Send` rather than isolation.
+4. Parallel branches (`join`, `par_map`, `par_for`) run simultaneously on
+   several threads, so they require `Send` rather than isolation.
 
 Rust has no counterpart, since tokio requires `Send` futures. This is the main
 construct that §11 cannot translate.
 
 ### 8.2 Scopes
 
-API names are illustrative. The origin structure is normative.
+The names and failure semantics are those of `03-authority-concurrency.md`
+§6.1. The origin structure is normative here.
 
 ```ferox
 impl Tasks {
-    pub fn scope<R, F>(&self, body: F) -> Result<R, ScopeError>
-        where F: FnOnce(Scope from self) -> R;
+    pub fn scope<T, E, F>(&self, body: F) -> Result<T, E>
+        where E: From<TaskError> + Send, F: FnOnce(Scope<E> from self) -> Result<T, E>;
+    pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
+        where F: FnOnce() -> T + Send + Owned;
 }
-impl Scope {                                  // Copy; one invariant origin σ
-    pub fn spawn<T, F>(self, f: F from self) -> Handle<T>
-        where F: FnOnce() -> T + Send, T: Send;
+impl<E> Scope<E> {                            // Copy; one invariant origin σ
+    pub fn spawn<U: Send, F>(self, f: F from self) -> Task<U, E>
+        where F: FnOnce() -> Result<U, E> + Send;
 }
 ```
 
@@ -641,7 +670,7 @@ impl Scope {                                  // Copy; one invariant origin σ
   must work for every `σ` that carries the loans of the `&Tasks` borrow.
   Because the caller chooses that borrow, children can borrow anything that
   outlives the `scope` call.
-- **`f: F from self`** imposes `F: σ` and `T: σ`. Everything a child borrows
+- **`f: F from self`** imposes `F: σ` and `U: σ`. Everything a child borrows
   stays borrowed until the scope ends:
   - inside the body, `σ` is a placeholder, so it is live at every point;
   - scope exit joins every child and cannot be cancelled (D8);
@@ -649,87 +678,92 @@ impl Scope {                                  // Copy; one invariant origin σ
 
   The parent body therefore cannot mutate, move or free a place that a child
   borrows.
-- **`Handle<T>`** has origin `σ` (rule 1, from `self: Scope`). Because `σ` is
-  higher-ranked, neither a `Scope` nor a `Handle` can escape through `R`.
+- **`Task<U, E>`** has origin `σ` (rule 1, from `self: Scope<E>`). Because `σ`
+  is higher-ranked, neither a `Scope` nor a `Task` can escape through `T`.
+- **`spawn_isolated`** takes an `Owned` closure, so it borrows nothing from
+  the caller and has no origin to check.
 - **Grandchildren.** A child may capture the `Scope` (`Scope: σ` holds).
   `σ` is invariant, so it cannot shrink to admit shorter borrows.
-- **A scope passed down** (`fn serve(bg: Scope, conn: Conn)`) is a signature
+- **A scope passed down** (`fn serve(bg: Scope<E>, conn: Conn)`) is a signature
   origin in `serve`. A child spawned there must outlive it. That means it
   owns its data, or it borrows what the signature ties to the scope, as in
-  `cfg: &Config from bg`. This is the precise form of D2's "detached tasks
-  require `Owned`": a function's own locals never outlive a scope it
-  received, so from that function's point of view its children are detached.
+  `cfg: &Config from bg`. This is the precise form of D2's "tasks spawned
+  into a long-lived scope capture `Owned` values": a function's own locals
+  never outlive a scope it received, so its children cannot borrow them.
 
 Translation: the shape of `std::thread::scope`, with `'env` taken to be the
 `&Tasks` borrow. `Scope` maps to `&'σ std::thread::Scope<'σ, 'env>`.
 
 ### 8.3 Child failure
 
-D5's moved-out rule is defined as follows. Let `M` be the set of places with
-a mutable loan in `orig(body)`, that is, every place lent mutably into the
-scope, directly or through a captured `&mut`. On the edge where `scope`
-returns `Err`:
+Draft 3 removes draft 2's moved-out rule (D5). A child's panic propagates to
+its scope as in Rust's `std::thread::scope`: the scope cancels the other
+children, joins them all, and then panics in the calling task, so no code
+after the `scope` call runs. A panic in `body` itself cancels and joins the
+children, then continues unwinding. A child that returns `Err` has finished
+normally, like any function that returns an error.
 
-- **Owned places in `M`** are uninitialized. Reading or borrowing one is an
-  error until it is assigned. Dropping it is allowed, because the value is
-  valid memory.
-- **Places in `M` behind a reference parameter** cannot be read or borrowed
-  for the rest of the function. They may be assigned, and the function may
-  return.
-- **Cells a failing child held locked** are poisoned at run time.
+The borrow checker therefore needs no rule for the failure edge. When
+`scope` returns, `Ok` or `Err`, every child has finished normally, the loans
+in `σ` end, and every place lent into the scope is usable again, as in Rust.
+A place a panicking child was mutating is reached afterwards only by
+unwinding, that is, by destructors, which `04-contracts.md` §4.3 verifies
+without assuming the type's invariant.
 
-A panic in `body` itself abandons the parent task, after its children are
-cancelled and joined.
+The only place a panic becomes a value is `Tasks::spawn_isolated`, whose
+closure is `Owned` (§8.2): it borrows nothing, so its `Err(Panicked)` exposes
+no half-updated place of the caller. A cell whose `with` closure panicked is
+poisoned (§8.4).
 
-Memory safety does not depend on this rule. Abandoning a task leaves every
-value valid memory, as unwinding does in Rust. The rule protects invariants,
-but only within the function: the second case lets a half-updated value reach
-the caller of a function that returns after a child failure (§12).
+Memory safety never depended on a failure rule: abandoning a task leaves
+every value valid memory, as unwinding does in Rust.
 
-### 8.4 `Shared<T>` and `lock`
+### 8.4 `Shared<T>` and `Shared::with`
 
 - **`Shared<T>`** requires `T: Send + Pure` (D8). It is a counted handle,
   invariant in `T`, with `orig(Shared<T>) = orig(T)`. It is `Send` and
-  `Sync`, and neither `Pure` nor `Frozen`.
-- **`lock (e1, …, en) |x1, …, xn| body`**, where `ei: &Shared<Ti>`, is
-  checked like a closure body in which `xi: &σ mut Ti` for a fresh
-  higher-ranked `σ`. No value carrying `σ` escapes into the result or into
-  captured places.
-- **The body** captures only `Pure` values and contains no `lock`; with
-  `Pure` payloads it reaches no capability and no `Shared` handle (D8). The
-  result is `Result<R, LockError>`, where `LockError` is `Aliased` or
-  `Poisoned` (D8; `03-authority-concurrency.md` LOCK-5).
-- **Distinctness.** Before acquiring anything, the runtime checks that the
-  handles are pairwise distinct, since two `&mut` to one payload would be
-  undefined behavior. If two handles name the same cell, `lock` returns
-  `Err(LockError::Aliased)` and the body does not run (D8, LOCK-2).
-- **Poisoning.** A panic in the body poisons the cells; a later `lock`
-  naming one returns `Err(LockError::Poisoned)` without running its body.
+  `Sync`, not `Pure`, and creating one takes `&Tasks` (D7).
+- **`Shared::with(&a, f)`** and **`Shared::with2(&a, &b, f)`** (and the
+  provisional `with_all` over a slice) replace draft 2's `lock` keyword. The
+  closure has type `for<'σ> FnOnce(&'σ mut T1, …) -> R`: each payload
+  reference gets a fresh higher-ranked `σ`, so no value carrying `σ` escapes
+  into the result or into captured places.
+- **The closure** is `Pure`, so it captures no capability and no `Shared`
+  handle; with `Pure` payloads it can neither suspend nor call `with` again
+  (D8). Both methods return `Result<R, LockError>`, where `LockError` is
+  `Aliased` or `Poisoned` (`03-authority-concurrency.md` LOCK-5).
+- **Distinctness.** Before acquiring anything, `with2` checks that the
+  handles are distinct, since two `&mut` to one payload would be undefined
+  behavior. If both name the same cell, it returns `Err(LockError::Aliased)`
+  and the closure does not run (D8, LOCK-2).
+- **Poisoning.** A panic in the closure poisons the cells; a later `with`
+  naming one returns `Err(LockError::Poisoned)` without running its closure.
   No safe API reads a poisoned payload; `cell.reset(v)` replaces it and
   clears the poison (LOCK-6).
 - **Translation.** Mutex guards turned into `&'σ mut T` inside
   `for<'σ> FnOnce(&'σ mut T1, …) -> R`.
 
-### 8.5 `par`
+### 8.5 `join`, `par_map`, `par_for`
 
-`par { a, b }` and `join(f, g)` take closures that are authority-free and
-`Send`. Their shared captures must be `Frozen`; mutable captures must be
-disjoint `&mut` borrows, which the borrow checker verifies as usual. The
-branches may borrow the enclosing frame, because `par` joins before it
-continues. In Rust this is the shape of `rayon::join`. `Frozen` is stricter
-than `Sync`; that serves determinism, not memory safety.
+`join(f, g)`, `par_map` and `par_for` take `Pure + Send` closures. Their
+shared captures must be `Pure + Sync`; mutable captures must be disjoint
+`&mut` borrows, which the borrow checker verifies as usual. The branches may
+borrow the enclosing frame, because `join` returns only after both finish. In
+Rust this is the shape of `rayon::join`. `Pure + Sync` is stricter than
+`Sync`; that serves determinism, not memory safety. Draft 2's `par { }`
+block is removed (D9).
 
-## 9. `Pure` and `Frozen`
+## 9. `Pure`
 
-Both are compiler-known auto traits. Outside std, they can be implemented
+`Pure` is a compiler-known auto trait. Outside std, it can be implemented
 only by `unsafe impl` in a package granted `unsafe`, and each such impl is a
-trust hole. Both are **deep**:
+trust hole. It is **deep**:
 
-- they look through every field, private ones included, and through `Box`,
-  `Rc` and `Arc`, with type arguments substituted;
+- it looks through every field, private ones included, and through `Box` and
+  `Rc`, with type arguments substituted;
 - recursive types take the greatest fixed point;
-- opaque and `dyn` types have exactly the traits their bounds state;
-- a type parameter has a trait only if it is bounded by it.
+- opaque and `dyn` types have exactly the auto traits their bounds state;
+- a type parameter is `Pure` only if it is bounded by it.
 
 ### `Pure`: no authority reachable
 
@@ -737,8 +771,9 @@ These are **not `Pure`**:
 
 - the capability types `Root`, `Fs`, `Net`, `Clock`, `Rand`, `Env`, `Stdin`,
   `Proc`, `Tasks` and `Accel`, and their attenuated forms;
-- the synchronization handles `Shared<T>`, `Sender<T>`, `Receiver<T>`,
-  `Scope`, `Handle<T>`, `sync::Weak<T>` and every atomic type;
+- the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
+  `Receiver<T>`, `Scope<E>`, `Task<U, E>`, `Arc<T>`, `sync::Weak<T>` and
+  every atomic type;
 - the foreign handles: raw pointers, `extern` types and foreign function
   pointers;
 - `ThreadBound` types;
@@ -746,47 +781,45 @@ These are **not `Pure`**:
 - an unbounded type parameter.
 
 **Everything else is `Pure` exactly when its components are**, including
-references, std collections, `Rc`, `rc::Weak`, `Arc`, `Cell`, `RefCell`,
-`Arena`, structs, enums and closures. Ferox function pointers are `Pure`:
-any authority the pointee uses arrives through its arguments.
+references, std collections, `Rc`, `rc::Weak`, `Cell`, `RefCell`, `Arena`,
+structs, enums and closures. Ferox function pointers are `Pure`: any
+authority the pointee uses arrives through its arguments.
 
 **What `Pure` guarantees.** A function whose parameter and capture types are
 all `Pure` is authority-free: no I/O, time, randomness, synchronization with
 other tasks, or suspension. Its result is a function of the state of memory
 reachable from its arguments. `Cell`, `RefCell` and `Rc` are `Pure` because
-that state is private to the task.
+that state is private to the task. Creating a synchronization handle takes
+`&Tasks`, which is not `Pure`, so authority-free code can neither receive
+nor create one (D7).
 
 **What std must provide in return.** No operation on a `Pure` type may return
-a result that depends on other tasks. Ferox's `Arc` therefore omits
-`strong_count`, `weak_count`, `get_mut`, `try_unwrap` and `into_inner`.
-`Arc::make_mut` stays, because its observable result does not depend on
-timing. `sync::Weak` is a synchronization handle, because `upgrade` observes
-other tasks' drops.
+a result that depends on other tasks. `Arc` and `sync::Weak` are therefore
+synchronization handles (D7): even without count readers, the last release
+runs `T::drop` in whichever task drops last, `make_mut` calls `Clone` only
+when another clone exists, and `upgrade` observes other tasks' drops. Ferox's
+`Arc` also omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap` and
+`into_inner`. Authority-free and parallel code shares data by reference
+inside a scope instead.
 
-### `Frozen`: no interior mutability reachable through shared references
+### `Pure + Sync` replaces `Frozen`
 
-**Not `Frozen`**: `Cell`, `RefCell`, `OnceCell`, `UnsafeCell`, atomics,
-`Rc` and `rc::Weak` (whose counts change through shared references),
-`Shared`, channel ends, `Scope`, `Handle`, capabilities, raw pointers,
-`dyn Trait` without `+ Frozen`, and unbounded type parameters.
+Draft 2 had a second deep trait, `Frozen`, for "no interior mutability
+through `&`". Draft 3 removes it: `Sync` already excludes `Cell`, `RefCell`,
+`OnceCell`, `UnsafeCell` and `Rc`, and `Pure` excludes atomics and every
+other synchronization handle, so nothing reachable from a `Pure + Sync`
+value can change while another task or branch reads it. Like `Pure`, `Sync`
+is structural, so an `Rc` inside a `Box` disqualifies a type
+(`reviews/round1-soundness.md` B6(e)).
 
-**Everything else is `Frozen` exactly when its components are.** That covers
-scalars, `str`, `&T`, `&mut T` (through `& &mut T` only reads are possible),
-`Box`, arrays, collections, `Option`, `Result`, structs, enums, closures and
-`Arc<T>`. `Arc` qualifies because its count is atomic and, under the rule
-above, invisible to safe code.
-
-Unlike Rust's shallow `Freeze`, `Frozen` looks behind pointers, so an `Rc`
-inside a `Box` disqualifies a type (`reviews/round1-soundness.md` B6(e)).
-
-### Where each trait is used
+### Where `Pure` is used
 
 | Use | Requires |
 | --- | --- |
-| `par` | authority-free and `Send` closures, `Frozen` shared captures |
-| memoization and `const fn` | `Pure` and `Frozen` parameters, no `&mut` parameters (D7) |
-| statics | `Owned`, `Sync` and `Frozen` |
-| `lock` payloads | `Send` and `Pure` |
+| `join`, `par_map`, `par_for` | `Pure + Send` closures, `Pure + Sync` shared captures |
+| memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7) |
+| statics | `Owned + Sync + Pure` |
+| `Shared` payloads; `with` closures | `Send + Pure`; `Pure` |
 
 ## 10. Worked examples
 
@@ -1081,7 +1114,7 @@ fn reachable(g: &Arena<Node>, start: Id<Node>) -> Vec<&str> {
 Rust: the same code with `slotmap::SlotMap` or `generational_arena`.
 
 **Accepted.** `Id<T>` (a `u32` index and a `u32` generation) is `Copy`,
-`Owned`, `Pure`, `Frozen`, `Send` and `Sync`, so it can be stored anywhere. A
+`Owned`, `Pure`, `Send` and `Sync`, so it can be stored anywhere. A
 stale handle panics on indexing; `get` returns `None`. Two nodes are mutated
 together with `g.get_disjoint_mut([a, b])`, checked at run time.
 
@@ -1098,10 +1131,10 @@ root.borrow_mut().val += leaf.borrow().val;
 
 Rust: identical.
 
-**Accepted.** The type is `Owned` and `Pure`, but not `Frozen`, `Send` or
-`Sync`. It may be held across suspensions within one task (§8.1) but cannot
-enter another task or `par`; use `Arc` with `Shared` there. A failed
-`borrow_mut` panics.
+**Accepted.** The type is `Owned` and `Pure`, but not `Send` or `Sync`. It
+may be held across suspensions within one task (§8.1) but cannot enter
+another task or a parallel branch; use `Shared` there. A failed `borrow_mut`
+panics.
 
 ### 10.11 A trait object holding a reference
 
@@ -1142,27 +1175,29 @@ on §5.1's default bound behind `&mut`.
 ### 10.12 Scoped tasks borrowing a slice
 
 ```ferox
-fn parallel_sum(tasks: &Tasks, xs: &[u64]) -> Result<u64, ScopeError> {
+fn parallel_sum(tasks: &Tasks, xs: &[u64]) -> Result<u64, TaskError> {
     let mid = xs.len() / 2;
     let mut sums = [0u64; 2];
     let [lo, hi] = &mut sums;
     tasks.scope(|s| {
-        s.spawn(|| *lo = xs[..mid].iter().sum());
-        s.spawn(|| *hi = xs[mid..].iter().sum());
+        s.spawn(|| { *lo = xs[..mid].iter().sum(); Ok(()) });
+        s.spawn(|| { *hi = xs[mid..].iter().sum(); Ok(()) });
+        Ok(())
     })?;
     Ok(sums[0] + sums[1])             // fine: every child has finished
 }
 
-fn after_failure(tasks: &Tasks, xs: &[u64]) -> u64 {
+fn after_failure(tasks: &Tasks, xs: &[u64]) -> u64 {   // SumError: #[from] TaskError, Overflow
     let mut sums = [0u64; 2];
     let [lo, _] = &mut sums;
-    match tasks.scope(|s| { s.spawn(|| *lo = xs.iter().sum()); }) {
-        Ok(()) => sums[0],
-        Err(_) => sums[0],            // error: `sums` was lent mutably to a failed scope
-    }
+    let r: Result<(), SumError> = tasks.scope(|s| {
+        s.spawn(|| { *lo = checked_sum(xs).ok_or(SumError::Overflow)?; Ok(()) });
+        Ok(())
+    });
+    match r { Ok(()) => sums[0], Err(_) => sums[0] }   // fine: the loans ended with the scope
 }
 
-fn serve(bg: Scope, conn: Conn) {
+fn serve(bg: Scope<ServeError>, conn: Conn) {           // read_into -> Result<usize, ServeError>
     let buf = [0u8; 4096];
     bg.spawn(|| conn.read_into(&buf));                                     // error
     bg.spawn(move || { let mut buf = [0u8; 4096]; conn.read_into(&mut buf) });  // fine
@@ -1183,15 +1218,17 @@ fn parallel_sum(xs: &[u64]) -> u64 {
 **`parallel_sum` is accepted**: `xs` and the slots outlive the `&Tasks`
 borrow, whose loans `σ` carries.
 
-**`after_failure` is rejected** by §8.3.
+**`after_failure` is accepted.** A child that returns `Err` has finished, so
+`sums` is usable on both arms. Draft 2's moved-out rule rejected it. If the
+child panicked instead, `scope` would panic and neither arm would run (§8.3).
 
 **In `serve`, the first spawn is rejected**: `buf` does not outlive `bg`'s
 scope (`reviews/round1-soundness.md` B2.4). The second spawn is accepted,
 because its closure owns everything it uses.
 
-Rust's scope re-raises a child's panic; Ferox returns `Err` and applies
-§8.3. For pure work the Ferox idiom is
-`let (a, b) = par { sum(&xs[..mid]), sum(&xs[mid..]) };`.
+Like Rust's scope, Ferox's re-raises a child's panic (§8.3). For pure work
+the Ferox idiom is
+`let (a, b) = join(|| sum(&xs[..mid]), || sum(&xs[mid..]));`.
 
 ## 11. Soundness sketch: translation to Rust
 
@@ -1213,7 +1250,8 @@ release.
 | A borrowing struct or enum | one lifetime parameter per origin, in name order; `from` in a field reuses the named lifetime; recursive occurrences reuse the declaration's lifetimes; rustc derives the same variances from the same fields | yes |
 | Elided origins in signatures | the same elided positions; output elision under identical rules | yes |
 | `from P` in a parameter type | reuse `P`'s lifetime | yes |
-| `-> T from P̄` | a fresh `'r` per affected position, with `'p: 'r` for each `p` in `orig(P̄)` | yes |
+| `-> T from P`, one origin | reuse `P`'s lifetime, as for parameters | yes |
+| `-> T from P1, …, Pn` | a fresh `'r` per affected position, with `'p: 'r` for each `p` in `orig(P̄)` | yes |
 | `f: F from P` | `F: 'p, F::Output: 'p` | yes |
 | `Self.f`, `self.f` in impls | `impl<'f, …> Ty<'f, …>`, with `'f` | yes |
 | `dyn`, the default `Owned` | `+ 'static`; behind `&'a`, `+ 'a` | yes |
@@ -1225,31 +1263,33 @@ release.
 | Two-phase borrows, NLL, drop check | the same | yes |
 | The std eyepatch | `#[may_dangle]` (unsafe, audited) | audited |
 | `Tasks::scope`, `Scope::spawn` | `std::thread::scope` with `'env` = the `&Tasks` borrow | yes |
-| The `Err` edge of a scope | `catch_unwind(AssertUnwindSafe(…))`; the moved-out rule only rejects more programs | yes |
-| `lock` | `for<'σ> FnOnce(&'σ mut T1, …)` over Mutex guards, plus a run-time distinctness check in std | audited |
-| `par` | `rayon::join` or `thread::scope`; `Frozen` is stricter than `Sync` | yes |
-| A non-`Send` value inside a task that migrates | none: Rust requires `Send` futures | **no** |
+| A child's panic | `std::thread::scope`'s re-raise; the `Err` edge needs no extra rule | yes |
+| `spawn_isolated` | `catch_unwind(AssertUnwindSafe(…))` over a `'static` closure | yes |
+| `Shared::with`, `with2` | `for<'σ> FnOnce(&'σ mut T1, …)` over Mutex guards, plus a run-time distinctness check in std | audited |
+| `join`, `par_map`, `par_for` | `rayon::join` or `thread::scope`; `Pure + Sync` is stricter than `Sync` | yes |
+| A non-`Send` value inside a task that migrates (v1) | none: Rust requires `Send` futures | **no** |
 
 ### 11.2 Where the translation is not exact
 
-- **R1. Task isolation (§8.1): medium risk.** Rust cannot express it.
+- **R1. Task isolation (§8.1, v1): medium risk.** Rust cannot express it.
   Soundness rests on the argument in §8.1, which needs a written proof in the
   style of Swift's SE-0414 and an audit of std, the runtime and FFI wrappers
-  for thread-affine state.
+  for thread-affine state. The proof must cover erasure: a `ThreadBound`
+  value boxed as `dyn Debug` must still pin (round-2 consistency review B8).
 - **R2. Bounded higher-ranked origins (§5.4): low risk.** This is the
   encoding that `std::thread::scope` relies on.
 - **R3. Implied bounds through `fn` pointers: low risk once implemented.**
   Reducing to Rust inherits Rust's holes, such as rust-lang/rust#25860, which
   the oracle cannot catch because rustc accepts them. §5.4's re-check closes
   it; known exploits belong in the negative test corpus.
-- **R4. The audited std set** (`Arena`, `Shared` and `lock`, channels,
-  `Scope`, the eyepatch containers) has Rust std's trust model and is counted
-  in the trust surface.
-- **R5. `Pure` and `Frozen`: medium risk.** They promise determinism, which
-  lies outside Rust's model and depends on classifying std correctly
-  (`Arc`'s counts were nearly missed).
-- **R6. The child-failure rule (§8.3)** is sound for memory but protects
-  invariants only partially.
+- **R4. The audited std set** (`Arena`, `Shared` and its `with` methods,
+  channels, `Scope`, the eyepatch containers) has Rust std's trust model and
+  is counted in the trust surface.
+- **R5. `Pure`: medium risk.** It promises determinism, which lies outside
+  Rust's model and depends on classifying std correctly (`Arc` was first
+  classified `Pure`; round 2 showed its drops and `make_mut` reveal timing).
+- **R6. Child failure (§8.3)** follows `std::thread::scope` exactly; the only
+  recovery point, `spawn_isolated`, takes `Owned` closures.
 - **R7. The evented lowering of scoped children** needs non-moving frames
   and uncancellable joins in the C backend, outside `τ`.
 
@@ -1261,7 +1301,7 @@ release.
 2. **Self-referential structs** need `unsafe` (a cost D2 accepts). There is
    no `Pin`, since there is no `async`.
 3. **`&'arena T` graphs** in the style of rustc's `TyCtxt` need an
-   append-only arena (`alloc(&self, v: T) -> &mut T`) with an eyepatch. v1
+   append-only arena (`alloc(&self, v: T) -> &mut T`) with an eyepatch. v0
    std ships only handle-based `Arena<T>`.
 4. **Exported field groups.** Named borrow sets that a type exports without
    exposing its fields, Rust's "abstract fields", are open.
@@ -1276,14 +1316,17 @@ release.
 7. **`Arc` count observers.** Something must replace `Arc::try_unwrap` and
    `get_mut` in the "unwrap after the workers finish" pattern, probably
    scope results.
-8. **Invariants after a child failure.** A half-updated referent behind a
-   `&mut` parameter can reach the caller (§8.3). Either D10 stops assuming
-   type invariants of `&mut` arguments after such a call, or such failures
-   must be propagated; this is open.
+8. **Invariants after a child failure.** Closed by draft 3: a child's panic
+   propagates through its scope (§8.3), so no half-updated referent behind a
+   `&mut` parameter reaches a caller.
 9. **Agent-facing naming.** E1 should measure whether agents find the right
    `from` from diagnostics that name origins such as `*out` and `lx.src`.
 
-## 13. Changes this chapter asks of `01-design.md`
+## 13. Changes this chapter asked of `01-design.md`
+
+Draft 3 applies items 1–4 and 7. Item 5 is superseded: D7 makes `Arc` and
+`sync::Weak` synchronization handles (§9). Item 6 is superseded: D5 removes
+the moved-out rule (§8.3). None are outstanding.
 
 1. **D2, `dyn`.** `&dyn Trait` and `&mut dyn Trait` should default to the
    reference's origin, which is Rust's default object bound; `dyn` elsewhere

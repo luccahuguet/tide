@@ -879,7 +879,7 @@ on several sources (Rust's `select!`), send one enum through one channel.
 
 ```ferox
 impl<T: Send + Pure> Shared<T> {                   // std::sync
-    fn new(v: T) -> Shared<T>;                     // no capability needed
+    fn new(tasks: &Tasks, v: T) -> Shared<T>;      // handles let tasks observe each other, so creation takes &Tasks
     fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError>;
     fn with2<U: Send + Pure, R>(a: &Shared<T>, b: &Shared<U>,
         f: impl FnOnce(&mut T, &mut U) -> R + Pure) -> Result<R, LockError>;

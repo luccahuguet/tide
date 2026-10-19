@@ -319,7 +319,7 @@ serialization as the default (5–7x slower in prior art).
   named only in `main`; a simulated root (`Root::sim(seed)`) only in tests and
   in `ferox sim`.
 - Files support append and explicit durability (`File::sync`,
-  `Dir::sync_dir`); durability is part of the simulator's filesystem model
+  `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
@@ -450,6 +450,10 @@ stackful execution internally.
   Spec integers are mathematical; `/` and `%` truncate as in Rust; `==` is
   model equality; quantifiers range over spec types. Closures appear in specs
   only through `f.requires(args)` and `f.ensures(args, r)`.
+- In v0, executable clauses use code semantics: machine integers that trap,
+  and `==` through `PartialEq`. Mathematical integers and model equality
+  apply under `prove` (v1), and the compiler warns where a clause would read
+  differently under the two.
 - **Uses**, chosen per package and overridable per item:
   1. `assert`: executable clauses become runtime checks in debug and test
      builds;

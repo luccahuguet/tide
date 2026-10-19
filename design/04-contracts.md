@@ -1,10 +1,24 @@
 # Ferox Contracts
 
-Status: draft 1. This chapter is the normative definition of D10 (contracts)
-and D11 (trust surface) in `design/01-design.md`, draft 2.1. It elaborates those
-decisions and must not contradict them. Where it needs a decision changed, it
-says so in the last section; until `01-design.md` changes, the decision there
-wins.
+Status: draft 1, synchronized with draft 3. This chapter is the normative
+definition of D10 (contracts) and D11 (trust surface) in
+`design/01-design.md`. It elaborates those decisions and must not contradict
+them. Where it needs a decision changed, it says so in the last section;
+until `01-design.md` changes, the decision there wins.
+
+**Tier** (01's Tiers table). v0 core: executable `requires`, `ensures`, loop
+`invariant`, `old`, `result`, and bounded quantifiers, checked at run time in
+debug and test builds and driving property tests: the parts of §1.1–§1.3
+that cover them, §2.3, §2.4 with its vacuity floor, release erasure (§2.6,
+first paragraph), and approval of weakened contracts (§11, without its
+solver checks). v0 clauses call authority-free functions directly
+(`reference.md` §10.1). v1: `prove` and per-item uses (§2.1, §2.5), clause
+classes (§2.2), check deletion (§2.6), `spec fn`, `proof fn`, `#[spec]`,
+views (§1.4–§1.7), total correctness and `decreases` (§3), `final` and type
+invariants (§4), laws and trait contracts (§5), closure contracts (§6),
+§7–§10, and proof status and trust closures.
+Later: deferred overflow traps (§3.2); interactive-proof export (§13). v0
+overflow traps are precise.
 
 Inputs: the round-1 reviews in `reviews/`, chiefly
 `round1-verification.md`, and `research/04-verification.md`. Prior art is
@@ -146,8 +160,10 @@ Rules that the grammar does not show:
 3. **`result`** is valid only in `ensures`. A function with `ensures` cannot
    have a parameter named `result`; the safe fix renames it.
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
-   at entry. A bare `*x` of a `&mut` parameter `x` is an error with two
-   machine-applicable fixes, `old(*x)` and `final(*x)` (§4.1).
+   at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
+   parameter means its value at return (`reference.md` §10.1). From v1, a
+   bare `*x` is an error with two machine-applicable fixes, `old(*x)` and
+   `final(*x)` (§4.1), and `ferox fix` rewrites v0 clauses to `final(*x)`.
 5. **`decreases`** on a function bounds recursion; on a loop it bounds
    iterations (§3.3). `diverges` is legal only on exec functions.
 6. **Impls refine trait contracts.** An impl method inherits its trait
@@ -177,11 +193,12 @@ Its meaning is the same in all three uses:
   Comparisons compare as `int`. Bitwise operators and shifts take operands of
   one machine type, compute at that width with Rust's meaning, then widen.
   `e as u32` on an `int` is well-formed only when the value fits.
-- **Equality.** Spec `==` is structural equality of spec values: fieldwise on
-  structs, enums, and tuples; extensional on `Seq`, `Set`, `Map`, and
+- **Equality.** Spec `==` is model equality (D10): `a == b` compares the
+  views, `a@ == b@` (§1.4). For a type without a `View` impl, including
+  every spec type, the view is the value, so `==` is structural: fieldwise
+  on structs, enums, and tuples; extensional on `Seq`, `Set`, `Map`, and
   `Multiset`; on floats it compares D3's canonical `to_bits()`, so it is
-  reflexive even for NaN. It never calls a user `PartialEq`. For abstract
-  equality, write `a@ == b@`.
+  reflexive even for NaN. It never calls a user `PartialEq`.
 - **References.** `&e` and `*e` are transparent: a `&T` denotes the `T`.
 - **Floats** are IEEE 754 values, not reals: `a + b` in a spec is the rounded
   IEEE sum, and `<` is the IEEE comparison. Default queries treat float
@@ -364,7 +381,8 @@ Debug and test builds evaluate `checked` clauses:
 - loop invariants at loop entry and at loop exit.
 
 The evaluator uses unbounded integers and persistent sequences, linked into
-debug builds. Any pending deferred trap (§3.2) fires before a check runs.
+debug builds. Overflow traps are precise in v0 (§3.2), so a check never sees
+a wrapped value.
 
 ### 2.4 `test`
 
@@ -392,7 +410,7 @@ gets a property test.
    `Arbitrary` supplies its own. A type with an invariant or private fields is
    built only through random sequences of public constructor and method calls.
    Capabilities come from `Root::sim(seed)` with fault injection. Function
-   parameters are not generated in v1.
+   parameters are not generated in v0 or v1.
 2. The `requires` conjuncts are matched against generator shapes: scalar
    ranges, length bounds, an index below a length (generated after the
    length), `sorted`, `distinct`, `contains`, `is_some`, and equalities that
@@ -422,16 +440,25 @@ with `release_checks = "none" | "pub_requires" | "checked"`; the default is
 
 D3 lets a proof delete a runtime check only if every fact it relies on is
 proved in the same build or still checked at run time. A check for overflow,
-division, shifts, `unwrap`, or `assert!` is therefore deleted only when both
-of the following hold:
+division, shifts, `unwrap`, or `assert!` is therefore deleted (v1) only when
+all of the following hold:
 
 1. its obligation is proved with an empty trust closure, by proofs this
    build's verifier checked;
-2. every `requires` the proof used is guaranteed. For a private function, every
-   caller in the package is proved. For a `pub` function, each such `requires`
-   stays checked at entry in every profile. Only a `checked` clause can stay
-   checked, so a check that depends on a `sampled` or `proof-only`
-   precondition is never deleted.
+2. every `requires` the proof used is guaranteed. That holds only if every
+   path into the function is a direct call in this package and each call is
+   proved to establish it with no assumptions: an empty trust closure, not
+   `proved, assuming N`. The function must not be `pub` or a trait-impl
+   method, be named as a value, or be coerced to `dyn`. Otherwise each such
+   `requires` stays checked at entry in every profile. Only a `checked`
+   clause can stay checked, so a check that depends on a `sampled` or
+   `proof-only` precondition is never deleted;
+3. every type invariant the proof assumed (§4.2) is guaranteed, which holds
+   only if every function of the invariant's defining module is proved;
+4. deletion is decided per instantiation. A check deleted in generic code
+   that relies on laws of the instantiated impls is deleted only where those
+   laws are `proved`; the instantiation cache (D12) keys each instance on
+   that law status, and witness-table code keeps law-dependent checks.
 
 Bounds checks follow the same rule but are deleted only under
 `release_delete_bounds_checks = true`, off by default in v1. A wrongly deleted
@@ -466,32 +493,31 @@ not verified.
 | `RefCell::borrow_mut` and similar | unprovable in v1, which has no borrow-flag model; use `try_borrow_mut` |
 
 `checked_*`, `wrapping_*`, `saturating_*`, `try_from`, and lossless `as`
-carry no obligation. Channel, `lock`, and capability operations report
-failure through `Result`. A runtime `assert!` is never an assumption: its
+carry no obligation. Channel, `Shared::with`, and capability operations
+report failure through `Result`. A runtime `assert!` is never an assumption: its
 condition must be proved, and only then is it known. There is no Dafny-style
 `expect`. When a callee was not proved in this build, the caller's verdict
 assumes the callee's `ensures`, panic-freedom, and termination, and lists them
 in its trust closure.
 
-### 3.2 Arithmetic and the deferred-trap rule
+### 3.2 Arithmetic and traps
 
-D3 lets an overflow trap be reported late; design open question 1 asks how
-that interacts with proofs. For contracts the answer is three rules.
-
-1. **Proofs use precise traps.** Each arithmetic operation is an obligation at
-   its own site, whatever the code generator batches. A proved function never
-   reaches a trap, so deferral cannot change verified behavior.
-2. **Deferral is unobservable except in abandoned memory.** A program with a
-   deferred trap behaves like the precise program except for the contents of
-   places the abandoned task wrote after the overflow, which D5 makes
-   unobservable (§4.3), and for the moment within the window when the trap
-   fires. The compiler may defer only across code whose control flow and
-   addresses do not depend on the overflowed value; a loop-exit test that
-   reads the value is a flush point. Differential runs against the reference
-   interpreter check this compiler obligation.
-3. **Contract checks are flush points.** Under `assert` and `test`, every
-   clause evaluation, including each loop-invariant check, first fires any
-   pending trap, so a check never sees a wrapped value.
+1. **v0 traps are precise** (D3). Every engine traps at the overflowing
+   operation, and nothing after it runs, so the interpreter and compiled code
+   report the same panic.
+2. **Proofs use precise traps.** Each arithmetic operation is an obligation at
+   its own site, whatever the code generator does. A proved function never
+   reaches a trap.
+3. **Deferred reporting is a later tier.** It would let the optimizer batch
+   checks in vectorized loops, but it must first show that the writes it
+   delays are unobservable. Abandoned memory does not give that: D5 drops
+   abandoned values, so their destructors read them (round-2 reviews B3,
+   B6). A candidate rule for that tier: a pending trap fires at the first
+   store to memory other than a register-allocated local, call, other panic
+   site, sink, handle, or capability operation, function return, or loop
+   back-edge (except in loops whose trip count is fixed at entry); the
+   earliest overflow in program order is reported; and every clause
+   evaluation is a flush point.
 
 ### 3.3 Termination
 
@@ -509,6 +535,14 @@ that interacts with proofs. For contracts the answer is three rules.
   except structural recursion on an enum argument, where each call passes a
   value matched out of it. Mutually recursive functions in one module compare
   measures lexicographically at each call.
+- **Hidden call edges.** The call graph also has an edge from each coercion
+  of a concrete type to `dyn Trait` to that impl's methods (as
+  `03-authority-concurrency.md` §4.1 rule 4 does for authority), and from
+  each concrete instantiation to the instantiated impls' methods, through
+  trait-call summaries exported for executable generics as for ghost ones
+  (§3.4 item 2). A cycle through these edges, such as `impl Step for S {
+  fn step(&self) { drive(self) } }` with `fn drive(t: &dyn Step) {
+  t.step() }`, needs a measure or `diverges`.
 - **Function values.** A closure's calls count as calls by the function that
   creates it, and naming a function as a value adds an edge to it. A call
   through a function value adds none. A call in a closure body must decrease
@@ -546,21 +580,28 @@ For a `&mut` parameter `x`:
   errors there.
 - In `ensures`, `old(*x)` is the value at entry. `old(x)` means the same,
   because references are transparent in specs; the formatter writes `old(*x)`.
-- If the result does not borrow from `x`, `final(*x)` is the value `*x` holds
-  when the function returns. It is executable.
-- If the result borrows from `x` (`-> &mut V from x`, or a borrowing result
-  with a `&mut` field), `final(*x)` is a **prophecy**: the value `*x` will hold
-  when the caller's borrow ends. `final(*r)` for a `&mut` `r` inside the result
+- `final(*x)` is executable, the value `*x` holds when the function returns,
+  only if no origin of `x`'s outer reference occurs in the result type, nor,
+  through the signature's `from` identifications, in a position under
+  another `&mut` parameter. `fn stash(s: &mut Slot, x: &mut i32 from s.r)`
+  fails the second test: it can store `x` in `*s`, so the borrow outlives
+  the call.
+- Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the
+  borrow ends. That covers a result that borrows from `x` (`-> &mut V from
+  x`, or a borrowing result with a `&mut` field) and a callee that stores
+  `x`; the callee must relate `final(*x)` to the final value of the place
+  where it stored `x`. `final(*r)` for a `&mut` `r` inside the result
   (`final(*result)`, a binding `Some(r)`, or a field path `final(*result.buf)`)
   is likewise the value at the end of that borrow. Prophetic `final` is
   `proof-only`.
 
 This is Verus's current rule and the RustHorn encoding that Creusot uses and
-RustHornBelt proved sound. In the caller, when a returned borrow `r` ends at
-its last use, the verifier learns that `final(*r)` equals the current `*r`,
-and the callee's `ensures` then determines `final(*x)`. D2 confines
-prophecies to `from` returns and to borrowing types with `&mut` fields;
-ordinary `&mut` arguments need none.
+RustHornBelt proved sound; RustHorn is sound for a stored borrow only if its
+`final` is a prophecy. In the caller, when a returned borrow `r` ends at its
+last use, the verifier learns that `final(*r)` equals the current `*r`, and
+the callee's `ensures` then determines `final(*x)`. Prophecies arise only
+from `from` returns, `from` identifications into another `&mut` parameter,
+and borrowing types with `&mut` fields; ordinary `&mut` arguments need none.
 
 ```ferox
 impl<K: Eq + Hash, V> Table<K, V> {
@@ -598,9 +639,10 @@ the invariants of their elements, as in Creusot.
 
 The verifier **assumes** `inv` of: each parameter at entry, including the entry
 value of a `&mut`; each call result; the value a `&mut` argument holds after
-the call; every prophetic `final`; and a lock payload at body entry. It
-**owes** `inv` for: each argument at a call; each return value; the final
-value of each `&mut` parameter at return; and a lock payload at body exit.
+the call; every prophetic `final`; and a `Shared` payload at closure entry
+(§4.4). It **owes** `inv` for: each argument at a call; each return value;
+the final value of each `&mut` parameter at return; and a `Shared` payload
+at closure exit.
 Between those points, code in the defining module may break the invariant
 freely. Because `inv(self)` is a precondition of `view`, a spec that mentions
 `x@` while `x` is broken fails well-formedness instead of reading garbage.
@@ -619,32 +661,36 @@ the derive is rejected if any clause is `proof-only`.
 
 ### 4.3 Panics and abandoned values
 
-D5 treats every place a panicking child borrowed mutably as moved out on the
-scope's error path. D5 drops the abandoned value, as Rust's unwinding does,
-so resources are released. Contracts therefore need one more fact:
-`Drop::drop` is verified without assuming `Self`'s invariant, since it may
-run on a possibly broken value. No other verified code assumes the invariant
-of an abandoned value, and the writes a deferred trap leaves behind (§3.2) land only
-in such places.
+D5 propagates a child's panic to its scope, which panics in turn, so no code
+after the scope runs, and recovers only at `Tasks::spawn_isolated`, whose
+closure is `Owned` and borrows nothing (`02-memory.md` §8.3). Abandoned
+values are dropped, as Rust's unwinding does, so resources are released.
+Contracts therefore need one more fact: `Drop::drop` is verified without
+assuming `Self`'s invariant, since it may run on a possibly broken value. No
+other verified code assumes the invariant of an abandoned value. A `Shared`
+cell whose closure panicked is poisoned (§4.4).
 
-### 4.4 `Shared<T>` and `lock`
+### 4.4 `Shared<T>` and `Shared::with`
 
 A `Shared<T>` handle has an opaque view, so specs can compare handles but
 cannot read the payload, and spec fns cannot take handles (they are not
-`Pure`). In `lock (a, b) |x, y| { body }`, the body is verified as a closure
-with `x: &mut T` and `y: &mut U`. It assumes `inv(*x)` and `inv(*y)`, and that
-the cells are distinct, because the run-time distinctness check comes first.
-It owes total correctness and `inv(final(*x))`, `inv(final(*y))`. This is the
+`Pure`). In `Shared::with2(&a, &b, |x, y| { body })`, the closure is
+verified with `x: &mut T` and `y: &mut U`. It assumes `inv(*x)` and
+`inv(*y)`, and that the cells are distinct, because the run-time
+distinctness check comes first (`Err(Aliased)` otherwise). It owes total
+correctness and `inv(final(*x))`, `inv(final(*y))`. This is the
 lock-invariant rule of concurrent separation logic, and it needs no
-interference reasoning here: D8 bodies call only authority-free functions,
-cannot lock or suspend, and hold `Pure` payloads, and a panicking body poisons
-its cells.
+interference reasoning here: D8 closures are `Pure`, so they call only
+authority-free functions, cannot call `with` or suspend, and hold `Pure`
+payloads, and a panicking closure poisons its cells. If the payload type's
+defining module has unproved functions, the entry assumption joins the trust
+closure.
 
-Callers learn only about the `R` in `Ok(r)`, constrained by the body's
+Callers learn only about the `R` in `Ok(r)`, constrained by the closure's
 `ensures` with the payload's entry and final values existentially
 quantified. They learn nothing about the payload afterwards, because another
-task may lock it next. A poisoned cell returns `Err(Poisoned)` from every
-later `lock`. The standard library offers no way to read a poisoned payload;
+task may acquire it next. A poisoned cell returns `Err(Poisoned)` from every
+later `with`. The standard library offers no way to read a poisoned payload;
 `reset(v)` replaces it, and `inv(v)` is owed at that call. Channel payloads
 keep their invariants because sending is a call.
 
@@ -723,7 +769,9 @@ solver stability. A generic proof is parametric and checked once, so
 monomorphization and witness tables share it. Its reliance is settled at
 each *concrete instantiation*: a call with concrete type arguments, a `dyn`
 coercion, or the use of a default method by an impl. There the caller's trust
-closure gains every law of the instantiated impls that is not `proved`. A
+closure gains every law of the instantiated impls that is not `proved`, and
+the instantiation cache (D12) keys the instance on those laws' proof status,
+so a cached instance never outlives a change in what it relies on (§2.6). A
 generic caller passes the reliance up to its own instantiation sites. This is
 how the unsound `max_of::<Weird>` example of the soundness review (B10a)
 becomes a counted assumption.
@@ -733,10 +781,12 @@ derive kind, lemmas such as "a lexicographic order over total orders is
 total", and a derived impl instantiates them with its fields' laws. Its status
 is the weakest among its fields' impls.
 
-`par_reduce` is specified as `tree_fold(canonical_shape(xs.len()), op, xs)`.
-A std lemma equates it with `fold` given the operation's
-`law fn associative`; used with a `tested` law, the lemma's conclusion is a
-counted assumption.
+`par_reduce` (v1) is specified as
+`tree_fold(canonical_shape(xs.len()), op, xs)`. A std lemma equates it with
+`fold` given the operation's `law fn associative`, when neither side traps;
+`par_reduce`'s panic obligation ranges over the canonical grouping's partial
+results. Used with a `tested` law, the lemma's conclusion is a counted
+assumption.
 
 ## 6. Closures and function values
 
@@ -810,7 +860,9 @@ functions run under `Root::sim` seeds with fault injection.
 - The interface artifact (D12) carries contracts, public spec fn bodies,
   views, invariants, laws, and generic trait-call summaries (§3.4). A body edit
   never re-checks dependents' proofs, because proofs see only contracts and
-  spec fns; editing a public spec fn body is an interface change.
+  spec fns; editing a public spec fn body is an interface change. Every
+  `const fn` body evaluated at compile time is part of its consumers' cache
+  keys (D12), since its value can fix their types and layouts.
 
 ### 8.2 Status
 
@@ -846,9 +898,11 @@ contracts and `#[spec]` accessors.
 
 A function's proof is cached under the hash of: its normalized body,
 including ghost code; its contract; its callees' interface contracts; the
-bodies of every transparent or revealed spec fn it reaches; the invariants,
-views, and laws of the types and bounds it mentions; inlined helper bodies;
-and the solver build, options, resource limit, and encoding version. CI
+bodies of every transparent or revealed spec fn it reaches; the bodies of
+`const fn`s evaluated at compile time; the invariants, views, and laws of the
+types and bounds it mentions, with the proof status of laws at concrete
+instantiations; inlined helper bodies; and the solver build, options,
+resource limit, and encoding version. CI
 rebuilds proofs into its own cache; a cache an agent can write is advisory
 only (D11).
 
@@ -1083,7 +1137,7 @@ fn wrap(head: usize, k: usize, cap: usize) -> usize
 pub fn submit(q: &Shared<Ring<Job>>, job: Job) -> Result<(), SubmitError>
     ensures match result { Err(SubmitError::Full(j)) => j == job, _ => true }
 {
-    match lock (q) |r| { r.push(job) } {
+    match q.with(|r| r.push(job)) {
         Ok(Ok(())) => Ok(()),
         Ok(Err(j)) => Err(SubmitError::Full(j)),
         Err(e) => Err(SubmitError::Lock(e)),
@@ -1096,7 +1150,7 @@ why `view` may assume `inv(self)`. Inside `push`, the invariant is broken
 between the write and `self.len += 1` and owed again at return. `pop` gets
 its `&mut` element through `IndexMut`, whose std contract uses `final` (§4.1),
 and the `self.head + 1` obligation holds because `head < cap`. In `submit`,
-`lock` assumes `Ring`'s invariant for `*r` and owes it at exit, which
+the `with` closure assumes `Ring`'s invariant for `*r` and owes it at exit, which
 `push`'s postcondition supplies. The caller learns that a rejected job comes
 back unchanged; it learns nothing about the queue's contents afterwards,
 because other tasks share the cell (§4.4).
@@ -1168,7 +1222,8 @@ integers, the laws come from the std lexicographic lemmas and the verdict is
    items.
 3. Checking prophetic `final` at run time, at the caller's borrow end.
 4. Specs for interior mutability: `Cell`, `RefCell`, and reference counts.
-5. Leaking versus dropping abandoned values (§4.3).
+5. The deferred-trap rule for the later tier (§3.2), which would also close
+   01's open question 1.
 6. Proof certificates, which would let bounds checks be deleted by default.
 7. Lean export of spec-level lemma statements (verification review N14).
 8. Generator shapes beyond the fixed list, and the defaults for the vacuity
@@ -1176,14 +1231,13 @@ integers, the laws come from the std lexicographic lemmas and the verdict is
 9. Whether reviewers judge distinguishing examples reliably; E3 should
    measure it.
 
-## Amendments needed in `01-design.md`
+## Amendments to `01-design.md`
 
-1. D8: a failed distinctness check in `lock` must return `Err`, not panic;
-   otherwise proved code cannot lock two handles.
-2. D5: say whether abandoned values are leaked or dropped (§4.3).
-3. D10: "bodies are opaque to callers by default" should say executable
-   bodies; spec fn bodies are transparent at fuel 1 (§8.1).
-4. D12: interface artifacts also carry public spec fn bodies, views,
-   invariants, laws, and generic trait-call summaries; editing a public spec
-   fn body is an interface change.
-5. D11: the exported status carries its trust closure (`proved, assuming N`).
+Draft 3 applies all five amendments this chapter asked for: `Err(Aliased)`
+from `with2` (D8), dropped abandoned values (D5), opaque executable bodies
+(D10), spec fn bodies and laws in interfaces (D12), and trust closures in
+status (D11). One remains:
+
+1. D12: the instantiation cache key should include the proof status of the
+   laws an instance relies on, so check deletion stays sound across builds
+   (§2.6, §5.3).
