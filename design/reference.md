@@ -8,11 +8,7 @@ until the E1 gate (D0). `reference-companion.md`, loaded on demand, holds
 the Rust-habit tables (14), example programs (15), the readings taken where
 the documents disagree (16), simulated faults and nodes (17), and what is
 not in v0 (Appendix A).
-Budget: under 25,000 tokens (D14; CI counting is planned). Measured on
-this text, 2026-10-19: 24,824 tokens. Method: input tokens that `claude -p
---model claude-opus-5-5 --tools "" --system-prompt "Reply with OK."
---output-format json` reports with this file as the prompt, minus those
-for the prompt `.`.
+Budget: under 25,000 tokens (D14); the companion records the count.
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -33,7 +29,8 @@ only allowlisted library items (6.9). Std import paths are in 12.3.
 
 Everything not listed in sections 2–13 works as in Rust 2024: syntax,
 ownership and borrowing, drop order and drop check, and traits and generics
-within 5's limits. `static` is immutable only (6.4); `unsafe` needs a grant
+within 5's limits. Std's traits, every `Iterator` adapter included, are
+admitted (6.9). `static` is immutable only (6.4); `unsafe` needs a grant
 (11).
 
 **Standard types** keep their Rust API: scalars, `str`, `String`, slices,
@@ -105,8 +102,11 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
   `#[non_exhaustive]`, `#[deprecated]`, `#[doc]`. `#[cfg]` accepts `test`,
   `debug_assertions`, `target_os`, `target_arch`, `unix`, `windows`, and
   `feature = ".."` (provisional beyond `test`).
-- Tide's own attributes (each in its section) are toolchain proc macros,
-  not user macros.
+- Tide attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
+  `#[tide::main]` (6.2), `#[pure]` (6.6), `#[sim_test]` (6.8),
+  `#[requires]`, `#[ensures]`, `#[invariants]` (10.1), `#[protected]` and
+  `#[trusted_pure]` (11): toolchain proc macros and their derives' helper
+  attributes, not user macros.
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
 
@@ -198,7 +198,8 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
 ### 3.5 Closures and returned `impl Trait`
 
 - A closure that captures a borrow is a borrowing value. A returned
-  `impl Trait` captures every lifetime in scope, as in Rust 2024:
+  `impl Trait` captures every generic parameter in scope, lifetimes
+  included, as in Rust 2024:
   `fn over(min: &u32) -> impl Fn(&Person) -> bool` needs no annotation;
   `+ use<'a>` captures less.
 - A closure in a `'static` position (`Box<dyn Fn()>` in a signature or
@@ -231,7 +232,8 @@ assert!(g.get(b).is_none());      // stale handle: None, never a dangling read
 ```
 
 `Id<T>` (a `u32` index and generation) is `Copy`, `Eq`, `Hash`, `'static`,
-`Pure`, `Send`, `Sync` (02 §10.9), `Ord`, and `Debug` (provisional).
+`Pure`, `Send`, `Sync` (02 §10.9), and also `Ord` and `Debug`
+(provisional).
 `Arena` has `new`, `insert(T) -> Id<T>`, `get(id) -> Option<&T>`,
 `get_mut`, `remove(id) -> Option<T>`,
 `get_disjoint_mut([a, b]) -> Option<[&mut T; 2]>`, `len`, and
@@ -329,9 +331,9 @@ do, in every dependency.
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
 | `Rand` (`std::rand`) | `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
-| `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`, as `io::Stdin`'s | — |
+| `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`, as `io::Stdin`'s (receivers `&self`, below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (Rust's builder), `exit(code: i32) -> !` | `only(["git", ..])` |
-| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point` (7.1); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
+| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
 - Every capability method takes `&self` (provisional): `&Rand` or `&Stdin`
   is enough. For many draws take `let mut rng = rand.rng();` once: a
@@ -444,8 +446,9 @@ write to sinks owned by the current task. They read nothing back, need no
 capability, never suspend, and keep a function authority-free, so
 `warn!("legacy row {}", row.id)` may sit in a pure decoder.
 
-- Format arguments are always evaluated, whatever level is enabled. Order
-  is program order; inside `join`/`par_map`, output is emitted in
+- Format arguments are always evaluated and the record formatted, whatever
+  level is enabled, so sink configuration never changes results or panics.
+  Order is program order; inside `join`/`par_map`, output is emitted in
   sequential order.
 - `main` configures sinks through `root.log` (levels, text or JSON,
   `root.log.to_file(file)`). Defaults: `println!` to stdout; `eprintln!` and
@@ -522,7 +525,7 @@ simulation's main task, so it can spawn, wait, and read virtual time.
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.elapsed() -> Duration`, `sim.records() -> Vec<Record>`, `sim.trace()` | virtual time; sink records; the event trace |
 
-(`Request` and `Record` are provisional.)
+(`Request`, `Record`, and the setup parameter types are provisional.)
 
 - **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
   time advances only when every task is blocked, jumping to the next timer.
@@ -841,10 +844,10 @@ builds, erased in release, and used to drive property tests.
   may be named only inside `old(..)` (`FX0803`, 04 §4.1); the usual fix
   gives the other parameter its own lifetime.
 - **`old(e)`** evaluates `e` at entry and snapshots it: `Copy` values are
-  copied, others cloned (a type that is neither is an error), and a
-  reference snapshots its referent, so `old(v.len())` costs one word and
-  `old(*v)` clones the `Vec`. `e` cannot mention `result` or a quantifier's variable: write
-  `old(*v)[i]`. A panic while snapshotting violates the clause.
+  copied, others cloned (a type that is neither is an error), and a reference
+  snapshots its referent, so `old(v.len())` costs one word and `old(*v)`
+  clones the `Vec`. `e` cannot mention `result` or a quantifier's variable:
+  write `old(*v)[i]`. A panic while snapshotting violates the clause.
 - **Other parameters** in `ensures` mean their entry values: a `Copy` one
   is copied and a `Clone + Pure + Sync` one cloned at entry (in generic
   code, if so bounded); any other cannot be named if the body assigns,

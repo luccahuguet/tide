@@ -16,8 +16,8 @@ on foreign functions, and `ThreadBound` (§5); the evented runtime and its lower
 `par_reduce` (§8.3); imported Rust crates and Rust consumers (§11, RUST-1
 to RUST-6). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
-by `reference.md`: `pct` scheduling and `--minimize` (§9). Draft 3 removed
-`Frozen` (now `Pure + Sync`), the `lock` keyword (now `Shared::with`, §6.5),
+by `reference-companion.md`: `pct` scheduling and `--minimize` (§9). Draft 3
+removed `Frozen` (now `Pure + Sync`), the `lock` keyword (now `Shared::with`, §6.5),
 `par { }` (now `join`, §8), and the moved-out rule (a child's panic
 propagates, §6.2).
 
@@ -26,7 +26,7 @@ scopes and `Shared::with`, and the full `Pure` table (its §8–§9);
 `04-contracts.md` owns verification of `with` closures and `par_reduce`;
 `reference.md` is the agent-facing summary. This chapter restates the
 definitions it relies on and adds the operational rules. API names marked
-provisional in `reference.md` are fixed here unless noted.
+provisional in `reference.md` or its companion are fixed here unless noted.
 
 ## 0. Terms
 
@@ -1050,7 +1050,7 @@ default and `tide sim --test` runs more.
   observe (§9.8 lists what it leaves out), so this granularity loses
   timings, not modeled behaviors.
 - Strategies: `random` (default), `pct(depth)` (probabilistic concurrency
-  testing; not in v0 per `reference.md`), and `fifo` for debugging.
+  testing; not in v0 per `reference-companion.md`), and `fifo` for debugging.
 
 ### 9.4 Fault injection
 
@@ -1133,8 +1133,8 @@ operation with its source span, its arguments, and its result.
   on `tide sim` or `tide test` starts a fresh run of one seed against the
   current source; it is not a replay.
 
-`--minimize` (not in v0 per `reference.md`) delta-debugs the fault plan and
-the scheduler's preemptions toward a shorter failing trace.
+`--minimize` (not in v0 per `reference-companion.md`) delta-debugs the fault
+plan and the scheduler's preemptions toward a shorter failing trace.
 
 ### 9.7 Determinism self-check
 

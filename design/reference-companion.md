@@ -9,6 +9,11 @@ bare section number below 14 refers to the core. Sections 14–16 tabulate
 or illustrate rules the core states; 17 and Appendix A hold what the core
 only points to. It is outside the core's 25,000-token budget (D14).
 
+Core count, 2026-10-19: 24,950 tokens (CI counting is planned). Method:
+input tokens that `claude -p --model claude-opus-5-5 --tools ""
+--system-prompt "Reply with OK." --output-format json` reports with
+`reference.md` as the prompt, minus those for the prompt `.`.
+
 ## 14. Rust habits and their fixes
 
 ### 14.1 Habits
@@ -389,7 +394,7 @@ replay manifest.
 | `node.fs() -> Fs` | the node's disk, for inspection after a crash |
 | `sim.run_for(d)`, `sim.run_until(&node_task) -> Result<T, E>` | drive the world |
 
-(`SimNode`, `NodeTask`, and the setup parameter types are provisional.)
+(`SimNode` and `NodeTask` are provisional.)
 
 - **Packet loss.** `net_drop(p)` drops each packet independently with
   probability `p`. A UDP datagram is simply lost. TCP streams and
