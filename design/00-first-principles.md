@@ -187,11 +187,12 @@ validation program (D0) has to settle it.
 - **H1: refined, into origins.** Draft 1's version (second-class references
   with views, one implicit region per type) was unsound or unusable as
   written and stricter than Rust's elision on common accessors, so Tide
-  keeps Rust's first-class `&` and `&mut` and its elision rules and replaces
-  named lifetime parameters with origins, `from` clauses that name a
-  parameter or place (D2). The E1 writer used origins correctly in every
-  borrowing case, though `reviews/round2-simplicity.md` counts this as
-  respelling lifetimes rather than removing them.
+  keeps Rust's first-class `&` and `&mut`, its elision rules, and its
+  lifetime spelling, with lifetimes checked as origins (D2). Draft 3's
+  `from` clauses, which named a parameter or place, respelled lifetimes
+  rather than removing them (`reviews/round2-simplicity.md`); on a held-out
+  trial they tied Rust's spelling on correctness with a third of the
+  annotations, and the tie went to Rust under D1 (`trials/e1-origins/`).
   Sources: `research/02-memory-models.md`, `reviews/round1-soundness.md`
   B1–B3, `reviews/round1-agent-usability.md` B2, `design/02-memory.md`,
   `trials/e1/grading.md`.

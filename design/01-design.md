@@ -1,7 +1,9 @@
 # Tide Design
 
-Status: draft 3.3. Draft 1 was synthesized from `design/00-first-principles.md`
-and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
+Status: draft 3.4. Draft 1 was synthesized from `design/00-first-principles.md`
+and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
+3.4 returns D2 to Rust's lifetime spelling after the origin trial
+(`trials/e1-origins/`). This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -14,8 +16,9 @@ It keeps what makes Rust worth learning: memory safety and data-race freedom
 without a garbage collector, zero-cost abstractions, algebraic data types,
 `Result` and `?`, and "if it compiles, it probably works". It keeps Rust's
 spelling wherever the meaning is the same, so a model's Rust knowledge
-transfers. It removes what costs agents the most: lifetime parameters, user
-macros, async coloring, an unbounded trait system, and slow builds.
+transfers. It removes what costs agents the most: user macros, async
+coloring, an unbounded trait system, and slow builds, and it narrows Rust's
+lifetimes to a subset without written outlives relations.
 
 It adds guarantees that a language can only make if it is designed for them
 from the start, and that tools layered on Rust cannot give, because Rust code
@@ -70,7 +73,7 @@ later-tier feature, the tier table wins.
 
 | Tier | Contents |
 | --- | --- |
-| v0 core | Rust surface and ownership with origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`requires`, `ensures`, loop `invariant`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the agent toolchain on the interpreter, then the Cranelift-class backend |
+| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`requires`, `ensures`, loop `invariant`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; the agent toolchain on the interpreter, then the Cranelift-class backend |
 | v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
@@ -167,9 +170,8 @@ provisional until E1 meets its thresholds.
   `todo!`, `unimplemented!`, `unreachable!`, `dbg!`, and the logging forms
   `error!`, `warn!`, `info!`, `debug!`, `trace!`. Users cannot define macros
   (D6).
-- Named lifetimes whose use maps exactly onto origins are accepted as a
-  legacy spelling and rewritten to `from` by the formatter; other uses are
-  errors with suggested origins (D2).
+- Lifetimes keep Rust's spelling in an origin-equivalent subset; the few
+  forms outside it are errors with a suggested rewrite (D2).
 - Where Tide's meaning differs, the Rust spelling is rejected with a
   machine-applicable fix: `async`/`.await`
   (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
@@ -183,43 +185,50 @@ respelling constructs that mean the same thing (`f"..."`, `print()`,
 `assert()`, `T?`, `[T]` generics), which draft 1 proposed and the usage
 measurement rejected.
 
-### D2. Memory: ownership with origins instead of lifetime parameters
+### D2. Memory: ownership with Rust's lifetimes, checked as origins
 
 - Every value has one owner; moves are the default for non-`Copy` types.
   References `&T` and `&mut T` follow Rust's shared-xor-mutable rule.
-- **Origins replace named lifetimes.** An origin names where a borrow comes
-  from: a parameter, a place path, or `'static`.
+- **Lifetimes keep Rust's spelling.** A lifetime names an **origin**: the
+  set of loans a borrow may come from (Polonius's reading).
   - Rust's lifetime-elision rules apply unchanged, so
     `fn get(&self, k: &str) -> Option<&V>` borrows from `self` exactly as in
-    Rust.
-  - Otherwise the signature names the origin with a positional `from` clause:
-    `fn longest(a: &str, b: &str) -> &str from a, b` (the result may borrow
-    from either), `fn next(&mut self) -> Option<&str from self.src>` (from the
-    place `self.src`, not from `self`). `from` is a contextual keyword after a
-    type in signatures, field declarations, and `dyn` types; inside generic
-    arguments several origins are parenthesized: `Vec<&str from (a, b)>`.
-  - In an impl, `Self`'s origins are named by field:
-    `impl Iterator for Lexer { type Item = &str from Self.src; ... }`.
-- **Types carry origins per reference position.** `struct Lexer { src: &str,
-  pos: usize }` is a borrowing type with one origin, named `src`. A struct gets
-  one origin per reference position in its fields (so `&mut T` holding a
-  borrowing `T` has two, avoiding Rust's `&'a mut T<'a>` trap) and inherits the
-  origins of its type arguments. A use site can bind origins by name with
-  `T from { src: place }`; `Vec<&str>` borrows what its elements borrow. There is no
-  `<'a>` parameter list. Variance follows Rust: shared references are
-  covariant, `&mut T` and cells are invariant in `T`.
-- **`'static` and `Owned`.** A type with no borrowed origins is `Owned`
-  (Rust's `T: 'static`). Trait objects follow Rust's object-lifetime defaults:
-  `Box<dyn Trait>` is `Owned`, while `&dyn Trait` and `&mut dyn Trait` take
-  the reference's origin; any other origin is written `dyn Trait from x`.
-  Closure-bound argument types may carry `from` (higher-ranked origins), which
-  is how `Tasks::scope` is typed. A closure that captures a borrow is itself a borrowing
-  value; a borrowing value may be returned or stored only where its origins are
-  named (`-> impl Fn() from xs`, a field with `from`). Elision covers plain
-  references and borrowing structs, as in Rust; a returned `impl Trait` or
-  `dyn Trait` that borrows must name its origins. A task may borrow only data
-  that outlives the scope it is spawned into, so tasks spawned into a
-  long-lived scope capture `Owned` values.
+    Rust. A borrowing type in a signature elides its lifetimes as
+    `Lexer<'_>` or as bare `Lexer`, as in Rust.
+  - Otherwise signatures name lifetimes as in Rust:
+    `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str`, and
+    `fn next_word(&mut self) -> Option<&'a str>` in `impl<'a> Lexer<'a>`
+    returns a borrow of the source, not of `self`.
+  - **Accepted:** lifetime parameters on structs, enums, impls, and
+    functions; `'_` and `'static`; type-outlives bounds in every spelling
+    (`T: 'a`, `T: Trait + 'a`, `impl Trait + 'a`, `dyn Trait + 'a`); and
+    the outlives relations that well-formed argument types imply
+    (`&'m BTreeMap<K, Vec<&'t str>>` lets a result be `&'m [&'t str]`).
+  - **Rejected with a suggested rewrite** (`FX0201`): written
+    lifetime-outlives bounds (`'a: 'b`), lifetime parameters on traits,
+    explicit `for<'a>`, and `+ use<..>`. `T: 'static` is accepted and
+    rewritten to `T: Owned`.
+- **Borrowing types declare lifetime parameters as in Rust**:
+  `struct Lexer<'a> { src: &'a str, pos: usize }`. Each parameter names one
+  origin; fields that use one name share it, and fields from different
+  sources take different names
+  (`struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`).
+  Variance follows Rust: shared references are covariant, `&mut T` and
+  cells are invariant in `T`.
+- **`'static` and `Owned`.** A type that borrows nothing except `'static`
+  data is `Owned` (Rust's `T: 'static`). Trait objects follow Rust's
+  object-lifetime defaults: `Box<dyn Trait>` is `Owned`, while `&'a dyn
+  Trait` is `dyn Trait + 'a`; any other borrowing object is written `dyn
+  Trait + 'a`. Closure-bound argument types are higher-ranked through `Fn`
+  sugar, which is how `Tasks::scope` is typed
+  (`impl FnOnce(Scope<'_, E>) -> Result<T, E>`). A closure that captures a
+  borrow is a borrowing value; it may be returned or stored only where its
+  lifetime is named (`-> impl Fn() + 'a`, a `Box<dyn Fn() + 'a>` field). A
+  returned `impl Trait` captures every lifetime its bounds name, elided or
+  written; with none it is `Owned` (Rust 2018's rule, not Rust 2024's
+  implicit capture). A task may borrow only data that outlives the scope it
+  is spawned into, so tasks spawned into a long-lived scope capture `Owned`
+  values.
 - **Drop check** uses Rust's conservative rule: data borrowed by a value with
   a destructor must strictly outlive that value; standard containers carry an
   audited exemption.
@@ -233,14 +242,24 @@ measurement rejected.
   check) lives in the memory chapter and is the definition the checker
   implements.
 
-Rejected: Rust lifetime parameters (annotation burden, the `'a` error class);
-draft 1's "one implicit region per type" (unsound through `&mut` or too
-restrictive, `reviews/round1-soundness.md` B1–B3); projections-only borrow
-return (unfamiliar); shared-mutable-alias models (unproven at scale).
+Rejected: draft 3's `from` clauses, which named origins by places
+(`fn next(&mut self) -> Option<&str from self.src>`, `struct Lexer { src:
+&str }`). On the held-out origin trial (`trials/e1-origins/grading.md`) they
+needed about a third of the annotations, but both spellings passed 10 of 10
+programs on first check with no borrow-related error, Rust's predicted `'a`
+error class did not appear, and the `from` writer raised 14 origin
+questions against 5, six of them on forms its reference never showed. A
+tie goes to Rust's spelling under D1. Also rejected: draft 1's "one
+implicit region per type" (unsound through `&mut` or too restrictive,
+`reviews/round1-soundness.md` B1–B3); projections-only borrow return
+(unfamiliar); shared-mutable-alias models (unproven at scale).
 
-Accepted costs: self-referential structs need `unsafe`; two fields that must
-share one origin need an explicit `from` on the field
-(`b: &str from a`).
+Accepted costs: about 3.5 times as many lifetime annotations as `from`
+clauses on the trial's tasks (a declaration on every borrowing type and
+impl, and a name at every use); Rust's `&'a mut T<'a>` trap stays writable,
+as in Rust, though elision avoids it; a result that borrows from several
+inputs through an invariant position cannot use `'a: 'b` and must be
+restructured; self-referential structs need `unsafe`.
 
 ### D3. Types: small, decidable, explicit at boundaries
 
@@ -278,8 +297,8 @@ operators.
   constants, and `impl Trait for Type`. Impls live in the module of the type
   or the trait.
 - No overlapping impls, specialization, higher-kinded types, generic
-  associated types, rank-N types (higher-ranked origins in closure bounds are
-  allowed), negative bounds, or user auto traits. Impl
+  associated types, rank-N types (higher-ranked lifetimes through `Fn`
+  sugar are allowed), negative bounds, or user auto traits. Impl
   where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
 - Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`) as
@@ -632,9 +651,9 @@ stackful execution internally.
   release; release runtime within 10–20% of equivalent Rust.
 - The compiler is written in Rust and not self-hosted before 1.0.
 
-- An **origin cross-check** tool translates signatures and bodies to Rust
-  with explicit lifetimes and runs `rustc`'s borrow checker over the test
-  corpus, so the Tide checker is continuously compared with Rust's. It is a
+- An **origin cross-check** tool translates signatures and bodies to Rust,
+  which for lifetimes is nearly the identity, and runs `rustc`'s borrow
+  checker over the test corpus, so the Tide checker is continuously compared with Rust's. It is a
   test oracle, not a backend.
 
 Rejected: Rust emission as the release backend (53 s clean builds, coupling
@@ -809,14 +828,14 @@ pub fn max_index(xs: &[i64]) -> usize
     best
 }
 
-/// Origins instead of lifetimes.
-pub struct Lexer {
-    src: &str,
+/// Rust's lifetimes: the word borrows the source, not the lexer.
+pub struct Lexer<'a> {
+    src: &'a str,
     pos: usize,
 }
 
-impl Lexer {
-    pub fn next_word(&mut self) -> Option<&str from self.src> {
+impl<'a> Lexer<'a> {
+    pub fn next_word(&mut self) -> Option<&'a str> {
         let rest = &self.src[self.pos..];
         let word = rest.split_whitespace().next()?;
         self.pos += rest.find(word)? + word.len();

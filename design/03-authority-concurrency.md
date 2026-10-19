@@ -2,7 +2,7 @@
 
 Status: draft 1 of the normative chapter for D7, D8, D9, D15, D16, and the
 Rust-import part of D13 in `design/01-design.md`, synchronized with its draft
-3.3. That document owns the decisions; this chapter turns them into rules a
+3.4. That document owns the decisions; this chapter turns them into rules a
 compiler, runtime, and simulator can implement. Where a rule needs a decision
 the design does not state, this chapter says so and lists it in §13.
 
@@ -584,20 +584,20 @@ The origin structure is `02-memory.md` §8.2; the names here are normative.
 
 ```tide
 impl Tasks {
-    pub fn scope<T, E, F>(&self, body: F) -> Result<T, E>
-        where E: From<TaskError> + Send, F: FnOnce(Scope<E> from self) -> Result<T, E>;
+    pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
+        where E: From<TaskError> + Send, F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>;
     pub fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + Owned)
         -> Result<T, Panicked>;
     pub fn shield<T>(&self, body: impl FnOnce() -> T) -> T;
     pub fn checkpoint(&self) -> Result<(), Cancelled>;
 }
-impl<E> Scope<E> {                        // Copy; origin σ
-    pub fn spawn<U: Send, F>(self, f: F from self) -> Task<U, E>
-        where F: FnOnce() -> Result<U, E> + Send;
+impl<'s, 'env, E> Scope<'s, 'env, E> {    // Copy; origin 's
+    pub fn spawn<U: Send, F>(self, f: F) -> Task<'s, U, E>
+        where F: FnOnce() -> Result<U, E> + Send + 's;
     pub fn set_deadline(self, at: Instant);
     pub fn cancel(self);
 }
-impl<U, E> Task<U, E> {
+impl<U, E> Task<'_, U, E> {
     pub fn join(self) -> Result<U, E>;    // shielded
 }
 pub enum TaskError { Cancelled, DeadlineExceeded }
@@ -605,8 +605,8 @@ pub struct Panicked { pub message: String }   // provisional
 ```
 
 Children may borrow anything that outlives the `scope` call. A scope passed
-down (`fn serve(bg: Scope<E>, ..)`) takes children that own their data or
-borrow what the signature ties to it. A child's panic propagates (TASK-1), so
+down (`fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`) takes children
+that own their data or borrow what the signature ties to it. A child's panic propagates (TASK-1), so
 no code after `scope` sees a place a panicking child was mutating; when
 `scope` returns, its loans have ended (D5, `02-memory.md` §8.3).
 

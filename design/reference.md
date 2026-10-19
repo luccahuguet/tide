@@ -1,7 +1,7 @@
 # Tide for Rust Programmers
 
 Status: the agent-facing reference for the **v0 core** of Tide, as the
-tier table of `design/01-design.md` (draft 3.3, the decision record) defines
+tier table of `design/01-design.md` (draft 3.4, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
@@ -28,8 +28,9 @@ The differences you will hit first:
    `println!` and `info!` still work anywhere.
 2. **No `async`.** Write blocking-style code; concurrency is structured
    scopes from the `Tasks` capability.
-3. **No lifetime parameters** (provisional). Elision works as in Rust. Where
-   Rust needs `'a`, write `from`: `fn pick(a: &str, b: &str) -> &str from a`.
+3. **Lifetimes are Rust's, minus a few forms.** Elision works as in Rust;
+   where Rust needs `'a`, write it: `fn pick<'a>(a: &'a str, b: &str) -> &'a str`.
+   No `'a: 'b` bounds, lifetimes on traits, or explicit `for<'a>` (3.2).
 4. **Integers trap on overflow in every build**, and `as` only does lossless
    conversions.
 5. **Shared mutable state is `Shared<T>`** with closure methods
@@ -50,8 +51,8 @@ edition):
 - **Patterns**: all of Rust's, with exhaustiveness and binding modes.
 - **Ownership and borrowing**: moves, `Copy`, `Clone`, `Drop`, shared xor
   mutable references, NLL, two-phase borrows, reborrowing, deref coercion,
-  auto-ref, drop order, Rust's drop check. Only lifetime *syntax* differs
-  (section 3).
+  auto-ref, drop order, Rust's drop check, and lifetime syntax, minus
+  `'a: 'b` bounds and a few other forms (section 3).
 - **Traits and generics**: default methods, supertraits, associated types
   and consts, blanket impls, `impl Trait` in argument and return position,
   `dyn Trait` with Rust's object safety, operator traits, `Deref`,
@@ -170,102 +171,101 @@ Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
 
-## 3. Origins instead of lifetimes (provisional)
+## 3. Lifetimes
 
-This whole section is provisional: E1 compares `from` against Rust's own
-lifetime syntax. Tide has Rust's borrow checker without lifetime
-parameters. An **origin** names where a borrow comes from: a parameter, a
-place path, or `'static`. A Rust signature with named lifetimes that map
-exactly onto origins is accepted, and `tide fmt` rewrites it to `from`.
+Tide has Rust's borrow checker and Rust's lifetime syntax for its common
+subset: lifetime parameters on structs, enums, impls, and functions, `'_`,
+`'static`, type-outlives bounds (`T: 'a`, `+ 'a`), and elision. Written
+`'a: 'b` bounds, lifetime parameters on traits, and explicit `for<'a>` are
+not part of Tide (3.2). Each lifetime names an **origin**, the set of loans
+a borrow may come from.
 
 ### 3.1 Elision is Rust's
 
-Rust's elision rules apply unchanged. Elided positions are `&T`/`&mut T`
-without `from`, and every origin of a borrowing type written without `from`
-(as Rust's `S<'_>`): `Lexer`, `Token`, `Cow<str>`, `Chars`,
-`std::slice::Iter<T>`.
+Rust's elision rules apply unchanged: with one input lifetime, every elided
+output position gets it; with `&self` or `&mut self`, every elided output
+position gets `self`'s; otherwise an elided output lifetime is an error. A
+borrowing type in a signature elides its lifetimes as `'_` (`Token<'_>`);
+the bare name (`Token`) is also accepted, as in Rust.
 
 ```tide
-fn first_word(s: &str) -> &str                          // from s
-fn get(&self, key: &str) -> Option<&V>                  // from self
-fn split_csv(line: &str) -> Result<Vec<Cow<str>>, CsvError>   // Cow borrows line
-fn lex(src: &str) -> Vec<Token>                         // Rust: Vec<Token<'_>>
+fn first_word(s: &str) -> &str                          // borrows s
+fn get(&self, key: &str) -> Option<&V>                  // borrows self
+fn split_csv(line: &str) -> Result<Vec<Cow<'_, str>>, CsvError>   // Cow borrows line
+fn lex(src: &str) -> Vec<Token<'_>>                     // each Token borrows src
 ```
 
-In `const` and `static` types, elided origins are `'static`:
-`const CASES: [(&str, &[&str]); 2] = ..;`. Write `Lexer`, never `Lexer<'a>`
-or `Lexer<'_>`.
+In `const` and `static` types, elided lifetimes are `'static`:
+`const CASES: [(&str, &[&str]); 2] = ..;`.
 
-### 3.2 `from` clauses: where Rust needs `'a`
+### 3.2 Named lifetimes: where elision is not enough
 
-`from p` after a type means "borrows from what the value at place `p`
-borrows". If `p` is a reference parameter, that is its referent.
-
-| Tide | Rust |
+| Need | Write |
 | --- | --- |
-| `fn longest(a: &str, b: &str) -> &str from a, b` | `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str` |
-| `fn pick(a: &str, b: &str) -> &str from a` | `fn pick<'a>(a: &'a str, b: &str) -> &'a str` |
-| `fn next_word(&mut self) -> Option<&str from self.src>` | `-> Option<&'a str>` in `impl<'a> Lexer<'a>` |
-| `fn text(&self) -> &str from *self` (on `Token`) | `fn text(&self) -> &'a str` in `impl<'a> Token<'a>` |
-| `fn longest(words: &[&str]) -> &str from *words` | `fn longest<'a>(words: &[&'a str]) -> &'a str` |
-| `fn add(m: &mut HashMap<&str from w, u32>, w: &str)` | `fn add<'a>(m: &mut HashMap<&'a str, u32>, w: &'a str)` |
-| `fn merge(a: &str, b: &str) -> Vec<&str from (a, b)>` | `-> Vec<&'a str>` with `a`, `b: &'a str` |
-| `type Item = Result<Token from Self.src, LexError>;` | `type Item = Result<Token<'a>, LexError>;` |
-| `fn find(n: &str, t: &str) -> Option<Match from { needle: n, line: t }>` | `-> Option<Match<'n, 't>>` |
+| result borrows from either input | `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str` |
+| result borrows from one input only | `fn pick<'a>(a: &'a str, b: &str) -> &'a str` |
+| a token that outlives the `&mut self` call | `fn next_word(&mut self) -> Option<&'a str>` in `impl<'a> Lexer<'a>` |
+| what a borrowing value borrows, not `&self` | `fn text(&self) -> &'a str` in `impl<'a> Token<'a>` |
+| an element of a slice of borrows | `fn longest<'a>(words: &[&'a str]) -> &'a str` |
+| map keys borrowed from an argument | `fn add<'a>(m: &mut HashMap<&'a str, u32>, w: &'a str)` |
+| results from two inputs | `fn merge<'a>(a: &'a str, b: &'a str) -> Vec<&'a str>` |
+| an associated type that borrows | `type Item = Result<Token<'a>, LexError>;` in `impl<'a> Iterator for Lexer<'a>` |
+| a value with two independent borrows | `fn find<'n, 't>(n: &'n str, t: &'t str) -> Option<Match<'n, 't>>` |
 
 Rules:
 
-- `from` binds looser than `&` and `dyn` (`&str from a` is `(&str) from a`)
-  and applies to **every elided origin position** in the type before it. To
-  target an inner one, parenthesize: `&mut (&str from v)`.
-- A bare list `from a, b` is allowed only at the end of a return type.
-  Elsewhere, at any nesting depth, `from` takes one origin, and a comma ends
-  it, so `Result<Token from Self.src, LexError>` has two type arguments;
-  write several origins as `from (a, b)`.
-- Places are a parameter or `self`, then fields and `*` (no calls or
-  indexing). `from self.src` is the field's origin, not the `&mut self`
-  borrow; that is how a token from `&mut self` survives the next call.
-  `Self.src` in an impl's associated type names the same origin. In a body,
-  `let src = self.src;` copies the reference out, and `&src[a..b]` keeps
-  origin `self.src`, as in Rust.
-  `from *self` is what the value behind `&self` borrows; a plain elided
-  `-> &str` on `&self` borrows the reference itself.
-- `from p` where `p` holds no borrow (`from self.pos`, `pos: usize`) is an
-  error; the fix is `from self`.
-- `T from { name: place, .. }` binds a multi-origin type's origins one by
-  one; `-> Match from a, b` lets every origin borrow from either.
-- `from` is a contextual keyword only after a type, so `String::from` and
-  `impl From<X>` are unaffected.
-- Rust lifetimes that do not map onto origins are `FX0201` with a suggested
-  `from`: outlives bounds (`'a: 'b`, `T: 'a`), lifetime parameters on traits,
-  `for<'a>`. A borrow that elision ties to the wrong origin is `FX0202`; its
-  fix suggests `from self.field`.
+- Lifetimes are declared first in the item's `<..>` list: `fn f<'a, T>`,
+  `struct S<'a>`, `enum E<'a>`, `impl<'a> S<'a>`,
+  `impl<'a> Iterator for S<'a>`.
+- One name on several inputs means the result may borrow from any of them;
+  at a call, the borrows shrink to the shortest, as in Rust.
+- `&'a mut Vec<&'b str>` keeps the `&mut` borrow apart from the data's
+  lifetime. Writing one name for both (`&'a mut Vec<&'a str>`) is legal
+  but ties the mutable borrow to the data, Rust's classic trap: callers
+  then fail to borrow-check, as in Rust.
+- In a body, `let src = self.src;` copies the reference out, and
+  `&src[a..b]` keeps lifetime `'a`, as in Rust. A plain elided `-> &str`
+  on `&self` borrows the reference itself, not `'a`.
+- Type-outlives bounds are accepted in every spelling: `T: 'a`,
+  `T: Trait + 'a`, `impl Trait + 'a` (also in argument position), and
+  `dyn Trait + 'a`.
+- Relations that well-formed argument types imply need no bound:
+  `&'m BTreeMap<char, Vec<&'t str>>` lets a result be `&'m [&'t str]`.
+- Not in Tide: written lifetime-outlives bounds (`'a: 'b`), lifetime
+  parameters on traits (`trait Parse<'a>`), explicit `for<'a>`, and
+  `+ use<..>` are `FX0201`, with a suggested rewrite: one shared lifetime, a
+  `+ 'a` bound, or a restructure. So a result that borrows from several
+  inputs, one of them behind `&mut` (`&mut Vec<&'a str>`), cannot get a
+  lifetime of its own; restructure. `T: 'static` is accepted and rewritten
+  to `T: Owned` (3.4).
+- An elided output that cannot be resolved, or that elision ties to the
+  wrong input, is `FX0202`; its fix suggests the named lifetime (often the
+  impl's `'a`).
 
 ### 3.3 Borrowing structs and enums
 
-A struct or enum declares no lifetime parameters. Each borrowed position in
-a field's type is an origin named by its path: `src` for `src: &str`, `*out`
-for the elements of `out: &mut Vec<&str>`, `lx.src` inside a field
-`lx: Lexer`, `Ident.0` for a tuple variant `Ident(&str)`. Variance is
-Rust's: `&T` covariant; `&mut T`, `Cell`, `RefCell`, `Shared` invariant.
+A struct or enum that holds references declares lifetimes for them,
+exactly as in Rust: `Ident(&'a str)` in `enum Token<'a>`, a field
+`lx: Lexer<'a>`. Variance is Rust's: `&T` covariant; `&mut T`, `Cell`,
+`RefCell`, `Shared` invariant.
 
 ```tide
-pub struct Lexer { src: &str, pos: usize }        // Rust: Lexer<'a> { src: &'a str, .. }
+pub struct Lexer<'a> { src: &'a str, pos: usize }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Token { Ident(&str), Int(&str), Punct(&str) }   // three origins, all bound together below
+pub enum Token<'a> { Ident(&'a str), Int(&'a str), Punct(&'a str) }
 
-impl Lexer {                                       // Rust: impl<'a> Lexer<'a>
-    pub fn new(src: &str) -> Lexer { Lexer { src, pos: 0 } }     // elision: from src
-    pub fn next_token(&mut self) -> Option<Token from self.src> { .. }
+impl<'a> Lexer<'a> {
+    pub fn new(src: &'a str) -> Self { Lexer { src, pos: 0 } }
+    pub fn next_token(&mut self) -> Option<Token<'a>> { .. }
 }
 
-impl Iterator for Lexer {
-    type Item = Token from Self.src;               // associated types name origins
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token<'a>;
     fn next(&mut self) -> Option<Self::Item> { self.next_token() }
 }
 
-fn two(text: &str) -> Option<(Token, Token)> {
+fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
     let mut lx = Lexer::new(text);
     let a = lx.next()?;
     let b = lx.next()?;                            // fine: `a` borrows text, not lx
@@ -273,49 +273,48 @@ fn two(text: &str) -> Option<(Token, Token)> {
 }
 ```
 
-- **Sharing an origin.** Fields get distinct origins by default. When one
-  field must hold data borrowed from another's origin, write `from` on the
-  field: `struct Collector { src: &str, out: &mut Vec<&str from src> }`
-  (Rust: `<'s, 'o>` with `&'o mut Vec<&'s str>`). In an enum,
-  `Int(&str from Ident.0)` (provisional).
-- **Impls.** `impl Lexer` is generic over `Lexer`'s origins. `Self.src`
-  names one of them. `-> Self` carries the impl's origins, so a constructor
-  `fn new(src: &str) -> Self` is an error: write `-> Lexer` (elision) or
-  `fn new(src: &str from Self.src) -> Self`. Builders return `-> &mut Self`.
+- **Several lifetimes.** Fields from different sources get different
+  names; one name means one shared lifetime:
+  `struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`.
+- **Impls.** `impl<'a> Lexer<'a>` is generic over the lifetime, and `Self`
+  is `Lexer<'a>`, so a constructor `fn new(src: &str) -> Self` is an error:
+  write `fn new(src: &'a str) -> Self`. Builders return `-> &mut Self`.
 
 ### 3.4 `'static`, `Owned`, and `dyn`
 
 - `'static` is kept: `&'static str`, string literals, consts.
-- `Owned` is a compiler-known auto trait: no borrowed origins (Rust's
-  `T: 'static`, accepted and rewritten to `T: Owned`). Work that outlives
-  the current function requires it: `spawn_isolated` (7.1), children of a
-  scope passed down (7.1), `Box<dyn Trait>` contents.
-- `dyn Trait` behind `&`/`&mut` borrows from the reference's origin, as in
-  Rust. Everywhere else (`Box`, `Rc`, `Arc`, fields, type arguments) it means
-  `dyn Trait + Owned`. Write `Box<dyn Trait from x>` for a borrowing object,
-  or `Box<dyn Fn(&Row) -> bool + '_>` in a field (one new origin).
+- `Owned` is a compiler-known auto trait: no borrowed lifetimes except
+  `'static` (Rust's `T: 'static`, accepted and rewritten to `T: Owned`).
+  Work that outlives the current function requires it: `spawn_isolated`
+  (7.1), children of a scope passed down (7.1), `Box<dyn Trait>` contents.
+- `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
+  `&'a mut` it is `dyn Trait + 'a`. Everywhere else (`Box`, `Rc`, `Arc`,
+  fields, type arguments) it means `dyn Trait + Owned`. Write
+  `Box<dyn Trait + 'a>` for a borrowing object, for example
+  `Box<dyn Fn(&Row) -> bool + 'a>` in a field of `struct Filter<'a>`.
 
 ### 3.5 Closures and returned `impl Trait`
 
 Inside a body, closures and iterator chains work as in Rust. A closure that
 captures a borrow is a borrowing value; it may be returned or stored only
-where its origins are named.
+where its lifetime is named.
 
-- A returned `impl Trait` borrows exactly what the elided positions in its
-  bounds name plus its `from` clause; with neither it is `Owned`. So
+- A returned `impl Trait` borrows exactly the lifetimes its bounds name,
+  elided or written, including `+ 'a`; with none it is `Owned`. So
   `fn adults(p: &[Person]) -> impl Iterator<Item = &Person>` needs nothing,
-  but `fn evens(xs: &[u32]) -> impl Iterator<Item = u32> from xs` and
-  `fn over(min: &u32) -> impl Fn(&Person) -> bool from min` must name the
-  borrow (`FX0204`, safe fix). This replaces Rust 2024's implicit capture
-  and `+ '_`.
+  but `fn evens(xs: &[u32]) -> impl Iterator<Item = u32> + '_` and
+  `fn over(min: &u32) -> impl Fn(&Person) -> bool + '_` must name the
+  borrow (`FX0204`, safe fix). This is Rust 2018's rule, not Rust 2024's
+  implicit capture.
 - Storing a closure in an `Owned` position (`Box<dyn Fn()>`,
   `spawn_isolated`) requires that it capture no borrows: `move` owned values
-  in (`clone()`, `to_string()`), or write `from` (`FX0203`).
+  in (`clone()`, `to_string()`), or write `+ 'a` (`FX0203`).
 
 ### 3.6 What is impossible, and what to write instead
 
 A struct cannot borrow from its own field (`FX0210`):
-`struct Doc { text: String, words: Vec<&str from text> }` is rejected.
+`struct Doc<'a> { text: String, words: Vec<&'a str> }` cannot be built with
+`words` borrowing its own `text`.
 
 | Need | Write |
 | --- | --- |
@@ -839,19 +838,19 @@ operation; authority-free code never suspends. Write blocking-style code.
 
 ```tide
 impl Tasks {
-    fn scope<T, E>(&self, body: impl FnOnce(Scope<E>) -> Result<T, E>) -> Result<T, E>
+    fn scope<'env, T, E>(&'env self, body: impl FnOnce(Scope<'_, 'env, E>) -> Result<T, E>) -> Result<T, E>
         where E: From<TaskError> + Send;
     fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + Owned) -> Result<T, Panicked>;
     fn limit(&self, n: usize) -> Tasks;               // attenuation: at most n live children
     fn shield<T>(&self, f: impl FnOnce() -> T) -> T;   // ignore enclosing cancellation
     fn checkpoint(&self) -> Result<(), Cancelled>;
 }
-impl<E> Scope<E> {                                    // Copy + Send + Sync: pass by value
-    fn spawn<U: Send>(self, f: impl FnOnce() -> Result<U, E> + Send) -> Task<U, E>;
+impl<'s, 'env, E> Scope<'s, 'env, E> {               // Copy + Send + Sync: pass by value
+    fn spawn<U: Send>(self, f: impl FnOnce() -> Result<U, E> + Send + 's) -> Task<'s, U, E>;
     fn set_deadline(self, at: Instant);
     fn cancel(self);
 }
-impl<U, E> Task<U, E> { fn join(self) -> Result<U, E>; }
+impl<U, E> Task<'_, U, E> { fn join(self) -> Result<U, E>; }
 pub enum TaskError { Cancelled, DeadlineExceeded }  // Debug, Clone, Copy, PartialEq, Eq, Error (provisional)
 pub struct Panicked { pub message: String }          // (provisional)
 ```
@@ -897,10 +896,10 @@ pub struct Panicked { pub message: String }          // (provisional)
   deadline passes starts the child once a slot frees; the child sees the
   cancellation at its first checkpoint, and `join` returns what it returns
   (provisional).
-- **A scope passed down** (`fn serve(bg: Scope<E>, ..)`) outlives the
-  function's locals, so its children must own their data (`move` with owned
-  values, `Owned`) or borrow what the signature ties to the scope
-  (`cfg: &Config from bg`).
+- **A scope passed down** (`fn serve<'s>(bg: Scope<'s, '_, E>, ..)`) outlives
+  the function's locals, so its children must own their data (`move` with
+  owned values, `Owned`) or borrow what the signature ties to the scope
+  (`cfg: &'s Config`).
 - The task, not the OS thread, is the isolation unit: values that never
   leave a task need not be `Send` (an `Rc` inside one task is fine).
 
@@ -1382,7 +1381,7 @@ only = ["crate::net::*"]         # no other module may declare Net
 | `tide eval '<expr>'` | Evaluate an expression against the package in the interpreter. |
 | `tide explain FX0201` | Explanation with a before/after example. |
 | `tide review <base>` | Trust diff (11). |
-| `tide fmt` | The one canonical format; rewrites legacy lifetime spellings to `from`. |
+| `tide fmt` | The one canonical format. |
 
 **Typed holes**: `todo!()` or `_?name` in expression position. `tide check`
 checks the rest and reports each hole's expected type, bindings in scope,
@@ -1392,13 +1391,11 @@ and candidate functions; use holes to build a function top-down.
 
 | Rust habit | Tide | Code |
 | --- | --- | --- |
-| `fn f<'a>(x: &'a str, y: &str) -> &'a str` | `fn f(x: &str, y: &str) -> &str from x` | accepted; `tide fmt` rewrites |
-| `struct P<'a> { s: &'a str }`, `impl<'a> P<'a>`, `P<'_>` | `struct P { s: &str }`, `impl P`, `P` | accepted; rewritten |
 | `T: 'static` | `T: Owned` | accepted; rewritten |
-| `'a: 'b`, `trait Foo<'a>`, `for<'a>` | a `from` clause, or restructure | `FX0201` |
-| `fn new(s: &str) -> Self` in a borrowing type's impl | `-> Lexer`, or `s: &str from Self.src` | error with both fixes |
-| `-> impl Iterator<Item = u32> + '_` | `-> impl Iterator<Item = u32> from xs` | `FX0204` safe |
-| `Box<dyn Fn()>` capturing a borrow | `Box<dyn Fn() from x>`, or move owned data in | `FX0203` |
+| `'a: 'b`, `trait Foo<'a>`, `for<'a>`, `+ use<..>` | one shared lifetime, a `+ 'a` bound, or restructure | `FX0201` |
+| `fn new(s: &str) -> Self` in `impl<'a> P<'a>` | `fn new(s: &'a str) -> Self` | error with fix |
+| `-> impl Iterator<Item = u32>` capturing a borrow (Rust 2024 capture) | `-> impl Iterator<Item = u32> + '_` | `FX0204` safe |
+| `Box<dyn Fn()>` capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `FX0203` |
 | Self-referential struct | indices, `Arena`, or owner and view apart | `FX0210` |
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
 | `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
@@ -1637,7 +1634,7 @@ generated directly rather than filtered.
 
 ## 16. Where the documents disagree
 
-The chapters are synchronized with 01 draft 3.3. These points remain open;
+The chapters are synchronized with 01 draft 3.4. These points remain open;
 this reference takes the reading shown.
 
 1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
@@ -1652,7 +1649,7 @@ this reference takes the reading shown.
 
 ## Appendix A. Later tiers (not in v0)
 
-From the tier table of 01 (draft 3.3). The chapters specify most of these.
+From the tier table of 01 (draft 3.4). The chapters specify most of these.
 
 **v1:**
 

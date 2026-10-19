@@ -1,6 +1,6 @@
 # Tide Memory: Ownership and Origins
 
-Status: draft 1, synchronized with draft 3.3. This chapter elaborates D2 of
+Status: draft 1, synchronized with draft 3.4. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
 definition the checker implements. Section 13 records the edits it asked of
 `01-design.md`.
@@ -119,7 +119,8 @@ Rust lifetime.
 - In a signature, origins are universally quantified: the caller chooses
   them. The body treats each signature origin as holding an unknown
   placeholder loan. It may rely on `σ ⊆ τ` between two signature origins only
-  when the signature implies it, through `from` or through well-formedness.
+  when the well-formedness of the signature's types implies it (§2.4 item 5);
+  Tide has no written `'a: 'b` bound.
 
 ### 2.2 Origins of a type and of a place
 
@@ -140,128 +141,105 @@ A reference lists only its outer origin. Well-formedness of `&ρ T` requires
 pointee borrows.
 
 **The origins of a place** are `orig(p) = orig(type of p)`: the loans held by
-the value stored at `p`. This is what a place means after `from`:
+the value stored at `p`. Diagnostics use them to say what a borrow came from.
 
-| Place in `from` | Type at the place | Denotes |
-| --- | --- | --- |
-| `x`, with `x: &Lexer` | `&ρ Lexer` | `ρ`: the borrow `x` holds, which covers everything reachable through it |
-| `self.src`, with `self: &mut Lexer` | `&σ str` | `σ`: the loans in the field, not the `&mut self` borrow |
-| `*words`, with `words: &[&str]` | `[&τ str]` | `τ`: the elements' origin |
-| `lx`, with `lx: Ctx` passed by value | `Ctx` | all of `Ctx`'s origins |
+### 2.3 Lifetime syntax
 
-### 2.3 Grammar of `from`
-
-`from` is a contextual keyword. It is recognized after a type in signatures
-(parameter types, return types and where clauses), in field declarations, in
-`dyn` and `impl` types, in associated-type definitions, and in type
-annotations in a body.
+Tide's lifetime syntax is Rust's, restricted to the forms that name an origin
+of a parameter, a field, or a result:
 
 ```
-TypeFrom   ::= Type 'from' Origins
-Origins    ::= Origin
-             | '(' Origin (',' Origin)+ ')'               several origins
-             | '{' Name ':' Origins (',' Name ':' Origins)* '}'   per-origin binding
-ReturnType ::= Type ['from' Origin (',' Origin)*]         a bare list only here
-Origin     ::= "'static" | Place | ('*')* 'Self' ('.' Field)+
-Place      ::= ('*')* Root ('.' Field)*
-Root       ::= a parameter name | 'self' | a sibling field (field declarations, §3.3)
+Lifetime     ::= "'" Ident | "'_" | "'static"
+Generics     ::= '<' Lifetime (',' Lifetime)* [',' TypeParam (',' TypeParam)*] '>'
+                                   on fn, struct, enum, impl; never on a trait
+RefType      ::= '&' [Lifetime] ['mut'] Type
+PathType     ::= Path ['<' Lifetime (',' Lifetime)* [',' Type (',' Type)*] '>']
+Bound        ::= TraitBound | Lifetime            in `T: ..`, `impl ..`, `dyn ..`
 ```
 
-- `from` binds more loosely than `&`, `&mut` and `dyn`, so `&str from a` is
-  `(&str) from a`. It applies to **every elided origin position** in the type
-  it follows. Use parentheses to target an inner one:
-  `&mut (&str from value)`.
-- A bare list `from a, b` is allowed only at the end of a return type. In
-  every other position, several origins are parenthesized:
-  `Vec<&str from (a, b)>`.
-- A place auto-dereferences like a field-access expression. It cannot contain
-  method calls or indexing.
-- `Self.f` names the origin of field `f` of the impl's `Self` type (§3.5).
-- It is an error if `orig(P)` is empty. For `from self.pos` with
-  `pos: usize`, the fix is `from self`, which covers a borrow of the field. A
-  `from` may not name the parameter whose own type contains it.
+- A lifetime parameter is declared on the item that uses it: `fn f<'a, T>`,
+  `struct S<'a>`, `enum E<'a>`, `impl<'a> S<'a>`,
+  `impl<'a> Iterator for S<'a>`. Each names one origin.
+- `'_` is an elided lifetime (§2.5). A borrowing type written without its
+  lifetime arguments (`Lexer` for `Lexer<'_>`) elides them, as in Rust.
+- A lifetime used as a bound (`T: 'a`, `T: Trait + 'a`, `impl Trait + 'a`,
+  `dyn Trait + 'a`) is a type-outlives bound (§2.4 item 3).
+- **Not accepted** (`FX0201`, with a suggested rewrite): written
+  lifetime-outlives bounds (`'a: 'b`, `<'a, 'b: 'a>`), lifetime parameters
+  on traits (`trait Parse<'a>`), explicit `for<'a>` (higher-ranked lifetimes
+  come only from `Fn` sugar, §5.4), `+ use<..>` (§5.2), and generic
+  associated types (`type Item<'a>`, D4). `T: 'static` is accepted and
+  rewritten to `T: Owned` (§3.7).
 
-### 2.4 What `from` means in each position
+### 2.4 What a named lifetime means in each position
 
-Every position reads the same way: the value at this position borrows from
-`P`. How that is enforced depends on who produces the value.
+A signature's lifetime parameters are universally quantified origins
+(§2.1): the caller chooses them. Every use of one name denotes the same
+origin, and variance (§4) decides what that asks of the caller, as in Rust.
 
-1. **Output positions** are return types and annotations in a body. When `P`
-   denotes exactly one origin, the affected positions **are** that origin, as
-   for parameter types (item 2); in Rust this reuses `P`'s lifetime. At a
-   covariant position this equals inclusion; at an invariant position, such
-   as the elements in `-> &mut Vec<&str from Self.lx.src>` (Rust's
-   `&mut Vec<&'a str>`), it is the only reading a body can satisfy. A union
-   `from P1, …, Pn` gets an origin `ρ` with `σ ⊆ ρ` for every `σ` in
-   `orig(P1) ∪ … ∪ orig(Pn)`: the value may carry any loan of `P1` to `Pn`. In
-   Rust this is a fresh `'r` with `'p: 'r`. A union at an invariant position
-   is an error whose diagnostic offers each single origin. In a closure
-   bound's argument type, `from P` is always an inclusion and the origin stays
-   higher-ranked (§5.4).
-2. **Parameter types.** The affected positions **are** the origin of `P`,
-   which must denote exactly one origin. In Rust this reuses `P`'s lifetime
-   parameter. Arguments are coerced at the call site, so at a covariant
-   position this means "the argument outlives `P`'s origin", and at an
-   invariant position it means "is exactly `P`'s origin".
-3. **Type-parameter parameters** (`f: F from P`, or `impl Trait from P`)
-   impose `F: 'p` for each `p` in `orig(P)`. For an `Fn*` bound this also
-   covers its output type. In Rust: `F: 'p, F::Output: 'p`.
-4. **Field types.** The affected positions share the named sibling's origin
-   (§3.3), which must denote exactly one origin.
-5. **Per-origin binding** (`Match from { needle: a, line: b }`) applies the
-   rule for the position to each named origin of the type separately. Origins
-   it does not name stay elided.
+1. **Parameter types.** At a covariant position, the argument must carry no
+   loan outside the origin; at an invariant position, its origin must be
+   exactly the origin.
+2. **Output positions** are return types and annotations in a body. A result
+   that may borrow from several inputs names one lifetime on all of them:
+   `fn longest<'a>(a: &'a str, b: &'a str) -> &'a str`. At the call, both
+   arguments coerce to a common origin that carries the loans of each. If
+   one of those inputs sits at an invariant position (the elements of
+   `&mut Vec<&'a str>`), that coercion is unavailable, and without a written
+   `'a: 'r` such a signature must be restructured (D2's accepted cost).
+3. **Type-outlives bounds** (`F: 'a`, `impl Fn() + 'a`, `dyn Trait + 'a`)
+   require `σ ⊆ ρa` for every `σ` in `orig(F)`. For an `Fn*` bound this also
+   covers its output type: in Rust, `F: 'a, F::Output: 'a`.
+4. **Field types.** Each use of a struct's lifetime parameter in a field type
+   is that origin; fields that use one name share it (§3.3).
+5. **Implied relations.** The well-formedness of parameter and return types
+   implies relations between their lifetimes, as in Rust (RFC 2093):
+   `&'m BTreeMap<K, Vec<&'t str>>` implies `ρt ⊆ ρm`, so a result
+   `&'m [&'t str]` needs no bound. Only written `'a: 'b` is rejected.
 
 ### 2.5 Elision
 
 Elision follows Rust's rules exactly.
 
-- **Inputs.** Each elided origin position in the parameter types is a
-  distinct origin. Elided positions are `&T` and `&mut T` without `from`,
-  each origin of a borrowing type written without `from` (Rust's `S<'_>`),
-  and `dyn Trait + '_` or `impl Trait + '_`. Origins hidden inside type
-  parameters are never counted.
-- **Rule 1.** If the parameters use exactly one origin (counted after `from`
-  identifications), every elided output position gets it.
+- **Inputs.** Each elided lifetime in the parameter types is a distinct
+  origin. Elided positions are `&T` and `&mut T` without a lifetime, `'_`,
+  each lifetime of a borrowing type written without lifetime arguments
+  (`Lexer` as `Lexer<'_>`), and `dyn Trait + '_` or `impl Trait + '_`.
+  Origins hidden inside type parameters are never counted.
+- **Rule 1.** If the parameters use exactly one origin, elided or named,
+  every elided output position gets it.
 - **Rule 2.** If the receiver is `&self` or `&mut self`, every elided output
   position gets the receiver reference's origin.
-- **Otherwise** an elided output origin is an error. The fix lists the
-  candidate `from` clauses and `&'static`.
+- **Otherwise** an elided output lifetime is an error (`FX0202`). The fix
+  lists the candidate named lifetimes and `'static`.
 - **Closure-bound sugar.** Inside `Fn(&A) -> &B`, the same rules apply, and
   the argument origins are higher-ranked.
-- **Consts and statics.** Elided origins are `'static`.
-- **Fields.** Each elided position is a new origin of the struct (§3.1).
-- **Associated types in impls** have no elision, as in Rust. Write
-  `from Self.f`.
+- **Consts and statics.** Elided lifetimes are `'static`.
+- **Fields** have no elision: a reference field uses a lifetime parameter of
+  its struct (§3.1) or `'static`.
+- **Associated types in impls** have no elision, as in Rust. Write the impl's
+  lifetime: `type Item = &'a str`.
 - **Default `dyn` bounds** are in §5.1.
 
-### 2.6 Legacy lifetime spelling
+### 2.6 Relation to Rust lifetimes
 
-D1 accepts Rust named lifetimes that map exactly onto origins, and the
-formatter rewrites them. A lifetime `'a` maps exactly when each use can be
-rewritten as follows:
+Every signature Tide accepts is a Rust signature with the same meaning, so
+§11's translation is the identity on lifetimes. The forms Rust has and Tide
+rejects (§2.3) are those whose meaning is not an origin of a parameter, a
+field, or a result: declared relations between two signature origins,
+lifetimes on traits, explicit higher-ranked binders, precise-capture lists,
+and lifetime-generic associated types.
 
-- a later parameter use becomes `from` the first place that carries `'a`;
-- a return-type use becomes `from` every place that carries `'a`: one place
-  identifies the position with it (§2.4), several form a union;
-- a struct use becomes `from` the first field that carries `'a`;
-- an impl use becomes `Self.f`, where `f` is the field that introduces `'a`;
-- `F: 'a` becomes `f: F from <place>`.
-
-The result accepts every body the Rust signature accepts: `-> &mut Vec<&'a
-str>` with `'a` carried by `self.lx.src` becomes the identification `from
-Self.lx.src`, and a shared `'a` over two inputs and a covariant output
-becomes the union `from a, b`, which is at least as general. These are
-rejected, with suggested origins: outlives bounds beyond what well-formedness
-implies, explicit `for<'a>`, lifetime parameters on traits, lifetimes that no
-parameter or field carries, and an `'a` carried by several inputs that also
-appears at an invariant output position.
+Draft 3 spelled origins with `from` clauses that named places
+(`fn next(&mut self) -> Option<&str from self.src>`, `struct Lexer { src:
+&str }`). The held-out trial in `trials/e1-origins/` found no correctness
+difference between the two spellings, and D1 keeps Rust's (D2).
 
 ### 2.7 Modular checking
 
 - **Interfaces.** A module's interface artifact (D12) records each
-  signature's origin positions, identifications, inclusions, implied bounds
-  and field-borrow sets (§7). For each public type it records the named
+  signature's lifetimes and their uses, type-outlives bounds, implied
+  relations and field-borrow sets (§7). For each public type it records the named
   origins with their variances, the auto traits (`Owned`, `Send`, `Sync`,
   `Pure`, and in v1 `ThreadBound`) and a drop-check summary. A change to any of these is an
   API change and appears in the trust diff.
@@ -272,7 +250,7 @@ appears at an invariant output position.
 - **Bodies.** Signature origins are placeholders, and they are live at every
   point of the body. Implied bounds come from the well-formedness of the
   parameter and return types. Any other inclusion the body needs between
-  placeholders is an error, which names the `from` clause to add.
+  placeholders is an error, which names the lifetime to add or share.
 - **A local loan reaching a placeholder origin** (a returned reference to a
   local) conflicts with the local's storage death: "returns a value borrowed
   from local `x`".
@@ -293,88 +271,67 @@ definition.
 
 ## 3. Borrowing types
 
-### 3.1 Origin parameters
+### 3.1 Lifetime parameters
 
-A struct or enum has one origin parameter for each origin position in its
-field types that `from` or `'static` does not fix. The positions are:
+A struct or enum declares its lifetime parameters as in Rust, and each names
+one origin of the type. Every reference, borrowing type, and `dyn Trait`
+object bound in a field type uses a declared lifetime or `'static`.
 
-- each `&` and `&mut`;
-- each origin of a borrowing type used as a field type (a field `lx: Lexer`
-  contributes `Lexer`'s origin);
-- each `dyn Trait + '_` object bound.
-
-Two further rules apply:
-
-- Origins carried by the type's own type parameters are not origin
+- Origins carried by the type's own type parameters are not lifetime
   parameters. They ride with the type arguments (§3.4).
-- A recursive occurrence of the type being declared, or of a type in its
-  recursive group, reuses the declaration's own origins. `struct Node { val:
-  i32, next: Option<&Node> }` has one origin, `next`, which is Rust's
-  `Node<'a> { next: Option<&'a Node<'a>> }`.
+- A recursive occurrence reuses the declaration's lifetimes, as in Rust:
+  `struct Node<'a> { val: i32, next: Option<&'a Node<'a>> }`.
 
-A type is a **borrowing type** if it has an origin parameter or a type
+A type is a **borrowing type** if it has a lifetime parameter or a type
 argument with origins. Otherwise it is `Owned`.
 
 ### 3.2 Names
 
-An origin is named by the path to its position:
-
-| Field | Origin names |
-| --- | --- |
-| `src: &str` | `src` |
-| `words: Vec<&str>` | `words` |
-| `out: &mut Vec<&str>` | `out` (the outer borrow), `*out` (the elements) |
-| `lx: Lexer` | `lx.src` |
-| `pair: (&str, &str)` | `pair.0`, `pair.1` |
-| variant `Ident(&str)` | `Ident.0` |
-
-When one path holds several origins, as in `m: HashMap<&str, &str>`,
-diagnostics add the position (`m` key, `m` value), and `from m` names both.
-Signatures name places (§2.2); origin names appear in diagnostics.
+An origin is named by its lifetime parameter: `'a` in `struct Lexer<'a>`.
+Diagnostics add the fields that carry it ("`'a`, carried by `src`").
 
 ### 3.3 Sharing an origin
 
-A field declared `b: &str from a` uses `a`'s origin, so the struct has one
-origin where it would otherwise have two. The named place may be any sibling
-path that holds exactly one origin: `from lx.src`, `from *out`. Order does not
-matter, and mutual references collapse into one origin.
+Fields that use one lifetime name share its origin; fields from different
+sources take different names:
 
 ```tide
-struct Collector { src: &str, out: &mut Vec<&str from src> }   // origins: src, out
+struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }   // origins: 's, 'o
 ```
 
-Rust: `struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }`.
+Writing one name for a `&mut` borrow and for the data behind it
+(`out: &'a mut Vec<&'a str>`) is accepted and means what it means in Rust:
+the mutable borrow then lasts as long as the data, which usually fails at
+the caller. Elision never produces it (§4.3).
 
 ### 3.4 Origins from type arguments
 
 `orig(Vec<&str>) = orig(&str)`: a container borrows what its elements borrow.
-`struct Tagged<T> { value: T, tag: &str }` has its own origin, `tag`, plus
-`orig(T)`. A field `r: &T` implies `orig(T) ⊆ r` (Rust infers `T: 'r`, RFC
-2093).
+`struct Tagged<'t, T> { value: T, tag: &'t str }` has its own origin, `'t`,
+plus `orig(T)`. A field `r: &'r T` implies `σ ⊆ ρr` for every `σ` in
+`orig(T)` (Rust infers `T: 'r`, RFC 2093).
 
 ### 3.5 Impls and `Self`
 
-`impl Lexer { … }` is implicitly generic over `Lexer`'s origins, like Rust's
-`impl<'src> Lexer<'src>`. `Self` denotes `Lexer` with exactly those origins.
+`impl<'a> Lexer<'a> { … }` is generic over `Lexer`'s origin, and `Self`
+denotes `Lexer<'a>`.
 
-- `Self.src` names the impl's origin. In a method that has a receiver, the
-  place `self.src` denotes the same origin.
-- `-> Self` carries the impl's origins. `-> Lexer` is an elided type, and the
-  elision rules resolve its origin.
-- Associated types must name their origins:
-  `type Item = &str from Self.src`.
+- `-> Self` carries `'a`. `-> Lexer` (or `Lexer<'_>`) is an elided type, and
+  the elision rules resolve its origin.
+- A method returns a borrow of what the value holds, not of the receiver,
+  with the impl's lifetime: `fn next_word(&mut self) -> Option<&'a str>`.
+- Associated types name the impl's lifetimes: `type Item = &'a str`.
 
 ### 3.6 Constructing and returning borrowing types
 
 - In a body, origins are inferred: in `Lexer { src: text, pos: 0 }`,
   `text`'s origin flows into `src`.
-- `fn lex(text: &str) -> Lexer`: by rule 1, `Lexer`'s origin is `text`'s.
-- In an impl, a constructor is written `fn new(src: &str) -> Lexer` (elision)
-  or `fn new(src: &str from Self.src) -> Self` (identification). Rust users
-  write `fn new(src: &'a str) -> Self`. Writing `fn new(src: &str) -> Self`
-  is an error, with both fixes offered.
-- A returned type with several origins takes either a union (`-> Match from
-  a, b`) or a per-origin binding (`-> Match from { needle: a, line: b }`).
+- `fn lex(text: &str) -> Lexer<'_>`: by rule 1, `Lexer`'s origin is
+  `text`'s.
+- In an impl, a constructor is written `fn new(src: &'a str) -> Self`.
+  `fn new(src: &str) -> Self` is an error whose fix names `'a`.
+- A returned type with several origins names each one:
+  `-> Match<'n, 'l>` (§10.7).
 
 ### 3.7 `Owned` and `'static`
 
@@ -447,7 +404,7 @@ unstated. Both readings fail (`reviews/round1-soundness.md` B1):
   `let r: &mut Vec<&str> = &mut names; r.push(&tmp);` stores a reference to a
   dying local into `names`.
 
-With one origin per position and Rust's variances, `&mut Vec<&str>` has two
+With Rust's lifetimes and variances, an elided `&mut Vec<&str>` has two
 origins: a covariant outer one and an invariant element one. The borrow of
 the `Vec` can end while its elements' origin lives on.
 
@@ -465,12 +422,12 @@ detail:
   locals depend on it.
 - **Everywhere else**, including `Box`, `Rc`, `Arc`, fields, type arguments
   and annotations on `let`, `dyn Trait` is `dyn Trait + Owned`.
-- `dyn Trait from P` borrows from `P` (§2.4).
-- `dyn Trait + '_` is an elided origin: in signatures it follows the elision
-  rules, and in a field it is a new origin named by the field.
+- `dyn Trait + 'a` borrows from `'a` (§2.4 item 3).
+- `dyn Trait + '_` is an elided origin and follows the elision rules. A
+  field names a declared lifetime: `Box<dyn Fn(&Row) -> bool + 'p>`.
 - `dyn Trait + 'static` is `Owned`.
-- Rust's rule for containers with declared `T: 'a` bounds does not arise;
-  those positions default to `Owned`, which is stricter.
+- Rust's object-lifetime default taken from a container's `T: 'a` bound
+  does not apply; those positions default to `Owned`, which is stricter.
 - A `dyn` type has no auto traits unless it names them:
   `dyn Fn() + Send + Pure`.
 
@@ -478,12 +435,12 @@ detail:
 
 - **Argument position.** `impl Trait` is an anonymous type parameter, as in
   Rust.
-- **Return position.** The opaque type's origins are exactly those its
-  `from` clause names plus the elided positions inside its bounds; with
-  neither, it is `Owned`. `fn iter(&self) -> impl Iterator<Item = &u32>`
-  captures `self` through the elided `&u32`, while
-  `fn evens(xs: &[u32]) -> impl Iterator<Item = u32> from xs` must name `xs`,
-  which Rust 2024 captures implicitly.
+- **Return position.** The opaque type's origins are exactly the lifetimes
+  its bounds name, elided or written, including `+ 'a`; with none, it is
+  `Owned`. This is Rust 2018's rule; `+ use<..>` is not accepted (§2.3).
+  `fn iter(&self) -> impl Iterator<Item = &u32>` captures `self` through the
+  elided `&u32`, while `fn evens(xs: &[u32]) -> impl Iterator<Item = u32> +
+  '_` must name `xs`'s origin, which Rust 2024 captures implicitly.
 - **Type parameters** are captured as in Rust.
 - **Auto traits** of an opaque type are only those its bounds state. Rust's
   auto-trait leakage would make dependents depend on the function's body,
@@ -498,8 +455,8 @@ detail:
   locally, passed as an argument, or stored inside a borrowing type such as
   `Map<I, F>`.
 - It may be returned, or stored in a field, only where its origins are named:
-  `-> impl Fn() -> usize from xs`, `-> Box<dyn Fn() from xs>`,
-  `pred: Box<dyn Fn(&Row) -> bool + '_>`, or a field whose type is a type
+  `-> impl Fn() -> usize + '_`, `-> Box<dyn Fn() + 'a>`, a field
+  `pred: Box<dyn Fn(&Row) -> bool + 'p>`, or a field whose type is a type
   parameter.
 - `move` changes the capture mode, not whether the closure borrows. A `move`
   closure that captures a `&str` still carries that string's origin. A
@@ -517,9 +474,11 @@ detail:
 - A closure literal takes its signature from its expected type. If a closure
   returns a borrow of its argument and has no expected type, that is an
   error. The fix annotates the closure's parameter and return types.
-- `from P` in a closure bound's argument type keeps the origin higher-ranked
-  with a lower bound: the closure must work for every `ρ` with
-  `orig(P) ⊆ ρ`. Scoped tasks use this (§8.2).
+- A higher-ranked origin gets a lower bound only through the
+  well-formedness of the argument type that carries it: in
+  `FnOnce(Scope<'_, 'env, E>)`, `Scope`'s fields imply `ρenv ⊆ ρs`, so the
+  closure must work for every `ρs` that carries the loans of `'env`.
+  Scoped tasks use this (§8.2), as Rust's `std::thread::scope` does.
 - When a function item is coerced to a `fn` pointer type, the bounds implied
   by its signature are checked again at the target instantiation. This closes
   the class of rustc bug rust-lang/rust#25860, where implied bounds are lost
@@ -576,7 +535,7 @@ of these fields, with compatible modes.
 autoderef as usual: `(*x).pos` when `x: &mut T`.
 
 **Elision.** For rule 2, the receiver counts as one borrow whose origin is the
-union of its field borrows. `from self.f` keeps its meaning from §2.2.
+union of its field borrows. The impl's named lifetimes keep their meaning.
 
 **API stability.**
 
@@ -613,8 +572,8 @@ structurally, as in Rust:
 | `Arc<T>` | if `T: Send + Sync` | if `T: Send + Sync` |
 | `Shared<T>` | yes | yes |
 | `Sender<T>`, `SyncSender<T>`; `Receiver<T>` | if `T: Send` | senders if `T: Send`; `Receiver` no |
-| `Task<U, E>` | if `U, E: Send` | if `U, E: Send` |
-| capabilities, `Scope<E>`, atomics | yes | yes |
+| `Task<'s, U, E>` | if `U, E: Send` | if `U, E: Send` |
+| capabilities, `Scope<'s, 'env, E>`, atomics | yes | yes |
 
 `unsafe impl Send` is allowed in packages granted `unsafe`, and each one is a
 trust hole.
@@ -655,45 +614,47 @@ The names and failure semantics are those of `03-authority-concurrency.md`
 
 ```tide
 impl Tasks {
-    pub fn scope<T, E, F>(&self, body: F) -> Result<T, E>
-        where E: From<TaskError> + Send, F: FnOnce(Scope<E> from self) -> Result<T, E>;
+    pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
+        where E: From<TaskError> + Send, F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>;
     pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
         where F: FnOnce() -> T + Send + Owned;
 }
-impl<E> Scope<E> {                            // Copy; one invariant origin σ
-    pub fn spawn<U: Send, F>(self, f: F from self) -> Task<U, E>
-        where F: FnOnce() -> Result<U, E> + Send;
+impl<'s, 'env, E> Scope<'s, 'env, E> {        // Copy; 's invariant; fields imply 'env: 's
+    pub fn spawn<U: Send, F>(self, f: F) -> Task<'s, U, E>
+        where F: FnOnce() -> Result<U, E> + Send + 's;
 }
 ```
 
-- **`Scope`** is a `Copy` handle with one origin `σ`, the scope's origin.
-  Inside `body`, `σ` is higher-ranked with `orig(self) ⊆ σ` (§5.4): `body`
-  must work for every `σ` that carries the loans of the `&Tasks` borrow.
-  Because the caller chooses that borrow, children can borrow anything that
-  outlives the `scope` call.
-- **`f: F from self`** imposes `F: σ` and `U: σ`. Everything a child borrows
-  stays borrowed until the scope ends:
+- **`Scope<'s, 'env, E>`** is a `Copy` handle. `'s`, written `σ` below, is
+  the scope's origin; `'env` is the `&Tasks` borrow. `Scope`'s fields imply
+  `ρenv ⊆ σ`, and the elided `'_` in `body`'s argument makes `σ`
+  higher-ranked (§5.4): `body` must work for every `σ` that carries the
+  loans of the `&Tasks` borrow. Because the caller chooses that borrow,
+  children can borrow anything that outlives the `scope` call.
+- **`F: .. + 's`** imposes `F: σ`, and `U: σ` through the closure's output.
+  Everything a child borrows stays borrowed until the scope ends:
   - inside the body, `σ` is a placeholder, so it is live at every point;
   - scope exit joins every child and cannot be cancelled (D8);
   - no guard object exists, so `mem::forget` has nothing to skip.
 
   The parent body therefore cannot mutate, move or free a place that a child
   borrows.
-- **`Task<U, E>`** has origin `σ` (rule 1, from `self: Scope<E>`). Because `σ`
-  is higher-ranked, neither a `Scope` nor a `Task` can escape through `T`.
+- **`Task<'s, U, E>`** has origin `σ`. Because `σ` is higher-ranked, neither
+  a `Scope` nor a `Task` can escape through `T`.
 - **`spawn_isolated`** takes an `Owned` closure, so it borrows nothing from
   the caller and has no origin to check.
 - **Grandchildren.** A child may capture the `Scope` (`Scope: σ` holds).
   `σ` is invariant, so it cannot shrink to admit shorter borrows.
-- **A scope passed down** (`fn serve(bg: Scope<E>, conn: Conn)`) is a signature
-  origin in `serve`. A child spawned there must outlive it. That means it
-  owns its data, or it borrows what the signature ties to the scope, as in
-  `cfg: &Config from bg`. This is the precise form of D2's "tasks spawned
-  into a long-lived scope capture `Owned` values": a function's own locals
-  never outlive a scope it received, so its children cannot borrow them.
+- **A scope passed down** (`fn serve(bg: Scope<'_, '_, E>, conn: Conn)`)
+  carries a signature origin in `serve`. A child spawned there must outlive
+  it. That means it owns its data, or it borrows what the signature ties to
+  the scope, as in `fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`.
+  This is the precise form of D2's "tasks spawned into a long-lived scope
+  capture `Owned` values": a function's own locals never outlive a scope it
+  received, so its children cannot borrow them.
 
-Translation: the shape of `std::thread::scope`, with `'env` taken to be the
-`&Tasks` borrow. `Scope` maps to `&'σ std::thread::Scope<'σ, 'env>`.
+Translation: `std::thread::scope`, with `'env` taken to be the `&Tasks`
+borrow. `Scope<'s, 'env, E>` maps to `&'s std::thread::Scope<'s, 'env>`.
 
 ### 8.3 Child failure
 
@@ -799,7 +760,7 @@ These are **not `Pure`**:
 - the capability types `Root`, `Fs`, `Net`, `Clock`, `Rand`, `Env`, `Stdin`,
   `Proc`, `Tasks` and `Accel`, and their attenuated forms;
 - the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
-  `Receiver<T>`, `Scope<E>`, `Task<U, E>`, `Arc<T>`, `sync::Weak<T>` and
+  `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>` and
   every atomic type;
 - the foreign handles: raw pointers, `extern` types and foreign function
   pointers;
@@ -850,7 +811,9 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 
 ## 10. Worked examples
 
-Each example shows Tide, the Rust it corresponds to, and the verdict.
+Tide's lifetime spelling is Rust's (§2.6), so each example is also the Rust
+program, except where a `rust` block shows a difference. Each verdict
+matches rustc's.
 
 ### 10.1 Iterators over a `Vec`
 
@@ -868,22 +831,17 @@ fn adults(people: &[Person], min_age: u32) -> impl Iterator<Item = &Person> {
 }
 
 // std
-pub struct Iter<T> { rest: &[T] }
-impl<T> Iterator for Iter<T> {
-    type Item = &T from Self.rest;
+pub struct Iter<'a, T> { rest: &'a [T] }
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
     fn next(&mut self) -> Option<Self::Item> { … }
 }
 ```
 
-```rust
-fn names_over(people: &[Person], min: u32) -> Vec<&str> { /* same */ }
-fn adults(people: &[Person], min_age: u32) -> impl Iterator<Item = &Person> + '_ { /* same */ }
-impl<'a, T> Iterator for Iter<'a, T> { type Item = &'a T; /* … */ }
-```
-
 **Accepted.** By rule 1, every elided `&` in a result gets `people`'s origin,
-and `adults` captures `people` through `Item`. Without `move`, its closure
-would borrow `min_age` and be rejected, as in Rust.
+and `adults` captures `people` through `Item`, which its bound names
+(§5.2). Without `move`, its closure would borrow `min_age` and be rejected,
+as in Rust.
 
 ### 10.2 `HashMap` get and entry
 
@@ -896,32 +854,28 @@ fn count_words(text: &str) -> HashMap<&str, usize> {
     counts
 }
 
-fn add_word(counts: &mut HashMap<&str from w, usize>, w: &str) {
+fn add_word<'w>(counts: &mut HashMap<&'w str, usize>, w: &'w str) {
     *counts.entry(w).or_insert(0) += 1;
 }
 
 impl Index {
     fn get(&self, key: &str) -> Option<&Entry> { self.map.get(key) }
 }
-fn find(cache: &HashMap<String, Entry>, key: &str) -> Option<&Entry> from cache {
+fn find<'c>(cache: &'c HashMap<String, Entry>, key: &str) -> Option<&'c Entry> {
     cache.get(key)
 }
 ```
 
-```rust
-fn add_word<'w>(counts: &mut HashMap<&'w str, usize>, w: &'w str) { /* same */ }
-fn find<'c>(cache: &'c HashMap<String, Entry>, key: &str) -> Option<&'c Entry> { /* same */ }
-```
-
-**Accepted.** `entry(&mut self, k: K) -> Entry<K, V>` and
-`Entry::or_insert(self, v: V) -> &mut V` elide as in Rust. `Entry` has one
-origin of its own; the origins of `K` and `V` are not counted.
+**Accepted.** `entry(&mut self, k: K) -> Entry<'_, K, V>` and
+`Entry::or_insert(self, v: V) -> &'a mut V` elide or name as in Rust.
+`Entry` has one origin of its own; the origins of `K` and `V` are not
+counted.
 
 **Rejected in v1**, as in stable Rust, is the conditional return of a lookup
 (NLL problem case #3):
 
 ```tide
-fn get_default(map: &mut HashMap<String, String>, k: &str) -> &mut String from map {
+fn get_default<'m>(map: &'m mut HashMap<String, String>, k: &str) -> &'m mut String {
     if let Some(v) = map.get_mut(k) { return v; }   // error: `*map` still mutably borrowed
     map.insert(k.to_string(), String::new());
     map.get_mut(k).unwrap()
@@ -933,15 +887,15 @@ The idiom is `map.entry(k.to_string()).or_default()`.
 ### 10.3 A lexer holding `&str`
 
 ```tide
-pub struct Lexer { src: &str, pos: usize }
+pub struct Lexer<'a> { src: &'a str, pos: usize }
 
-impl Lexer {
-    pub fn new(src: &str) -> Lexer { Lexer { src, pos: 0 } }
-    pub fn next_word(&mut self) -> Option<&str from self.src> { … }
+impl<'a> Lexer<'a> {
+    pub fn new(src: &'a str) -> Self { Lexer { src, pos: 0 } }
+    pub fn next_word(&mut self) -> Option<&'a str> { … }
 }
 
-impl Iterator for Lexer {
-    type Item = &str from Self.src;
+impl<'a> Iterator for Lexer<'a> {
+    type Item = &'a str;
     fn next(&mut self) -> Option<Self::Item> { self.next_word() }
 }
 
@@ -953,45 +907,29 @@ fn first_two(text: &str) -> (Option<&str>, Option<&str>) {
 }
 ```
 
-```rust
-struct Lexer<'a> { src: &'a str, pos: usize }
-impl<'a> Lexer<'a> {
-    fn new(src: &'a str) -> Self { /* … */ }
-    fn next_word(&mut self) -> Option<&'a str> { /* … */ }
-}
-impl<'a> Iterator for Lexer<'a> { type Item = &'a str; /* … */ }
-```
-
-**Accepted.** Without `from self.src`, rule 2 ties the token to the
+**Accepted.** With an elided `-> Option<&str>`, rule 2 ties the token to the
 `&mut self` borrow, and the second call is rejected (Rust behaves the same).
-The diagnostic suggests `from self.src`.
+The diagnostic suggests `&'a str`.
 
 ### 10.4 A parser returning slices of its input
 
 ```tide
-pub struct Parser { lx: Lexer, peeked: Option<&str from lx.src> }   // one origin: lx.src
+pub struct Parser<'a> { lx: Lexer<'a>, peeked: Option<&'a str> }   // one origin: 'a
 
-impl Parser {
-    pub fn new(text: &str) -> Parser { Parser { lx: Lexer::new(text), peeked: None } }
+impl<'a> Parser<'a> {
+    pub fn new(text: &'a str) -> Self { Parser { lx: Lexer::new(text), peeked: None } }
 
-    fn peek(&mut self) -> Option<&str from self.lx.src> {
+    fn peek(&mut self) -> Option<&'a str> {
         if self.peeked.is_none() { self.peeked = self.lx.next_word(); }
         self.peeked
     }
 
-    pub fn pair(&mut self) -> Result<(&str, &str) from self.lx.src, ParseError> { … }
+    pub fn pair(&mut self) -> Result<(&'a str, &'a str), ParseError> { … }
 }
 
 pub fn split_header(line: &str) -> Option<(&str, &str)> {
     let (k, v) = line.split_once(':')?;
     Some((k.trim(), v.trim()))
-}
-```
-
-```rust
-struct Parser<'a> { lx: Lexer<'a>, peeked: Option<&'a str> }
-impl<'a> Parser<'a> {
-    fn pair(&mut self) -> Result<(&'a str, &'a str), ParseError> { /* … */ }
 }
 ```
 
@@ -1015,35 +953,29 @@ impl Request {
     }
 }
 
-pub struct ArgList { args: Vec<&str> }
-impl ArgList {
-    pub fn arg(&mut self, a: &str from self.args) -> &mut Self {
+pub struct ArgList<'a> { args: Vec<&'a str> }
+impl<'a> ArgList<'a> {
+    pub fn arg(&mut self, a: &'a str) -> &mut Self {
         self.args.push(a);
         self
     }
 }
 ```
 
-```rust
-impl<'a> ArgList<'a> {
-    fn arg(&mut self, a: &'a str) -> &mut Self { self.args.push(a); self }
-}
-```
-
-**Accepted.** `ArgList::arg` needs `from self.args`. Without it, `a` has its
-own origin and the push is rejected ("`a` must outlive the elements of
-`self.args`"). Write `-> &mut Self`. Writing `-> &mut ArgList` would give the
-inner origin to the `&mut self` borrow by rule 2, as `ArgList<'_>` does in
-Rust, and the body would be rejected.
+**Accepted.** `ArgList::arg` needs the impl's `'a` on `a`. With an elided
+`a: &str`, `a` has its own origin and the push is rejected ("`a` must
+outlive `'a`"). Write `-> &mut Self`. Writing `-> &mut ArgList<'_>` would
+give the inner lifetime to the `&mut self` borrow by rule 2, and the body
+would be rejected.
 
 ### 10.6 `longest`
 
 ```tide
-fn longest(a: &str, b: &str) -> &str from a, b {
+fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
     if a.len() >= b.len() { a } else { b }
 }
 
-fn longest_word(words: &[&str]) -> &str from *words {
+fn longest_word<'w>(words: &[&'w str]) -> &'w str {
     words.iter().copied().max_by_key(|w| w.len()).unwrap_or("")
 }
 
@@ -1053,19 +985,14 @@ fn title(text: &str) -> &str {
 }
 ```
 
-```rust
-fn longest<'a>(a: &'a str, b: &'a str) -> &'a str { /* … */ }
-fn longest_word<'w>(words: &[&'w str]) -> &'w str { /* … */ }
-```
-
 **Accepted.** This is `reviews/round1-soundness.md` B2.1. Draft 1 rejected it.
 
 ### 10.7 A struct holding references from two sources
 
 ```tide
-pub struct Match { needle: &str, line: &str }       // two origins: needle, line
+pub struct Match<'n, 'l> { needle: &'n str, line: &'l str }   // two origins
 
-pub fn find(needle: &str, text: &str) -> Option<Match from { needle: needle, line: text }> {
+pub fn find<'n, 'l>(needle: &'n str, text: &'l str) -> Option<Match<'n, 'l>> {
     let line = text.lines().find(|l| l.contains(needle))?;
     Some(Match { needle, line })
 }
@@ -1077,21 +1004,17 @@ fn first_error(text: &str) -> Option<&str> {
 }
 ```
 
-```rust
-struct Match<'n, 'l> { needle: &'n str, line: &'l str }
-fn find<'n, 'l>(needle: &'n str, text: &'l str) -> Option<Match<'n, 'l>> { /* … */ }
-```
-
-**Accepted.** With the union `-> Option<Match> from needle, text`, both
-origins would carry both loans. `Some(m.line)` would then be rejected,
+**Accepted.** With one shared lifetime,
+`fn find<'a>(needle: &'a str, text: &'a str) -> Option<Match<'a, 'a>>`, both
+fields would carry both loans, and `Some(m.line)` would be rejected,
 because `pat` dies at the end of `first_error`.
 
 ### 10.8 A struct whose fields share an origin
 
 ```tide
-struct Collector { src: &str, out: &mut Vec<&str from src> }
+struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }
 
-impl Collector {
+impl Collector<'_, '_> {
     fn emit(&mut self, start: usize, end: usize) {
         self.out.push(&self.src[start..end]);
     }
@@ -1105,14 +1028,13 @@ fn tokenize(text: &str) -> Vec<&str> {
 }
 ```
 
-```rust
-struct Collector<'s, 'o> { src: &'s str, out: &'o mut Vec<&'s str> }
-```
-
-**Accepted.** Without `from src`, `out`'s elements have their own origin,
-`*out`, and `emit` is rejected ("`self.src` must outlive the elements of
-`self.out`; add `from src`"). Draft 1's single region made this example
-either unsound or unusable (B1).
+**Accepted.** If the elements had a lifetime of their own
+(`out: &'o mut Vec<&'e str>`), `emit` would be rejected ("`'s` must outlive
+`'e`"). If one name covered everything
+(`struct Collector<'a> { src: &'a str, out: &'a mut Vec<&'a str> }`), the
+`&mut toks` borrow would last as long as the tokens and `tokenize` would be
+rejected at `toks`. Draft 1's single region made this example either
+unsound or unusable (B1).
 
 ### 10.9 A graph through `Arena` handles
 
@@ -1156,8 +1078,6 @@ leaf.borrow_mut().parent = Rc::downgrade(&root);
 root.borrow_mut().val += leaf.borrow().val;
 ```
 
-Rust: identical.
-
 **Accepted.** The type is `Owned` and `Pure`, but not `Send` or `Sync`. It
 may be held across suspensions within one task (§8.1) but cannot enter
 another task or a parallel branch; use `Shared` there. A failed `borrow_mut`
@@ -1166,11 +1086,11 @@ panics.
 ### 10.11 A trait object holding a reference
 
 ```tide
-fn words(text: &str) -> Box<dyn Iterator<Item = &str> from text> {
+fn words<'a>(text: &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a> {
     Box::new(text.split_whitespace())
 }
 
-struct Filter { pred: Box<dyn Fn(&Row) -> bool + '_> }        // one origin: pred
+struct Filter<'p> { pred: Box<dyn Fn(&Row) -> bool + 'p> }    // one origin: 'p
 
 fn count_leaves(tree: &Tree) -> usize {
     let mut n = 0;
@@ -1184,19 +1104,14 @@ fn job(text: &String) -> Job {
 }
 ```
 
-```rust
-fn words<'a>(text: &'a str) -> Box<dyn Iterator<Item = &'a str> + 'a> { /* … */ }
-struct Filter<'p> { pred: Box<dyn Fn(&Row) -> bool + 'p> }
-```
-
 **`words`, `Filter` and `count_leaves` are accepted.** `count_leaves` relies
 on §5.1's default bound behind `&mut`.
 
 **`job` is rejected, as in Rust.** `Bytes` borrows `text`, but this
 `dyn Iterator` is `Owned`. There are two fixes:
 
-- `struct Job { next: Box<dyn Iterator<Item = u8> + '_> }`, after which
-  `fn job(text: &String) -> Job` elides by rule 1;
+- `struct Job<'a> { next: Box<dyn Iterator<Item = u8> + 'a> }`, after which
+  `fn job(text: &String) -> Job<'_>` elides by rule 1;
 - owning the data: `text.clone().into_bytes().into_iter()`.
 
 ### 10.12 Scoped tasks borrowing a slice
@@ -1224,7 +1139,7 @@ fn after_failure(tasks: &Tasks, xs: &[u64]) -> u64 {   // SumError: #[from] Task
     match r { Ok(()) => sums[0], Err(_) => sums[0] }   // fine: the loans ended with the scope
 }
 
-fn serve(bg: Scope<ServeError>, conn: Conn) {           // read_into -> Result<usize, ServeError>
+fn serve(bg: Scope<'_, '_, ServeError>, conn: Conn) {   // read_into -> Result<usize, ServeError>
     let buf = [0u8; 4096];
     bg.spawn(|| conn.read_into(&buf));                                     // error
     bg.spawn(move || { let mut buf = [0u8; 4096]; conn.read_into(&mut buf) });  // fine
@@ -1274,18 +1189,13 @@ release.
 
 | Tide | Rust | Exact? |
 | --- | --- | --- |
-| A borrowing struct or enum | one lifetime parameter per origin, in name order; `from` in a field reuses the named lifetime; recursive occurrences reuse the declaration's lifetimes; rustc derives the same variances from the same fields | yes |
-| Elided origins in signatures | the same elided positions; output elision under identical rules | yes |
-| `from P` in a parameter type | reuse `P`'s lifetime | yes |
-| `-> T from P`, one origin | reuse `P`'s lifetime, as for parameters | yes |
-| `-> T from P1, …, Pn` | a fresh `'r` per affected position, with `'p: 'r` for each `p` in `orig(P̄)` | yes |
-| `f: F from P` | `F: 'p, F::Output: 'p` | yes |
-| `Self.f`, `self.f` in impls | `impl<'f, …> Ty<'f, …>`, with `'f` | yes |
+| Borrowing structs and enums, named lifetimes, `'_`, type-outlives bounds | the same | yes |
+| Elided lifetimes in signatures | the same elided positions; output elision under identical rules | yes |
+| Implied relations from well-formedness | the same (RFC 2093) | yes |
 | `dyn`, the default `Owned` | `+ 'static`; behind `&'a`, `+ 'a` | yes |
-| Return-position `impl Trait` | `impl Trait + use<'p…, T…>`, with auto traits stated | yes |
+| Return-position `impl Trait` | `impl Trait + use<'p…, T…>` naming every lifetime its bounds name, with auto traits stated | yes |
 | `Owned` | `'static` | yes |
-| Closures, `Fn` sugar, higher-ranked origins | the same | yes |
-| `from` in a closure-bound argument | the implied-bound encoding that `std::thread::scope` uses (a witness type mentioning `&'s &'p ()`) | encoded |
+| Closures, `Fn` sugar, higher-ranked lifetimes, including the lower bound that `Scope<'_, 'env, E>` implies | the same | yes |
 | Field-borrow methods | associated functions with split borrows | yes |
 | Two-phase borrows, NLL, drop check | the same | yes |
 | The std eyepatch | `#[may_dangle]` (unsafe, audited) | audited |
@@ -1303,8 +1213,8 @@ release.
   style of Swift's SE-0414 and an audit of std, the runtime and FFI wrappers
   for thread-affine state. The proof must cover erasure: a `ThreadBound`
   value boxed as `dyn Debug` must still pin (round-2 consistency review B8).
-- **R2. Bounded higher-ranked origins (§5.4): low risk.** This is the
-  encoding that `std::thread::scope` relies on.
+- **R2. Bounded higher-ranked origins (§5.4): low risk.** They come only
+  from well-formedness, the encoding that `std::thread::scope` relies on.
 - **R3. Implied bounds through `fn` pointers: low risk once implemented.**
   Reducing to Rust inherits Rust's holes, such as rust-lang/rust#25860, which
   the oracle cannot catch because rustc accepts them. §5.4's re-check closes
@@ -1332,28 +1242,31 @@ release.
    std ships only handle-based `Arena<T>`.
 4. **Exported field groups.** Named borrow sets that a type exports without
    exposing its fields, Rust's "abstract fields", are open.
-5. **Implicit origin propagation.** A new reference field adds origins to
-   every containing type, possibly far from the edit. The interface diff
-   reports such changes in public types as breaking. E1 data should decide
-   whether a visible marker such as `view struct` is worth its cost.
-6. **Lifetimes Tide cannot express.** These are explicit outlives bounds
-   between unrelated origins, lifetime parameters on traits, lending traits
-   that need GATs, and `for<'a>` beyond elision. Interop with lifetime-heavy
-   Rust APIs is out of scope (Positioning).
+5. **Origin propagation.** A new reference field needs a lifetime parameter
+   on its type and on every type that contains it, as in Rust. The edit is
+   local and visible, and the interface diff reports it in public types as
+   breaking.
+6. **Lifetimes Tide cannot express.** These are written outlives bounds
+   between origins (`'a: 'b`), lifetime parameters on traits, lending traits
+   that need GATs, `for<'a>` beyond elision, and therefore a result that
+   borrows from several inputs through an invariant position (§2.4 item 2).
+   Interop with lifetime-heavy Rust APIs is out of scope (Positioning).
 7. **`Arc` count observers.** Something must replace `Arc::try_unwrap` and
    `get_mut` in the "unwrap after the workers finish" pattern, probably
    scope results.
 8. **Invariants after a child failure.** Closed by draft 3: a child's panic
    propagates through its scope (§8.3), so no half-updated referent behind a
    `&mut` parameter reaches a caller.
-9. **Agent-facing naming.** E1 should measure whether agents find the right
-   `from` from diagnostics that name origins such as `*out` and `lx.src`.
+9. **Agent-facing repair.** E1 should measure whether agents find the right
+   lifetime from diagnostics; the origin trial produced no borrow errors to
+   repair (`trials/e1-origins/grading.md`).
 
 ## 13. Changes this chapter asked of `01-design.md`
 
 Draft 3 applies items 1–4 and 7. Item 5 is superseded: D7 makes `Arc` and
 `sync::Weak` synchronization handles (§9). Item 6 is superseded: D5 removes
-the moved-out rule (§8.3). None are outstanding.
+the moved-out rule (§8.3). Draft 3.4 supersedes items 2 and 3: lifetimes
+keep Rust's spelling (D2, §2.6). None are outstanding.
 
 1. **D2, `dyn`.** `&dyn Trait` and `&mut dyn Trait` should default to the
    reference's origin, which is Rust's default object bound; `dyn` elsewhere

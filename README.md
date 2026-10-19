@@ -20,8 +20,8 @@ to trust.
 - **Review what changed in what code may do.** The compiler diffs authority,
   contracts, and `unsafe` holes between revisions, so reviewers see the risk
   before reading the code.
-- **Already familiar.** Rust syntax wherever the meaning is the same, without
-  lifetime parameters, macros, or `async`/`await`. Contracts run as checks and
+- **Already familiar.** Rust syntax wherever the meaning is the same,
+  including lifetimes, without macros or `async`/`await`. Contracts run as checks and
   tests today and become proofs later.
 - **Works with Bend** for massively parallel, proved kernels.
 
@@ -31,7 +31,7 @@ and the speed figures are targets, not measurements.*
 ## Status
 
 Tide is in the design phase; there is no compiler for this design. The
-decision record is `design/01-design.md` (draft 3.3). Syntax is provisional
+decision record is `design/01-design.md` (draft 3.4). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0).
 
 The repository holds no code yet. The early Rust scaffold from the first
@@ -60,7 +60,7 @@ design, which does not implement Tide, is kept in
 - [REFERENCES.md](REFERENCES.md): the languages, projects, papers, and data
   Tide draws on.
 
-Chapters 02–04 elaborate draft 3.3 and label which sections are v0 core and
+Chapters 02–04 elaborate draft 3.4 and label which sections are v0 core and
 which are later tiers; on any conflict, `01-design.md` and its tier table
 win.
 
@@ -106,7 +106,7 @@ Cited evidence behind the decisions, in [research/](research/):
 
 ## v0 Core and Later Tiers
 
-- **v0 core**: Rust surface and ownership with origins; traits with a power
+- **v0 core**: Rust surface and ownership, with lifetimes checked as origins; traits with a power
   ceiling; `Result` and `?`; built-in `!` forms and derives; capabilities and
   `Root`; the `Pure` auto trait; structured tasks on blocking and thread
   runtimes; channels, `Shared::with`, `join`, `par_map`, and `par_for`;

@@ -1,6 +1,6 @@
 # Tide Contracts
 
-Status: draft 1, synchronized with draft 3.3. This chapter is the normative
+Status: draft 1, synchronized with draft 3.4. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
 `design/01-design.md`. It elaborates those decisions and must not contradict
 them. Where it needs a decision changed, it says so in the last section;
@@ -668,15 +668,14 @@ For a `&mut` parameter `x`:
 - In `ensures`, `old(*x)` is the value at entry. `old(x)` means the same,
   because references are transparent in specs; the formatter writes `old(*x)`.
 - `final(*x)` is executable, the value `*x` holds when the function returns,
-  only if no origin of `x`'s outer reference occurs in the result type, nor,
-  through the signature's `from` identifications, in a position under
-  another `&mut` parameter. `fn stash(s: &mut Slot, x: &mut i32 from s.r)`
-  fails the second test: it can store `x` in `*s`, so the borrow outlives
-  the call.
+  only if the origin of `x`'s outer reference, named or given by elision,
+  occurs neither in the result type nor in a position under another `&mut`
+  parameter. `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)` fails the
+  second test: it can store `x` in `*s`, so the borrow outlives the call.
 - Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the
-  borrow ends. That covers a result that borrows from `x` (`-> &mut V from
-  x`, or a borrowing result with a `&mut` field) and a callee that stores
-  `x`; the callee must relate `final(*x)` to the final value of the place
+  borrow ends. That covers a result that borrows from `x`
+  (`fn f<'x>(x: &'x mut M) -> &'x mut V`, or a borrowing result with a
+  `&mut` field) and a callee that stores `x`; the callee must relate `final(*x)` to the final value of the place
   where it stored `x`. `final(*r)` for a `&mut` `r` inside the result
   (`final(*result)`, a binding `Some(r)`, or a field path `final(*result.buf)`)
   is likewise the value at the end of that borrow. Prophetic `final` is
@@ -687,8 +686,9 @@ RustHornBelt proved sound; RustHorn is sound for a stored borrow only if its
 `final` is a prophecy. In the caller, when a returned borrow `r` ends at its
 last use, the verifier learns that `final(*r)` equals the current `*r`, and
 the callee's `ensures` then determines `final(*x)`. Prophecies arise only
-from `from` returns, `from` identifications into another `&mut` parameter,
-and borrowing types with `&mut` fields; ordinary `&mut` arguments need none.
+from results that carry a `&mut` parameter's origin, a `&mut` parameter's
+origin shared with a position under another `&mut` parameter, and borrowing
+types with `&mut` fields; ordinary `&mut` arguments need none.
 
 ```tide
 impl<K: Eq + Hash, V> Table<K, V> {
@@ -1067,7 +1067,7 @@ and spec tests, and the use settings. Under `prove`, internal specs are proof
 scaffolding and need no approval.
 
 **What is hashed.** Each root spec has a *spec-closure hash* over the
-normalized clauses, the signature (types, `from` origins, field-borrow sets),
+normalized clauses, the signature (types, lifetimes, field-borrow sets),
 and, transitively, everything its meaning depends on: the bodies of every
 function a clause calls, including the impls behind operators such as `==`
 (D11); spec fn bodies (opaque and closed ones included); the contracts of
