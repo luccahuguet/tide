@@ -471,8 +471,8 @@ serialization as the default (5–7x slower in prior art).
   the structural rule rejects that is authority-free in fact, such as a
   foreign handle, is marked `#[trusted_pure]` with a reason in a package
   granted `unsafe`, which counts as a trust hole; `unsafe impl Pure` is not
-  used. Rust code that calls a Tide
-  crate (v1) is unchecked, so closures and impls it passes in are trust holes,
+  used. Rust code that calls a Tide crate (RUST-6, v1) is unchecked, so
+  closures and impls it passes in are trust holes,
   as FFI callbacks are. v1's `ThreadBound` trait objects take the same
   companion form, since `dyn Trait + ThreadBound` is E0225 as well.
 - Parallel code (D9) requires `Pure + Send` closures and `Pure + Sync` shared
@@ -635,9 +635,9 @@ execution internally; it runs tasks on baton-passed threads.
   where the body reassigns the parameter (`cur = &mut n.next`), as v1's
   `final(*x)` does, and `old(*x)` its value at entry. Where `final(*x)`
   would be a prophecy (`x`'s origin appears in another parameter's type,
-  the result type, or a bound, 04 §4.1), naming `x` outside `old(..)` is
-  `FX0803`. `old(e)` evaluates
-  `e` at entry and snapshots the value it
+  the result type, or a bound other than on the right of an outlives
+  bound, 04 §4.1), naming `x` outside `old(..)` is `FX0803`. `old(e)`
+  evaluates `e` at entry and snapshots the value it
   denotes, copying `Copy` values and cloning others; `old` of a type that is
   neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
   counts as a violation of the clause that needed it. One skip rule decides

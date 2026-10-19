@@ -474,9 +474,10 @@ rule CLAUSE-*n*.
    helper call when the body returns a borrow of the reborrowed parameter,
    a renamed `self`, which cannot be a closure parameter, and the checker's
    `Pure` decision to choose snapshots, since rustc accepts every `Pure`
-   bound (`03-authority-concurrency.md` §3.1). It also erases a named
-   lifetime in the closure parameter's type: `|x: &'r mut i32|` is
-   rejected (E0503) where `|x: &mut i32|` compiles.
+   bound (`03-authority-concurrency.md` §3.1). It must also erase the
+   outer reference's named lifetime in the closure parameter's type, and
+   only that one: `|x: &'r mut i32|` is rejected (E0503) where
+   `|x: &mut i32|` compiles, while a pointee's lifetime must stay.
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 

@@ -7,7 +7,7 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 is not in v0; section 16 lists where the documents still disagree and which
 reading this reference takes. Syntax is provisional until the E1 gate (D0).
 Budget: under 25,000 tokens (D14; CI counting is planned). Measured on
-this text, 2026-10-19: 39,330 tokens, over budget (01 open question 8).
+this text, 2026-10-19: 39,291 tokens, over budget (01 open question 8).
 Method: input tokens that `claude -p --model claude-opus-5-5 --tools ""
 --system-prompt "Reply with OK." --output-format json` reports with this
 file as the prompt, minus those for the prompt `.`.
@@ -658,8 +658,7 @@ it structurally wherever a type meets a `Pure` bound or is coerced to a
 `Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
 own code). **Not `Pure`**: the capability types and `File`, `TcpStream`, and
 other handles derived from them; synchronization handles (`Shared`, channel
-ends,
-`Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any `Sync`
+ends, `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any `Sync`
 type whose `&self` API can observe or cause mutation); raw pointers;
 a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded type
 parameter. **Everything else
@@ -1146,13 +1145,13 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
   `let _ = r;` to discard on purpose (provisional: Rust warns).
 - `#[derive(Error)]` replaces `thiserror` (2.2).
 - **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap` on
-  `None`, a violated contract) unwind the current task and run destructors.
-  A panic raised during that unwinding, for example in a destructor, aborts
-  the process, and so does stack overflow, as in Rust. `tide test` and
-  `tide sim` then rerun each test and seed in flight alone, report each
-  that aborts (a seed with its replay command), and go on in a fresh
-  process. A panicking child makes its scope panic
-  (7.1). There is no `catch_unwind` (`FX0701`); isolate risky work with
+  `None`, a violated contract) unwind the current task and run destructors. A
+  panic raised during that unwinding, for example in a destructor, aborts the
+  process, and so does stack overflow, as in Rust. `tide test` and `tide sim`
+  then rerun each test and seed in flight alone, report each that aborts (a
+  seed with its replay command), and go on in a fresh process; the run fails
+  even if no rerun aborts. A panicking child makes its scope panic (7.1).
+  There is no `catch_unwind` (`FX0701`); isolate risky work with
   `tasks.spawn_isolated`. A panic in the main task exits with code 101.
 
 ## 10. Contracts
@@ -1178,11 +1177,12 @@ builds, erased in release, and used to drive property tests.
   use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
   parameter `v` (or `*v`) means the caller's referent at return, even if
   the body reassigns `v` (`v = &mut n.next`); `old(*v)` its value at
-  entry. If `v`'s lifetime appears in another parameter's type, the result
-  type, or a bound, `v` may be named only inside `old(..)` (`FX0803`); the
-  usual fix gives the other parameter its own lifetime. `old(e)` evaluates
-  `e` at
-  entry and snapshots the value: `Copy`
+  entry. If `v`'s outer lifetime appears in another parameter's type, the
+  result type (a returned `impl Trait` captures it), or a bound other than
+  on the right of an outlives bound (`T: 'v`), `v` may be named only inside
+  `old(..)` (`FX0803`, 04 §4.1); the usual fix gives the other parameter
+  its own lifetime. `old(e)` evaluates `e` at entry and snapshots the
+  value: `Copy`
   values are copied, others cloned, and a reference snapshots its referent.
   So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`
   of a type that is neither `Copy` nor `Clone` is an error. `e` cannot

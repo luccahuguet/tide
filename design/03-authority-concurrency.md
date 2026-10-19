@@ -250,16 +250,16 @@ determinism claim here holds modulo exhaustion of memory, stack, or
   is reported from outside it: `tide test` and `tide sim` run the binary as a
   child process, which may run several tests and seeds at once. Before a seed
   runs, the simulator writes its replay manifest with the seed and build
-  identity, and appends the rest of REPLAY-1's contents as the run goes, and
+  identity, and appends the rest of REPLAY-1's contents as the run goes.
   Tide's `#[test]` writes a start record for every test, since libtest reports
-  none. When the child aborts, `tide test` or `tide sim` reruns each test and
-  seed that was in flight in a child of its own, reports each that aborts
-  alone (a simulated one by seed with its replay command, any other by test
-  name), and starts a fresh child for the tests and seeds not yet run. The run
-  fails even if no rerun aborts, and then reports the abort with the tests
-  that were in flight. An abort from PANIC-2 is reported the same way. The
-  depth at which an overflow occurs is outside the determinism claim, so a
-  rerun or replay may not reproduce it.
+  none for tests it runs concurrently. When the child aborts, `tide test` or
+  `tide sim` reruns each test and seed that was in flight in a child of its
+  own, reports each that aborts alone (a simulated one by seed with its replay
+  command, any other by test name), and starts a fresh child for the tests and
+  seeds not yet run. The run fails even if no rerun aborts, and then reports
+  the abort with the tests and seeds that were in flight. An abort from
+  PANIC-2 is reported the same way. The depth at which an overflow occurs is
+  outside the determinism claim, so a rerun or replay may not reproduce it.
 - **PANIC-2. Panic during unwinding.** A panic raised while a task is
   unwinding from another panic, for example in a destructor, aborts the
   process, as in Rust (D5).
