@@ -34,8 +34,9 @@ and the speed figures are targets, not measurements.*
 Tide is in the design phase; there is no compiler for this design. The
 decision record is `design/01-design.md` (draft 3.6). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0). D18 makes
-Tide a checked dialect of Rust, compiled by stock rustc against Tide's std,
-once a feasibility spike passes; until then the new-language design stands.
+Tide a checked dialect of Rust, compiled by a pinned rustc against Tide's
+std; its feasibility spike (`spikes/d18/`) passed, and its changes to the
+other decisions are not yet applied.
 
 The repository holds no production code yet. `spikes/d18/` holds the
 throwaway feasibility spike for D18, and the early Rust scaffold from the

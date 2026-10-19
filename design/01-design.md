@@ -5,7 +5,7 @@ and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
 3.4 returned D2 to Rust's lifetime spelling after the origin trial
 (`trials/e1-origins/`); draft 3.5 takes Rust 2024's lifetimes whole
 after review rounds 8 to 10; and draft 3.6 adopts the checked Rust dialect
-as the v0 direction, gated by a feasibility spike (D18). This
+as the v0 direction (D18), whose feasibility spike passed. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -59,8 +59,7 @@ deterministic replay, with Rust's guarantees and much faster builds.
 - **Rust coexistence**: under D18 a Tide crate is a Rust crate: Rust code
   depends on it directly, sharing the std types Tide re-exports, and Tide
   links synchronous Rust crates directly as trust holes behind capability
-  wrappers. Until D18's spike passes, the fallback is C-ABI libraries with
-  generated binding crates and shims. Async Rust ecosystems (tokio, axum) and
+  wrappers. Async Rust ecosystems (tokio, axum) and
   lifetime-heavy APIs (serde's `'de`) are out of scope for interop.
 - **Bend tandem, not competition**: Tide is the effectful, authority-checked
   shell; Bend 2 owns proved, massively parallel kernels (D16).
@@ -666,7 +665,7 @@ stackful execution internally.
 
 Rejected: Rust emission as the release backend (53 s clean builds, coupling
 to rustc's borrow precision, no route to stackless lowering of Tide tasks),
-a rejection D18 reverses if its spike passes;
+a rejection D18 reverses;
 witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 1.0.
 
@@ -785,22 +784,32 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   returned an error, searching backward from the failure, which models handle
   better than stepping forward.
 
-### D18. A checked dialect of Rust (v0 direction, gated)
+### D18. A checked dialect of Rust (v0 direction)
 
-Owner decision, 2026-10-19 (bead `fx-enq`; study
-`research/15-rust-dialect.md`; review `reviews/dialect-codex.md`).
+Owner decisions, 2026-10-19: the direction (bead `fx-enq`; study
+`research/15-rust-dialect.md`; review `reviews/dialect-codex.md`), and the
+gate passed with checker architecture A then B (bead `fx-7qu`; spike
+`spikes/d18/`, results in research/15).
 
-- **Every Tide program is a valid Rust 2024 crate** that a pinned stock
-  rustc compiles, with Tide's meaning, against Tide's std. The driver passes
+- **Every Tide program is a valid Rust 2024 crate** that a pinned, unmodified
+  nightly rustc compiles, with Tide's meaning, against Tide's std. The driver passes
   that std as `std` (`--extern std=`), so rustc's std injection loads it and
   the real std's paths cannot be named.
 - **Tide's checker gates every crate before rustc runs.** It owns the
   subset, authority, `Pure`, contracts, FX diagnostics, and the trust diff.
   It also enforces an **admission allowlist** over `core`, `alloc`, and std's
-  inherent methods. That closes what the std swap leaves open: safe hardware
-  queries, address observers, atomics created without `Tasks`, and float
-  methods. The checker must resolve names, methods, impls, and constants as
-  the pinned rustc does.
+  inherent methods, keyed on crate identity. That closes what the std swap
+  leaves open: safe hardware queries, raw pointer types and every address
+  observer, atomics created without `Tasks`, float methods, I/O methods on
+  re-exported std types such as `Path::exists`, `io::Error::last_os_error`,
+  and timed waits such as `recv_timeout`.
+- **Checker architecture: A, then B.** (A) A `rustc_private` driver on the
+  same pinned nightly that builds the code is the authoritative admission
+  gate and the oracle; it checks rustc's own resolution, so no separate
+  equivalence argument is needed. It passes `-Zallow-features=`, so user code
+  cannot enable unstable features. (B) Tide's own incremental front end
+  serves D12's edit loop and is tested against A; where they disagree, A
+  decides.
 - **The driver owns every rustc invocation.** It adds no user-controlled
   `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C` flags, runs no
   build scripts or proc macros except the toolchain's, and keeps its own
@@ -809,11 +818,12 @@ Owner decision, 2026-10-19 (bead `fx-enq`; study
 - **rustc and LLVM are the release backend**, replacing D12's C backend and
   its Cranelift-class backend; open question 7 lapses. An interpreter is
   built only if `tide eval` or E4's edit-to-test target needs it.
-- **The gate.** A bounded feasibility spike must meet the seven acceptance
-  criteria in `research/15-rust-dialect.md` before v0 implementation
-  planning commits to this direction. Until it passes, the other decisions
-  keep their current text. If it fails, the new-language design stands.
-- **What changes when the spike passes.**
+- **The gate passed** (2026-10-19): the spike met the seven criteria in
+  `research/15-rust-dialect.md` at prototype scale. Its gaps (a panic
+  inside a clause, sampled-clause budgets, `a..=b` next-index binding) are
+  implementation work.
+- **Changes to apply to the other decisions**, which keep their current
+  text until applied:
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.
   - D2: no `T: Owned` rewrite.
@@ -827,7 +837,6 @@ Owner decision, 2026-10-19 (bead `fx-enq`; study
   - D14: the typed-hole spelling.
   - The tier table.
 - **Reversal conditions:**
-  - the spike fails a criterion with no workable fix;
   - E1 rejects the attribute spellings;
   - v1's evented runtime cannot be built without exposing coloring to users
     (`research/15-rust-dialect.md` lists its requirements).
@@ -935,7 +944,7 @@ fn feed_times_out() {
 5. The interpreter's role in `tide test` once the development backend exists.
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
-7. (Lapses if D18's spike passes.) How the C-emitting release backend (D12,
+7. (Lapsed under D18.) How the C-emitting release backend (D12,
    v1) implements unwinding for panics, which must drop values (D5): a flag check after every call,
    compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.

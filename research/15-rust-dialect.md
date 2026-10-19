@@ -651,6 +651,9 @@ prototype scale. The gaps in criteria 3 and 6 are implementation work, not
 blockers. The checker-architecture choice and the added leaks change D18's
 text before its listed decision changes are applied.
 
+**Owner decisions (2026-10-19).** The gate is passed, and the checker
+architecture is A then B. Both are recorded in D18.
+
 ---
 
 ## Review resolution
