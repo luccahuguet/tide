@@ -91,6 +91,10 @@ Cited evidence behind the decisions, in [research/](research/):
 - `10-concurrency-parallelism.md`: concurrency, deterministic parallelism, and
   deterministic simulation testing.
 - `11-bend-interop.md`: how Tide and Bend 2 divide the work.
+- `12-newcomer-sweep.md`: 2025–2026 languages and tools, the ideas Tide
+  adopted from them, and lust, a checked Rust subset with fast edit checks.
+- `13-agent-fleets.md`: what people running many agents and subagents need
+  from a language, ranked, and where Tide meets or misses each need.
 
 ### Reviews and Trials
 
