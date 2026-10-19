@@ -247,14 +247,17 @@ determinism claim here holds modulo exhaustion of memory, stack, or
 - **PANIC-1. Stack overflow** aborts the process, as in Rust (D5): no
   destructors run and `spawn_isolated` cannot contain it. Under the
   simulator it fails the seed. v0's simulator runs in one process (§9.1),
-  so the abort is reported from outside it: the simulator writes each
-  seed's replay manifest before running the seed, and `tide test` and
-  `tide sim` run the binary as a child process. When the child aborts,
-  they report the seed whose manifest was in flight as failed, with its
-  replay command, and start a fresh child for the tests and seeds not yet
+  so the abort is reported from outside it: `tide test` and `tide sim` run
+  the binary as a child process, which may run several tests and seeds at
+  once. Before a seed runs, the simulator writes its replay manifest with
+  the seed and build identity, and appends the rest of REPLAY-1's contents
+  as the run goes. When the child aborts, the driver reruns each test and
+  seed that was in flight in a child of its own, reports each that aborts
+  alone (a simulated one by seed with its replay command, any other by
+  test name), and starts a fresh child for the tests and seeds not yet
   run. An abort from PANIC-2 is reported the same way. The depth at which
-  an overflow occurs is outside the determinism claim, so a replay may not
-  reproduce it.
+  an overflow occurs is outside the determinism claim, so a rerun or
+  replay may not reproduce it.
 - **PANIC-2. Panic during unwinding.** A panic raised while a task is
   unwinding from another panic, for example in a destructor, aborts the
   process, as in Rust (D5).
@@ -361,7 +364,11 @@ so the rules above also need an admission check (D7).
 blanket impl, so rustc accepts every `Pure` bound and coherence never treats
 `Pure` as making two impls disjoint. The checker decides it structurally
 wherever a type meets a `Pure`-implying obligation or is coerced to a `Pure`
-trait object. A type the structural rule rejects that is authority-free in
+trait object. A failure is reported under the code of the rule that needs
+`Pure` (`FX0502`, `FX0603`, `FX0606`, `FX0611`, `FX0612`), and otherwise,
+as at a user-written bound, a `Pure` supertrait's impl, or a coercion to a
+`Pure` trait object, as `FX0517`. A type the structural rule rejects that is
+authority-free in
 fact, such as a foreign handle, may be marked
 `#[trusted_pure(reason = "...")]` in a package granted `unsafe`, and each
 such mark is a trust hole. `Pure` is deep: it looks through every field,
@@ -401,7 +408,7 @@ every `Value` a `PureValue`, so the checker's structural check runs at each
 coercion to `dyn PureValue`, not at the impl.
 
 **Unchecked callers.** Rust code that calls a Tide crate is not checked
-(RUST-6), so a closure or trait impl it passes in may meet a `Pure` bound
+(RUST-6, v1), so a closure or trait impl it passes in may meet a `Pure` bound
 without being authority-free. Such values are trust holes, as foreign
 callbacks are.
 
@@ -954,10 +961,11 @@ cancelled.
   (ADMIT-1); std's `float::bits`, `float::min`, and `float::max` take their
   place, and its `math::sin`, `math::exp`, `math::ln`, `math::powf`, and the
   other functions beyond IEEE's basic operations use one math library for
-  every target (D15), never the platform's libm. Each covers `f32` and
-  `f64`. The basic operations `sqrt` and `mul_add` are correctly rounded,
-  so they stay methods, and `from_bits` observes nothing and stays
-  admitted (D3). Formatting, byte
+  every target (D15), never the platform's libm. Each is generic over
+  `f32` and `f64`. The basic operations `sqrt` and `mul_add` are correctly
+  rounded, so they stay methods; on a target without hardware FMA,
+  `mul_add` calls std's math library, never the platform's `fma`.
+  `from_bits` observes nothing and stays admitted (D3). Formatting, byte
   conversions, and foreign calls are audited against the same rule.
   The automatic parallelization pass (later tier) only runs independent
   authority-free calls in parallel; it never regroups a fold.
@@ -1113,7 +1121,8 @@ operation with its source span, its arguments, and its result.
   compiler version, the target, and every option that affects semantics,
   such as the profile and `cfg` settings; the simulated root's
   configuration (program arguments, environment, files, scheduler strategy,
-  and fault plan); and every injected input.
+  and fault plan); and every injected input, appended as the run goes
+  (PANIC-1).
 - **REPLAY-2. Identity check.** `tide sim --replay <manifest>` refuses to
   run, before executing anything, unless the current source hashes and
   build identity equal the manifest's; it then reruns exactly what the

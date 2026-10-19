@@ -144,7 +144,8 @@ Cited evidence behind the decisions, in [research/](research/):
   rustc builds gated by the admission driver, then Tide's incremental front
   end (D18).
 - **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the
-  evented runtime, FFI, direct Rust crate import,
+  evented runtime, FFI, direct Rust crate import and Rust consumers of Tide
+  crates,
   `par_reduce`, field-borrow declarations, and production record and replay.
 - **Later**: the Bend tandem, deferred overflow traps, automatic
   parallelization, `Shape` reflection, Polonius-precision borrows, and

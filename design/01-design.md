@@ -59,7 +59,7 @@ deterministic replay, with Rust's guarantees and a much faster edit loop.
   components (agents, proxies, storage engines, schedulers). Blocking and
   thread runtimes plus the simulator; the evented runtime follows.
 - **Rust coexistence**: under D18 a Tide crate is a Rust crate: Rust code
-  depends on it directly, sharing the std types Tide re-exports, and Tide
+  depends on it directly (v1), sharing the std types Tide re-exports, and Tide
   links synchronous Rust crates directly as trust holes behind capability
   wrappers. Async Rust ecosystems (tokio, axum) and
   lifetime-heavy APIs (serde's `'de`) are out of scope for interop.
@@ -202,8 +202,8 @@ provisional until E1 meets its thresholds.
   (→ `float::bits(x)`, `math::sin(x)`, D3), other items outside the
   admission allowlist (D7), `impl` blocks outside the type's or trait's module
   (D4), user macros (D6).
-- The reference is written as a delta from Rust and token-counted in CI
-  (budget in D14).
+- The reference is written as a delta from Rust and token-counted (budget
+  in D14; CI counting is planned).
 
 Rejected: fresh syntax (low-resource penalty with no data to recover it);
 respelling constructs that mean the same thing (`f"..."`, `print()`,
@@ -321,14 +321,14 @@ over-capture, fixed with `+ use<..>`; self-referential structs need
   stays native. Rust leaves NaN bits and math precision unspecified, and its
   inherent float methods cannot be overridden, so the observers and math
   methods (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`,
-  `signum`, `total_cmp`, `min`, `max`, `sin`, `exp`, and the rest) are
-  outside the admission allowlist (D7). Tide's std provides functions in
-  their place: `float::bits(x)`, `float::min(a, b)`, `float::max(a, b)`,
-  `math::sin(x)`, `math::exp(x)`, each for `f32` and `f64`. `float::min`
-  and `float::max` order -0.0 below +0.0. `from_bits` builds a float and
-  observes nothing, so it stays admitted; so do `sqrt` and `mul_add`, which
-  IEEE 754 and Rust define as correctly rounded. Formatting, byte
-  conversions, and foreign calls are audited against the same rule.
+  `signum`, `total_cmp`, `min`, `max`, `sin`, `exp`, and the rest) are outside
+  the admission allowlist (D7). Tide's std provides functions in their place:
+  `float::bits(x)`, `float::min(a, b)`, `float::max(a, b)`, `math::sin(x)`,
+  `math::exp(x)`, each generic over `f32` and `f64`. `float::min` and
+  `float::max` order -0.0 below +0.0. `from_bits` builds a float and observes
+  nothing, so it stays admitted; so do `sqrt` and `mul_add`, which IEEE 754
+  and Rust define as correctly rounded. Formatting, byte conversions, and
+  foreign calls are audited against the same rule.
 
 Rejected: signature inference, implicit conversions, overloading, custom
 operators.
@@ -633,7 +633,9 @@ execution internally; it runs tasks on baton-passed threads.
   step budget is reported as unchecked, not as failed. In `ensures`, a bare
   `*x` of a `&mut` parameter means the caller's referent at return, even
   where the body reassigns the parameter (`cur = &mut n.next`), as v1's
-  `final(*x)` does, and `old(*x)` its value at entry. `old(e)` evaluates
+  `final(*x)` does, and `old(*x)` its value at entry. Where `final(*x)`
+  would be a prophecy (the result borrows from `x`, or `x`'s borrow can
+  outlive the call), only `old(*x)` may be named. `old(e)` evaluates
   `e` at entry and snapshots the value it
   denotes, copying `Copy` values and cloning others; `old` of a type that is
   neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
@@ -818,8 +820,8 @@ lowering of Tide tasks); D18 reversed that.
 - `tide doc` serves documentation matched to the installed compiler: a card
   under 8 KB for an agent's instructions file, `tide explain <code>` with fix
   examples, and the delta-from-Rust reference. The core reference budget is
-  25,000 tokens, counted in CI; the standard-library reference is separate
-  and served on demand.
+  25,000 tokens, to be counted in CI; the standard-library reference is
+  separate and served on demand.
 - `tide fix` applies safe fixes and owns migrations between language
   versions.
 - Source text is canonical; the formatter is deterministic and has no
@@ -936,12 +938,14 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   `research/15-rust-dialect.md` at prototype scale. Its gaps (a panic
   inside a clause, sampled-clause budgets, `a..=b` next-index binding,
   entry values of by-value parameters in `ensures`, `loop {}` rewriting,
-  and a `&mut` parameter the body reassigns, which its closure lowering
-  rejects with E0521) are implementation work. Its `tide-admit` reports
-  every failed `Pure` obligation as `FX0510`; the design reports one under
-  the code of the rule that needs `Pure` (`FX0502`, `FX0603`, `FX0606`,
-  `FX0611`, `FX0612`), and `FX0510` is the least-authority lint
-  (03 §4.2).
+  a `&mut` parameter the body reassigns, which its closure lowering
+  rejects with E0521, and snapshot choices that need the checker's `Pure`
+  decision) are implementation work. Its `tide-admit` reports every failed
+  `Pure` obligation as `FX0510`; the design reports one under the code of
+  the rule that needs `Pure` (`FX0502`, `FX0603`, `FX0606`, `FX0611`,
+  `FX0612`), and otherwise as `FX0517` (03 §3.1). A broken `#[pure]` is
+  `FX0511`, and `FX0510` is the least-authority lint (03 §4.2). Its float
+  fixture still rejects `sqrt`, which D3 admits.
 - **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.
@@ -1067,5 +1071,5 @@ fn feed_times_out() {
    acceptable, this is the main reason to switch to a direct LLVM backend.
 8. How the core reference fits D14's 25,000 tokens: on Claude's tokenizer
    it is over half again as long (count and method in its header). The
-   checker's test corpus does not depend on it; E1's held-out round does
-   (bead `fx-fbq`).
+   checker's test corpus does not depend on it; E1's held-out round does.
+   The restructure is bead `fx-fbq`.

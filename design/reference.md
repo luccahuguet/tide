@@ -6,9 +6,11 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
 reading this reference takes. Syntax is provisional until the E1 gate (D0).
-Budget: under 25,000 tokens, counted in CI (D14). Measured 2026-10-19:
-39,140 tokens, over budget (01 open question 8). Method: `claude -p` input
-tokens with this file as the prompt, minus those of a one-character prompt.
+Budget: under 25,000 tokens (D14; CI counting is planned). Measured on
+this text, 2026-10-19: 39,302 tokens, over budget (01 open question 8).
+Method: input tokens that `claude -p --model claude-opus-5-5 --tools ""
+--system-prompt "Reply with OK." --output-format json` reports with this
+file as the prompt, minus those for the prompt `.`.
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -401,7 +403,8 @@ precision unspecified, so the methods that read a float's sign or bits
 `float::bits(x)` (any NaN reads as one canonical NaN), `float::min(a, b)`
 and `float::max(a, b)` (-0.0 below +0.0), and `math::sin(x)`,
 `math::exp(x)`, ..., from one library on every target (`use std::{float,
-math};`), each for `f32` and `f64`. `f64::from_bits(u)`, `x.sqrt()`, and
+math};`), each generic over `f32` and `f64` (`float::bits` of an `f32` is
+a `u32`; signatures provisional). `f64::from_bits(u)`, `x.sqrt()`, and
 `x.mul_add(a, b)` are admitted: they observe nothing or are correctly
 rounded. Rounding and classification (`floor`, `ceil`, `round`, `trunc`,
 `abs`, `is_nan`, `is_finite`) stay methods (provisional). `f64` is not `Eq`
@@ -652,7 +655,9 @@ fn decode_user(row: &Row) -> Result<User, DecodeError> {      // still authority
 `Pure` (prelude) means no authority is reachable from the type. Std declares
 it with a blanket impl, so rustc accepts every bound; Tide's checker decides
 it structurally wherever a type meets a `Pure` bound or is coerced to a
-`Pure` trait object. **Not `Pure`**: the capability types and `File`, `TcpStream`, and other
+`Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
+own code). **Not `Pure`**: the capability types and `File`, `TcpStream`, and
+other
 handles derived from them; synchronization handles (`Shared`, channel ends,
 `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any `Sync`
 type whose `&self` API can observe or cause mutation); raw pointers;
@@ -1142,10 +1147,11 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
 - `#[derive(Error)]` replaces `thiserror` (2.2).
 - **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap` on
   `None`, a violated contract) unwind the current task and run destructors.
-  Stack overflow aborts the process, as in Rust; under the simulator,
-  `tide test` and `tide sim` report the seed that was running and continue
-  in a fresh process. A panic raised during that unwinding, for example in a
-  destructor, aborts the process. A panicking child makes its scope panic
+  A panic raised during that unwinding, for example in a destructor, aborts
+  the process, and so does stack overflow, as in Rust. `tide test` and
+  `tide sim` then rerun each test and seed in flight alone, report each
+  that aborts (a seed with its replay command), and go on in a fresh
+  process. A panicking child makes its scope panic
   (7.1). There is no `catch_unwind` (`FX0701`); isolate risky work with
   `tasks.spawn_isolated`. A panic in the main task exits with code 101.
 
@@ -1158,7 +1164,7 @@ builds, erased in release, and used to drive property tests.
 
 | Clause | Where | Meaning |
 | --- | --- | --- |
-| `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`FX0801`) | precondition, checked at entry; a failure blames the caller |
+| `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`FX0802`) | precondition, checked at entry; a failure blames the caller |
 | `#[ensures(e)]` | as `requires` | postcondition, checked at each return; a failure blames the callee |
 | `invariant!(e);` | first statements of a loop body | checked at loop entry (even for zero iterations) and exit; under `tide test`, also after every iteration |
 
@@ -1172,7 +1178,9 @@ builds, erased in release, and used to drive property tests.
   use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
   parameter `v` (or `*v`) means the caller's referent at return, even if
   the body reassigns `v` (`v = &mut n.next`); `old(*v)` its value at
-  entry. `old(e)` evaluates `e` at entry and snapshots the value: `Copy`
+  entry. If the result borrows from `v`, or `v`'s borrow can outlive the
+  call, only `old(*v)` may be named (`FX0803`). `old(e)` evaluates `e` at
+  entry and snapshots the value: `Copy`
   values are copied, others cloned, and a reference snapshots its referent.
   So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`
   of a type that is neither `Copy` nor `Clone` is an error. `e` cannot
@@ -1448,7 +1456,7 @@ and candidate functions; use holes to build a function top-down.
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
 | `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (6.9) | `FX0501` |
 | `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
-| `fn main()` or `fn main(root: Root)` without the attribute | `#[tide::main] fn main(root: Root)` | `FX0512` safe |
+| `fn main()` or `fn main(root: Root)` without the attribute | add `#[tide::main]` | `FX0512` safe |
 | `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
 | `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |

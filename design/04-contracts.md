@@ -106,7 +106,8 @@ fn_clause   = "#[" "requires" "(" sexpr ")" "]"
             | "#[" "decreases" "(" sexpr { "," sexpr } ")" "]"  (* v1; lexicographic *)
             | "#[" "diverges" "]"                                (* v1 *)
             | "#[" "invariants" "]" ;              (* rewrites loops and closures only *)
-(* Trait and trait-impl methods: clauses are v1, FX0801 in v0 (rule 6) *)
+(* trait_fn, and impl_fn in a trait impl: requires and ensures are v1,
+   FX0802 in v0 (rule 6); #[invariants] is v0. Inherent methods are v0. *)
 trait_fn    = { attr | fn_clause } "fn" ident generics? "(" params ")" ret?
               where? ( block | ";" ) ;
 impl_fn     = { attr | fn_clause } vis? "fn" ident generics? "(" params ")"
@@ -188,7 +189,8 @@ Rules that the grammar does not show:
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
    parameter means the caller's referent at return, even where the body
-   reassigns the parameter (§1.8, CLAUSE-4). From v1, a bare `*x` is an
+   reassigns the parameter, and is `FX0803` where `final(*x)` would be a
+   prophecy (§1.8, CLAUSE-4). From v1, a bare `*x` is an
    error with two machine-applicable fixes, `old(*x)` and `final(*x)`
    (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
    is executable, and otherwise reports it for a manual choice.
@@ -197,9 +199,10 @@ Rules that the grammar does not show:
    functions.
 6. **Impls refine trait contracts** (v1). An impl method inherits its trait
    method's contract and may weaken the precondition and strengthen the
-   postcondition, never the reverse (§5.2). In v0 a clause on a trait
-   method or a trait-impl method is `FX0801`; the fix states it on a
-   function or inherent method that the impl calls.
+   postcondition, never the reverse (§5.2). In v0 a `requires` or
+   `ensures` on a trait method or a trait-impl method is `FX0802`; the fix
+   states it on a function or inherent method that the impl calls.
+   `#[invariants]` and loop `invariant!` are allowed there in v0.
 7. **Bodiless ghost functions.** A bodiless `spec fn` is uninterpreted, and its
    result type must be inhabited. A bodiless `proof fn` is an axiom and must
    carry `#[trusted(reason = "...")]`.
@@ -423,9 +426,12 @@ rule CLAUSE-*n*.
    `old(v.get(10).cloned())`. In `requires`, a `&mut` parameter `x` and
    `*x` denote the entry value. In `ensures`, a bare `x` or `*x` of a
    `&mut` parameter denotes the caller's referent at return, as v1's
-   `final(*x)` does, even where the body reassigns the parameter
+   executable `final(*x)` does, even where the body reassigns the parameter
    (`cur = &mut n.next`): the lowering passes the body a reborrow and reads
    the caller's reference after it. `old(*x)` denotes the entry value.
+   Where §4.1 makes `final(*x)` a prophecy (the result's origins include
+   `x`'s, or the signature lets `x`'s borrow outlive the call), naming `x`
+   or `*x` in an `ensures` is `FX0803` in v0; `old(*x)` is allowed.
    Other parameters denote their entry values. Of these, a `Copy` one, a
    shared reference included, is copied at entry as it is. A non-`Copy` one
    is cloned at entry if it is `Clone + Pure + Sync`, the types whose
@@ -462,7 +468,11 @@ rule CLAUSE-*n*.
    violation, step budgets, entry values of by-value parameters in
    `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
    closure lowering rejects with E0521 (`research/15-rust-dialect.md`,
-   Spike results).
+   Spike results). The lowering item 4 describes also needs a generic
+   helper call when the body returns a borrow of the reborrowed parameter,
+   a renamed `self`, which cannot be a closure parameter, and the checker's
+   `Pure` decision to choose snapshots, since rustc accepts every `Pure`
+   bound (`03-authority-concurrency.md` §3.1).
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
