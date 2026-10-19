@@ -1,6 +1,6 @@
 # Tide Memory: Ownership and Origins
 
-Status: draft 1, synchronized with draft 3.1. This chapter elaborates D2 of
+Status: draft 1, synchronized with draft 3.3. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
 definition the checker implements. Section 13 records the edits it asked of
 `01-design.md`.
@@ -622,7 +622,7 @@ trust hole.
 **Task boundaries** require `Send` (by value) or `Sync` (by reference): a
 spawned child's captures, so the closure is `Send`; channel messages;
 `Shared` payloads; a child's result; and the branches of `join`, `par_map`
-and `par_for`.
+and `par_for`, including the slice elements they share or split (§8.5).
 
 **Task isolation (D8).** Under the evented runtime (v1), a task may migrate
 between OS threads at a suspension point while it holds values that are not
@@ -718,7 +718,12 @@ no half-updated place of the caller. A cell whose `with` closure panicked is
 poisoned (§8.4).
 
 Memory safety never depended on a failure rule: abandoning a task leaves
-every value valid memory, as unwinding does in Rust.
+every value valid memory, as unwinding does in Rust. Stack overflow is a
+panic too (D5, `03-authority-concurrency.md` PANIC-1), so it unwinds
+through scope exit, which joins the children that borrow the overflowing
+task's frames before those frames are freed. A panic during unwinding
+aborts the process (PANIC-2), so no frame is freed while a child still
+borrows it.
 
 ### 8.4 `Shared<T>` and `Shared::with`
 
@@ -757,6 +762,13 @@ borrow the enclosing frame, because `join` returns only after both finish. In
 Rust this is the shape of `rayon::join`. `Pure + Sync` is stricter than
 `Sync`; that serves determinism, not memory safety. Draft 2's `par { }`
 block is removed (D9).
+
+Element types follow the same rule (D9, `03-authority-concurrency.md`
+PAR-4): every element is `Pure`, plus `Sync` when branches share it and
+`Send` when branches split or move it. `par_map` requires `T: Pure + Sync`,
+and `par_for`, `par_chunks_mut` and `par_sort` require `T: Pure + Send`.
+Without the `Pure` bound, a slice of `Shared` handles or channel ends would
+let a closure that captures nothing lock cells or block in schedule order.
 
 If a branch panics, the panic propagates (D5), and the places the region
 could write through `&mut` hold unspecified but valid values: a branch may or
@@ -831,7 +843,7 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 
 | Use | Requires |
 | --- | --- |
-| `join`; `par_map`, `par_for` | `FnOnce + Pure + Send` closures; `Fn + Pure + Send + Sync` closures; both with `Pure + Sync` shared captures |
+| `join`; `par_map`, `par_for`, `par_chunks_mut`, `par_sort` | `FnOnce + Pure + Send` closures; `Fn + Pure + Send + Sync` closures; both with `Pure + Sync` shared captures; elements `Pure + Sync` (`par_map`) or `Pure + Send` (the others) |
 | memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7) |
 | statics (computed at compile time) | `Owned + Sync + Pure` |
 | `Shared` payloads; `with` closures | `Send + Pure`; `Pure` |

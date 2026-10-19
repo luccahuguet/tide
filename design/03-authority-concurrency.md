@@ -2,7 +2,7 @@
 
 Status: draft 1 of the normative chapter for D7, D8, D9, D15, D16, and the
 Rust-import part of D13 in `design/01-design.md`, synchronized with its draft
-3.1. That document owns the decisions; this chapter turns them into rules a
+3.3. That document owns the decisions; this chapter turns them into rules a
 compiler, runtime, and simulator can implement. Where a rule needs a decision
 the design does not state, this chapter says so and lists it in §13.
 
@@ -154,8 +154,9 @@ the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
 
 No runtime runs children inline, so a library that spawns is correct under
 all four; they differ in cost, not meaning. Because `threads` gives every
-live task its own OS thread, blocked tasks never starve a runnable one, and
-production cannot deadlock where the simulator makes progress (D8).
+live task its own OS thread, blocked tasks never starve a runnable one.
+Parallel branches cannot block either (PAR-4), so production cannot
+deadlock where the simulator makes progress (D8).
 `Tasks::limit(n)` bounds concurrency where a program needs a bound.
 
 Capability types are concrete: production binaries link only the real
@@ -227,11 +228,21 @@ What replaces each use of global state:
 | a global logger | the sinks (§2.4) |
 | global configuration | a `Pure + Sync` config value built in `main` and passed by reference |
 
-### 2.3 Resource exhaustion
+### 2.3 Resource exhaustion and nested panics
 
-Allocation needs no capability; its failure aborts the process. Stack
-overflow abandons the task. Every determinism claim here holds modulo
-exhaustion of memory, stack, or `const fn` fuel.
+Allocation needs no capability; its failure aborts the process. Every
+determinism claim here holds modulo exhaustion of memory, stack, or
+`const fn` fuel.
+
+- **PANIC-1. Stack overflow** is a panic (D5). Engines detect it before the
+  stack runs out, compiled code by a stack-limit check at function entry and
+  the interpreter by a depth limit, so it unwinds like any panic: destructors
+  run, scope exit joins the children that borrow the task's frames (JOIN-1),
+  and `spawn_isolated` can contain it. The depth at which it occurs is
+  outside the determinism claim.
+- **PANIC-2. Panic during unwinding.** A panic raised while a task is
+  unwinding from another panic, for example in a destructor, aborts the
+  process, as in Rust (D5).
 
 ### 2.4 Write-only sinks
 
@@ -371,19 +382,20 @@ its last release and `make_mut` run user code at timing-dependent points
   task-private cells;
 - memoizability, which also needs `Pure + Sync` parameters and no `&mut`;
 - safety for parallel branches, which also needs `Send` (and `Sync` for a
-  closure called from several branches) and `Pure + Sync` shared captures;
+  closure called from several branches), `Pure + Sync` shared captures,
+  and `Pure` elements (PAR-4);
 - constant time or freedom from timing side channels.
 
 ### 3.5 Where each property is required
 
 | Use | Requires |
 | --- | --- |
-| `join` closures; `par_*` closures | `FnOnce + Pure + Send`; `Fn + Pure + Send + Sync`; for both, shared captures `Pure + Sync` and mutable captures disjoint |
+| `join` closures; `par_*` closures | `FnOnce + Pure + Send`; `Fn + Pure + Send + Sync`; for both, shared captures `Pure + Sync` and mutable captures disjoint; `par_*` elements `Pure + Sync` when shared, `Pure + Send` when split or moved (PAR-4) |
 | compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters; a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
 | `static` (computed at compile time, GLOBAL-2) | `Owned + Sync + Pure` |
 | `Shared<T>` payloads | `T: Send + Pure` |
 | `Shared::with` closures | `Pure`, so every call in them is authority-free |
-| contract clauses (v0) | calls only to authority-free functions with no `&mut` parameters and `Pure + Sync` argument types (`04-contracts.md` §1.8) |
+| contract clauses (v0) | as `04-contracts.md` CLAUSE-3: calls only to authority-free functions with `Pure + Sync` argument types that take `&mut` only to temporaries the clause creates |
 | `spec fn`, `#[spec]` functions (v1) | as `04-contracts.md` §1.5–§1.7: concrete parameter types `Pure`; type parameters of spec and proof fns need no bound |
 | foreign callbacks (v1) | authority-free (§5.3) |
 
@@ -621,9 +633,13 @@ no code after `scope` sees a place a panicking child was mutating; when
      (TASK-4);
   3. otherwise it returns the body's result, `Ok` or `Err`.
 
-  Spawn order, not timing, chooses among failed children, and the runtime
-  never inspects `E`. Failures and panics the rule does not report go to one
-  `debug!` record.
+  An `Err` that a child returns after observing a cancellation caused by a
+  sibling's failure is a **cancellation echo**, not a failure (D8), so rule
+  2 reports the root cause. The runtime keeps one bit per child, set when a
+  checkpoint in the child, or in a scope nested in it, returns a
+  cancellation error that a sibling's failure caused; it never inspects
+  `E`. Spawn order, not timing, chooses among failed children. Failures,
+  echoes, and panics the rule does not report go to one `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
   keeps doing so. Operations that consume a value return it inside the error
@@ -813,6 +829,14 @@ may borrow the enclosing frame, because `join` returns only after both
 finish. A branch is not a task: it has no checkpoints and cannot be
 cancelled.
 
+- **PAR-4. Element types.** The slice methods require elements that are
+  `Pure`, plus `Sync` when branches share them and `Send` when branches
+  split or move them (D9): `par_map` requires `T: Pure + Sync`, and
+  `par_for`, `par_chunks_mut`, and `par_sort` require `T: Pure + Send`
+  (`FX0612`). With the closure and capture rules, every branch is
+  authority-free: none can reach a `Shared` cell, a channel end, or a
+  capability, so none can synchronize, block, or do I/O.
+
 ### 8.2 Semantics
 
 - **PAR-1.** When no branch panics, a parallel call's values, its writes
@@ -832,7 +856,11 @@ cancelled.
   reaching one, the region may diverge where the sequential program would
   have panicked.
 - **PAR-3.** Floating-point code is never contracted to FMA or reassociated
-  unless written so (`mul_add`), and `to_bits` canonicalizes NaN (D3). std
+  unless written so (`mul_add`). Every operation that reads a float's sign
+  or bits (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`,
+  `signum`, `total_cmp`, hashing, formatting, and foreign calls) treats any
+  NaN as one canonical NaN in every engine, `const fn` evaluation included,
+  while arithmetic stays native (D3). std
   ships one math library for every target (D15), so `sin`, `exp`, `ln`,
   `powf`, and the other functions beyond IEEE's basic operations never call
   the platform's libm.
@@ -913,8 +941,9 @@ default and `tide sim --test` runs more.
   operation (`spawn`, `join`, `send`, `recv`, `Shared::with*` acquire and
   release, `reset`, atomics, `Weak::upgrade`), and every checkpoint. Between two points a task
   runs alone. Because safe code is data-race-free, interleavings at
-  synchronization operations reach every observable outcome, so this
-  granularity loses timings, not behaviors.
+  synchronization operations reach every outcome the simulator's model can
+  observe (§9.8 lists what it leaves out), so this granularity loses
+  timings, not modeled behaviors.
 - Strategies: `random` (default), `pct(depth)` (probabilistic concurrency
   testing; not in v0 per `reference.md`), and `fifo` for debugging.
 
@@ -982,13 +1011,24 @@ Each trace event records virtual time, node, task, kind (`cap`, `sched`,
 `fault`, `sink`, `spawn`, `exit`, `cancel`, `cell`, `chan`, `assert`), the
 operation with its source span, its arguments, and its result.
 
-Every simulated run writes a **replay manifest** (D15): the seed, commit,
-toolchain version, target, the simulated root's configuration (program
-arguments, environment, files, scheduler strategy, and fault plan), and
-every injected input. `tide sim --replay` reruns exactly what a manifest
-records, so a failing seed replays bit for bit. `--minimize` (not in v0
-per `reference.md`) delta-debugs the fault plan and the scheduler's
-preemptions toward a shorter failing trace.
+- **REPLAY-1. Manifest.** Every simulated run, under `tide sim` or
+  `tide test`, writes a replay manifest (D15): the seed; the content hashes
+  of the source and of every dependency (D14's snapshot hashes, so an
+  uncommitted edit changes them); a semantic build identity, which is the
+  compiler version, the target, and every option that affects semantics,
+  such as the profile and `cfg` settings; the simulated root's
+  configuration (program arguments, environment, files, scheduler strategy,
+  and fault plan); and every injected input.
+- **REPLAY-2. Identity check.** `tide sim --replay <manifest>` refuses to
+  run, before executing anything, unless the current source hashes and
+  build identity equal the manifest's; it then reruns exactly what the
+  manifest records, so a failing seed replays bit for bit. The replay
+  command printed for a failing `tide test` seed is this command. `--seed`
+  on `tide sim` or `tide test` starts a fresh run of one seed against the
+  current source; it is not a replay.
+
+`--minimize` (not in v0 per `reference.md`) delta-debugs the fault plan and
+the scheduler's preemptions toward a shorter failing trace.
 
 ### 9.7 Determinism self-check
 
@@ -1354,3 +1394,7 @@ lazy splitting in D9 with PAR-2's divergence qualification, `Accel` in D7,
 and `Shared::new` taking `&Tasks`. Outstanding:
 
 - 01's open question 4 is answered by `#[pure]` and `FX0511` (§3.2).
+- D8's echo rule (TASK-2) covers cancellations caused by a sibling's
+  failure. When the body's own `Err` cancels the scope, a child's echo still
+  counts under rule 2 and replaces the body's error; D8 should say whether
+  the body's failure counts as a sibling's.

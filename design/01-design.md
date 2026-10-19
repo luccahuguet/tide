@@ -440,6 +440,8 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   `DeadlineExceeded`; otherwise it returns the body's result. An error a
   child returns after observing cancellation caused by a sibling's failure
   does not count as a failure, so the root cause is what the scope reports.
+  Likewise, when the body itself returns `Err`, the children it cancels are
+  echoes, and the scope returns the body's error unless a child panicked.
 - In v0 the threads runtime runs one OS thread per task, so blocking tasks
   cannot exhaust a pool and production cannot deadlock where the simulator
   makes progress; `Tasks::limit` bounds concurrency when needed.
@@ -518,8 +520,10 @@ stackful execution internally.
   counts as a violation of the clause that needed it. One skip rule decides
   when a clause runs: clauses built only from operators, literals, and
   standard-library accessors are `checked` in debug and test builds;
-  clauses that call user-defined functions are `sampled` and run under
-  `tide test`. Mathematical integers and model equality
+  quantifiers and clauses that call user-defined functions are `sampled`
+  and run under `tide test`. In generic code, a clause that passes a value of
+  type `T` to a function requires `T: Pure + Sync`. Mathematical integers
+  and model equality
   apply under `prove` (v1), and the compiler warns where a clause would read
   differently under the two.
 - **Uses**, chosen per package and overridable per item:

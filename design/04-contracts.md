@@ -1,6 +1,6 @@
 # Tide Contracts
 
-Status: draft 1, synchronized with draft 3.1. This chapter is the normative
+Status: draft 1, synchronized with draft 3.3. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
 `design/01-design.md`. It elaborates those decisions and must not contradict
 them. Where it needs a decision changed, it says so in the last section;
@@ -339,60 +339,79 @@ produces a type error.
 ### 1.8 v0 clause semantics
 
 This section is the whole meaning of a v0 clause (D10). v0 has no spec
-language, so in v0 this section replaces §1.3–§1.7 and §2.2.
+language, so in v0 this section replaces §1.3–§1.7 and §2.2. Item *n* is
+rule CLAUSE-*n*.
 
-1. **Forms.** v0 has `requires`, `ensures`, and loop `invariant` clauses,
-   with `result`, `old(e)`, `==>`, and `forall` and `exists` over a bounded
-   binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
+1. **CLAUSE-1. Forms.** v0 has `requires`, `ensures`, and loop `invariant`
+   clauses, with `result`, `old(e)`, `==>`, and `forall` and `exists` over a
+   bounded binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
    `exists`), with `lo` and `hi` free of `x`, or `c.contains(&x) ==> p`; an
    unsigned binder implies `0 <= x`. An unbounded quantifier is an error.
    `decreases`, `diverges`, `final`, type invariants, and the spec language
    of §1.3–§1.7 are v1.
-2. **Code semantics.** A clause is a Rust boolean expression, typed and
-   evaluated as code: machine integers that trap on overflow, and `==` and
-   `<` through `PartialEq` and `PartialOrd`. So
+2. **CLAUSE-2. Code semantics.** A clause is a Rust boolean expression,
+   typed and evaluated as code: machine integers that trap on overflow,
+   and `==` and `<` through `PartialEq` and `PartialOrd`. So
    `fn widen(a: u8, b: u8) -> u16 ensures result == a + b` is a type error;
    write `result == a as u16 + b as u16`. Mathematical integers and model
    equality apply only under `prove` (v1).
-3. **Read-only evaluation.** A clause calls only authority-free functions
-   whose argument types are `Pure + Sync` and that take `&mut` only to
-   temporaries created inside the clause, such as the iterator in
+3. **CLAUSE-3. Read-only evaluation.** A clause calls only authority-free
+   functions whose argument types are `Pure + Sync` and that take `&mut`
+   only to temporaries created inside the clause, such as the iterator in
    `xs.iter().all(|x| *x > 0)`; no `&mut` reaches a place that exists
-   outside the clause's own evaluation. The rule
-   covers methods, trait methods, the operator impls behind `==`, `<`, and
-   indexing, and calls inside closure literals in the clause. `Sync`
-   excludes `Cell`, `RefCell`, and `Rc`, and `Pure` excludes capabilities
-   and handles, so evaluating a clause cannot change program state: a build
-   that erases clauses differs only by the missing checks. `Iterator::all`
-   and `any` take `&mut self`; a clause uses `forall` and `exists` instead.
-   Generic clauses are classified per instantiation (D4): where an argument
-   type is not `Pure + Sync`, the clause is not evaluated and is reported as
-   unchecked (provisional).
-4. **`old` and `&mut` parameters.** `old(e)` is `e` evaluated at entry. The
-   evaluator snapshots each maximal subexpression of `e` that mentions no
-   `result` or bound variable, so `old(v.len())` costs one word, and it
-   never calls `Clone`. In `requires`, a `&mut` parameter `x` and `*x` denote
-   the entry value. In `ensures`, a bare `x` or `*x` of a `&mut` parameter
-   denotes its value at return and `old(*x)` its value at entry; other
-   parameters denote their entry values.
-5. **Classes.** A clause is `sampled` if its cost can grow with the size of
-   a value or is unknown: it contains a quantifier, `==` or `old` over a
-   collection, or a call to any function other than operators on scalars
-   and std's constant-time accessors (`len`, `is_empty`, indexing, `get`,
-   `is_some`, `is_ok`, and similar). Every other clause is `checked`.
-6. **When clauses run.** Debug builds evaluate `checked` clauses: `requires`
-   at entry, `ensures` at each return, and loop invariants at loop entry and
-   exit (§2.3). `tide test` also evaluates `sampled` clauses on §2.4's
-   schedule, evaluates loop invariants after every iteration, and runs
-   generated tests (§2.4). Release builds erase clauses (§2.6).
-7. **Outcomes.** A clause that evaluates to `false` is a violation, and so is
-   a clause whose evaluation panics; a violation panics (D5) and blames the
-   caller for `requires` and the callee for `ensures` and invariants. Each
-   evaluation of a `sampled` clause has a step budget, and one that exceeds
-   it is reported as unchecked, not as failed. The report lists every clause
-   a build or test run did not evaluate.
-8. **Approval.** A contract's hash covers the bodies of every function its
-   clauses call, transitively (D11, §11).
+   outside the clause's own evaluation. The rule covers methods, trait
+   methods, the operator impls behind `==`, `<`, and indexing, the `Clone`
+   impls that `old` calls (item 4), and calls inside closure literals in the
+   clause. `Sync` excludes `Cell`, `RefCell`, and `Rc`, and `Pure` excludes
+   capabilities and handles, so evaluating a clause cannot change program
+   state: a build that erases clauses differs only by the missing checks. A
+   clause in generic code is checked once, at its definition (D4), so a
+   value whose type mentions a type parameter `T` may reach a call only if
+   the definition bounds `T` by `Pure + Sync`, as generic definitions state
+   the properties they need (`03-authority-concurrency.md` §3.2). Without
+   the bound the clause is an error whose fix adds it; no instantiation
+   skips a clause.
+4. **CLAUSE-4. `old` and `&mut` parameters.** `old(e)` evaluates `e` at
+   entry and snapshots the value it denotes (D10). A `Copy` value is copied
+   and any other value is cloned, so `old(v.len())` costs one word and
+   `old(*v)` clones the whole `Vec`. A reference is snapshotted as its
+   referent, and a snapshot is borrow-checked as a local live from entry to
+   return, so it cannot hold a borrow the body invalidates
+   (`old(v.get(10))` is rejected where the body mutates `v`). `old` of a
+   type that is neither `Copy` nor `Clone` is an error whose fix moves a
+   method call inside, as in `old(v.len())`. Because `e` runs at entry, it
+   cannot mention `result` or a quantifier's bound variable: for a bound
+   `i`, write `old(*v)[i]`, not `old(v[i])`. A panic while taking a
+   snapshot is a violation of the clause that needed it (item 7), so a
+   value that may not exist is snapshotted as an `Option`, as in
+   `old(v.get(10).cloned())`. In `requires`, a `&mut` parameter `x` and
+   `*x` denote the entry value. In `ensures`, a bare `x` or `*x` of a
+   `&mut` parameter denotes its value at return and `old(*x)` its value at
+   entry; other parameters denote their entry values.
+5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
+   literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
+   `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)
+   is `checked`. Every other clause is `sampled`: one with a quantifier, one
+   that calls a std function that is not an accessor, and one that calls a
+   user-defined function, which includes a closure literal and an operator
+   or `Clone` that reaches a user type's impl. The class depends on syntax,
+   not cost, so `a == b` on two `Vec<i64>` is `checked`.
+6. **CLAUSE-6. When clauses run: one skip rule** (D10). Debug and test
+   builds evaluate `checked` clauses: `requires` at entry, `ensures` at each
+   return, and loop invariants at loop entry and exit (§2.3). `tide test`
+   also evaluates `sampled` clauses on §2.4's schedule, evaluates loop
+   invariants after every iteration, and runs generated tests (§2.4).
+   Release builds erase clauses (§2.6). Apart from a `sampled` clause's
+   step budget (item 7), nothing else decides whether a clause runs.
+7. **CLAUSE-7. Outcomes.** A clause that evaluates to `false` is a
+   violation, and so is a clause whose evaluation panics, including a panic
+   while taking one of its `old` snapshots (item 4); a violation panics (D5)
+   and blames the caller for `requires` and the callee for `ensures` and
+   invariants. Each evaluation of a `sampled` clause has a step budget, and
+   one that exceeds it is reported as unchecked, not as failed. The report
+   lists every clause a build or test run did not evaluate.
+8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
+   function its clauses call, transitively (D11, §11).
 
 ## 2. The three uses
 
@@ -1305,8 +1324,16 @@ integers, the laws come from the std lexicographic lemmas and the verdict is
 Draft 3 applies all five amendments this chapter asked for: `Err(Aliased)`
 from `with2` (D8), dropped abandoned values (D5), opaque executable bodies
 (D10), spec fn bodies and laws in interfaces (D12), and trust closures in
-status (D11). One remains:
+status (D11). These remain:
 
 1. D12: the instantiation cache key should include the proof status of the
    laws an instance relies on, so check deletion stays sound across builds
    (§2.6, §5.3).
+2. D10: say that a clause in generic code needs `Pure + Sync` bounds on the
+   type parameters whose values it passes to calls (CLAUSE-3). D4's
+   definition checking and the one skip rule, which leaves no
+   per-instantiation skip, already imply it.
+3. D10: the one skip rule names the `checked` and the user-call `sampled`
+   cases; CLAUSE-5 also classes quantifiers and std calls that are not
+   accessors as `sampled`, as D10's cost-based description of the classes
+   suggests.

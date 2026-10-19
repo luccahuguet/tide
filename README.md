@@ -31,7 +31,7 @@ and the speed figures are targets, not measurements.*
 ## Status
 
 Tide is in the design phase; there is no compiler for this design. The
-decision record is `design/01-design.md` (draft 3). Syntax is provisional
+decision record is `design/01-design.md` (draft 3.3). Syntax is provisional
 until the E1 learnability experiment meets its thresholds (D0).
 
 The repository holds no code yet. The early Rust scaffold from the first
@@ -60,8 +60,9 @@ design, which does not implement Tide, is kept in
 - [REFERENCES.md](REFERENCES.md): the languages, projects, papers, and data
   Tide draws on.
 
-Chapters 02–04 elaborate draft 2.1 and still describe some later-tier
-features; on any conflict, `01-design.md` and its tier table win.
+Chapters 02–04 elaborate draft 3.3 and label which sections are v0 core and
+which are later tiers; on any conflict, `01-design.md` and its tier table
+win.
 
 ### Research
 

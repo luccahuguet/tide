@@ -1,7 +1,7 @@
 # Tide for Rust Programmers
 
 Status: the agent-facing reference for the **v0 core** of Tide, as the
-tier table of `design/01-design.md` (draft 3.1, the decision record) defines
+tier table of `design/01-design.md` (draft 3.3, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
@@ -384,9 +384,12 @@ context. `round_from` and float `TryFrom` are provisional names.
 
 ### 4.3 Floats
 
-IEEE 754 as Rust; `to_bits()` returns one canonical NaN pattern, and `sin`,
-`exp`, `powf`, and the other math functions come from one library that std
-ships for every target, so results match across targets. `f64` is not `Eq`
+IEEE 754 as Rust, with native arithmetic, but every operation that reads a
+float's sign or bits (`to_bits`, `is_sign_positive`, `is_sign_negative`,
+`copysign`, `signum`, `total_cmp`, hashing, formatting, foreign calls) sees
+any NaN as one canonical NaN. `sin`, `exp`, `powf`, and the other math
+functions come from one library that std ships for every target, so results
+match across targets. `f64` is not `Eq`
 or `Ord`; use `total_cmp`.
 
 ## 5. Traits and generics
@@ -648,7 +651,7 @@ authority-freedom a compile error (`FX0511`).
 | Use | Requires |
 | --- | --- |
 | `join` closures (8) | `Pure + Send`; shared captures `Pure + Sync` |
-| `par_map`, `par_for` closures (8) | `Fn + Pure + Send + Sync`; shared captures `Pure + Sync` |
+| `par_map`, `par_for`, `par_sort` (8) | closures `Fn + Pure + Send + Sync`; shared captures `Pure + Sync`; elements `Pure + Sync` (`par_map`) or `Pure + Send` |
 | `Shared<T>` payloads; `with` closures (7.4) | `T: Send + Pure`; closure `Pure` |
 | `static` (6.4) | `Owned + Sync + Pure` |
 | functions a contract clause calls (10.1) | authority-free, `Pure + Sync` arguments, `&mut` only to clause-created temporaries |
@@ -713,9 +716,11 @@ Semantics:
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
   interleaving, so each seed explores a schedule. Parallel regions (8) run
-  sequentially. Each run writes a replay manifest (seed, commit, toolchain,
-  target, simulated setup, injected faults), from which it replays bit for
-  bit.
+  sequentially. Each run writes a replay manifest: seed, content hashes of
+  the source and every dependency, compiler version, target,
+  semantics-affecting build options, simulated setup, and injected inputs.
+  Replay refuses to run if the source or build differs; otherwise it
+  reproduces the run bit for bit.
 - **Errors** have the host's `io::ErrorKind`s.
 - **Packet loss.** `net_drop(p)` drops each packet independently with
   probability `p`. A UDP datagram is simply lost. TCP streams and
@@ -773,8 +778,11 @@ fn acked_lines_survive_a_crash(sim: SimRoot) {
 }
 ```
 
-`tide test` reports a failing seed with a replay command
-(`tide test acked_lines_survive_a_crash --seed 1729 --trace`);
+`tide test` reports a failing seed with a replay command that loads its
+manifest:
+`tide sim --replay target/sim/acked_lines_survive_a_crash-1729.manifest.json`.
+`tide test acked_lines_survive_a_crash --seed 1729 --trace` instead reruns
+that seed against the current source, for example after a fix.
 `tide sim <bin> -- args` runs `main` under many seeds as one node.
 
 ### 6.9 Ambient Rust calls and their fixes
@@ -859,7 +867,9 @@ pub struct Panicked { pub message: String }          // (provisional)
   child has finished, `scope` re-raises the panic of the earliest-spawned
   panicking child, if any; otherwise it returns the error of the
   earliest-spawned failing child, if any (`DeadlineExceeded` if the scope's
-  own deadline cancelled it, 7.2); otherwise the body's result. Other
+  own deadline cancelled it, 7.2); otherwise the body's result. An error a
+  child returns after seeing the cancellation that a sibling's failure
+  caused is an echo, not a failure, so the root cause is reported. Other
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives
@@ -1064,8 +1074,10 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
 
 - `join` is in `std::par`. `par_map`, `par_for`, and `par_sort` (stable) are
   inherent slice methods and need no import:
-  `fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>`
-  and `fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)`.
+  `fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U> where T: Pure + Sync`
+  and `fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync) where T: Pure + Send`;
+  `par_sort` needs `T: Pure + Send` too. These element bounds (`FX0612`)
+  keep every `Shared` cell, channel, and capability out of reach of a branch.
 - `join` closures must be `Pure + Send`; `par_map`, `par_for`, and
   `par_sort` closures are shared by branches, so they must also be `Fn` and
   `Sync` (no owned `Cell`) (`FX0610`). Shared captures must be
@@ -1091,10 +1103,11 @@ let total: u64 = docs.par_map(|d| score(d)).iter().sum();         // reduce sequ
   `let _ = r;` to discard on purpose (provisional: Rust warns).
 - `#[derive(Error)]` replaces `thiserror` (2.2).
 - **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap`
-  on `None`, a violated contract) unwind the current task and run
-  destructors. A panicking child makes its scope panic (7.1). There is no
-  `catch_unwind` (`FX0701`); isolate risky work with `tasks.spawn_isolated`.
-  A panic in the main task exits with code 101.
+  on `None`, a violated contract, stack overflow) unwind the current task
+  and run destructors. A panic raised during that unwinding, for example in
+  a destructor, aborts the process. A panicking child makes its scope panic
+  (7.1). There is no `catch_unwind` (`FX0701`); isolate risky work with
+  `tasks.spawn_isolated`. A panic in the main task exits with code 101.
 
 ## 10. Contracts
 
@@ -1114,10 +1127,14 @@ builds, erased in release, and used to drive property tests.
   included, are conjoined in order.
 - **In `ensures`**, `result` is the return value (a contextual keyword): a
   place the clause reads but cannot move out of, so match on `&result` or
-  use `result.as_ref()` unless it is `Copy` (provisional). `old(e)` is `e`
-  evaluated at entry. A `&mut` parameter `v` (or `*v`)
-  means its value at return; `old(*v)` its value at entry. `old` snapshots
-  only what the clause reads and never calls `Clone`.
+  use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
+  parameter `v` (or `*v`) means its value at return; `old(*v)` its value at
+  entry. `old(e)` evaluates `e` at entry and snapshots the value: `Copy`
+  values are copied, others cloned, and a reference snapshots its referent.
+  So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`
+  of a type that is neither `Copy` nor `Clone` is an error. `e` cannot
+  mention `result` or a quantifier's variable: write `old(*v)[i]`. A panic
+  while snapshotting is a violation of that clause.
 - **Clause expressions** are ordinary Rust boolean expressions, evaluated
   as code: `==`, `<`, and arithmetic mean exactly what they mean in code,
   including overflow traps; widen (`a as u128 + b as u128`) when a sum might
@@ -1126,11 +1143,9 @@ builds, erased in release, and used to drive property tests.
   temporaries the clause creates (`xs.len()`, `x.cmp(y)`,
   `xs.iter().all(|x| *x > 0)`, your own `is_valid(x)`, closures capturing
   such data). So a clause cannot reach a capability, `Shared`, `Cell`, or
-  `RefCell`, not even `cells.len()` on a slice of handles, and cannot call
-  `Iterator::all` or `any`, which take `&mut self`: write `forall` or
-  `exists`. Type parameters need no bound; at an instantiation whose types
-  are not `Pure + Sync`, a clause that calls their methods is reported as
-  unchecked (provisional).
+  `RefCell`, not even `cells.len()` on a slice of handles. In generic code,
+  a clause that uses a value of a type parameter `T` needs `T: Pure + Sync`
+  (the fix adds the bound); no instantiation skips a clause.
 - **Added syntax**, clauses only: `a ==> b` (implication, lowest precedence,
   right-associative); `forall |i: T| guard ==> p` and
   `exists |i: T| guard && p`, where `guard` bounds the binder as
@@ -1139,10 +1154,11 @@ builds, erased in release, and used to drive property tests.
   extends as far right as possible: to the end of the clause, or of the
   enclosing parentheses or `match` arm. So write
   `result == (exists |i: usize| i < xs.len() && xs[i] == x)`.
-- **When clauses run.** A clause is *sampled* if it has a quantifier,
-  compares or snapshots a whole collection, or calls anything but scalar
-  operators and std's constant-time accessors (`len`, `is_empty`, indexing,
-  `get`, `is_some`); other clauses are *checked*. Debug builds evaluate
+- **When clauses run.** One rule: a clause built only from operators on std
+  types, literals, `result`, `old` of `Copy` values, and std's accessors
+  (`len`, `is_empty`, indexing, `get`, `contains`, `is_some`) is *checked*;
+  any other clause, such as one with a quantifier, a closure, or a call to
+  your own function, is *sampled*. Debug and test builds evaluate
   checked clauses at the points in the table; `tide test` also checks
   sampled clauses, on each function's first 64 calls and then calls 128,
   256, and so on, each under a step budget. One that runs over budget is
@@ -1360,7 +1376,7 @@ only = ["crate::net::*"]         # no other module may declare Net
 | `tide check` | One verdict plus NDJSON diagnostics: stable codes, exact and related spans, fixes marked `safe` or `suggest`. |
 | `tide fix` | Apply safe fixes; `--thread <Cap> --to <fn>` threads a capability. |
 | `tide test [filter] [--seed N] [--trace]` | Tests, property tests, and sim tests: diff, panic span, seed, shrunk input, replay command, event trace. |
-| `tide sim <bin> -- args` | Run `main` under many seeds. |
+| `tide sim <bin> -- args` | Run `main` under many seeds; `tide sim --replay <manifest>` replays a run (6.8). |
 | `tide eval '<expr>'` | Evaluate an expression against the package in the interpreter. |
 | `tide explain FX0201` | Explanation with a before/after example. |
 | `tide review <base>` | Trust diff (11). |
@@ -1401,6 +1417,7 @@ and candidate functions; use holes to build a function top-down.
 | `tokio::select!` | a channel of an enum, deadlines | `FX0605` |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `FX0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `FX0610`, `FX0611` |
+| `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `FX0612` |
 | `catch_unwind` | `tasks.spawn_isolated` | `FX0701` |
 | Ignoring a `Result` | `?`, handle it, or `let _ =` | `FX0702` |
 | `requires a, b` | `requires a` `requires b` | safe fix |
@@ -1561,7 +1578,7 @@ an `Outcome`, so the scope returns `Ok` with one outcome per URL (7.2).
 use std::cmp::Ordering;
 
 /// Like `slice::binary_search`.
-pub fn binary_search<T: Ord>(xs: &[T], target: &T) -> Result<usize, usize>
+pub fn binary_search<T: Ord + Pure + Sync>(xs: &[T], target: &T) -> Result<usize, usize>
     requires xs.is_sorted()
     ensures match result {
         Ok(i) => i < xs.len() && xs[i] == *target,
@@ -1608,7 +1625,8 @@ mod tests {
 ```
 
 The `ensures` of `binary_search` uses `==` and `<` on `T`, which are `Eq`
-and `Ord` exactly as in code. Its `requires` and quantified `ensures` are
+and `Ord` exactly as in code; its clauses use values of `T`, so `T` is
+bounded `Pure + Sync` (10.1). Its `requires` and quantified `ensures` are
 sampled: `tide test` checks them in linear time on its schedule (10.1), and
 release builds erase them. `tide test` also runs generated contract tests
 of both functions (10.2): `T` becomes
@@ -1617,7 +1635,7 @@ generated directly rather than filtered.
 
 ## 16. Where the documents disagree
 
-The chapters are synchronized with 01 draft 3.1. These points remain open;
+The chapters are synchronized with 01 draft 3.3. These points remain open;
 this reference takes the reading shown.
 
 1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
@@ -1632,7 +1650,7 @@ this reference takes the reading shown.
 
 ## Appendix A. Later tiers (not in v0)
 
-From the tier table of 01 (draft 3.1). The chapters specify most of these.
+From the tier table of 01 (draft 3.3). The chapters specify most of these.
 
 **v1:**
 
