@@ -8,8 +8,10 @@ draft 3.4). **Inference** marks reasoning that no source states.
 Method: a Grok search of X (1 Jan 2025 to 19 Oct 2026) returned the posts
 quoted in "Findings from X"; quotes are as Grok reported them, the posts
 were not each reopened, and every figure in them is the author's claim. A
-delegated web search of papers, benchmarks, and incident reports supplied
-"Empirical evidence"; most 2026 items there are arXiv preprints, and figures
+delegated web search of practitioner write-ups supplied "Practitioner
+reports" (three primary sources returned 403 and are quoted through the
+secondary source named); a second search of papers, benchmarks, and incident
+reports supplied "Empirical evidence"; most 2026 items there are arXiv preprints, and figures
 marked *secondary* were seen only in write-ups about a study.
 
 ---
@@ -129,6 +131,111 @@ operational problem, not by rate.
 
 ---
 
+## Practitioner reports (cited)
+
+### P1. Fast mechanical feedback the agent cannot forge
+
+- "give the agent fast, high quality tools to automatically tell it when it
+  is wrong" [P01]. "Specific programming languages have inbuilt back
+  pressure through their type system" [P02].
+- Stripe's pre-push lints take "less than five seconds", and it runs "at
+  most two rounds of CI" because CI costs "tokens, compute, and time" [P03].
+  "Advice does not cause builds to fail, allowing drift to accumulate
+  quietly" [P04].
+
+### P2. Verification the agent cannot game
+
+- Anthropic's long-running harness tells the agent "It is unacceptable to
+  remove or edit tests" and keeps the feature list in JSON because the model
+  "is less likely to inappropriately change or overwrite JSON files compared
+  to Markdown" [P05].
+- StrongDM keeps its scenarios "outside the codebase (similar to a 'holdout'
+  set)" [P06]. "36% of commits made by coding agents add mocks to tests,
+  compared with 26% by non-agents" [P07].
+
+### P3. Review is the bottleneck
+
+- "the natural bottleneck on all of this is how fast I can review the
+  results" [P08]; "the pull request review clearly turns into the
+  bottleneck", and "if input grows faster than throughput, you have an
+  accumulating failure" [P09]; beyond 3–4 parallel sessions, "I'm the
+  bottleneck" [P10].
+
+### P4. State lives in files, not context
+
+- "each new session begins with no memory of what came before";
+  "compaction isn't sufficient" [P05]. Yegge treats compaction as "a failure
+  mode" and keeps work in Beads, "a Git ledger of all of your work" [P11].
+
+### P5. Isolation between parallel agents
+
+- Building a C compiler with agents: "Merge conflicts are frequent", and on
+  the Linux kernel "Every agent would hit the same bug, fix that bug, and
+  then overwrite each other's changes" [P12]. With locking, twenty agents
+  produced the throughput of two or three [P13].
+- Hundreds of agents compiling at once produce "many GB/s reads and writes
+  of build artifacts" [P14], and Cargo's shared `target/` lock blocks agents
+  in separate worktrees [P15].
+
+### P6. Sandboxing and supply chain
+
+- Sandboxing "reduces permission prompts by 84%" and needs "both filesystem
+  and network isolation" [P16]. "The only solution that's credible is to run
+  coding agents in a sandbox" [P17].
+- Agent platforms should ship with install scripts disabled; agents "should
+  never regenerate a lockfile unless explicitly asked to"; new package
+  versions should wait 24–72 hours before agents can install them [P18].
+
+### P7. Tool output that is cheap and bounded
+
+- "The test harness should not print thousands of useless bytes", and
+  "Claude can't tell time and, left alone, will happily spend hours running
+  tests" [P12]. "Tools need to be fast"; "Crashes are tolerable; hangs are
+  problematic" [P19].
+
+### P8. Failures must be attributable
+
+- Agents "disavow work. They say, 'Someone completely unrelated to me broke
+  the build'" [P11]. Cursor accepted a small constant error rate rather than
+  a permanently green trunk, since "Even a single small error ... would
+  cause the whole system to grind to a halt" [P14].
+
+### P9. What practitioners say about languages
+
+- Ronacher recommends Go: its context "explicitly flows through the code
+  execution path"; "In Go, tests run straightforwardly and incrementally",
+  while agents misread how to invoke `cargo test`; low churn "greatly
+  reduces the likelihood of AI generating outdated code" [P19].
+- His wish list for a language for agents [P20]: typed results, since
+  "Agents struggle with exceptions"; greppable names, since "agents really
+  like local reasoning"; no macros ("Agents often struggle with macros"); no
+  import cycles; tests that are hard to make flaky; code that "either runs
+  or doesn't"; no significant whitespace; and declared effects so tests can
+  "precisely mock out these side effects" (a proposal, not an observation).
+- "Fast compile-test cycles matter more than code simplicity and
+  readability"; agents compile and test "one-to-two orders of magnitude more
+  often" than humans [P21]. Rust gives "extreme correctness" but "the
+  compilation speed is slow" [P02].
+- Type-checker feedback raised success from 79.6% to 83.9% with "21% fewer
+  steps" on well-typed code, and gave "no meaningful improvement" on lightly
+  typed code (secondary) [P22]. "AI's ability to write code in a language is
+  proportional to how much of that language it's seen" [P23]; Willison
+  doubts that still holds [P24].
+
+**Gaps.** No controlled fleet-scale language comparison; no practitioner
+report of language-level effects or capabilities (every sandbox found works
+at the OS level); no data that language-level determinism reduces flaky
+tests.
+
+**Inference.** Ronacher's list reads like Tide's design: `Result` and `?`
+(D5), no user macros (D6), no module cycles (`FX0914`), braces (D1),
+capabilities as declared effects that the simulator substitutes (D7, D15),
+and `tide check` before anything runs. The gap that no one reports
+language-level capabilities is both Tide's opening and its risk: the idea is
+unproven in practice.
+
+---
+
 ## Empirical evidence (cited)
 
 ### E1. Agents game checks they can edit
@@ -226,14 +333,16 @@ operational problem, not by rate.
 
 | # | Need | Evidence | Tide today | Gap |
 | --- | --- | --- | --- | --- |
-| 1 | Review that fits human attention | X1, E1 | The trust diff (D11) reports what changed in what code may do: authority, contracts, `unsafe` | E3 must show it shrinks review of agent PRs; nothing yet presents it per PR |
-| 2 | Tests and specs the agent cannot weaken | X6, E1 | `#[protected]` tests (D14); contracts in the trust surface (D11) | Signatures, contracts, and grants are not protected; a weakened `ensures` is not flagged as such |
-| 3 | Parallel work without collisions | X2, E7 | Interface artifacts; a body edit never rechecks dependents (D12); content-hashed definitions and stable IDs (D14); no globals (D7) | No first-class delegation boundary: "this interface is sealed, implement behind it" lives only in prompts |
-| 4 | Validation per change, off the shared queue | X3, X8, E6 | Nothing runs at build time; capabilities bound what tests can touch (D7, D13); simulated time (D15) | "Safe to run an unreviewed branch's tests without a VM" is implied, not stated or tested |
-| 5 | A fast, strict check loop | X7, E4 | Targets of tens of milliseconds per edit (D12) | Unproven until a checker exists; lust shows the target is reachable on a Rust subset (research/12) |
+| 1 | Review that fits human attention | X1, P3, E1 | The trust diff (D11) reports what changed in what code may do: authority, contracts, `unsafe` | E3 must show it shrinks review of agent PRs; nothing yet presents it per PR |
+| 2 | Tests and specs the agent cannot weaken | X6, P2, E1 | `#[protected]` tests (D14); contracts in the trust surface (D11) | Signatures, contracts, and grants are not protected; a weakened `ensures` is not flagged as such |
+| 3 | Parallel work without collisions | X2, P5, E7 | Interface artifacts; a body edit never rechecks dependents (D12); content-hashed definitions and stable IDs (D14); no globals (D7) | No first-class delegation boundary: "this interface is sealed, implement behind it" lives only in prompts |
+| 4 | Validation per change, off the shared queue | X3, X8, P6, E6 | Nothing runs at build time; capabilities bound what tests can touch (D7, D13); simulated time (D15) | "Safe to run an unreviewed branch's tests without a VM" is implied, not stated or tested |
+| 5 | A fast, strict check loop | X7, P1, P9, E4 | Targets of tens of milliseconds per edit (D12) | Unproven until a checker exists; lust shows the target is reachable on a Rust subset (research/12) |
 | 6 | Low cost per spawn | X4, E2 | A 25,000-token reference budget (D14); locality (D7) | The reference is paid again by every fresh subagent; no measure of tokens per task |
-| 7 | State that survives compaction | X5, E3 | Seeds and replay commands (D15), snapshot hashes, stable diagnostic codes (D14), rule IDs (D0) make state compact to hand off | None at the language level |
-| 8 | Stable suites | X6, E5 | Deterministic simulation: authority-routed nondeterminism cannot flake, and virtual time makes results independent of machine load (D15) | Undersold: the pitch never says that tests do not flake under 20 parallel agents |
+| 7 | State that survives compaction | X5, P4, E3 | Seeds and replay commands (D15), snapshot hashes, stable diagnostic codes (D14), rule IDs (D0) make state compact to hand off | None at the language level |
+| 8 | Stable suites | X6, P9, E5 | Deterministic simulation: authority-routed nondeterminism cannot flake, and virtual time makes results independent of machine load (D15) | Undersold: the pitch never says that tests do not flake under 20 parallel agents |
+| 9 | Bounded runs and attributable failures | P7, P8 | The simulator counts steps (D15); every failure carries a seed and a replay command (D14) | Promise that every `tide` command is bounded in time and output, and that a failure names the change and seed that caused it |
+| 10 | Builds that many agents can share | P5 | Content-hashed definitions and cached interface artifacts (D12, D14) | State that the build cache is safe for concurrent agents across worktrees, unlike Cargo's `target/` lock |
 
 **Inference, on need 6.** A new language charges a context tax on every
 spawn. A fleet that starts thousands of subagents pays Tide's reference
@@ -370,3 +479,30 @@ Empirical sources (delegated web search, 2026-10-19):
 - [E33] MAST, Mar 2025: https://arxiv.org/abs/2503.13657
 - [E34] AgenticFlict, Apr 2026: https://arxiv.org/abs/2604.03551
 - [E35] Xu et al., Jul 2026: https://arxiv.org/abs/2607.04697
+
+Practitioner sources (delegated web search, 2026-10-19):
+
+- [P01] Mitchell Hashimoto, 5 Feb 2026: https://mitchellh.com/writing/my-ai-adoption-journey
+- [P02] Geoffrey Huntley, Ralph, 14 Jul 2025: https://ghuntley.com/ralph/
+- [P03] Stripe, Minions, 9 Feb 2026: https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents
+- [P04] Factory, linters to direct agents, 5 Sep 2025: https://factory.com/using-linters-to-direct-agents
+- [P05] Anthropic, effective harnesses for long-running agents, 26 Nov 2025: https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
+- [P06] Simon Willison on StrongDM's software factory, 7 Feb 2026: https://simonwillison.net/2026/Feb/7/software-factory/
+- [P07] Hora and Robbes, Jan 2026: https://arxiv.org/abs/2602.00409
+- [P08] Simon Willison, parallel coding agents, 5 Oct 2025: https://simonwillison.net/2025/Oct/5/parallel-coding-agents/
+- [P09] Armin Ronacher, the final bottleneck, 13 Feb 2026: https://lucumr.pocoo.org/2026/2/13/the-final-bottleneck/
+- [P10] Charlie Guo, harness engineering, 22 Feb 2026 (also quotes OpenAI's "Harness engineering", which returned 403): https://www.ignorance.ai/p/the-emerging-harness-engineering
+- [P11] Steve Yegge on Software Engineering Daily, 12 Feb 2026: https://softwareengineeringdaily.com/wp-content/uploads/2026/02/SED1908-Steve-Yegge.txt
+- [P12] Nicholas Carlini, building a C compiler, 5 Feb 2026: https://www.anthropic.com/engineering/building-c-compiler
+- [P13] Cursor, scaling agents, 14 Jan 2026: https://cursor.com/blog/scaling-agents
+- [P14] Cursor, self-driving codebases, 5 Feb 2026: https://cursor.com/blog/self-driving-codebases
+- [P15] Rust forum, cargo-worktree, 26 Mar 2026: https://users.rust-lang.org/t/announcements-cargo-worktree-fix-build-isolation-in-git-worktrees/139192
+- [P16] Anthropic, Claude Code sandboxing, 20 Oct 2025: https://www.anthropic.com/engineering/claude-code-sandboxing
+- [P17] Simon Willison, living dangerously, 22 Oct 2025: https://simonwillison.net/2025/Oct/22/living-dangerously-with-claude/
+- [P18] Andrew Nesbitt, package security for AI agents, 9 Apr 2026: https://nesbitt.io/2026/04/09/package-security-defenses-for-ai-agents
+- [P19] Armin Ronacher, agentic coding, 12 Jun 2025: https://lucumr.pocoo.org/2025/6/12/agentic-coding/
+- [P20] Armin Ronacher, a language for agents, 9 Feb 2026: https://lucumr.pocoo.org/2026/2/9/a-language-for-agents/
+- [P21] Wes McKinney, agent ergonomics, 20 Jan 2026: https://wesmckinney.com/blog/agent-ergonomics/
+- [P22] PyCon US 2026 typing summit recap, 14 May 2026: https://bernat.tech/posts/pycon-us-2026-typing-summit-recap/
+- [P23] GitHub, Anders Hejlsberg interview, 6 Nov 2025: https://github.blog/developer-skills/programming-languages-and-frameworks/typescripts-rise-in-the-ai-era-insights-from-lead-architect-anders-hejlsberg
+- [P24] Simon Willison, not so boring, 9 Mar 2026: https://simonwillison.net/2026/Mar/9/not-so-boring/
