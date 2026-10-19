@@ -865,12 +865,13 @@ pub struct Panicked { pub message: String }          // (provisional)
 - **Failure.** A child or the body fails when it returns `Err`. The first
   failure cancels the scope (body, children, nested scopes). Once every
   child has finished, `scope` re-raises the panic of the earliest-spawned
-  panicking child, if any; otherwise it returns the body's `Err` if the
-  body failed, else the error of the earliest-spawned failing child, if any
-  (`DeadlineExceeded` if the scope's own deadline cancelled it, 7.2);
-  otherwise the body's `Ok` result. An error a child returns after seeing a
-  cancellation that the body's or a sibling's failure caused is an echo and
-  never counts, so the root cause is reported. Other
+  panicking child, if any; otherwise it returns the error of the
+  earliest-spawned failing child, if any (`DeadlineExceeded` if the scope's
+  own deadline cancelled it, 7.2); otherwise the body's result, `Ok` or
+  `Err`. An error a child returns after seeing a cancellation that the
+  body's `Err` or a sibling's failure caused is an echo and never counts,
+  so the root cause is reported: the body's error when the children only
+  echo it, and `x`'s error when the body fails through `x.join()?`. Other
   errors go to one `debug!` record. To collect per-item errors without
   cancelling siblings, return them as data:
   `s.spawn(move || Ok(net.get(u, deadline)))` gives

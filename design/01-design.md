@@ -433,15 +433,17 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   structurally. The task, not the OS thread, is the isolation unit; values
   that never leave a task need not be `Send`.
 - **Scope results** follow one precedence rule once every child has
-  finished. The body counts as spawned before all its children. An error a
-  child returns after observing a cancellation caused by the body's or a
-  sibling's failure is an **echo** and never counts. Then: if anything
-  panicked, the scope re-raises the earliest-spawned panic; otherwise, if
-  the body or any child failed (echoes excluded), it returns the
-  earliest-spawned failure, where a child cancelled by the scope's own
-  deadline reports `DeadlineExceeded`; otherwise it returns the body's
-  `Ok` result. So a body's `Err` wins over every child error, and an
-  independent child failure is never hidden by an echo.
+  finished, unless the body panicked, in which case the panic keeps
+  unwinding after the children are joined. An error a child returns after
+  observing a cancellation caused by the body's `Err` or a sibling's
+  failure is an **echo** and never counts. Then: if a child panicked, the
+  scope re-raises the earliest-spawned child's panic; otherwise, if a child
+  failed (echoes excluded), it returns the earliest-spawned failing child's
+  error, where a child cancelled by the scope's own deadline reports
+  `DeadlineExceeded`; otherwise it returns the body's result, `Ok` or
+  `Err`. So the body's error is reported when its children only echo it,
+  an independent child failure is never hidden, and a body that fails
+  through `x.join()?` reports `x`'s error, not `Cancelled`.
 - In v0 the threads runtime runs one OS thread per task, so blocking tasks
   cannot exhaust a pool and production cannot deadlock where the simulator
   makes progress; `Tasks::limit` bounds concurrency when needed.
