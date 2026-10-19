@@ -7,7 +7,7 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 is not in v0; section 16 lists where the documents still disagree and which
 reading this reference takes. Syntax is provisional until the E1 gate (D0).
 Budget: under 25,000 tokens (D14; CI counting is planned). Measured on
-this text, 2026-10-19: 39,302 tokens, over budget (01 open question 8).
+this text, 2026-10-19: 39,330 tokens, over budget (01 open question 8).
 Method: input tokens that `claude -p --model claude-opus-5-5 --tools ""
 --system-prompt "Reply with OK." --output-format json` reports with this
 file as the prompt, minus those for the prompt `.`.
@@ -657,8 +657,8 @@ it with a blanket impl, so rustc accepts every bound; Tide's checker decides
 it structurally wherever a type meets a `Pure` bound or is coerced to a
 `Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
 own code). **Not `Pure`**: the capability types and `File`, `TcpStream`, and
-other
-handles derived from them; synchronization handles (`Shared`, channel ends,
+other handles derived from them; synchronization handles (`Shared`, channel
+ends,
 `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any `Sync`
 type whose `&self` API can observe or cause mutation); raw pointers;
 a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded type
@@ -1178,8 +1178,10 @@ builds, erased in release, and used to drive property tests.
   use `result.as_ref()` unless it is `Copy` (provisional). A `&mut`
   parameter `v` (or `*v`) means the caller's referent at return, even if
   the body reassigns `v` (`v = &mut n.next`); `old(*v)` its value at
-  entry. If the result borrows from `v`, or `v`'s borrow can outlive the
-  call, only `old(*v)` may be named (`FX0803`). `old(e)` evaluates `e` at
+  entry. If `v`'s lifetime appears in another parameter's type, the result
+  type, or a bound, `v` may be named only inside `old(..)` (`FX0803`); the
+  usual fix gives the other parameter its own lifetime. `old(e)` evaluates
+  `e` at
   entry and snapshots the value: `Copy`
   values are copied, others cloned, and a reference snapshots its referent.
   So `old(v.len())` costs one word, `old(*v)` clones the `Vec`, and `old`

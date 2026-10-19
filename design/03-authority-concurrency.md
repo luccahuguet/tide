@@ -245,19 +245,21 @@ determinism claim here holds modulo exhaustion of memory, stack, or
 `const fn` fuel.
 
 - **PANIC-1. Stack overflow** aborts the process, as in Rust (D5): no
-  destructors run and `spawn_isolated` cannot contain it. Under the
-  simulator it fails the seed. v0's simulator runs in one process (§9.1),
-  so the abort is reported from outside it: `tide test` and `tide sim` run
-  the binary as a child process, which may run several tests and seeds at
-  once. Before a seed runs, the simulator writes its replay manifest with
-  the seed and build identity, and appends the rest of REPLAY-1's contents
-  as the run goes. When the child aborts, the driver reruns each test and
+  destructors run and `spawn_isolated` cannot contain it. Under the simulator
+  it fails the seed. v0's simulator runs in one process (§9.1), so the abort
+  is reported from outside it: `tide test` and `tide sim` run the binary as a
+  child process, which may run several tests and seeds at once. Before a seed
+  runs, the simulator writes its replay manifest with the seed and build
+  identity, and appends the rest of REPLAY-1's contents as the run goes, and
+  Tide's `#[test]` writes a start record for every test, since libtest reports
+  none. When the child aborts, `tide test` or `tide sim` reruns each test and
   seed that was in flight in a child of its own, reports each that aborts
-  alone (a simulated one by seed with its replay command, any other by
-  test name), and starts a fresh child for the tests and seeds not yet
-  run. An abort from PANIC-2 is reported the same way. The depth at which
-  an overflow occurs is outside the determinism claim, so a rerun or
-  replay may not reproduce it.
+  alone (a simulated one by seed with its replay command, any other by test
+  name), and starts a fresh child for the tests and seeds not yet run. The run
+  fails even if no rerun aborts, and then reports the abort with the tests
+  that were in flight. An abort from PANIC-2 is reported the same way. The
+  depth at which an overflow occurs is outside the determinism claim, so a
+  rerun or replay may not reproduce it.
 - **PANIC-2. Panic during unwinding.** A panic raised while a task is
   unwinding from another panic, for example in a destructor, aborts the
   process, as in Rust (D5).
@@ -368,8 +370,7 @@ trait object. A failure is reported under the code of the rule that needs
 `Pure` (`FX0502`, `FX0603`, `FX0606`, `FX0611`, `FX0612`), and otherwise,
 as at a user-written bound, a `Pure` supertrait's impl, or a coercion to a
 `Pure` trait object, as `FX0517`. A type the structural rule rejects that is
-authority-free in
-fact, such as a foreign handle, may be marked
+authority-free in fact, such as a foreign handle, may be marked
 `#[trusted_pure(reason = "...")]` in a package granted `unsafe`, and each
 such mark is a trust hole. `Pure` is deep: it looks through every field,
 private ones included, and through `Box` and `Rc`; recursive types take the
@@ -963,8 +964,9 @@ cancelled.
   other functions beyond IEEE's basic operations use one math library for
   every target (D15), never the platform's libm. Each is generic over
   `f32` and `f64`. The basic operations `sqrt` and `mul_add` are correctly
-  rounded, so they stay methods; on a target without hardware FMA,
-  `mul_add` calls std's math library, never the platform's `fma`.
+  rounded, so they stay methods; on a CPU without hardware FMA, `mul_add`
+  runs the toolchain's correctly rounded software `fma` (rustc's
+  `compiler_builtins` today), never the platform's libm.
   `from_bits` observes nothing and stays admitted (D3). Formatting, byte
   conversions, and foreign calls are audited against the same rule.
   The automatic parallelization pass (later tier) only runs independent

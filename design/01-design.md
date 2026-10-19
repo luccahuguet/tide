@@ -472,7 +472,7 @@ serialization as the default (5–7x slower in prior art).
   foreign handle, is marked `#[trusted_pure]` with a reason in a package
   granted `unsafe`, which counts as a trust hole; `unsafe impl Pure` is not
   used. Rust code that calls a Tide
-  crate is unchecked, so closures and impls it passes in are trust holes,
+  crate (v1) is unchecked, so closures and impls it passes in are trust holes,
   as FFI callbacks are. v1's `ThreadBound` trait objects take the same
   companion form, since `dyn Trait + ThreadBound` is E0225 as well.
 - Parallel code (D9) requires `Pure + Send` closures and `Pure + Sync` shared
@@ -634,8 +634,9 @@ execution internally; it runs tasks on baton-passed threads.
   `*x` of a `&mut` parameter means the caller's referent at return, even
   where the body reassigns the parameter (`cur = &mut n.next`), as v1's
   `final(*x)` does, and `old(*x)` its value at entry. Where `final(*x)`
-  would be a prophecy (the result borrows from `x`, or `x`'s borrow can
-  outlive the call), only `old(*x)` may be named. `old(e)` evaluates
+  would be a prophecy (`x`'s origin appears in another parameter's type,
+  the result type, or a bound, 04 §4.1), naming `x` outside `old(..)` is
+  `FX0803`. `old(e)` evaluates
   `e` at entry and snapshots the value it
   denotes, copying `Copy` values and cloning others; `old` of a type that is
   neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
@@ -930,7 +931,7 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   build scripts or proc macros for Tide crates except the toolchain's
   (imported Rust crates' build scripts run sandboxed, D13), and keeps its own
   content-addressed cache instead of Cargo's build directory. A generated
-  `Cargo.toml` is an export for Rust consumers.
+  `Cargo.toml` is an export for Rust consumers (v1).
 - **rustc and LLVM are the release backend**, replacing D12's C backend and
   its Cranelift-class backend; open question 7 lapses. An interpreter is
   built only on D12's conditions.

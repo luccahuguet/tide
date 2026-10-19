@@ -69,7 +69,7 @@ Rust code that uses `result` or `old` as an identifier keeps compiling.
 | Form | Where |
 | --- | --- |
 | `#[requires(..)]`, `#[ensures(..)]`; v1: `#[decreases(..)]`, `#[diverges]` | outer attributes on a function or inherent method; v1: a trait method or impl method |
-| `#[invariants]` | outer attribute on a function: rewrites its loops and closures without adding a clause |
+| `#[invariants]` | outer attribute on a function or method, trait-impl methods included: rewrites its loops and closures without adding a clause |
 | `invariant!(..)`; v1: `decreases!(..)` | statements opening a loop body |
 | v1: `requires!(..)`, `ensures!(..)` | statements opening a closure's block body |
 | v1: `#[invariant(..)]` | outer attribute on a struct or enum |
@@ -189,9 +189,9 @@ Rules that the grammar does not show:
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
    parameter means the caller's referent at return, even where the body
-   reassigns the parameter, and is `FX0803` where `final(*x)` would be a
-   prophecy (§1.8, CLAUSE-4). From v1, a bare `*x` is an
-   error with two machine-applicable fixes, `old(*x)` and `final(*x)`
+   reassigns the parameter. Where §4.1 makes `final(*x)` a prophecy, naming
+   `x` outside `old(..)` is `FX0803` (§1.8, CLAUSE-4). From v1, a bare `*x` is
+   an error with two machine-applicable fixes, `old(*x)` and `final(*x)`
    (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
    is executable, and otherwise reports it for a manual choice.
 5. **`#[decreases]`** (v1) on a function bounds recursion; `decreases!` in
@@ -429,9 +429,11 @@ rule CLAUSE-*n*.
    executable `final(*x)` does, even where the body reassigns the parameter
    (`cur = &mut n.next`): the lowering passes the body a reborrow and reads
    the caller's reference after it. `old(*x)` denotes the entry value.
-   Where §4.1 makes `final(*x)` a prophecy (the result's origins include
-   `x`'s, or the signature lets `x`'s borrow outlive the call), naming `x`
-   or `*x` in an `ensures` is `FX0803` in v0; `old(*x)` is allowed.
+   Where §4.1 makes `final(*x)` a prophecy (`x`'s origin appears in
+   another parameter's type, the result type, or a bound other than on the
+   right of an outlives bound), naming `x` in an `ensures` outside
+   `old(..)` is `FX0803` in v0. `old(*x)` and `old(x.len())` are allowed,
+   and the usual fix gives the other parameter its own lifetime.
    Other parameters denote their entry values. Of these, a `Copy` one, a
    shared reference included, is copied at entry as it is. A non-`Copy` one
    is cloned at entry if it is `Clone + Pure + Sync`, the types whose
@@ -472,7 +474,9 @@ rule CLAUSE-*n*.
    helper call when the body returns a borrow of the reborrowed parameter,
    a renamed `self`, which cannot be a closure parameter, and the checker's
    `Pure` decision to choose snapshots, since rustc accepts every `Pure`
-   bound (`03-authority-concurrency.md` §3.1).
+   bound (`03-authority-concurrency.md` §3.1). It also erases a named
+   lifetime in the closure parameter's type: `|x: &'r mut i32|` is
+   rejected (E0503) where `|x: &mut i32|` compiles.
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
