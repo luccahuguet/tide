@@ -821,8 +821,8 @@ lowering of Tide tasks); D18 reversed that.
 - `tide doc` serves documentation matched to the installed compiler: a card
   under 8 KB for an agent's instructions file, `tide explain <code>` with fix
   examples, and the delta-from-Rust reference. The core reference budget is
-  25,000 tokens, to be counted in CI; the standard-library reference is
-  separate and served on demand.
+  25,000 tokens, to be counted in CI; its companion and the standard-library
+  reference are separate and served on demand.
 - `tide fix` applies safe fixes and owns migrations between language
   versions.
 - Source text is canonical; the formatter is deterministic and has no
@@ -1070,7 +1070,3 @@ fn feed_times_out() {
    v1) implements unwinding for panics, which must drop values (D5): a flag
    check after every call, compiler-specific extensions, or abort in release builds. If none is
    acceptable, this is the main reason to switch to a direct LLVM backend.
-8. How the core reference fits D14's 25,000 tokens: on Claude's tokenizer
-   it is over half again as long (count and method in its header). The
-   checker's test corpus does not depend on it; E1's held-out round does.
-   The restructure is bead `fx-fbq`.

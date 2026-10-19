@@ -975,8 +975,8 @@ cancelled.
 ### 8.3 `par_reduce` and the canonical grouping (v1)
 
 In v0, code `par_map`s the expensive part and folds sequentially. In v1,
-`xs.par_reduce()` takes a slice of `M: Combine` (`reference.md` Appendix A)
-and is **defined** as `tree_fold(G(xs.len()), xs)`, where G is:
+`xs.par_reduce()` takes a slice of `M: Combine` (`reference-companion.md`
+Appendix A) and is **defined** as `tree_fold(G(xs.len()), xs)`, where G is:
 
 1. An empty slice reduces to `M::empty()`.
 2. The input is cut into blocks of B = 2048 elements; the last may be short.

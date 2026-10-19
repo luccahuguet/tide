@@ -55,8 +55,9 @@ first design, which does not implement Tide, is kept in
 - [design/01-design.md](design/01-design.md): the decision record (D0–D18)
   and the tier table; it owns every decision.
 - [design/reference.md](design/reference.md): the agent-facing reference for
-  the v0 core, written as a delta from Rust, with a 25,000-token budget
-  that it currently exceeds (bead `fx-fbq`).
+  the v0 core, written as a delta from Rust, within a 25,000-token budget;
+  [design/reference-companion.md](design/reference-companion.md) holds its
+  on-demand tables, examples, and later tiers.
 - [design/02-memory.md](design/02-memory.md): ownership, origins, variance,
   drop check, `Send`, `Sync`, and `Pure`; the definition the checker
   implements.
