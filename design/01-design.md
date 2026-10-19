@@ -433,15 +433,15 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   structurally. The task, not the OS thread, is the isolation unit; values
   that never leave a task need not be `Send`.
 - **Scope results** follow one precedence rule once every child has
-  finished: if any child panicked, the scope re-raises the panic of the
-  earliest-spawned panicking child; otherwise, if any child failed, it
-  returns the error of the earliest-spawned failing child, where a
-  cancellation caused by the scope's own deadline is reported as
-  `DeadlineExceeded`; otherwise it returns the body's result. An error a
-  child returns after observing cancellation caused by a sibling's failure
-  does not count as a failure, so the root cause is what the scope reports.
-  Likewise, when the body itself returns `Err`, the children it cancels are
-  echoes, and the scope returns the body's error unless a child panicked.
+  finished. The body counts as spawned before all its children. An error a
+  child returns after observing a cancellation caused by the body's or a
+  sibling's failure is an **echo** and never counts. Then: if anything
+  panicked, the scope re-raises the earliest-spawned panic; otherwise, if
+  the body or any child failed (echoes excluded), it returns the
+  earliest-spawned failure, where a child cancelled by the scope's own
+  deadline reports `DeadlineExceeded`; otherwise it returns the body's
+  `Ok` result. So a body's `Err` wins over every child error, and an
+  independent child failure is never hidden by an echo.
 - In v0 the threads runtime runs one OS thread per task, so blocking tasks
   cannot exhaust a pool and production cannot deadlock where the simulator
   makes progress; `Tasks::limit` bounds concurrency when needed.

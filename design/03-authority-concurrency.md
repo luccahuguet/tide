@@ -624,23 +624,24 @@ no code after `scope` sees a place a panicking child was mutating; when
   time, or in scheduler order under the simulator) cancels the scope, its
   body, and its nested scopes. Unless the body panicked (TASK-1), `scope`
   then waits for every child and decides its outcome by one precedence rule
-  (D8):
+  (D8). The body counts as spawned before all its children.
   1. if any child panicked, it re-raises the panic of the earliest-spawned
      panicking child;
-  2. otherwise, if any child failed, it returns the error of the
-     earliest-spawned failing child, except that a child cancelled by the
-     scope's own deadline is reported as `E::from(TaskError::DeadlineExceeded)`
-     (TASK-4);
-  3. otherwise it returns the body's result, `Ok` or `Err`.
+  2. otherwise, if the body or any child failed, echoes excluded, it returns
+     the earliest-spawned failure: the body's `Err` if it returned one,
+     else the earliest-spawned failing child's error, except that a child
+     cancelled by the scope's own deadline is reported as
+     `E::from(TaskError::DeadlineExceeded)` (TASK-4);
+  3. otherwise it returns the body's `Ok` result.
 
-  An `Err` that a child returns after observing a cancellation caused by a
-  sibling's failure is a **cancellation echo**, not a failure (D8), so rule
-  2 reports the root cause. The runtime keeps one bit per child, set when a
-  checkpoint in the child, or in a scope nested in it, returns a
-  cancellation error that a sibling's failure caused; it never inspects
-  `E`. When the body's own `Err` cancels the scope, the children's resulting
-  errors are echoes too, and the scope returns the body's error unless a
-  child panicked. Spawn order, not timing, chooses among failed children. Failures,
+  An `Err` that a child returns after observing a cancellation caused by
+  the body's or a sibling's failure is a **cancellation echo**, not a
+  failure (D8). The runtime keeps one bit per child, set when a checkpoint
+  in the child, or in a scope nested in it, returns a cancellation error
+  that the body's or a sibling's failure caused; it never inspects `E`. A
+  child that fails without observing such a cancellation is an independent
+  failure and counts under rule 2. Spawn order, not timing, chooses among
+  failures. Failures,
   echoes, and panics the rule does not report go to one `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
