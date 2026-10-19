@@ -1,24 +1,32 @@
 # Tide
 
-Tide is a systems language design for software that coding agents write and
-humans must trust. Its core is three guarantees that a language can make only
-if it is designed for them from the start. First, there is no ambient
-authority: code reaches files, the network, the clock, the environment, or
-randomness only through capability values it is handed, so a function's
-signature bounds what it can do, in every dependency. Second, whole programs
-run under deterministic simulation: any program, dependencies included,
-replays bit for bit from a seed when its foreign effects have simulator
-models. Third, the compiler computes a reviewable
-trust surface (signatures, authority, contract status, and trust holes such as
-`unsafe` and FFI) and diffs it between revisions. Tide delivers these on a
-Rust-familiar surface, with Rust spelling wherever the meaning is the same,
-ownership with origins instead of lifetime parameters, no async, and no user
-macros, and it aims for much faster builds than Rust. Contracts (`requires`,
-`ensures`) are part of the language and serve as runtime checks, property
-tests, and optional SMT proofs; they support the trust surface rather than
-lead it. Tide works in tandem with Bend 2, not in competition: Tide is the
-effectful, authority-checked shell, and Bend owns proved, massively parallel
-pure kernels.
+**Rust's speed and safety, millisecond feedback, and code that cannot do more
+than its signature says.**
+
+Tide is a systems language for software that AI agents write and humans have
+to trust.
+
+- **As fast as Rust, 10–100x faster to build.** Ownership without a garbage
+  collector and generics specialized like Rust's, but edits check in tens of
+  milliseconds instead of seconds: no proc macros, no build scripts, no
+  inference across signatures, no unbounded trait solver.
+- **Safer than Rust.** The same memory safety and data-race freedom, plus: no
+  code, in any dependency, can touch files, the network, or the clock unless
+  it is handed that authority; integer overflow never wraps silently; nothing
+  runs at build time.
+- **Every program replays.** Any Tide program, dependencies included, runs
+  under a seeded simulator and reproduces bit for bit, so concurrency bugs
+  become ordinary failing tests.
+- **Review what changed in what code may do.** The compiler diffs authority,
+  contracts, and `unsafe` holes between revisions, so reviewers see the risk
+  before reading the code.
+- **Already familiar.** Rust syntax wherever the meaning is the same, without
+  lifetime parameters, macros, or `async`/`await`. Contracts run as checks and
+  tests today and become proofs later.
+- **Works with Bend** for massively parallel, proved kernels.
+
+*Tide is in the design phase: the guarantees are what the design commits to,
+and the speed figures are targets, not measurements.*
 
 ## Status
 
