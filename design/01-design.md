@@ -74,6 +74,11 @@ later-tier feature, the tier table wins.
 | v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; the C-emitting release backend; FFI with `#[trusted_pure]`; Rust crate import; `par_reduce` with canonical grouping; field-borrow declarations; production record and replay (D17) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
+`prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
+already use the clause syntax agents will later prove, so moving proofs in
+later costs no rewrite, while shipping them in v0 would roughly double the
+reference and put Ferox's pitch on Bend 2's ground.
+
 v0 removes these from draft 2: the `Frozen` trait (`Pure + Sync` covers it),
 the `lock` keyword (replaced by `Shared::with` methods), `par { }` blocks
 (replaced by the library `join`), and the moved-out rule (a child task's panic
