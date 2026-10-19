@@ -1,407 +1,552 @@
 # Ferox Design
 
-Status: draft 1, synthesized from `design/00-first-principles.md` and the
-reports in `research/`. This document owns the design decisions. Chapters in
-`design/` elaborate them and must not contradict them; a change of decision is
-made here first.
+Status: draft 2. Draft 1 was synthesized from `design/00-first-principles.md`
+and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
+document owns the design decisions. Chapters elaborate them and must not
+contradict them; a change of decision is made here first.
 
 ## Thesis
 
-Ferox is a systems language for software that agents write and humans trust.
+Ferox is a systems language for software that agents write and humans must
+trust.
 
 It keeps what makes Rust worth learning: memory safety and data-race freedom
 without a garbage collector, zero-cost abstractions, algebraic data types,
-`Result` and `?`, and "if it compiles, it probably works". It removes the
-parts that cost the most and buy the least for agent-written code: lifetime
-annotations, macros, async coloring, an unbounded trait system, and slow
-builds. It adds three things no mainstream systems language has together:
+`Result` and `?`, and "if it compiles, it probably works". It keeps Rust's
+spelling wherever the meaning is the same, so a model's Rust knowledge
+transfers. It removes what costs agents the most: lifetime parameters, user
+macros, async coloring, an unbounded trait system, and slow builds.
 
-1. **Authority in signatures.** Code can only touch the outside world through
-   capability values it is handed. A signature tells a reviewer everything a
-   function can do to the world. Everything else is pure, deterministic, and
-   safe to parallelize.
-2. **Contracts the toolchain proves.** `requires` and `ensures` clauses are
-   part of the language, checked by an SMT solver when the package opts in,
-   executed as assertions and property tests otherwise.
-3. **A trust surface.** Signatures, capabilities, contracts, and trust holes
-   (`unsafe`, `assume`, FFI) form a small, hashed surface that the toolchain
-   diffs between revisions. Humans review the trust diff; machines check the
-   bodies.
+It adds guarantees that a language can only make if it is designed for them
+from the start, and that tools layered on Rust cannot give, because Rust code
+can reach the outside world from anywhere:
 
-The one-line pitch: Rust's guarantees, Go's build speed, Dafny's proofs, and
-authority you can read in a signature, in a language small enough to fit in an
-agent's context.
+1. **No ambient authority.** Code touches the world only through capability
+   values it is handed. A function's signature bounds what it can do; code
+   without capabilities cannot read the clock, the network, files, the
+   environment, or randomness, in any dependency.
+2. **Deterministic simulation of whole programs.** Because every source of
+   nondeterminism is a capability, any Ferox program, dependencies included,
+   runs under a seeded simulator and replays bit for bit from seed and commit.
+   Agents get a reproducible oracle for concurrent and distributed bugs.
+3. **A reviewable trust surface.** Public signatures, declared and exercised
+   authority, contracts with their proof status, and trust holes (`unsafe`,
+   `assume`, FFI, unproved dependency contracts) are computed by the compiler
+   and diffed between revisions, so reviewers see what changed in what code
+   may do before reading how it does it.
 
-## Positioning
+Contracts (`requires`, `ensures`) are part of the language and serve as
+runtime checks, property tests, and optional SMT proofs. They support the
+thesis; they are not the headline. Proof-first, massively parallel pure
+computation is Bend's territory (D16).
 
-- **A Rust replacement for new systems code**: services, CLIs,
-  infrastructure, data systems. Not a research language.
-- **A Rust companion during adoption.** Ferox packages build into Rust crates
-  and call Rust crates, so a team adopts Ferox one module at a time
-  (`research/09-adoption-interop-backends.md`).
-- **Not a Bend competitor.** Bend 2 owns proved, massively parallel pure
-  computation on CPUs and GPUs. Ferox owns effectful systems code and calls
-  Bend for kernels (`design/` chapter on Bend tandem, pending
-  `research/11-bend-interop.md`).
+One line: Rust's guarantees with Go's build speed, plus authority you can read
+in a signature and whole-program deterministic replay.
+
+## Positioning And Scope
+
+- **v0 target**: command-line tools, developer tooling, and infrastructure
+  components (agents, proxies, storage engines, schedulers). Blocking and
+  thread runtimes plus the simulator; the evented runtime follows.
+- **Rust coexistence**: Ferox builds C-ABI libraries with generated Rust
+  binding crates, and imports synchronous Rust leaf crates through generated
+  shims. Async Rust ecosystems (tokio, axum) and lifetime-heavy APIs
+  (serde's `'de`) are out of scope for interop.
+- **Bend tandem, not competition**: Ferox is the effectful, authority-checked
+  shell; Bend 2 owns proved, massively parallel kernels (D16).
+- **Evidence-gated**: the thesis is tested by the validation program (D0)
+  before syntax freezes.
 
 ## Evidence That Shaped The Design
 
-The decisions below cite these findings; details and sources are in the
-research reports.
+Details and sources are in `research/` and `reviews/`.
 
-- New languages fail on syntax first: in unfamiliar languages most model
-  failures were syntax borrowed from other languages. A Rust-like surface
-  learned better than a smaller-community alternative with seven times more
-  code (`research/05`, `research/09`).
-- Compiler feedback is the largest single lever: precise diagnostics raised
-  Rust repair rates from 10.7% to 73.7%, and execution feedback took a model
-  from 45% to 82% on an unseen language (`research/05`).
-- Frontier agents fixing real issues do best in Rust despite more first-try
-  compile errors: strictness pays off once the agent can iterate
+- In unfamiliar languages most model failures are syntax borrowed from
+  familiar ones; a Rust-like surface learned better than alternatives
+  (`research/05`, `research/09`).
+- In a 6.08M-line Rust sample, 77% of files used constructs that draft 1
+  would have rejected or respelled despite identical meaning
+  (`reviews/round1-agent-usability.md`).
+- Precise compiler feedback raised Rust repair rates from 10.7% to 73.7%;
+  execution feedback took a model from 45% to 82% on an unseen language
   (`research/05`).
-- Most LLM Rust errors are type mismatches and trait bounds, not lifetimes;
-  ownership errors are a minority but hard to repair without good fixes
-  (`research/02`, `research/05`).
-- SMT-backed contracts lead every benchmark for agent-written verified code
-  (Dafny 82%, Verus 44%, Lean 27% in one 2025 study); generating correct specs
-  is the harder half (`research/04`).
-- Compile speed is decided by language design more than by backends: faster
-  backends alone gained 5–17% end to end, while design changes gave 100x on
-  incremental rebuilds (`research/03`).
+- Frontier agents fixing real issues do best in Rust despite more first-try
+  compile errors (`research/05`).
+- SMT-backed contracts lead agent verification benchmarks; spec generation is
+  the weak half, and agents game verifiers unless trust holes are policed
+  (`research/04`).
+- Compile speed is decided by language design more than backends
+  (`research/03`); emitted Rust measured 53 s clean and 17 s incremental on a
+  100k-line crate, and witness-table generics ran 6–24x slower than
+  monomorphized code (`reviews/round1-performance.md`).
 - Every trait-system crisis in Rust and Swift came from power added later
   (`research/08`).
 - Library-level deterministic simulation fails because dependencies reach
   ambient time, randomness, and threads (`research/07`, `research/10`).
-- Agents navigate by grep and edit text; structured edit operations add
-  little for strong models. Fast feedback, docs in context, and
-  machine-applicable fixes add a lot (`research/06`).
-- HigherOrderCO itself abandoned interaction nets as Bend's runtime; HVM is
-  not a viable backend for a systems language (`research/01`).
+- Bend 2 already pitches "proof that blocks AI mistakes" for backend code;
+  leading with proofs would compete with it (`reviews/round1-strategy.md`).
 
 ## Decisions
 
-Each decision states the choice, the reason, and what it rejects.
+### D0. Validation program with gates
 
-### D1. Surface: Rust where the meaning is the same
+The design is a hypothesis. Before syntax freezes, the project runs:
 
-Ferox uses Rust's syntax for every construct whose meaning is the same in
-Ferox: `fn`, `let`, `let mut`, `struct`, `enum`, `impl`, `trait`, `match`,
-`if let`, `while let`, `for`, `loop`, closures `|x| ...`, `&` and `&mut`,
-`Option<T>`, `Result<T, E>`, `?`, generics `<T: Bound>`, `::` paths,
-`#[derive(...)]`, `#[test]`, `pub`, `use`.
+- **E1 learnability**: a fresh agent given only the Ferox reference writes a
+  fixed task set; pass rates and iterations to green are compared with the
+  same agent writing Rust.
+- **E2 productivity**: equivalent multi-file tasks in Ferox (interpreter) and
+  Rust, measuring wall time, iterations, and defects.
+- **E3 review**: reviewers detect planted malicious or authority-widening
+  changes using the trust diff versus the plain code diff.
+- **E4 compile speed and E5 runtime**: benchmark suites against the D12
+  targets and against Rust.
 
-Where Ferox differs, it uses new syntax rather than giving familiar syntax a
-new meaning, and the compiler recognizes the Rust habit and offers a
-machine-applicable fix (`println!` → `print`, `x as u8` → `x.truncate()`,
-`'a` → `from`). Idiomatic Rust is a near-correct first draft of Ferox.
+Gates at months 3, 6, and 9 decide continue, adjust, or stop. Syntax in D1 is
+provisional until E1 meets its targets.
 
-Rejected: a fresh syntax optimized in isolation (pays the low-resource
-penalty with no data to recover it); `[T]` generics and `T?`/`T ! E` sugar
-(second spellings of things models already write correctly).
+### D1. Surface: Rust spelling wherever the meaning is the same
 
-### D2. Memory: owned values, second-class references, declared views
+- Rust syntax is Ferox syntax for every construct with the same meaning,
+  including `where` clauses, `pub(crate)`, inline `mod` blocks,
+  `#[derive(...)]` with Rust's trait names, `#[cfg(test)]`, `'static`,
+  `From`/`TryFrom`/`Into`, `wrapping_add`, `checked_add`, `saturating_add`,
+  `Wrapping<T>`, `Box<dyn Error>`, and `// SAFETY:` comments.
+- A **fixed, compiler-implemented set of `!` forms** keeps Rust's most common
+  macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
+  `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,
+  `assert_eq!`, `assert_ne!`, `debug_assert!`, `matches!`, `panic!`,
+  `todo!`, `unimplemented!`, `unreachable!`, `dbg!`. Users cannot define
+  macros (D6).
+- Where Ferox's meaning differs, the Rust spelling is rejected with a
+  machine-applicable fix: named lifetimes `'a` (→ `from`, D2), `async`/`.await`
+  (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
+  I/O such as `std::env::args()` or `std::fs::read` (→ capabilities, D7),
+  `impl` blocks outside the type's or trait's module (D4), user macros (D6).
+- The reference is written as a delta from Rust and token-counted in CI
+  (budget in D14).
 
-- Every value has one owner. Moves are the default for non-`Copy` types;
-  copying anything else is an explicit `.clone()`.
-- References `&T` and `&mut T` follow Rust's shared-xor-mutable rule.
-- **No lifetime parameters.** References may be passed as parameters, used
-  locally, and returned when they derive from parameters. A returned
-  reference's source is inferred when exactly one parameter is borrowed;
-  otherwise the signature names it: `fn pick(a: &str, b: &str) -> &str from a`.
-- **Views.** A struct with a reference field is a *view type*. Views may hold
-  references and other views, may be returned with `from`, and cannot be
-  stored in non-view types or outlive their sources. Generic containers of
-  views are views (`Vec<&str>` is a view). This is Rust's lifetime system
-  restricted to one implicit region per type and one region per borrowed
-  parameter, which removes lifetime annotations without losing soundness.
-- Borrow checking is per function, flow- and field-sensitive at the
-  precision of Polonius, with methods allowed to declare the fields they
-  borrow so disjoint borrows compose.
+Rejected: fresh syntax (low-resource penalty with no data to recover it);
+respelling constructs that mean the same thing (`f"..."`, `print()`,
+`assert()`, `T?`, `[T]` generics), which draft 1 proposed and the usage
+measurement rejected.
+
+### D2. Memory: ownership with origins instead of lifetime parameters
+
+- Every value has one owner; moves are the default for non-`Copy` types.
+  References `&T` and `&mut T` follow Rust's shared-xor-mutable rule.
+- **Origins replace named lifetimes.** An origin names where a borrow comes
+  from: a parameter, a place path, or `'static`.
+  - Rust's lifetime-elision rules apply unchanged, so
+    `fn get(&self, k: &str) -> Option<&V>` borrows from `self` exactly as in
+    Rust.
+  - Otherwise the signature names the origin with a positional `from` clause:
+    `fn longest(a: &str, b: &str) -> &str from a, b` (the result may borrow
+    from either), `fn next(&mut self) -> Option<&str from self.src>` (from the
+    place `self.src`, not from `self`). `from` is a keyword only in this
+    position.
+- **Types carry origins per reference field.** `struct Lexer { src: &str, pos:
+  usize }` is a borrowing type with one origin, named `src`. A struct gets one
+  origin per reference-typed field and inherits the origins of its type
+  arguments; `Vec<&str>` borrows what its elements borrow. There is no
+  `<'a>` parameter list. Variance follows Rust: shared references are
+  covariant, `&mut T` and cells are invariant in `T`.
+- **`'static` and `Owned`.** A type with no borrowed origins is `Owned`
+  (Rust's `T: 'static`). `dyn Trait` means `dyn Trait + Owned` unless written
+  `dyn Trait from x`. Escaping closures (`move` closures stored or returned)
+  and detached tasks require `Owned`; a closure that captures a borrow is
+  itself borrowing.
+- **Drop check** uses Rust's conservative rule: a value with a destructor
+  must strictly outlive the borrows it holds; standard containers carry an
+  audited exemption.
+- Borrow checking is per function at NLL precision plus declared field
+  borrows on methods (`fn advance(&mut self.{pos})`), so disjoint-field calls
+  compose. Polonius-level precision is a later, compatible relaxation.
 - Non-tree data uses the standard library: `Arena<T>` with generational
-  handles, arena-scoped references, and `Rc`/`Arc`/`Weak` with compiler-elided
-  count traffic. There is no hidden reference counting of ordinary values.
-- Closures do not escape by default. An escaping closure is `move` and owns
-  everything it captures.
+  handles, `Rc`/`Arc`/`Weak`, `Cell` and `RefCell`. No hidden reference
+  counting of ordinary values.
+- The normative origin calculus (formation, variance, elision, subtyping, drop
+  check) lives in the memory chapter and is the definition the checker
+  implements.
 
-Rejected: full Rust lifetimes (annotation burden, `'a` errors, lifetime
-generics); Hylo-style projections as the only borrow return (unfamiliar);
-implicit reference counting fallback (hides cost); shared mutable aliasing
-models such as group borrowing (unproven at scale, lose aliasing-based
-optimization). Costs accepted: long-lived references inside heap collections
-need views, handles, or `Rc`; self-referential structs need `unsafe`
-(`research/02`).
+Rejected: Rust lifetime parameters (annotation burden, the `'a` error class);
+draft 1's "one implicit region per type" (unsound through `&mut` or too
+restrictive, `reviews/round1-soundness.md` B1–B3); projections-only borrow
+return (unfamiliar); shared-mutable-alias models (unproven at scale).
+
+Accepted costs: self-referential structs need `unsafe`; two fields that must
+share one origin need an explicit `from` on the field
+(`b: &str from a`).
 
 ### D3. Types: small, decidable, explicit at boundaries
 
-- Scalars `bool`, `i8`–`i128`, `u8`–`u128`, `isize`, `usize`, `f32`, `f64`,
-  `char`; `String`, `&str`, `Vec<T>`, `[T; N]`, slices, tuples.
+- Rust's scalar, string, slice, array, tuple, `Option`, `Result`, `Vec`,
+  `Box`, and `String` types with their Rust meaning. No null.
 - Nominal `struct` and `enum` with exhaustive `match`.
-- No null; `Option<T>` with niche layout.
-- Every item signature is fully annotated: functions, fields, constants,
-  trait items. Inference is bidirectional and local to a function body. No
-  overloading: one function per name per scope, one method per name per type.
-- Integer arithmetic traps on overflow, division by zero, and over-wide
-  shifts in every build profile. Wrapping and saturating arithmetic are
-  explicit methods. There is no `as`; conversions are `widen()` (lossless),
-  `narrow()` (returns `Option`), and `truncate()`.
-- Strings are UTF-8; `==` is byte equality.
+- Every item signature is annotated; inference is bidirectional and local to
+  a function body. No overloading: one function per name per scope, one
+  method per name per type. No polymorphic recursion.
+- **Integers trap on overflow, division by zero, and over-wide shifts in every
+  profile.** The trap may be reported late, but before the overflowed value
+  influences any observable effect or leaves the enclosing loop or function,
+  so the optimizer can batch checks in vectorized loops. Proved contracts
+  delete checks.
+- `as` is accepted only where it is lossless; lossy conversions use
+  `TryFrom`, `truncate()`, or explicit float rounding methods.
+- Floats are IEEE 754; `to_bits()` canonicalizes NaN so observable results
+  match across backends and targets.
 
-Rejected: global or signature inference (breaks locality, prefix typing, and
-separate compilation); implicit conversions; overloading and custom operators
-(exponential checking, many meanings per name).
+Rejected: signature inference, implicit conversions, overloading, custom
+operators.
 
 ### D4. Abstraction: traits with a hard power ceiling
 
-- Traits with methods, default methods, and flat associated types and
-  constants. `impl Trait for Type` lives in the module that defines the type
+- Rust traits with methods, default methods, flat associated types and
+  constants, and `impl Trait for Type`. Impls live in the module of the type
   or the trait.
-- No overlapping impls, no specialization, no higher-kinded types, no generic
-  associated types, no rank-N types, no negative bounds, no user auto traits.
-  Impl where-clauses must be structurally smaller than the impl head.
+- No overlapping impls, specialization, higher-kinded types, generic
+  associated types, rank-N types, negative bounds, or user auto traits. Impl
+  where-clauses must be structurally smaller than the impl head.
 - Generics are definition-checked: instantiation never produces a type error.
-- Bounds are written in one place, the generic parameter list.
 - `dyn Trait` is always spelled out.
-- Generic code cannot inspect concrete types, so the shared-code strategy of
-  development builds and the specialized code of release builds behave
-  identically (D11).
+- Traits may declare **laws** (D10), which impls must satisfy.
 
-Rejected: GATs, HKTs, and specialization (each cost Rust or Swift years and
-breaks dev/release equivalence); ML functors (unfamiliar); Zig-style
-`comptime` generics (instantiation-time errors, slow and nonlocal checking)
-(`research/08`).
+Rejected: GATs, HKTs, specialization; ML functors; Zig-style comptime
+generics.
 
-### D5. Errors: values, with declared conversions
+### D5. Errors: values, as in Rust
 
-- Recoverable errors are `Result<T, E>`; `?` propagates.
-- `?` converts an error only through a variant the destination enum declares
-  with `from`: `enum AppError { Net(NetError) from, Timeout }`. The conversion
-  is visible in one place, the destination type.
+- `Result<T, E>` and `?` with Rust's meaning, including conversion through
+  `From`. `#[derive(Error)]` with `#[from]` on variants generates `Display`,
+  `Error`, and `From` impls, so the common `thiserror` style is built in.
+  `Box<dyn Error>` works.
 - Results are must-use.
-- Bugs (overflow, out-of-bounds, failed assertions, `panic`) abandon the
-  current task. Recovery happens only at structured task boundaries, which
-  observe the panic as an error value.
+- Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
+  current task. A structured scope observes a child's panic as an error value.
+  On that error path, every place the child borrowed mutably is treated as
+  moved out (it must be reassigned before use), and every cell the child held
+  locked is poisoned, so no half-updated data is ever observed.
 
-Rejected: exceptions (hidden control flow); Rust's open-ended `From`
-conversions in `?` (a second, nonlocal resolution rule); anonymous error
-unions (novel syntax; nominal enums are what models write).
+Rejected: exceptions; draft 1's `from` keyword on variants (collides with
+`String::from`, `reviews/round1-agent-usability.md` B2).
 
-### D6. No macros; reflection, const evaluation, and visible codegen
+### D6. No user macros; built-in derives, read-only reflection, const evaluation
 
-- A closed set of compiler-implemented derives: `Eq`, `Ord`, `Hash`,
-  `Clone`, `Copy`, `Debug`, `Default`.
-- Every nominal type exposes a compiler-provided `Shape` (fields, variants,
-  names, layout), opt-out for types with invariants. Serialization, printing,
-  and diffing become ordinary generic library code.
-- `const fn` evaluation is pure, deterministic, fuel-limited, and cached. It
-  computes values, never declarations or types.
-- Code generators are build steps that write ordinary `.fx` source files the
-  agent and reviewer can read.
-- Formatting is a built-in string form: `f"{name} has {count} items"`,
-  type-checked at compile time. `print`, `assert`, and `dbg` are ordinary
-  built-in functions, not macros.
+- A closed, compiler-implemented derive set: `PartialEq`, `Eq`, `PartialOrd`,
+  `Ord`, `Hash`, `Clone`, `Copy`, `Debug`, `Default`, `Error`, `Encode`,
+  `Decode`. `Encode` and `Decode` are compiler-generated serialization with
+  format plug-ins, so serialization does not depend on reflection speed.
+- Every nominal type exposes a read-only `Shape` (fields, variants, names,
+  layout) for printing, diffing, and inspection. Constructing a value through
+  `Shape` is allowed only for types that opt in and whose fields are all
+  visible; capability types can never be constructed this way.
+- `const fn` evaluation is authority-free, deterministic, fuel-limited, and
+  cached; it computes values, never declarations or types.
+- Code generators are build steps that write ordinary source files.
 
 Rejected: token and procedural macros (opaque to agents and tools, uncached,
-a supply-chain hole); unrestricted compile-time execution (`research/03`,
-`research/08`).
+supply-chain holes); unrestricted compile-time execution; reflection-based
+serialization as the default (5–7x slower in prior art).
 
 ### D7. Authority: capabilities as values, no ambient authority
 
-- Every operation that observes or changes the outside world is a method on a
-  capability value: `Fs`, `Net`, `Clock`, `Rand`, `Env`, `Stdio`, `Proc`,
-  `Tasks`. The standard library has no free functions that do I/O, read the
-  time, draw randomness, or spawn.
-- `main` receives `root: Root`, the only source of capabilities. Nothing else
-  can create one.
-- Capabilities are ordinary parameters, passed by reference:
-  `fn fetch(net: &Net, clock: &Clock, url: &Url) -> Result<Page, FetchError>`.
-  Attenuation is a method returning a narrower capability:
-  `root.fs.dir("/var/log/app", Mode::Append)`, `root.net.only(hosts)`.
+- Every operation that reads or changes the outside world, or that can
+  observe nondeterminism, is a method on a capability value: `Fs`, `Net`,
+  `Clock`, `Rand`, `Env`, `Stdin`, `Proc`, `Tasks`, `Shared`. The standard
+  library has no free functions that do I/O, read the time, draw randomness,
+  read the environment, or spawn.
+- `main` may take `root: Root`, the only source of capabilities. `Root` can be
+  named only in `main`; a simulated root (`Root::sim(seed)`) only in tests and
+  in `ferox sim`.
+- Capabilities are ordinary parameters passed by reference. Attenuation is a
+  method returning a narrower capability: `root.fs.dir("/var/lib/app",
+  Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
 - Safe code has no mutable globals and no thread-locals.
-- **Purity is a type fact.** A type is `Pure` if it contains no capability.
-  A function is pure if every parameter and capture is `Pure`. Pure functions
-  are deterministic, eligible for `const fn`, memoization, `par`, and proofs.
-- A type that stores a capability is authority-bearing by its fields;
-  tooling shows the computed authority of every public type and function.
-- `dbg` is the one untracked effect, for debugging, and warns in release
-  builds.
-- The package manifest grants only escape hatches per dependency: `unsafe`,
-  `ffi`. There are no build scripts and no install hooks. The lockfile records
-  each package's public authority, and an upgrade that widens it fails until
-  approved.
+- **Write-only diagnostic sinks are not authority.** `print!`, `println!`,
+  `eprint!`, `eprintln!`, `dbg!`, and the built-in `log` and `trace` APIs write
+  to sinks owned by the current task and configured by `main`. They cannot
+  read anything back, they do not affect purity, and inside `par` their output
+  is buffered and emitted in sequential order. `dbg!` is an error in release
+  builds; printing to stdout from a library package is a lint.
+- **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
+  `Pure` if no capability, synchronization handle (channel ends, `Shared<T>`
+  handles, task handles), or foreign handle is reachable from it. A function
+  is authority-free if all its parameter and capture types are `Pure`. An
+  authority-free function cannot observe nondeterminism: its results depend
+  only on its arguments.
+- **Frozen data.** `Frozen` is a second compiler-known auto trait: a type is
+  `Frozen` if it has no interior mutability reachable through shared
+  references (no `Cell`, `RefCell`, atomics). `par` (D9), memoization, and
+  `const fn` combine `Pure` with `Frozen`.
+- **Foreign calls carry authority.** `extern` declarations are allowed only in
+  packages granted `ffi`. Each foreign function is wrapped by a Ferox
+  signature that takes the capabilities it may use, or is marked
+  `#[trusted_pure]` with a reason, which counts as a trust hole.
+- The manifest grants escape hatches per dependency: `unsafe`, `ffi`. There
+  are no build scripts or install hooks. The lockfile records each package's
+  public authority; an upgrade that widens it fails until approved (D13).
+- Tooling reports **declared and exercised authority** for every public item
+  and lints over-granted capabilities. `ferox fix` can thread a capability
+  through a call chain.
 
-Rejected: an effect type system with effect variables or rows (signature
-noise, inference cost; capabilities passed as values give the same
-reviewability and contextual polymorphism through borrowed closures);
-implicit capability resolution through `with` clauses (a second argument
-passing mechanism; explicit parameters are simpler, greppable, and support
-attenuation with no extra syntax); user-defined handlers and continuations in
-v1 (research stage, unsound with affine types when multi-shot)
-(`research/07`).
+Rejected: effect rows and effect variables; implicit capability resolution
+through `with` clauses; user-defined handlers and continuations in v1;
+capabilities for write-only diagnostics (the plumbing cost would push agents
+to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
 
-### D8. Concurrency: structured tasks on stackful runtimes, no async
+### D8. Concurrency: structured tasks, no async, compiled to state machines
 
-- There is no `async`/`await` and no futures in user code. A function may
-  suspend only by using a capability; a pure function never suspends.
-- Tasks are spawned into a scope from the `Tasks` capability and cannot
-  outlive it. Children may borrow from the parent's frames. The first failure
-  cancels siblings, then propagates.
-- Cancellation is level-triggered with deadlines: once a scope is cancelled,
-  capability operations in it return `Err(Cancelled)`. A suspended
-  computation is never dropped silently; it unwinds and runs destructors.
-  Operations that consume a value return it inside the error.
-- Shared mutable state is message passing over channels, or
-  `lock (a, b) |x, y| { ... }` over `Cell`-like shared cells, which acquires
-  all named cells atomically. Inside a `lock` body no capability is in scope
-  and no `lock` nests, so this primitive cannot deadlock or hold a lock across
-  a suspension.
-- Data-race freedom comes from ownership plus `Send` and `Share`, derived
-  structurally. The task, not the OS thread, is the isolation unit.
-- The binary chooses the runtime: blocking (no runtime, for CLIs), threads,
-  evented (stackful tasks on work-stealing schedulers over io_uring, epoll,
-  kqueue, or IOCP), or simulated. Libraries never choose.
+- There is no `async`/`await` and no futures in user code. A function can
+  suspend only by using a capability; an authority-free function never
+  suspends.
+- Tasks are spawned into scopes from the `Tasks` capability and cannot
+  outlive them. Children may borrow from the parent. The first failure cancels
+  siblings, then propagates. Joining a scope cannot be cancelled.
+- Cancellation is level-triggered with deadlines: capability operations in a
+  cancelled scope return `Err(Cancelled)`; suspended work unwinds and runs
+  destructors; operations that consume a value return it inside the error.
+- **Shared mutable state** is message passing over channels, or
+  `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send`. The lock
+  acquires all named cells atomically in a global order and checks at run time
+  that the handles are distinct. Its body may call only authority-free
+  functions, and `Shared` handles are not `Pure`, so a body can neither
+  suspend nor take another lock. A panicking body poisons the cells, and
+  `lock` returns `Result`.
+- Data-race freedom comes from ownership plus `Send` and `Sync`, derived
+  structurally. The task, not the OS thread, is the isolation unit; values
+  that never leave a task need not be `Send`.
+- **The binary chooses the runtime**: blocking, threads, evented, or
+  simulated. Libraries never choose. The compiler knows from signatures which
+  functions may suspend; under the evented runtime it compiles them to
+  stackless state machines with non-moving heap frames, and under the blocking
+  and thread runtimes it compiles them as ordinary functions. Recursive
+  suspending calls allocate their frames.
+- Foreign callbacks cannot suspend. A task holding a `ThreadBound` value is
+  pinned to its thread while it holds it.
 
-Rejected: Rust-style async (coloring, `Pin`, `Send` puzzles, executor
-fragmentation); hidden effect-based suspension (OCaml's Eio lesson: invisible
-suspension points); unstructured spawn (`research/10`).
+Rejected: Rust-style async; hidden effect-based suspension; unstructured
+spawn; stackful tasks in compiled code (thread-local caching across migration
+is unsound with foreign frames, and per-task stacks cap task counts,
+`reviews/round1-performance.md` B3). The interpreter and simulator may use
+stackful execution internally.
 
-### D9. Parallelism: deterministic, with sequential semantics
+### D9. Parallelism: deterministic, with defined grouping
 
-- `par { a(), b() }`, `join`, and parallel iterators (`par_map`,
-  `par_reduce`) run only pure closures without shared interior mutability.
-  Results equal sequential execution, so proofs and tests of sequential code
-  hold for parallel runs.
-- The runtime decides granularity (heartbeat scheduling), so `par` is cheap
-  enough to use freely.
-- Reductions use a fixed tree shape that depends on input size, so float
-  results are bitwise identical on any core count.
-- An optional compiler pass parallelizes independent pure calls
-  automatically, behind a flag until benchmarks justify it.
-- Massively parallel and GPU kernels belong to Bend 2 (D14), not to Ferox v1.
+- `par { a(), b() }`, `join`, and parallel iterators run closures that are
+  authority-free and `Send`, capturing shared data only if it is `Frozen`, or
+  holding disjoint `&mut` splits.
+- `par_map` and `par_for` equal their sequential versions.
+- `par_reduce` takes an operation whose trait declares associativity as a law
+  and is defined by a canonical balanced grouping that depends only on input
+  length. Results are bitwise identical on any core count. For non-associative
+  operations such as float addition, the canonical grouping is the
+  definition, documented as different from a sequential fold.
+- Granularity is the runtime's job (heartbeat scheduling).
+- An automatic parallelization pass for independent authority-free calls is
+  behind a flag until benchmarks justify it.
 
-### D10. Contracts and proofs: one spec, three uses
+### D10. Contracts: one spec, three uses, defined semantics
 
-- `requires`, `ensures`, `invariant`, and `decreases` clauses, using Dafny
-  and Verus names. `result` names the return value in `ensures`. Specs are
-  written in a pure, terminating spec sublanguage with unbounded `int` and
-  `nat`, `Seq`, `Set`, `Map`, and quantifiers.
-- One spec serves three uses, chosen per package:
-  1. `assert`: specs compile to runtime checks in debug and test builds;
-  2. `test`: specs also drive generated property tests and fuzzing;
-  3. `prove`: an SMT solver proves the specs; counterexamples become
-     diagnostics; ghost code and lemmas are allowed.
-- Specs never affect typing or code generation; release builds erase them
-  unless asked to keep them.
-- Executable code keeps machine integers; under `prove`, overflow is a proof
-  obligation.
-- Design for solver stability: function bodies are opaque to callers by
-  default, quantifiers need triggers, nonlinear and bit-vector reasoning stays
-  in marked blocks, the solver version is pinned, and CI checks proof
-  stability under seed changes.
-- Trust holes are keywords the compiler counts: `assume`, `#[trusted]`,
-  `unsafe`. Their count and locations are part of the trust surface.
+- Clauses `requires`, `ensures`, `invariant`, `decreases`, with Dafny and
+  Verus names, written in the grammar, not in macros. `result` names the
+  return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
+  value a returned or stored `&mut` holds when its borrow ends.
+- **Spec language.** Specs call only `spec fn`s and the built-in spec types.
+  Spec integers are mathematical; `/` and `%` truncate as in Rust; `==` is
+  model equality; quantifiers range over spec types. Closures appear in specs
+  only through `f.requires(args)` and `f.ensures(args, r)`.
+- **Uses**, chosen per package and overridable per item:
+  1. `assert`: executable clauses become runtime checks in debug and test
+     builds;
+  2. `test`: clauses also drive property tests and fuzzing (`requires`
+     filters and guides generation), and loop invariants are checked;
+  3. `prove`: an SMT solver proves **total correctness**. Every panic site,
+     including arithmetic, indexing, `unwrap`, and assertions, is a proof
+     obligation, and every loop and recursion needs `decreases` or an explicit
+     `diverges` marker. Lemmas must terminate.
+- The compiler classifies each clause as `checked` (cheap to execute),
+  `sampled` (executable but expensive; checked only in `test` mode), or
+  `proof-only` (unbounded quantifiers), and reports unchecked clauses.
+- **Trait laws.** Traits declare bodiless `law fn`s, such as transitivity for
+  `Ord` or associativity for `par_reduce` operations. Under `prove` each impl
+  proves them; under `test` they become property tests. Derived impls come
+  with generated proofs.
+- **Spec quality.** The toolchain checks that preconditions are satisfiable
+  and postconditions are not trivially true, offers mutation testing of specs,
+  and treats a weakened spec as an authority change that needs approval.
+- **Capabilities have no spec model in v1.** A function that uses a
+  capability may state postconditions about its results that hold for every
+  possible response of the world.
+- Specs never affect typing or code generation, except that proved facts may
+  delete runtime checks. Release builds erase specs unless asked to keep them.
+- Solver stability: bodies are opaque to callers by default; quantifiers need
+  triggers; nonlinear and bit-vector reasoning stays in marked blocks; the
+  solver version is pinned; CI checks proof stability under seed changes.
 - Interactive proofs are out of v1; the escape hatch is `#[trusted]` with a
-  stated reason, or a lemma proved elsewhere.
+  reason.
 
-Rejected: full dependent types (evaluation in the checker, slow and complex);
-Lean-style tactic proofs as the main layer (weakest agent success on program
-proofs); macro-embedded spec syntax (a major source of model syntax errors in
-Verus) (`research/04`).
+### D11. Trust surface and transitive trust
 
-### D11. Compilation: compiled interfaces, function-level incrementality
+- Each package interface exports, per public item, its signature, declared and
+  exercised authority, contracts, and **proof status**: proved, tested, or
+  assumed.
+- Trust holes are counted transitively: `unsafe`, `#[trusted]`,
+  `#[trusted_pure]`, `assume`, foreign calls, unproved impls of laws, and
+  unproved dependency contracts that a proof relies on.
+- `ferox review <base>` prints the trust diff. It also reports **spec
+  coverage**: which public items have contracts and at what status. Items
+  without contracts still need ordinary review and tests; the trust diff
+  narrows review, it does not replace it.
+- **Approval lives outside the agent's write scope.** Approvals of spec
+  changes, authority widening, and new trust holes are records signed by a
+  human-held key and verified by CI. A hash written in the same change is
+  never approval. Hashes cover everything a spec's meaning depends on,
+  including the bodies of `spec fn`s it calls.
 
-- A module is a file; the module tree is the directory tree. Imports are
-  explicit, cycles are errors, unused imports are errors.
-- Each module compiles to an interface artifact (signatures, type layouts,
-  contracts, authority) with a content hash. Dependents read only interfaces
-  of their direct imports; a body edit never re-checks dependents.
+### D12. Compilation and backends
+
+- A module is a file or an inline `mod` block; the module tree follows the
+  directory tree. Imports are explicit; cycles and unused imports are errors.
+- Each module compiles to an interface artifact (signatures, layouts,
+  contracts, authority, proof status) with a content hash. Dependents read
+  only their direct imports' interfaces; a body edit never re-checks
+  dependents.
 - Checking, borrow checking, authority checking, and proving are per
   function, parallel, and cached by content hash.
-- Generics compile once to shared code with witness tables in development
-  builds; release builds monomorphize through a content-addressed
-  instantiation cache across the whole package graph.
-- Targets for a 100,000-line project: edit to diagnostics around 30 ms
-  typical and under 100 ms at the 95th percentile; clean check under 2 s;
-  clean debug build around 1 s plus link (`research/03`).
+- **Generics are monomorphized in every profile** through one
+  content-addressed instantiation cache shared across the package graph and
+  across builds. Witness-table code is a budgeted fallback for very large or
+  cold instantiations and must behave identically.
+- **Backends**, all from one mid-level IR:
+  1. a reference interpreter: the semantic oracle, `const fn` evaluator, and
+     simulator engine;
+  2. a Cranelift-class development backend with mid-IR inlining and an
+     incremental linker, in v1;
+  3. a release backend that emits C and builds it with an optimizing C
+     compiler, which gives LLVM-class code, portable targets, and WASM through
+     clang. A direct LLVM backend is a later option if C limits debug info or
+     performance.
+- **Targets** for a 100,000-line project: edit to diagnostics around 30 ms
+  typical, under 100 ms at the 95th percentile; edit to running tests under
+  1 s; clean debug build a few seconds; development-build runtime within 3x of
+  release; release runtime within 10–20% of equivalent Rust.
+- The compiler is written in Rust and not self-hosted before 1.0.
 
-### D12. Backends and bootstrap
+Rejected: Rust emission as the release backend (53 s clean builds, coupling
+to rustc's borrow precision, no route to stackless lowering of Ferox tasks);
+witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
+1.0.
 
-1. **Reference interpreter first.** The checker plus a reference interpreter
-   is the first deliverable and the semantic oracle for everything after it.
-   It also gives agents an instant edit-to-test loop before native backends
-   exist.
-2. **Rust emission for release and interop.** Ferox lowers to readable Rust
-   that uses a small Ferox runtime crate. Release builds get LLVM
-   optimization, and every Ferox package is a Rust crate, so Ferox lives
-   inside Cargo workspaces. Ferox's own checker is authoritative; `rustc`
-   is a second check, never the definition.
-3. **Native development backend later**, Cranelift-class, with an incremental
-   linker, once the interpreter stops being fast enough.
-4. The compiler is written in Rust and is not self-hosted before 1.0.
-5. No C++ interop, MLIR, or GPU backend before 1.0.
+### D13. Packages and supply chain
 
-### D13. Toolchain contract for agents
+- No build scripts, install hooks, or code that runs at fetch or build time.
+- Lockfiles are on by default with content hashes; publishing requires
+  trusted publishing; package names are namespaced; the client rejects
+  dependencies that do not exist rather than guessing near names.
+- Each package's manifest lists escape-hatch grants per dependency (`unsafe`,
+  `ffi`), and the lockfile records each package's public authority and trust
+  holes. Widening either needs approval (D11).
+- **Rust crates** are imported through generated C-ABI shims for synchronous
+  APIs. Each imported crate declares its authority in the manifest; the shim
+  requires those capabilities; a symbol scan of the compiled crate checks the
+  declaration; its build script, if any, runs sandboxed without network and
+  with recorded outputs.
 
-- One command answers "is this right?": `ferox check` returns one verdict and
-  NDJSON diagnostics with stable codes, exact spans, related spans, and fix
-  plans marked `safe` or `suggest`.
-- **Typed holes**: `_?name` in an expression position checks the rest of the
-  program and reports the expected type, the in-scope bindings with their
-  types, and candidate functions.
+### D14. Toolchain contract for agents
+
+- `ferox check` returns one verdict and NDJSON diagnostics with stable codes,
+  exact spans, related spans, and fix plans marked `safe` or `suggest`.
+  Diagnostics for Rust habits (D1) carry safe fixes.
+- `ferox test` and `ferox sim` return structured results: each failure has its
+  seed, a replay command, and a capability event trace.
+- **Typed holes**: `todo!()` or `_?name` in expression position checks the
+  rest of the program and reports the expected type, in-scope bindings, and
+  candidate functions.
+- `ferox eval` runs an expression in the interpreter against the current
+  package; `ferox verify` runs proofs; coverage and spec coverage are
+  reported.
 - Every response carries a snapshot hash; every write request carries its base
   hash and applies atomically or not at all.
-- `ferox doc` serves documentation matched to the installed compiler,
-  including a short always-on card (under 8 KB) for an agent's instructions
-  file, `ferox explain <code>` with fix examples, and a full reference that
-  fits in context.
+- `ferox doc` serves documentation matched to the installed compiler: a card
+  under 8 KB for an agent's instructions file, `ferox explain <code>` with fix
+  examples, and the delta-from-Rust reference. The core reference budget is
+  25,000 tokens, counted in CI; the standard-library reference is separate
+  and served on demand.
 - `ferox fix` applies safe fixes and owns migrations between language
-  versions, so models never need to learn deprecated idioms.
-- `ferox review <base>` prints the trust-surface diff: changed public
-  signatures, authority, contracts, trust holes, and dependency authority.
-- Specs, `#[protected]` tests, and the trust surface are hashed in a lockfile;
-  agent edits to them are reported separately and require approval.
-- Source text is canonical. The formatter is deterministic and has no
-  options. Definitions are content-hashed for caching and conflict detection;
-  symbols have stable IDs for queries.
+  versions.
+- Source text is canonical; the formatter is deterministic and has no
+  options. Definitions are content-hashed; symbols have stable IDs.
 
-### D14. Bend tandem
+### D15. Deterministic simulation as a first-class mode
 
-Ferox calls Bend 2 for pure, proved, massively parallel kernels through a
-declared foreign boundary; the details wait for
-`research/11-bend-interop.md`. Ferox does not ship interaction-net
-semantics, superposition search, or a GPU backend of its own.
+- `Root::sim(seed)` provides deterministic clocks, network, filesystem,
+  randomness, environment, task scheduling, and fault injection (drops,
+  delays, partitions, disk errors, crashes and restarts of node scopes).
+  Virtual time advances only when every task is blocked; a global deadlock is
+  reported with the blocked-task graph.
+- `ferox sim <binary>` runs a program's `main` under many seeds. A failure
+  prints seed and commit and replays bit for bit, dependencies included.
+- Authority-free `par` regions run on real cores under simulation, because
+  their results are deterministic.
+- A determinism self-check runs a seed twice and diffs the event traces.
+- Coverage: the build lists any reachable foreign effect with no simulator
+  model.
+
+### D16. Bend tandem
+
+- Ferox calls Bend 2 for pure, proved, massively parallel kernels; Bend may
+  call Ferox libraries through its foreign effects once Ferox exports C ABIs.
+- **Stage 0, available now**: a `bend` dependency kind with an exact version
+  pin and cached builds; a generated shim lets Bend's own checker verify the
+  declared kernel signature; kernels run as a supervised child process with a
+  generated text protocol. A Bend crash maps to `Err`.
+- **Stage 1, if Bend ships a native library target**: in-process calls under
+  an `ffi` grant. Ferox never depends on this stage.
+- The boundary has a closed type map (no 64-bit Bend numbers yet, bounded
+  naturals, power-of-two arrays, strings copied); values move or copy across,
+  never share; closures and handles never cross.
+- Calls require an `Accel` capability: one Bend runtime per process with a
+  thread budget, kernels pure and total.
+- A Ferox contract can be exported as a Bend law, proved by Bend, and imported
+  as an external claim at a lower trust level than a Ferox proof.
+- Deterministic `par` lets Ferox and Bend implementations of one kernel be
+  tested against each other.
 
 ## The Feel
 
 ```ferox
-use std::net::{Net, NetError, Url, UrlError};
+use std::net::{Net, NetError, Url};
 use std::time::{Clock, Duration};
 use std::json;
 
-#[derive(Debug, Eq)]
+#[derive(Debug, PartialEq, Decode)]
 pub struct Entry {
     pub title: String,
     pub link: Url,
 }
 
+#[derive(Debug, Error)]
 pub enum FetchError {
-    Net(NetError) from,
-    Parse(json::Error) from,
+    #[error("network: {0}")]
+    Net(#[from] NetError),
+    #[error("bad feed: {0}")]
+    Parse(#[from] json::Error),
 }
 
 /// Authority: network and clock, nothing else.
 pub fn fetch_feed(net: &Net, clock: &Clock, url: &Url) -> Result<Vec<Entry>, FetchError> {
-    let deadline = clock.now() + Duration::seconds(5);
+    let deadline = clock.now() + Duration::from_secs(5);
     let body = net.get(url, deadline)?;
-    let entries = parse_feed(&body)?;
-    Ok(entries)
+    log::info!("fetched {} bytes from {url}", body.len());
+    Ok(parse_feed(&body)?)
 }
 
-/// Pure: no capability in the signature, so deterministic and parallelizable.
+/// Authority-free: deterministic, parallelizable, simulable.
 pub fn parse_feed(body: &[u8]) -> Result<Vec<Entry>, json::Error> {
     json::decode(body)
 }
 
-/// Proved under `prove`; checked at run time under `assert`.
+/// Checked at run time under `assert`, fuzzed under `test`, proved under `prove`.
 pub fn max_index(xs: &[i64]) -> usize
     requires xs.len() > 0
     ensures result < xs.len()
@@ -411,6 +556,7 @@ pub fn max_index(xs: &[i64]) -> usize
     for i in 1..xs.len()
         invariant best < i
         invariant forall |j: usize| j < i ==> xs[best] >= xs[j]
+        decreases xs.len() - i
     {
         if xs[i] > xs[best] {
             best = i;
@@ -419,16 +565,26 @@ pub fn max_index(xs: &[i64]) -> usize
     best
 }
 
-pub enum AppError {
-    Fetch(FetchError) from,
-    Url(UrlError) from,
+/// Origins instead of lifetimes.
+pub struct Lexer {
+    src: &str,
+    pos: usize,
 }
 
-fn main(root: Root) -> Result<(), AppError> {
+impl Lexer {
+    pub fn next_word(&mut self) -> Option<&str from self.src> {
+        let rest = &self.src[self.pos..];
+        let word = rest.split_whitespace().next()?;
+        self.pos += rest.find(word)? + word.len();
+        Some(word)
+    }
+}
+
+fn main(root: Root) -> Result<(), Box<dyn Error>> {
     let net = root.net.only(["example.com:443"]);
     let url = Url::parse("https://example.com/feed.json")?;
     let entries = fetch_feed(&net, &root.clock, &url)?;
-    root.stdio.print(f"{entries.len()} entries");
+    println!("{} entries", entries.len());
     Ok(())
 }
 
@@ -436,24 +592,23 @@ fn main(root: Root) -> Result<(), AppError> {
 fn feed_times_out() {
     let sim = Root::sim(42);
     let net = sim.net.drop_all();
-    let result = fetch_feed(&net, &sim.clock, &Url::parse("https://example.com/").unwrap());
-    let Err(FetchError::Net(NetError::Timeout)) = result else {
-        panic("expected a timeout");
-    };
+    let url = Url::parse("https://example.com/").unwrap();
+    let result = fetch_feed(&net, &sim.clock, &url);
+    assert!(matches!(result, Err(FetchError::Net(NetError::Timeout))));
 }
 ```
 
 ## Open Questions
 
-1. Visibility levels: module-private by default with `pub` exporting from the
-   package, or a separate package-internal level.
-2. Exact view-type rules for generic containers and closures capturing views.
-3. How the `Shape` reflection interacts with types that keep invariants
-   private.
-4. Whether stackful tasks meet memory targets for very high task counts, and
-   the FFI cost of stack switching.
-5. Bend 2 boundary: types, ownership, proof claims, runtime ownership.
-6. The macro-free spellings of `matches!`, `vec!`, `format!`, and `assert_eq!`.
-7. Whether the `Pure` property should be declarable on public functions so
-   that adding authority to a pure public function is a visible breaking
-   change rather than an inferred one.
+1. Whether `log::info!` belongs in the fixed `!` set or is an ordinary
+   function with format-string checking.
+2. The exact deferred-trap rule for overflow and its interaction with proofs.
+3. Field-borrow declaration syntax on methods and its effect on public API
+   stability.
+4. The simulator model for foreign effects and for Rust crates imported
+   through shims.
+5. Whether authority-free public functions should be declarable (`#[pure]`)
+   so that adding authority is a visible breaking change.
+6. The interpreter's role in `ferox test` once the development backend exists.
+7. How spec coverage and exercised authority are presented so the trust diff
+   stays small enough to read.
