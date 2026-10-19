@@ -271,6 +271,15 @@ time, not safety. Tide must hit D12's targets.
    the kernel enforcement adopted from research/12. E6 shows why: in 2025
    and 2026, building or installing a dependency was enough to run an
    attacker's code, including on crates.io.
+   **Inference.** This complements microVMs rather than replacing them. An
+   agent runs arbitrary shell commands, so its session still needs a
+   microVM or OS confinement. A microVM, though, does not protect the
+   credentials inside it (E6's s1ngularity attack read local secrets),
+   gives the reviewer no evidence, and is gone in production. Tide moves
+   validation out of the VM: tests and seeded simulations run in-process
+   with only granted capabilities and virtual time, so a fleet needs one VM
+   per agent session, not one per test run, and kernel enforcement gives
+   the deployed process its own OS sandbox.
 5. **Flag `unsafe` as a review event.** Agents silence the borrow checker
    with `unsafe` (E1, E6's Rust item); the trust diff already lists `unsafe`
    holes, and the reference should tell agents that a new one is a
