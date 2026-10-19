@@ -1,6 +1,6 @@
 # Ferox Design
 
-Status: draft 2. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 2.1. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
@@ -27,8 +27,10 @@ can reach the outside world from anywhere:
    environment, or randomness, in any dependency.
 2. **Deterministic simulation of whole programs.** Because every source of
    nondeterminism is a capability, any Ferox program, dependencies included,
-   runs under a seeded simulator and replays bit for bit from seed and commit.
-   Agents get a reproducible oracle for concurrent and distributed bugs.
+   runs under a seeded simulator and replays bit for bit from seed and commit,
+   provided every foreign effect it reaches has a simulator model; the build
+   lists any that do not. Agents get a reproducible oracle for concurrent and
+   distributed bugs.
 3. **A reviewable trust surface.** Public signatures, declared and exercised
    authority, contracts with their proof status, and trust holes (`unsafe`,
    `assume`, FFI, unproved dependency contracts) are computed by the compiler
@@ -40,8 +42,8 @@ runtime checks, property tests, and optional SMT proofs. They support the
 thesis; they are not the headline. Proof-first, massively parallel pure
 computation is Bend's territory (D16).
 
-One line: Rust's guarantees with Go's build speed, plus authority you can read
-in a signature and whole-program deterministic replay.
+One line: authority you can read in a signature and whole-program
+deterministic replay, with Rust's guarantees and much faster builds.
 
 ## Positioning And Scope
 
@@ -101,9 +103,17 @@ The design is a hypothesis. Before syntax freezes, the project runs:
   changes using the trust diff versus the plain code diff.
 - **E4 compile speed and E5 runtime**: benchmark suites against the D12
   targets and against Rust.
+- **E6 plumbing**: the same application written with capabilities by agents,
+  measuring how often they pass `Root`-like bundles everywhere and how large
+  the resulting trust diffs are.
 
-Gates at months 3, 6, and 9 decide continue, adjust, or stop. Syntax in D1 is
-provisional until E1 meets its targets.
+Initial thresholds, revised as data arrives: on a 30-task suite, Ferox
+first-check pass rate at least 0.8x the Rust rate and final pass rate at least
+the Rust rate within 1.5x the iterations (E1); reviewers using the trust diff
+catch at least 1.5x as many planted authority-widening changes as with the
+plain diff (E3). Gates: month 3, E1 on the interpreter; month 6, E1 and E2;
+month 9, E3 to E6. Each gate decides continue, adjust, or stop. Syntax in D1 is
+provisional until E1 meets its thresholds.
 
 ### D1. Surface: Rust spelling wherever the meaning is the same
 
@@ -116,10 +126,14 @@ provisional until E1 meets its targets.
   macro spellings with their Rust meaning: `println!`, `print!`, `eprintln!`,
   `eprint!`, `format!`, `write!`, `writeln!`, `vec!`, `assert!`,
   `assert_eq!`, `assert_ne!`, `debug_assert!`, `matches!`, `panic!`,
-  `todo!`, `unimplemented!`, `unreachable!`, `dbg!`. Users cannot define
-  macros (D6).
+  `todo!`, `unimplemented!`, `unreachable!`, `dbg!`, and the logging forms
+  `error!`, `warn!`, `info!`, `debug!`, `trace!`. Users cannot define macros
+  (D6).
+- Named lifetimes whose use maps exactly onto origins are accepted as a
+  legacy spelling and rewritten to `from` by the formatter; other uses are
+  errors with suggested origins (D2).
 - Where Ferox's meaning differs, the Rust spelling is rejected with a
-  machine-applicable fix: named lifetimes `'a` (→ `from`, D2), `async`/`.await`
+  machine-applicable fix: `async`/`.await`
   (→ capabilities, D8), lossy `as` (→ `try_from` or `truncate`, D3), ambient
   I/O such as `std::env::args()` or `std::fs::read` (→ capabilities, D7),
   `impl` blocks outside the type's or trait's module (D4), user macros (D6).
@@ -143,8 +157,11 @@ measurement rejected.
   - Otherwise the signature names the origin with a positional `from` clause:
     `fn longest(a: &str, b: &str) -> &str from a, b` (the result may borrow
     from either), `fn next(&mut self) -> Option<&str from self.src>` (from the
-    place `self.src`, not from `self`). `from` is a keyword only in this
-    position.
+    place `self.src`, not from `self`). `from` is a contextual keyword after a
+    type in signatures, field declarations, and `dyn` types; inside generic
+    arguments several origins are parenthesized: `Vec<&str from (a, b)>`.
+  - In an impl, `Self`'s origins are named by field:
+    `impl Iterator for Lexer { type Item = &str from Self.src; ... }`.
 - **Types carry origins per reference field.** `struct Lexer { src: &str, pos:
   usize }` is a borrowing type with one origin, named `src`. A struct gets one
   origin per reference-typed field and inherits the origins of its type
@@ -153,11 +170,12 @@ measurement rejected.
   covariant, `&mut T` and cells are invariant in `T`.
 - **`'static` and `Owned`.** A type with no borrowed origins is `Owned`
   (Rust's `T: 'static`). `dyn Trait` means `dyn Trait + Owned` unless written
-  `dyn Trait from x`. Escaping closures (`move` closures stored or returned)
-  and detached tasks require `Owned`; a closure that captures a borrow is
-  itself borrowing.
-- **Drop check** uses Rust's conservative rule: a value with a destructor
-  must strictly outlive the borrows it holds; standard containers carry an
+  `dyn Trait from x`. A closure that captures a borrow is itself a borrowing
+  value; a borrowing value may be returned or stored only where its origins are
+  named (`-> impl Fn() from xs`, a field with `from`). Detached tasks and
+  global registrations require `Owned`.
+- **Drop check** uses Rust's conservative rule: data borrowed by a value with
+  a destructor must strictly outlive that value; standard containers carry an
   audited exemption.
 - Borrow checking is per function at NLL precision plus declared field
   borrows on methods (`fn advance(&mut self.{pos})`), so disjoint-field calls
@@ -182,15 +200,18 @@ share one origin need an explicit `from` on the field
 
 - Rust's scalar, string, slice, array, tuple, `Option`, `Result`, `Vec`,
   `Box`, and `String` types with their Rust meaning. No null.
-- Nominal `struct` and `enum` with exhaustive `match`.
+- Nominal `struct` and `enum` with exhaustive `match`; `impl Trait` in
+  argument and return position as in Rust.
 - Every item signature is annotated; inference is bidirectional and local to
   a function body. No overloading: one function per name per scope, one
   method per name per type. No polymorphic recursion.
 - **Integers trap on overflow, division by zero, and over-wide shifts in every
   profile.** The trap may be reported late, but before the overflowed value
   influences any observable effect or leaves the enclosing loop or function,
-  so the optimizer can batch checks in vectorized loops. Proved contracts
-  delete checks.
+  so the optimizer can batch checks in vectorized loops. A proof may delete a
+  runtime check only if every fact it relies on is either proved inside the
+  same build or still checked at run time; a `pub` precondition that a deleted
+  check depends on stays checked at function entry.
 - `as` is accepted only where it is lossless; lossy conversions use
   `TryFrom`, `truncate()`, or explicit float rounding methods.
 - Floats are IEEE 754; `to_bits()` canonicalizes NaN so observable results
@@ -262,12 +283,14 @@ serialization as the default (5–7x slower in prior art).
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
 - Safe code has no mutable globals and no thread-locals.
-- **Write-only diagnostic sinks are not authority.** `print!`, `println!`,
+- **Write-only diagnostic sinks are not capabilities.** `print!`, `println!`,
   `eprint!`, `eprintln!`, `dbg!`, and the built-in `log` and `trace` APIs write
   to sinks owned by the current task and configured by `main`. They cannot
   read anything back, they do not affect purity, and inside `par` their output
   is buffered and emitted in sequential order. `dbg!` is an error in release
-  builds; printing to stdout from a library package is a lint.
+  builds; printing to stdout from a library package is a lint. Sink use is
+  still reported as exercised effect in the trust surface, and `Secret<T>`
+  values refuse `Debug` and `Display` so they cannot be logged by accident.
 - **Authority-free types.** `Pure` is a compiler-known auto trait: a type is
   `Pure` if no capability, synchronization handle (channel ends, `Shared<T>`
   handles, task handles), or foreign handle is reachable from it. A function
@@ -276,8 +299,10 @@ serialization as the default (5–7x slower in prior art).
   only on its arguments.
 - **Frozen data.** `Frozen` is a second compiler-known auto trait: a type is
   `Frozen` if it has no interior mutability reachable through shared
-  references (no `Cell`, `RefCell`, atomics). `par` (D9), memoization, and
-  `const fn` combine `Pure` with `Frozen`.
+  references (no `Cell`, `RefCell`, atomics). `par` (D9) combines `Pure` with
+  `Frozen`; memoization and `const fn` additionally forbid `&mut`
+  parameters. A call through a closure or `dyn` value may suspend exactly when
+  that value's type is not `Pure`.
 - **Foreign calls carry authority.** `extern` declarations are allowed only in
   packages granted `ffi`. Each foreign function is wrapped by a Ferox
   signature that takes the capabilities it may use, or is marked
@@ -306,12 +331,14 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   cancelled scope return `Err(Cancelled)`; suspended work unwinds and runs
   destructors; operations that consume a value return it inside the error.
 - **Shared mutable state** is message passing over channels, or
-  `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send`. The lock
-  acquires all named cells atomically in a global order and checks at run time
-  that the handles are distinct. Its body may call only authority-free
-  functions, and `Shared` handles are not `Pure`, so a body can neither
-  suspend nor take another lock. A panicking body poisons the cells, and
-  `lock` returns `Result`.
+  `lock (a, b) |x, y| { ... }` over `Shared<T>` cells with `T: Send + Pure`.
+  The lock acquires all named cells atomically in a global order and checks
+  at run time that the handles are distinct. Acquisition is not a
+  cancellation point. Its body may call only authority-free functions and may
+  not contain `lock`; payloads are `Pure`, so they hold no `Shared` handles,
+  and the body can neither suspend nor take another lock. A panicking body
+  poisons the cells, and `lock` returns `Result`. A cell's invariant is its
+  payload type's invariant.
 - Data-race freedom comes from ownership plus `Send` and `Sync`, derived
   structurally. The task, not the OS thread, is the isolation unit; values
   that never leave a task need not be `Send`.
@@ -336,11 +363,13 @@ stackful execution internally.
   authority-free and `Send`, capturing shared data only if it is `Frozen`, or
   holding disjoint `&mut` splits.
 - `par_map` and `par_for` equal their sequential versions.
-- `par_reduce` takes an operation whose trait declares associativity as a law
-  and is defined by a canonical balanced grouping that depends only on input
-  length. Results are bitwise identical on any core count. For non-associative
-  operations such as float addition, the canonical grouping is the
-  definition, documented as different from a sequential fold.
+- `par_reduce` is defined by a canonical balanced grouping that depends only
+  on input length, so results are bitwise identical on any core count. When
+  the operation's trait carries a proved or tested associativity law, the
+  result also equals the sequential fold; for float addition it does not, and
+  the canonical grouping is the definition.
+- If several parallel branches panic, the one first in sequential order is
+  reported.
 - Granularity is the runtime's job (heartbeat scheduling).
 - An automatic parallelization pass for independent authority-free calls is
   behind a flag until benchmarks justify it.
@@ -350,8 +379,15 @@ stackful execution internally.
 - Clauses `requires`, `ensures`, `invariant`, `decreases`, with Dafny and
   Verus names, written in the grammar, not in macros. `result` names the
   return value; `old(x)` the entry value of a `&mut` parameter; `final(x)` the
-  value a returned or stored `&mut` holds when its borrow ends.
-- **Spec language.** Specs call only `spec fn`s and the built-in spec types.
+  value a returned or stored `&mut` holds when its borrow ends. A bare `*x` of
+  a `&mut` parameter in `ensures` is an error: write `old(*x)` or `final(*x)`.
+- **Spec language.** Specs call only `spec fn`s, the built-in spec types, and
+  functions marked `#[spec]`, which must be authority-free and proved total;
+  the standard library marks its pure accessors (`len`, indexing, `get`,
+  `contains`, and similar), so `xs.len()` and `xs[i]` mean the same in specs
+  as in code. `spec fn`s must terminate. Spec expressions carry
+  well-formedness obligations (no division by zero, indices in bounds), as in
+  Dafny. Floats in specs are IEEE values, not reals.
   Spec integers are mathematical; `/` and `%` truncate as in Rust; `==` is
   model equality; quantifiers range over spec types. Closures appear in specs
   only through `f.requires(args)` and `f.ensures(args, r)`.
@@ -371,9 +407,11 @@ stackful execution internally.
   `Ord` or associativity for `par_reduce` operations. Under `prove` each impl
   proves them; under `test` they become property tests. Derived impls come
   with generated proofs.
-- **Spec quality.** The toolchain checks that preconditions are satisfiable
-  and postconditions are not trivially true, offers mutation testing of specs,
-  and treats a weakened spec as an authority change that needs approval.
+- Trait methods may carry contracts; impls may weaken preconditions and
+  strengthen postconditions, never the reverse.
+- **Spec quality.** The toolchain checks that preconditions are satisfiable,
+  postconditions are not trivially true, and assumptions are not
+  contradictory, and runs mutation testing of specs in CI.
 - **Capabilities have no spec model in v1.** A function that uses a
   capability may state postconditions about its results that hold for every
   possible response of the world.
@@ -397,11 +435,15 @@ stackful execution internally.
   coverage**: which public items have contracts and at what status. Items
   without contracts still need ordinary review and tests; the trust diff
   narrows review, it does not replace it.
-- **Approval lives outside the agent's write scope.** Approvals of spec
-  changes, authority widening, and new trust holes are records signed by a
-  human-held key and verified by CI. A hash written in the same change is
-  never approval. Hashes cover everything a spec's meaning depends on,
-  including the bodies of `spec fn`s it calls.
+- **What needs approval**: weakening or removing a contract, widening
+  authority, adding a trust hole (including `diverges`), downgrading a
+  package or item from `prove` to `test` or `assert`, and changing a
+  `#[protected]` test.
+- **Approval lives outside the agent's write scope.** Approvals are records
+  signed by a human-held key and verified by CI. A hash written in the same
+  change is never approval, and proof caches are rebuilt in CI rather than
+  trusted. Hashes cover everything a spec's meaning depends on, including the
+  bodies of `spec fn`s it calls.
 
 ### D12. Compilation and backends
 
@@ -432,6 +474,11 @@ stackful execution internally.
   release; release runtime within 10–20% of equivalent Rust.
 - The compiler is written in Rust and not self-hosted before 1.0.
 
+- An **origin cross-check** tool translates signatures and bodies to Rust
+  with explicit lifetimes and runs `rustc`'s borrow checker over the test
+  corpus, so the Ferox checker is continuously compared with Rust's. It is a
+  test oracle, not a backend.
+
 Rejected: Rust emission as the release backend (53 s clean builds, coupling
 to rustc's borrow precision, no route to stackless lowering of Ferox tasks);
 witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
@@ -439,7 +486,9 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
 
 ### D13. Packages and supply chain
 
-- No build scripts, install hooks, or code that runs at fetch or build time.
+- Ferox packages have no build scripts, install hooks, or code that runs at
+  fetch or build time. The one exception is an imported Rust crate's build
+  script, which runs sandboxed and counts as a trust hole.
 - Lockfiles are on by default with content hashes; publishing requires
   trusted publishing; package names are namespaced; the client rejects
   dependencies that do not exist rather than guessing near names.
@@ -463,8 +512,11 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   rest of the program and reports the expected type, in-scope bindings, and
   candidate functions.
 - `ferox eval` runs an expression in the interpreter against the current
-  package; `ferox verify` runs proofs; coverage and spec coverage are
-  reported.
+  package. `ferox verify` runs proofs and returns NDJSON results with proof
+  status per item and counterexamples for failures. Coverage and spec coverage
+  are reported.
+- `#[protected]` tests are part of the trust surface; agents cannot change
+  them without approval (D11).
 - Every response carries a snapshot hash; every write request carries its base
   hash and applies atomically or not at all.
 - `ferox doc` serves documentation matched to the installed compiler: a card
@@ -537,7 +589,7 @@ pub enum FetchError {
 pub fn fetch_feed(net: &Net, clock: &Clock, url: &Url) -> Result<Vec<Entry>, FetchError> {
     let deadline = clock.now() + Duration::from_secs(5);
     let body = net.get(url, deadline)?;
-    log::info!("fetched {} bytes from {url}", body.len());
+    info!("fetched {} bytes from {url}", body.len());
     Ok(parse_feed(&body)?)
 }
 
@@ -600,15 +652,13 @@ fn feed_times_out() {
 
 ## Open Questions
 
-1. Whether `log::info!` belongs in the fixed `!` set or is an ordinary
-   function with format-string checking.
-2. The exact deferred-trap rule for overflow and its interaction with proofs.
-3. Field-borrow declaration syntax on methods and its effect on public API
+1. The exact deferred-trap rule for overflow and its interaction with proofs.
+2. Field-borrow declaration syntax on methods and its effect on public API
    stability.
-4. The simulator model for foreign effects and for Rust crates imported
+3. The simulator model for foreign effects and for Rust crates imported
    through shims.
-5. Whether authority-free public functions should be declarable (`#[pure]`)
+4. Whether authority-free public functions should be declarable (`#[pure]`)
    so that adding authority is a visible breaking change.
-6. The interpreter's role in `ferox test` once the development backend exists.
-7. How spec coverage and exercised authority are presented so the trust diff
+5. The interpreter's role in `ferox test` once the development backend exists.
+6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
