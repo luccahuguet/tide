@@ -1,6 +1,6 @@
 # Tide Design
 
-Status: draft 3.2. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3.3. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
@@ -258,8 +258,11 @@ share one origin need an explicit `from` on the field
   check depends on stays checked at function entry.
 - `as` is accepted only where it is lossless; lossy conversions use
   `TryFrom`, `truncate()`, or explicit float rounding methods.
-- Floats are IEEE 754; `to_bits()` canonicalizes NaN so observable results
-  match across backends and targets.
+- Floats are IEEE 754. Every operation that reads a float's sign or bits
+  (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`, `signum`,
+  `total_cmp`, hashing, formatting, foreign calls) treats any NaN as one
+  canonical NaN, so observable results match across backends and targets
+  while arithmetic stays native.
 
 Rejected: signature inference, implicit conversions, overloading, custom
 operators.
@@ -290,7 +293,9 @@ generics.
   `Box<dyn Error>` works.
 - Results are must-use.
 - Bugs (overflow, out-of-bounds, failed assertions, `panic!`) abandon the
-  current task. A child task's panic propagates to its scope, which panics in
+  current task. A panic raised while unwinding from another panic aborts the
+  process, and stack overflow is a panic. A child task's panic propagates to
+  its scope, which panics in
   turn, as with Rust's `std::thread::scope`; no code ever observes data a
   panicking task was mutating. Recovery happens only at
   `Tasks::spawn_isolated`, which takes an `Owned` closure and returns
@@ -427,7 +432,9 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   earliest-spawned panicking child; otherwise, if any child failed, it
   returns the error of the earliest-spawned failing child, where a
   cancellation caused by the scope's own deadline is reported as
-  `DeadlineExceeded`; otherwise it returns the body's result.
+  `DeadlineExceeded`; otherwise it returns the body's result. An error a
+  child returns after observing cancellation caused by a sibling's failure
+  does not count as a failure, so the root cause is what the scope reports.
 - In v0 the threads runtime runs one OS thread per task, so blocking tasks
   cannot exhaust a pool and production cannot deadlock where the simulator
   makes progress; `Tasks::limit` bounds concurrency when needed.
@@ -452,7 +459,10 @@ stackful execution internally.
   `join` runs `Pure + Send` closures; `par_map` and `par_for` run
   `Fn + Pure + Send + Sync` closures, because they call one closure from
   several threads. Captured shared data must be `Pure + Sync`; `&mut` data
-  is reachable only through disjoint splits.
+  is reachable only through disjoint splits. Element types follow the same
+  rule: `par_map`, `par_for`, `par_chunks_mut`, and `par_sort` require
+  elements that are `Pure` plus `Sync` when shared or `Send` when split or
+  moved, so no branch can reach a `Shared` cell, a channel, or a capability.
 - When no branch panics, `join`, `par_map`, and `par_for` equal their
   sequential versions. When a branch panics, the panic propagates as in D5,
   and data the region could write has unspecified (memory-safe) contents
@@ -497,7 +507,14 @@ stackful execution internally.
   evaluation panics counts as a violation; a sampled clause that exceeds its
   step budget is reported as unchecked, not as failed. In `ensures`, a bare
   `*x` of a `&mut` parameter means its value at return and `old(*x)` its
-  value at entry. Mathematical integers and model equality
+  value at entry. `old(e)` evaluates `e` at entry and snapshots the value it
+  denotes, copying `Copy` values and cloning others; `old` of a type that is
+  neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
+  counts as a violation of the clause that needed it. One skip rule decides
+  when a clause runs: clauses built only from operators, literals, and
+  standard-library accessors are `checked` in debug and test builds;
+  clauses that call user-defined functions are `sampled` and run under
+  `tide test`. Mathematical integers and model equality
   apply under `prove` (v1), and the compiler warns where a clause would read
   differently under the two.
 - **Uses**, chosen per package and overridable per item:
@@ -662,9 +679,11 @@ witness tables by default (6–24x slower); C++ interop, MLIR, and GPU before
   durable by `sync` or `sync_dir` may be lost or torn, as the seed decides.
 - `tide sim <binary>` runs a program's `main` under many seeds. A failure
   prints seed and commit and replays bit for bit, dependencies included.
-- Every simulated run writes a replay manifest: seed, commit, toolchain
-  version, target, the simulated root's configuration (arguments,
-  environment, files), and all injected inputs. The standard library ships
+- Every simulated run writes a replay manifest: seed, the content hashes of
+  the source and every dependency, a semantic build identity (compiler
+  version, target, and every option that affects semantics), the simulated
+  root's configuration (arguments, environment, files), and all injected
+  inputs. Replay refuses to run against a mismatched identity. The standard library ships
   one math library for every target, `to_bits` canonicalizes NaN, and raw
   pointer addresses are observable only under an `unsafe` grant.
 - Node entry points are `fn` items or `Fn` closures with `Owned` captures, so
