@@ -1,6 +1,6 @@
 # Tide Memory: Ownership and Origins
 
-Status: draft 1, synchronized with draft 3.4. This chapter elaborates D2 of
+Status: draft 1, synchronized with draft 3.5. This chapter elaborates D2 of
 `design/01-design.md` and the memory parts of D5, D7, D8 and D9, and it is the
 definition the checker implements. Section 13 records the edits it asked of
 `01-design.md`.
@@ -132,7 +132,9 @@ orig(S<ρ1..ρn; T1..Tm)      = {ρ1..ρn} ∪ orig(T1) ∪ … ∪ orig(Tm)   (
 orig((T1, …, Tn))           = orig(T1) ∪ … ∪ orig(Tn); arrays and slices likewise
 orig(dyn Trait + ρ) = {ρ}        orig(dyn Trait + Owned) = ∅
 orig(closure)               = the union of orig over its captured types
-orig(returned impl Trait)   = its captured lifetimes ∪ orig of its captured type parameters (§5.2)
+orig(returned impl Trait)   = ∅ if its bounds state Owned (+ 'static); {ρ} if + ρ;
+                              otherwise its captured lifetimes ∪ orig of its
+                              captured type parameters (§5.2)
 orig(T), T a type parameter = an abstract set
 orig(scalars, str, String, fn pointers, 'static references to Owned data) = ∅
 ```
@@ -152,13 +154,16 @@ ceiling:
 ```
 Lifetime     ::= "'" Ident | "'_" | "'static"
 Generics     ::= '<' LtParam (',' LtParam)* [',' TypeParam (',' TypeParam)*] '>'
-                                   on fn, struct, enum, impl; never on a trait
+               | '<' TypeParam (',' TypeParam)* '>'
+                                   lifetime parameters on fn, struct, enum, impl;
+                                   never on a trait
 LtParam      ::= Lifetime [':' Lifetime ('+' Lifetime)*]
 RefType      ::= '&' [Lifetime] ['mut'] Type
 PathType     ::= Path ['<' Lifetime (',' Lifetime)* [',' Type (',' Type)*] '>']
 Bound        ::= TraitBound | Lifetime            in `T: ..`, `impl ..`, `dyn ..`
 WherePred    ::= Type ':' Bound ('+' Bound)* | Lifetime ':' Lifetime ('+' Lifetime)*
-Capture      ::= 'use' '<' .. '>'                 only on a return-position `impl Trait`
+Capture      ::= 'use' '<' .. '>'                 only on a return-position `impl Trait`;
+                                   lists every type parameter in scope
 ```
 
 - A lifetime parameter is declared on the item that uses it: `fn f<'a, T>`,
@@ -359,9 +364,9 @@ denotes `Lexer<'a>`.
   `Pure` (`03-authority-concurrency.md` GLOBAL-1), since D7 allows no mutable
   globals. v0 has no lazy statics: a static's value is computed at compile
   time by `const fn` (D7).
-- `Owned` is required by `Box<dyn Trait>` contents (§5.1), `dyn Any`, values
-  handed to tasks that outlive their creator (§8.2), and global
-  registrations.
+- `Owned` is required by `Box<dyn Trait>` contents in a signature or field
+  (§5.1), `dyn Any`, values handed to tasks that outlive their creator
+  (§8.2), and global registrations.
 
 ## 4. Variance and subtyping
 
@@ -427,9 +432,9 @@ the `Vec` can end while its elements' origin lives on.
 
 ### 5.1 `dyn Trait`
 
-D2 follows Rust's object-lifetime defaults: `Box<dyn Trait>` is `Owned`,
-while `&dyn Trait` and `&mut dyn Trait` take the reference's origin. In
-detail:
+D2 follows Rust's object-lifetime defaults: in a signature or field,
+`Box<dyn Trait>` is `Owned`, while `&dyn Trait` and `&mut dyn Trait` take
+the reference's origin. In detail:
 
 - **Directly behind a reference** (`&dyn Trait`, `&mut dyn Trait`), the
   object's origin defaults to the reference's, which is Rust's
@@ -460,9 +465,10 @@ detail:
   annotation, and `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn()
   -> usize + use<'a>` releases the caller's `key` borrow at the call.
 - **Type parameters** are captured as in Rust.
-- **Auto traits** of an opaque type are only those its bounds state. Rust's
-  auto-trait leakage would make dependents depend on the function's body,
-  which D12 forbids.
+- **Auto traits.** An opaque type is `Send`, `Sync`, `Pure`, or in v1
+  `ThreadBound` only if its bounds state it. Rust's auto-trait leakage would
+  make dependents depend on the function's body, which D12 forbids. `Owned`
+  instead follows `orig` (§2.2, §3.7), as Rust's `'static` does.
 
 ### 5.3 Closures
 
@@ -480,8 +486,8 @@ detail:
 - `move` changes the capture mode, not whether the closure borrows. A `move`
   closure that captures a `&str` still carries that string's origin. A
   closure is `Owned` exactly when every captured value is `Owned`.
-- Where `Owned` is required (`Box<dyn Fn()>`, a task that outlives its
-  creator, a global registration), the usual fix is `move` plus owning the
+- Where `Owned` is required (`Box<dyn Fn()>` in a signature or field, a
+  task that outlives its creator, a global registration), the usual fix is `move` plus owning the
   data (`to_string()`, `clone()`, or an `Arc`, created with `&Tasks`).
 
 ### 5.4 Higher-ranked origins
@@ -767,7 +773,8 @@ trust hole. It is **deep**:
 - it looks through every field, private ones included, and through `Box` and
   `Rc`, with type arguments substituted;
 - recursive types take the greatest fixed point;
-- opaque and `dyn` types have exactly the auto traits their bounds state;
+- opaque and `dyn` types have exactly the auto traits their bounds state
+  (`Owned` alone follows `orig`, §3.7);
 - a type parameter is `Pure` only if it is bounded by it.
 
 Coherence never treats a missing auto trait (`Send`, `Sync`, `Pure`, `Owned`)

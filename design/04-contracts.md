@@ -1,6 +1,6 @@
 # Tide Contracts
 
-Status: draft 1, synchronized with draft 3.4. This chapter is the normative
+Status: draft 1, synchronized with draft 3.5. This chapter is the normative
 definition of D10 (contracts) and D11 (trust surface) in
 `design/01-design.md`. It elaborates those decisions and must not contradict
 them. Where it needs a decision changed, it says so in the last section;
@@ -672,9 +672,10 @@ For a `&mut` parameter `x`:
   the origin of `x`'s outer reference, named or given by elision, occurs in
   no other parameter type and in no bound or where clause; it is not among
   the result type's origins, counting the lifetimes a returned `impl Trait`
-  captures (`02-memory.md` §2.2, §5.2); and no declared or implied outlives
-  bound relates it to another origin. `fn stash<'r>(s: &mut Slot<'r>, x:
-  &'r mut i32)` fails: it can store `x` in `*s`, so the borrow outlives the
+  captures (`02-memory.md` §2.2, §5.2); and no declared or implied bound makes
+  it outlive another origin (`'r: 'q`, that is `ρr ⊆ ρq`). The `'a: 'r` that
+  a borrowing pointee implies does not count.
+  `fn stash<'r>(s: &mut Slot<'r>, x: &'r mut i32)` fails: it can store `x` in `*s`, so the borrow outlives the
   call. So does `fn give<'q, 'r: 'q>(x: &'r mut i32) -> &'q mut i32`, whose
   bound lets `x` escape as the result.
 - Otherwise `final(*x)` is a **prophecy**: the value `*x` will hold when the
@@ -692,8 +693,9 @@ RustHornBelt proved sound; RustHorn is sound for a stored borrow only if its
 last use, the verifier learns that `final(*r)` equals the current `*r`, and
 the callee's `ensures` then determines `final(*x)`. Prophecies arise only
 from results that carry or capture a `&mut` parameter's origin, a `&mut`
-parameter's origin that the signature relates to another parameter (one
-name, a bound, or `'r: 'q`), and borrowing types with `&mut` fields;
+parameter's origin that the signature lets outlive another origin (a shared
+name, a bound, or `'r: 'q`, declared or implied), and borrowing types with
+`&mut` fields;
 ordinary `&mut` arguments need none.
 
 ```tide

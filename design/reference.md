@@ -1,7 +1,7 @@
 # Tide for Rust Programmers
 
 Status: the agent-facing reference for the **v0 core** of Tide, as the
-tier table of `design/01-design.md` (draft 3.4, the decision record) defines
+tier table of `design/01-design.md` (draft 3.5, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Appendix A lists what
 is not in v0; section 16 lists where the documents still disagree and which
@@ -284,7 +284,7 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
 - `Owned` is a compiler-known auto trait: no borrowed lifetimes except
   `'static` (Rust's `T: 'static`, accepted and rewritten to `T: Owned`).
   Work that outlives the current function requires it: `spawn_isolated`
-  (7.1), `Box<dyn Trait>` contents, and children of a scope passed down
+  (7.1), `Box<dyn Trait>` contents in a signature or field, and children of a scope passed down
   unless they borrow only what the signature ties to the scope (7.1).
 - `dyn Trait` follows Rust's object-lifetime defaults: behind `&'a` or
   `&'a mut` it is `dyn Trait + 'a`. Elsewhere in signatures and fields
@@ -305,8 +305,8 @@ where its lifetime is named or captured.
   Iterator<Item = u32>` and `fn over(min: &u32) -> impl Fn(&Person) -> bool`
   need no annotation. To capture less, list what it captures:
   `-> impl Fn() -> usize + use<'a>`.
-- Storing a closure in an `Owned` position (`Box<dyn Fn()>`,
-  `spawn_isolated`) requires that it capture no borrows: `move` owned values
+- Storing a closure in an `Owned` position (`Box<dyn Fn()>` in a signature
+  or field, `spawn_isolated`) requires that it capture no borrows: `move` owned values
   in (`clone()`, `to_string()`), or write `+ 'a` (`FX0203`).
 
 ### 3.6 What is impossible, and what to write instead
@@ -1395,7 +1395,7 @@ and candidate functions; use holes to build a function top-down.
 | `trait Foo<'a>`, `for<'a>`, `type Item<'a>` | a lifetime on the method or impl, `Fn` sugar, owned items or indices | `FX0201`, `FX0404`, `FX0403` |
 | `impl Lexer { .. }` for `struct Lexer<'a>` | `impl Lexer<'_>` or `impl<'a> Lexer<'a>` | error with fix |
 | `fn new(s: &str) -> Self` in `impl<'a> P<'a>` | `fn new(s: &'a str) -> Self` | error with fix |
-| `Box<dyn Fn()>` capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `FX0203` |
+| `Box<dyn Fn()>` in a signature or field, capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `FX0203` |
 | Self-referential struct | indices, `Arena`, or owner and view apart | `FX0210` |
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
 | `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
@@ -1634,7 +1634,7 @@ generated directly rather than filtered.
 
 ## 16. Where the documents disagree
 
-The chapters are synchronized with 01 draft 3.4. These points remain open;
+The chapters are synchronized with 01 draft 3.5. These points remain open;
 this reference takes the reading shown.
 
 1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
@@ -1649,7 +1649,7 @@ this reference takes the reading shown.
 
 ## Appendix A. Later tiers (not in v0)
 
-From the tier table of 01 (draft 3.4). The chapters specify most of these.
+From the tier table of 01 (draft 3.5). The chapters specify most of these.
 
 **v1:**
 

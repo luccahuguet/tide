@@ -2,7 +2,7 @@
 
 Status: draft 1 of the normative chapter for D7, D8, D9, D15, D16, and the
 Rust-import part of D13 in `design/01-design.md`, synchronized with its draft
-3.4. That document owns the decisions; this chapter turns them into rules a
+3.5. That document owns the decisions; this chapter turns them into rules a
 compiler, runtime, and simulator can implement. Where a rule needs a decision
 the design does not state, this chapter says so and lists it in §13.
 

@@ -1,9 +1,10 @@
 # Tide Design
 
-Status: draft 3.4. Draft 1 was synthesized from `design/00-first-principles.md`
+Status: draft 3.5. Draft 1 was synthesized from `design/00-first-principles.md`
 and `research/`; draft 2 answers the six round-1 reviews in `reviews/`; draft
-3.4 returns D2 to Rust 2024's lifetimes after the origin trial
-(`trials/e1-origins/`) and review rounds 8 and 9. This
+3.4 returned D2 to Rust's lifetime spelling after the origin trial
+(`trials/e1-origins/`), and draft 3.5 takes Rust 2024's lifetimes whole
+after review rounds 8 to 10. This
 document owns the design decisions. Chapters elaborate them and must not
 contradict them; a change of decision is made here first.
 
@@ -214,8 +215,10 @@ measurement rejected.
   Variance follows Rust: shared references are covariant, `&mut T` and
   cells are invariant in `T`.
 - **`'static` and `Owned`.** A type that borrows nothing except `'static`
-  data is `Owned` (Rust's `T: 'static`). `Box<dyn Trait>` is `Owned`, and
-  `&'a dyn Trait` is `dyn Trait + 'a`, by Rust's object-lifetime defaults.
+  data is `Owned` (Rust's `T: 'static`). In a signature or field,
+  `Box<dyn Trait>` is `Owned` and `&'a dyn Trait` is `dyn Trait + 'a`, by
+  Rust's object-lifetime defaults; inside a body the object lifetime is
+  inferred.
   `Tasks::scope` is typed like `std::thread::scope`:
   `impl FnOnce(Scope<'_, 'env, E>) -> Result<T, E>`, where `Scope<'s, 'env,
   E>` declares `'env: 's`, so the higher-ranked `'s` is bounded below by
