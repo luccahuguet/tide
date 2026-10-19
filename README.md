@@ -94,16 +94,27 @@ Cited evidence behind the decisions, in [research/](research/):
 
 ### Reviews and Trials
 
-- [reviews/](reviews/): adversarial reviews. Round 1 (agent usability,
-  performance, soundness, strategy, verification, and a second-model review)
-  examined draft 1; `round1-resolution.md` audits draft 2 against it. Round 2
-  (simplicity and a second-model review) examined draft 2.1 and led to the
-  tier split.
-- [trials/e1/](trials/e1/): the first E1 learnability pilot. An agent that saw
-  only `reference.md` wrote ten programs, which `grading.md` grades without a
-  compiler against the normative chapters. It estimated a 6/10 first-check
-  pass rate against about 9/10 for Rust, with no leaked Rust habits; the
-  misses trace to gaps in the reference and one design gap.
+- [reviews/](reviews/): adversarial reviews, one file per reviewer and
+  round. Round 1 (agent usability, performance, soundness, strategy,
+  verification, and a second-model review) examined draft 1;
+  `round1-resolution.md` audits draft 2 against it. Round 2 (consistency,
+  simplicity, and a second-model review) examined draft 2.1 and led to the
+  tier split. Rounds 3–7 (consistency and second-model reviews) checked
+  drafts 3 to 3.3 until no v0-blocking objection remained. Round 8 reviewed
+  the switch to Rust lifetime syntax and led D2 to take Rust 2024's rules
+  whole.
+- [trials/](trials/): E1 learnability trials. A fresh agent that saw only a
+  reference wrote the programs, and `grading.md` grades them without a
+  compiler against the normative chapters.
+  - `e1/`: the pilot. It estimated a 6/10 first-check pass rate against
+    about 9/10 for Rust, with no leaked Rust habits; the misses trace to
+    gaps in the reference and one design gap.
+  - `e1-round2/`: the same tasks after the reference fixes, 9/10. The
+    reference now mirrors these tasks, so later rounds use held-out tasks.
+  - `e1-origins/`: held-out, borrow-heavy tasks written once with `from`
+    clauses and once with Rust lifetime syntax. Both arms passed 10/10 with
+    no borrow errors, and Rust syntax needed about 3.5 times the
+    annotations; the tie decided D2's Rust spelling.
 
 ## v0 Core and Later Tiers
 
@@ -144,7 +155,5 @@ Cited evidence behind the decisions, in [research/](research/):
   keep that name as written. [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md),
   the `FEROX_*` documents, and the `ORBIS_*` documents record earlier naming
   reviews.
-- [ZERO_LANGUAGE_FINDINGS.md](ZERO_LANGUAGE_FINDINGS.md): findings from a
-  review of Zerolang (Zero), an agent-first language.
 - [TASKS.md](TASKS.md) and `tasks/`: tasks from the first design's bootstrap
   work.
