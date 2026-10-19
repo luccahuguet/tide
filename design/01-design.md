@@ -750,3 +750,7 @@ fn feed_times_out() {
 5. The interpreter's role in `ferox test` once the development backend exists.
 6. How spec coverage and exercised authority are presented so the trust diff
    stays small enough to read.
+7. How the C-emitting release backend (D12, v1) implements unwinding for
+   panics, which must drop values (D5): a flag check after every call,
+   compiler-specific extensions, or abort in release builds. If none is
+   acceptable, this is the main reason to switch to a direct LLVM backend.
