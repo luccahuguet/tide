@@ -1160,8 +1160,8 @@ builds, erased in release, and used to drive property tests.
   any other clause, such as one with a quantifier, a closure, or a call to
   your own function, is *sampled*. Debug and test builds evaluate
   checked clauses at the points in the table; `tide test` also checks
-  sampled clauses, on each function's first 64 calls and then calls 128,
-  256, and so on, each under a step budget. One that runs over budget is
+  sampled clauses on every call, each under a step budget, so the outcome
+  depends only on the inputs. One that runs over budget is
   reported as unchecked, not failed. Release builds erase clauses.
 - **Visibility.** A `pub` function's contract may call only `pub` functions
   (Rust's private-in-public rule; provisional for v0).
