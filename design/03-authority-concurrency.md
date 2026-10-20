@@ -66,7 +66,7 @@ scope-exit join. Every capability error type has a cancellation variant whose
 
 | Type | Main operations | Attenuation | Suspends |
 | --- | --- | --- | --- |
-| `Fs` | `read`, `read_to_string`, `write`, `write_synced`, `open`, `create`, `open_with(p, &OpenOptions)`, `sync_dir`, `create_dir_all`, `read_dir`, `metadata`, `exists`, `rename`, `remove_file` | `dir(path, Mode::Read \| Mode::ReadWrite)`, `read_only()` | all |
+| `Fs` | `read`, `read_to_string`, `write`, `write_synced`, `open`, `create`, `open_with(p, &OpenOptions)`, `sync_dir`, `create_dir_all`, `read_dir`, `metadata`, `exists`, `rename`, `remove_file`, `remove_dir`, `remove_dir_all` | `dir(path, Mode::Read \| Mode::ReadWrite)`, `read_only()` | all |
 | `File` | `read`, `read_owned`, `write`, `write_owned`, `seek`, `sync`, `set_len`, `close` | none | all |
 | `Net` | `connect(addr)`, `bind(addr)`, `bind_udp(addr)`, `resolve(host)`, `get(&Url, deadline)` | `only(["host:port", ..])`, `no_bind()` | all |
 | `ReadDir`, `DirEntry` | iteration, `path`, `file_name`, `metadata`, `file_type` | none | iteration, `metadata`, `file_type` |
@@ -91,9 +91,19 @@ Notes:
   `OpenOptions` is Rust's builder without its ambient `open`. Writes are
   durable only once synced: `file.sync()` (Rust's `sync_all` and `sync_data`
   are accepted spellings) for contents, and `fs.sync_dir(p)` for directory
-  entries changed by `create`, `rename`, `remove_file`, or a new
-  subdirectory. D7's `Dir::sync_dir` is this method: an `Fs` from `dir()` is
-  the directory capability. `write_synced` syncs the file and its entry.
+  entries changed by `create`, `rename`, `remove_file`, `remove_dir`, or a
+  new subdirectory. `remove_dir_all(p)` is, as Rust specifies it,
+  `remove_file` and `remove_dir` on every path below and including `p`, so
+  the whole removal is durable once `sync_dir` of `p`'s parent returns
+  (§9.5): nothing below a removed directory is reachable. A cancelled or
+  failed `remove_dir_all` can leave part of the tree, since cancellation
+  (TASK-3) or an error can stop it between paths. An `Fs` never removes
+  its own base: `remove_dir(".")` fails with `InvalidInput`, and
+  `remove_dir_all` on a path that names the base empties it and leaves it
+  in place (Rust then reports `InvalidInput` for `"."`); `sync_dir(".")`
+  makes the emptying durable.
+  D7's `Dir::sync_dir` is this method: an `Fs` from `dir()` is the
+  directory capability. `write_synced` syncs the file and its entry.
   After a simulated crash, unsynced writes may be lost or torn, but each
   directory-entry change survives whole or not at all, so a `rename` over a
   target leaves it naming the old file or the new one (§9.5). Atomic
@@ -1161,24 +1171,35 @@ through the simulated network and filesystem.
 
 A crash is not a cancellation: the node's tasks stop at their current
 scheduling points without running destructors, its memory is freed, and
-peers' connections reset after a modeled delay. Only data made durable by
-`sync` or `sync_dir` (§1.1) survives; other writes may be lost or torn, as
-the seed decides (D15, §9.4). Each unsynced directory-entry change, a
-`create`, `rename`, `remove_file`, or new subdirectory, survives whole or is
-lost, never torn: after a crash, a `rename` either happened or did not.
-Either the target names the renamed file and the source name is gone, or
-both are as they were, so a replaced target names the old file or the new
-one, never neither. Which unsynced changes survive is otherwise
-unspecified, except that the surviving set is one a file system could
-reach: a change survives only if the changes that created its entry and
-every directory above it do. So a program may rely only on what `sync_dir`
-made durable and on each change being whole. This is POSIX's rename
-atomicity carried across a crash, which journaling file systems provide
-in practice and every atomic-replace protocol needs. `restart` reruns the entry
-with a fresh `NodeRoot` over the surviving durable storage; no volatile
-state survives. `sim.run_for(d)` and `sim.run_until(&handle)`, which returns
-the entry's `Result<T, E>`, drive the world; `node.fs()` inspects a node's
-disk.
+peers' connections reset after a modeled delay. Data made durable by `sync`
+or `sync_dir` (§1.1) survives, provided its entry and the entries of the
+directories above it are durable too, since a directory whose entry is lost
+takes its contents with it; other writes may be lost or torn, as the seed
+decides (D15, §9.4). Each unsynced directory-entry change, a `create`,
+`rename`, `remove_file`, `remove_dir`, or new subdirectory, survives whole
+or is lost, never torn; `remove_dir_all` is one such change per path it
+removes, so a crash can leave part of the tree. After a crash, a `rename`
+either happened or did not. Either the target names the renamed file and the
+source name is gone, or both are as they were, so a replaced target names
+the old file or the new one, never neither. Which unsynced changes survive
+is otherwise unspecified, except that the surviving set is one a file system
+could reach: a change survives only if the changes that created its entries
+and every directory above its paths do; a change that takes a name survives
+only if the change that freed the name does; and a directory's removal, by
+`remove_dir` or by a `rename` over it, survives only if every change that
+emptied it does, each removal in it and each `rename` out of it. A
+`sync_dir` that makes a directory's removal durable makes those changes
+durable too, because a file system cannot remove a directory before emptying
+it. Likewise every other change a durable change depends on is made durable
+with it, except one: durability never flows from synced data or a synced
+entry to the unsynced creation of its own entry or of a directory above it.
+So a program may rely only on what `sync_dir` made durable and on each
+change being whole. This is POSIX's rename atomicity carried across a crash,
+which journaling file systems provide in practice and every atomic-replace
+protocol needs. `restart` reruns the entry with a fresh `NodeRoot` over the
+surviving durable storage; no volatile state survives. `sim.run_for(d)` and
+`sim.run_until(&handle)`, which returns the entry's `Result<T, E>`, drive
+the world; `node.fs()` inspects a node's disk.
 
 ### 9.6 `tide sim`
 

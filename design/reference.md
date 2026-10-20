@@ -381,8 +381,8 @@ fn main(root: Root) -> Result<(), AppError> {
 ```rust
 impl Fs {                                         // every method takes &self; p: impl AsRef<Path>
     // read, read_to_string, write (not durable), create_dir_all, read_dir, metadata,
-    // rename, remove_file, remove_dir_all: as std::fs (a DirEntry, like a File,
-    // carries the Fs's authority)
+    // rename, remove_file, remove_dir, remove_dir_all: as std::fs (a DirEntry,
+    // like a File, carries the Fs's authority)
     fn write_synced(&self, p, data: impl AsRef<[u8]>) -> io::Result<()>;   // durable when it returns
     fn open(&self, p) -> io::Result<File>;                          // read only
     fn create(&self, p) -> io::Result<File>;                        // write; create or truncate
@@ -414,7 +414,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
   before attenuating to a directory that may not exist yet.
 - **Durability** (D7, D15). Writes are durable only once synced: `file.sync()`
   for contents, `fs.sync_dir(dir)` for the entries changed by `create`,
-  `rename`, `remove_file`, or a new subdirectory; `write_synced` syncs the
+  `rename`, removals, or a new subdirectory; `write_synced` syncs the
   file and its entry. After a crash, unsynced data may be lost or torn; a
   `rename` is never half done (companion 17). An acknowledged write is:
   write, `sync()`, and, the first time a file or directory is created,
