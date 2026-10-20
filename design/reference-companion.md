@@ -9,7 +9,7 @@ bare section number below 14 refers to the core. Sections 14–16 tabulate
 or illustrate rules the core states; 17 and Appendix A hold what the core
 only points to. It is outside the core's 25,000-token budget (D14).
 
-Core count: 24,996 tokens on 2026-10-20, measured by
+Core count: 24,995 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -44,6 +44,11 @@ Rerun it after any change to the core and update this line.
 | `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `FX0604` |
 | `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `FX0505` |
 | `tokio::select!` | a channel of an enum, deadlines | `FX0605` |
+| `Err(SendError(v))` | `Err(e)`, then `e.into_inner()`; `e.is_cancelled()` (7.3) | rustc E0532 |
+| `Err(RecvError)` | `Err(RecvError::Disconnected)`, or `Err(e)` and `e.is_cancelled()`: the bare name is now a binding that also catches `Cancelled` | rustc warning only (`non_snake_case`) |
+| `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `FX0913` safe |
+| A pipeline stage returning `Err` when its channel disconnects | return `Ok`: a disconnect alone is not an echo, so the `Err` could outrank the failure that dropped the peer (7.1, 7.3) | — |
+| An `Rc<Cell<u32>>` counter captured by a `world.http` peer | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `FX0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `FX0610`, `FX0611` |
 | `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `FX0612` |
@@ -378,8 +383,8 @@ this reference takes the reading shown.
 
 ## 17. Simulation: faults, nodes, crashes
 
-The rest of 6.8's simulator: fault injection, crashable nodes, and the
-replay manifest.
+The rest of 6.8's simulator: fault injection, network time, setup types,
+crashable nodes, records, and replay.
 
 | Item | Effect |
 | --- | --- |
@@ -396,6 +401,18 @@ replay manifest.
 
 (`SimNode` and `NodeTask` are provisional.)
 
+- **Network time.** Without faults, each packet takes 1–10 ms, drawn from
+  the seed, and a `Net::get` is one round trip (2–20 ms, connection setup
+  and name resolution included) plus the reply's `after(d)`. An address
+  with no peer gives `Refused` after one round trip; a host that no peer or
+  node names gives `Dns` at once.
+- **Setup types.** `world.args` takes any `IntoIterator` of `AsRef<OsStr>`
+  items and `env_var(k, v)` two `AsRef<OsStr>` values, as `Command::args`
+  and `Command::env` do; `stdin` and `file` contents take `impl
+  AsRef<[u8]>`, so `"text"` and `b"bytes"` both work. A `world.http` peer
+  is `Fn(&Request) -> Reply + Send + 'static`: the simulator calls it from
+  the requesting task's thread, so state shared with the test body is a
+  synchronization handle from `sim.tasks`.
 - **Packet loss.** `net_drop(p)` drops each packet independently with
   probability `p`. A UDP datagram is simply lost. TCP streams and
   `Net::get` retransmit, so loss shows up as delay: each loss of the same
@@ -404,8 +421,17 @@ replay manifest.
   scope is cancelled (`Cancelled`).
 - **Replay manifest**: seed, content hashes of the source and every
   dependency, compiler version, target, semantics-affecting build options,
-  simulated setup, and injected inputs.
-- **Records** of a node stay in `sim.records()` if the node later crashes.
+  simulated setup, and injected inputs. Replay refuses to run if the source
+  or build differs, and otherwise reproduces the run bit for bit.
+- **Replay.** `tide test` reports a failing seed with a replay command,
+  `tide sim --replay target/sim/<test>-<seed>.manifest.json`;
+  `tide test <test> --seed <seed> --trace` instead reruns that seed against
+  the current source. `tide sim <bin> -- args` runs `main` under many seeds
+  as one node.
+- **Records.** A `Record` has `node: String`, `time: Duration`, `sink:
+  Sink` (`Out`, `Err`, `Dbg`, or `Log(Level)`), and `message: String`, one
+  line without its newline (provisional). A node's records stay in
+  `sim.records()` if the node later crashes.
 - **Node entries.** `restart` calls the entry again, so it is a `fn` item or
   an `Fn` closure, never `FnOnce`. It is `Send`, and its captures are
   `'static`, `Pure`, and `Sync`, so a run cannot change them; clone inside it
@@ -413,8 +439,13 @@ replay manifest.
   pass it or its fields to helpers.
 - **Crashes.** A crash stops a node's tasks at their current scheduling
   points without running destructors, frees its memory, and resets its
-  peers' connections. Only synced data survives (6.3); unsynced writes and
-  directory entries may be lost or torn, as the seed decides. Crashing a
+  peers' connections. Only synced data survives (6.3); unsynced writes may
+  be lost or torn, as the seed decides. Each unsynced directory-entry
+  change (`create`, `rename`, `remove_file`, a new directory) survives
+  whole or is lost: a `rename` leaves the target naming the renamed file
+  with the source gone, or both as they were. Which unsynced changes
+  survive is otherwise unspecified, except that a change survives only if
+  the changes that created its entry and every directory above it do. Crashing a
   node whose entry has returned is the same power cut (provisional). The
   test body itself cannot crash: put crash-tested code in a node.
 - **Restarts.** `restart(&node)` crashes a running node, then calls the

@@ -37,13 +37,13 @@ admitted (6.9). `static` is immutable only (6.4); `unsafe` needs a grant
 arrays, tuples, `Option`, `Result`, `Vec`, `Box`, `Rc`, `Arc` (created with
 `&Tasks`, minus count observers, 6.4), `Weak`, `Cell`, `RefCell`,
 `VecDeque`, `HashMap`, `HashSet`, `BTreeMap`, `BTreeSet`, `BinaryHeap`,
-`Cow`, `Path`, `PathBuf`, `Duration`, `Instant`, `SystemTime`,
-`std::{cmp, ops, mem, fmt, convert}`, and the `std::io` traits and types
-(`Read`, `Write`, `Seek`, `BufRead`, `BufReader`, `BufWriter`, `io::Error`,
-`io::ErrorKind`, `io::Result`). What changes is how you *obtain* I/O
-objects (6) and the default hasher (6.4). Testing is Rust's (`#[test]`,
-`#[should_panic(expected = "..")]`, `#[cfg(test)] mod tests`, the
-`assert!` family); a test may take parameters (10.2).
+`Cow`, `Path`, `PathBuf`, `OsStr`, `OsString`, `Duration`, `Instant`,
+`SystemTime`, `std::{cmp, ops, mem, fmt, convert}`, and the `std::io` traits
+and types (`Read`, `Write`, `Seek`, `BufRead`, `BufReader`, `BufWriter`,
+`io::Error`, `io::ErrorKind`, `io::Result`). What changes is how you
+*obtain* I/O objects (6) and the default hasher (6.4). Testing is Rust's
+(`#[test]`, `#[should_panic(expected = "..")]`, `#[cfg(test)] mod tests`,
+the `assert!` family); a test may take parameters (10.2).
 
 ## 2. Surface: `!` forms, derives, attributes
 
@@ -331,7 +331,7 @@ do, in every dependency.
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
 | `Rand` (`std::rand`) | `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
-| `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`, as `io::Stdin`'s (receivers `&self`, below) | — |
+| `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (Rust's builder), `exit(code: i32) -> !` | `only(["git", ..])` |
 | `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
@@ -381,7 +381,8 @@ fn main(root: Root) -> Result<(), AppError> {
 ```rust
 impl Fs {                                         // every method takes &self; p: impl AsRef<Path>
     // read, read_to_string, write (not durable), create_dir_all, read_dir, metadata,
-    // rename, remove_file, remove_dir_all: as std::fs
+    // rename, remove_file, remove_dir_all: as std::fs (a DirEntry, like a File,
+    // carries the Fs's authority)
     fn write_synced(&self, p, data: impl AsRef<[u8]>) -> io::Result<()>;   // durable when it returns
     fn open(&self, p) -> io::Result<File>;                          // read only
     fn create(&self, p) -> io::Result<File>;                        // write; create or truncate
@@ -414,9 +415,12 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 - **Durability** (D7, D15). Writes are durable only once synced: `file.sync()`
   for contents, `fs.sync_dir(dir)` for the entries changed by `create`,
   `rename`, `remove_file`, or a new subdirectory; `write_synced` syncs the
-  file and its entry. After a crash, anything unsynced may be lost or torn
-  (companion 17). An acknowledged write is: write, `sync()`, and, the first
-  time a file or directory is created, `sync_dir` of its parent.
+  file and its entry. After a crash, unsynced data may be lost or torn; a
+  `rename` is never half done (companion 17). An acknowledged write is:
+  write, `sync()`, and, the first time a file or directory is created,
+  `sync_dir` of its parent. Atomic replace:
+  `fs.write_synced("f.tmp", data)?; fs.rename("f.tmp", "f")?;
+  fs.sync_dir(".")?;`.
 - **Torn tails.** A crash can leave a partial last record. Cut it off
   (`set_len`, then `sync`) before appending again, or the next acknowledged
   record is glued to the torn bytes and lost on the next read. Companion
@@ -498,57 +502,46 @@ require `Pure`.
 `Timeout` (the operation's deadline passed), `Cancelled`, `Denied` (a host
 outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
 response), and `Io(io::Error)`; `is_cancelled()` and `is_transient()`
-(timeouts, resets, refusals, 5xx) classify them (provisional beyond `Timeout`
-and `Cancelled`; all but `Status` and `Io` are unit variants). `NetError` is
-not `PartialEq`: test it with `matches!`. `Url::parse(&str) -> Result<Url,
-UrlError>`; `Url` has the `url` crate's accessors (`host_str`,
-`port_or_known_default`, `path`, `as_str`) and `Display`. `TcpStream` is
-`io::Read + io::Write`, also for `&TcpStream`.
+(`Timeout`, `Reset`, `Refused`, and `Status` 408, 429, or 5xx) classify
+them. `NetError` is not `PartialEq`: test it with `matches!`.
+`Url::parse(&str) -> Result<Url, UrlError>`; `Url` has the `url` crate's
+accessors (`host_str`, `port_or_known_default`, `path`, `as_str`) and
+`Display`. `TcpStream` is `io::Read + io::Write`, also for `&TcpStream`.
 
 ### 6.8 Simulation
 
 Every capability has a deterministic simulated version. `Root::sim(seed)`
 returns a `SimRoot` (`std::sim`) with `Root`'s capability fields, all
-simulated (pass `&sim.fs`, `&sim.net`, `&sim.clock`, `&sim.tasks` to the
-code under test), plus `sim.world` (setup), `sim.faults` and
-`sim.node(name)` (faults and crashable nodes, companion 17), and
-inspection methods. It
-works in any test, plain or property: the test body runs as the
-simulation's main task, so it can spawn, wait, and read virtual time.
+simulated (pass `&sim.fs` and the rest to the code under test), plus
+`sim.world` (setup), `sim.faults` and `sim.node(name)` (faults and crashable
+nodes, companion 17), and inspection methods. It works in any test, plain or
+property: the test body runs as the simulation's main task, so it can spawn,
+wait, and read virtual time.
 
 | Item | Effect |
 | --- | --- |
 | `#[sim_test(seeds = 200)] fn t(sim: SimRoot)` | runs the test once per seed with a fresh `SimRoot`; plain `#[sim_test]` runs 100 seeds; more parameters are generated (10.2) |
 | `sim.world.file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>)` | create a file (parents included) |
-| `sim.world.args(["prog", "a.txt"])`, `env_var(k, v)`, `stdin(bytes)` | program inputs; `args` as `env.args()` returns them |
-| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.world.args(["prog", "a.txt"])`, `env_var(k, v)`, `stdin("text")` | program inputs; `args` as `env.args()` returns them |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.elapsed() -> Duration`, `sim.records() -> Vec<Record>`, `sim.trace()` | virtual time; sink records; the event trace |
 
-(`Request`, `Record`, and the setup parameter types are provisional.)
+(`Request` and `Record` are provisional.)
 
 - **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
   time advances only when every task is blocked, jumping to the next timer.
   Computation and `Clock`, `Rand`, `Env`, and `Tasks` calls take none; each
-  file operation takes up to 1 ms and each network packet 1–10 ms, drawn
-  from the seed (provisional). Bound `sim.elapsed()` by a deadline your code
-  sets, or with slack. If no task can ever run again, the run fails with a
-  deadlock report.
+  file operation takes up to 1 ms (provisional), and a fault-free
+  `Net::get` 2–20 ms plus the reply's `after(d)` (companion 17). Bound
+  `sim.elapsed()` by a deadline your code sets, or with slack. If no task
+  can ever run again, the run fails with a deadlock report.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
   interleaving. Parallel regions (8) run sequentially. Each run writes a
-  replay manifest (companion 17); replay refuses to run if the source or
-  build differs, and otherwise reproduces the run bit for bit.
+  replay manifest that reproduces it bit for bit (companion 17).
 - **Records.** Every sink record, `println!` output included, enters
-  `sim.records()` with its node. A `Record` has `node: String`,
-  `time: Duration`, `sink: Sink` (`Out`, `Err`, `Dbg`, or `Log(Level)`), and
-  `message: String`, one line without its newline (provisional).
-
-`tide test` reports a failing seed with a replay command,
-`tide sim --replay target/sim/<test>-<seed>.manifest.json`;
-`tide test <test> --seed <seed> --trace` instead reruns that seed against
-the current source. `tide sim <bin> -- args` runs `main` under many seeds
-as one node.
+  `sim.records()` with its node (fields: companion 17).
 
 ### 6.9 Ambient Rust calls and the admission allowlist
 
@@ -561,8 +554,8 @@ The checker admits only listed `core`, `alloc`, and std inherent items;
 everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
 raw pointer types and address observers (`addr()`, `{:p}`) without the
 `unsafe` grant; `core::sync::atomic`; float observers and math methods
-(4.3); I/O methods on std types (`Path::exists`, `metadata`; use `fs`);
-`io::Error::last_os_error`; timed waits such as `recv_timeout` (use
+(4.3); I/O methods on re-exported std types (`Path::exists`, `metadata`; use
+`fs`); `io::Error::last_os_error`; timed waits such as `recv_timeout` (use
 `recv_deadline`); and `include_str!`, `env!`, `option_env!`.
 
 ### 6.10 Patterns
@@ -673,7 +666,7 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
   authority-free code, `Shared::with*`, joins, and scope exit are not, and
   are never interrupted. Work unwinds through ordinary `Err` returns;
   operations that consume a value return it inside the error
-  (`SendError(v)`).
+  (`SendError::Cancelled(v)`).
 - **Operation deadlines.** `net.get(url, deadline)` returns
   `NetError::Timeout` when `deadline` passes; `clock.sleep_until(t)` and
   `rx.recv_deadline(t)` likewise (`Instant`s from a `Clock`).
@@ -695,11 +688,15 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
 Channels are Rust's `std::sync::mpsc`, except that creation takes `&Tasks`
 (7.4): `channel(tasks)` (unbounded; a lint in libraries, `FX0608`),
 `sync_channel(n, tasks)`, `Sender: Clone`, `send`, `try_send`, `recv`,
-`try_recv`, `recv_deadline(t)`, and a `Receiver` that iterates until every
-sender drops. `recv` and `send` on a full `sync_channel` are checkpoints.
-Payloads must be `Send`. A `Receiver` has one consumer; for N workers over
-a list, use `Tasks::limit` (7.1). To wait on several sources (Rust's
-`select!`, `FX0605`), send one enum through one channel.
+`try_recv`, `recv_deadline(t)`, and iteration, which ends at the first
+`recv` error. `recv`, `recv_deadline`, and `send` on a full `sync_channel`
+are checkpoints, so their errors are enums with `is_cancelled()`:
+`RecvError::{Disconnected, Cancelled}`, `RecvTimeoutError` (adds `Timeout`),
+and `SendError::{Disconnected(v), Cancelled(v)}` (`into_inner()`). A
+disconnect alone is not an echo (7.1). Payloads must be `Send`. A `Receiver` has
+one consumer; for N workers over a list, use `Tasks::limit` (7.1). To wait
+on several sources (Rust's `select!`, `FX0605`), send one enum through one
+channel.
 
 ### 7.4 `Shared<T>`
 
@@ -1062,7 +1059,7 @@ only = ["crate::net::*"]         # no other module may declare Net
 - `tide test [filter] [--seed N] [--trace]`: tests, property tests, and sim
   tests, reporting diff, panic span, seed, shrunk input, replay command,
   event trace. `tide sim <bin> -- args` runs `main` under many seeds;
-  `tide sim --replay <manifest>` replays a run (6.8).
+  `tide sim --replay <manifest>` replays a run (companion 17).
 - `tide eval '<expr>'` evaluates an expression against the package;
   `tide explain FX0201` explains a code with a before/after example;
   `tide review <base>` prints the trust diff (11); `tide fmt` is the one

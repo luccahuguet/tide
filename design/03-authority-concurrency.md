@@ -31,9 +31,10 @@ provisional in `reference.md` or its companion are fixed here unless noted.
 ## 0. Terms
 
 - **Capability**: a value of a standard capability type (§1.1) or of a
-  resource handle derived from one (`File`, `TcpStream`, `TcpListener`,
-  `Child`). Every operation that reads or changes the outside world, or that
-  observes nondeterminism, is a method on a capability.
+  resource handle derived from one (`File`, `ReadDir`, `DirEntry`,
+  `TcpStream`, `TcpListener`, `Child`). Every operation that reads or
+  changes the outside world, or that observes nondeterminism, is a method
+  on a capability.
 - **Synchronization handle**: a value through which tasks observe each other's
   timing or cancellation: `Shared<T>`, channel ends, `Scope<'s, 'env, E>`, `Task<'s, U, E>`,
   `Arc<T>`, `sync::Weak<T>`, and atomics. Creating one takes `&Tasks` (D7), so
@@ -68,6 +69,7 @@ scope-exit join. Every capability error type has a cancellation variant whose
 | `Fs` | `read`, `read_to_string`, `write`, `write_synced`, `open`, `create`, `open_with(p, &OpenOptions)`, `sync_dir`, `create_dir_all`, `read_dir`, `metadata`, `exists`, `rename`, `remove_file` | `dir(path, Mode::Read \| Mode::ReadWrite)`, `read_only()` | all |
 | `File` | `read`, `read_owned`, `write`, `write_owned`, `seek`, `sync`, `set_len`, `close` | none | all |
 | `Net` | `connect(addr)`, `bind(addr)`, `bind_udp(addr)`, `resolve(host)`, `get(&Url, deadline)` | `only(["host:port", ..])`, `no_bind()` | all |
+| `ReadDir`, `DirEntry` | iteration, `path`, `file_name`, `metadata`, `file_type` | none | iteration, `metadata`, `file_type` |
 | `TcpStream`, `TcpListener`, `UdpSocket` | `read`, `write`, `read_owned`, `write_owned`, `accept`, `send_to`, `recv_from`, `shutdown` | none | all |
 | `Clock` | `now() -> Instant`, `system_time()`, `sleep(d)`, `sleep_until(t)` | `monotonic_only()` | `sleep`, `sleep_until` |
 | `Rand` | `next_u64`, `gen_range`, `gen_bool`, `fill_bytes`, `shuffle`, `rng() -> Pcg64` | none | none |
@@ -92,7 +94,37 @@ Notes:
   entries changed by `create`, `rename`, `remove_file`, or a new
   subdirectory. D7's `Dir::sync_dir` is this method: an `Fs` from `dir()` is
   the directory capability. `write_synced` syncs the file and its entry.
-  After a simulated crash, unsynced writes may be lost or torn (§9.5).
+  After a simulated crash, unsynced writes may be lost or torn, but each
+  directory-entry change survives whole or not at all, so a `rename` over a
+  target leaves it naming the old file or the new one (§9.5). Atomic
+  replace is therefore `write_synced` to a temporary, `rename` it over the
+  target, and `sync_dir` the parent.
+- **Directory listings.** `fs.read_dir(p)` returns `io::Result<ReadDir>`, an
+  iterator of `io::Result<DirEntry>`, as in Rust. `DirEntry` keeps Rust's
+  `path()`, `file_name() -> OsString`, `metadata()`, and `file_type()`.
+  Like a `File`, a `ReadDir` or `DirEntry` is a resource handle that
+  carries the authority of the `Fs` that listed it, so it is not `Pure`;
+  advancing the iterator, `metadata()`, and `file_type()` are reads through
+  that `Fs` and suspend. As Rust's does on Linux, a `ReadDir` ends after
+  yielding its first error. These are Tide std's own types, so ADMIT-1's
+  ban on I/O methods of re-exported std types does not reach them. `OsStr`
+  and `OsString` keep Rust's API, which does no I/O.
+- **Standard input.** `Stdin`'s reads are inherent methods with `&self`
+  receivers: `read_line(&mut String)`, `lines()`, `read_to_string(&mut
+  String)`, `read_to_end(&mut Vec<u8>)`, and `is_terminal()`, which Rust
+  spreads over `Stdin`, `io::Read`, and `IsTerminal`. `Stdin` and `&Stdin`
+  also implement `io::Read`, as in Rust. No call is ambiguous, because
+  inherent methods win, but an `io::Read` import used only for these calls
+  is unused (`FX0913`, safe fix). `lines()` ends after yielding a
+  cancellation error, so `stdin.lines().flatten()` cannot spin in a
+  cancelled scope.
+- **Network errors.** `NetError` has `Timeout`, `Cancelled`, `Denied` (a
+  host outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
+  response), and `Io(io::Error)`. `is_transient()` is true for `Timeout`,
+  `Reset`, `Refused`, and `Status` of 408, 429, or 5xx: the failures a
+  later identical request can escape. `Cancelled` is not transient,
+  because cancellation is level-triggered (TASK-3) and a retry fails the
+  same way. `Denied`, `Dns`, and `Io` are not transient either.
 - **Owned buffers.** The kernel only ever owns runtime buffers.
   `read(&mut buf)` copies out of one; `read_owned(buf)` and `write_owned(buf)`
   move a `Vec<u8>` in and return it, inside the error on failure. Cancellation
@@ -111,7 +143,7 @@ Notes:
 | Type | Operations | Waits |
 | --- | --- | --- |
 | `Shared<T>`, `T: Send + Pure` | `Shared::new(v, tasks)`, `clone()` (same cell), `Shared::same(&a, &b)`, `reset(v)`, `with`, `with2`, `with_all` (§6.5) | acquisition, not a checkpoint |
-| `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `send` on a full `sync_channel`, `recv`; both checkpoints |
+| `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `send` on a full `sync_channel`, `recv`, `recv_deadline`; all checkpoints |
 | `Scope<'s, 'env, E>` | `spawn`, `set_deadline(t)`, `cancel()` | none |
 | `Task<'s, U, E>` | `join` | yes, shielded (§6.3) |
 | `Arc<T>`, `sync::Weak<T>` | `Arc::new(v, tasks)`, `clone`, `make_mut`, `Arc::downgrade(&a, tasks)`, `upgrade` | none |
@@ -729,6 +761,9 @@ no code after `scope` sees a place a panicking child was mutating; when
   that the body's `Err` or a sibling's failure caused; it never inspects
   `E`. A child that fails without observing such a cancellation is an
   independent failure and counts under rule 2, ahead of the body's `Err`.
+  A channel disconnect alone sets no bit, so an `Err` returned after one
+  by a child that has observed no such cancellation is an independent
+  failure (§6.4).
   So when the body's `Err` cancels the scope and the children only echo
   it, rule 3 reports the body's error; when the body fails through
   `x.join()?` because `x` failed, rule 2 reports `x`'s error (JOIN-2).
@@ -737,8 +772,8 @@ no code after `scope` sees a place a panicking child was mutating; when
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
   keeps doing so. Operations that consume a value return it inside the error
-  (`SendError(v)`). An in-flight kernel operation is cancelled before the
-  error returns. A cancelled write may already have reached the peer.
+  (`SendError::Cancelled(v)`). An in-flight kernel operation is cancelled
+  before the error returns. A cancelled write may already have reached the peer.
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
@@ -783,10 +818,40 @@ no code after `scope` sees a place a panicking child was mutating; when
 
 Channels follow Rust's `std::sync::mpsc`, except that creating one takes
 `&Tasks` (§1.2): `channel(tasks)` is unbounded and `sync_channel(n, tasks)`
-bounded; `Sender` is `Clone`; a `Receiver` iterates until
-every sender is dropped. `send` on a full `sync_channel` and `recv` are
-checkpoints. `recv_deadline(t)` returns `Timeout` at `t`. Payloads must be
-`Send`. An unbounded `channel` in a library is lint `FX0608`.
+bounded; `Sender` is `Clone`; a `Receiver` is iterable. `send` on a full
+`sync_channel`, `recv`, and `recv_deadline(t)` are checkpoints;
+`recv_deadline` returns `Timeout` at `t`. Payloads must be `Send`. An
+unbounded `channel` in a library is lint `FX0608`.
+
+Rust's `RecvError` is a unit struct and `SendError(T)` gives no reason, so
+neither can say that a checkpoint failed because of cancellation (TASK-3).
+The errors of the checkpointing operations are therefore enums with a
+cancellation case:
+
+```rust
+pub enum RecvError { Disconnected, Cancelled }
+pub enum RecvTimeoutError { Timeout, Disconnected, Cancelled }
+pub enum SendError<T> { Disconnected(T), Cancelled(T) }  // into_inner(self) -> T
+```
+
+Each has `is_cancelled()` and Rust's `Debug`, `Display`, `Error`, `Clone`,
+`Copy`, `PartialEq`, and `Eq`; as in Rust, `SendError<T>` has the last four
+only where `T` does. `RecvError` converts into `RecvTimeoutError`; Rust's
+conversions into `TryRecvError` and `TrySendError` are dropped, since those
+have no `Cancelled` case. `Sender::send` never blocks, so it fails only
+with `Disconnected`. `try_send` and `try_recv` never block and keep
+Rust's `TrySendError` and `TryRecvError`. Iterating a `Receiver` ends at
+the first error of either kind; code that must tell a cancelled stream
+from a finished one calls `recv`. Rust patterns that name the old shapes,
+`Err(RecvError)` and `SendError(v)`, become `Err(RecvError::Disconnected)`
+and `e.into_inner()`. A bare `Err(RecvError)` still compiles, as a binding
+that catches every error.
+
+A disconnect is not a cancellation and alone sets no echo bit (TASK-2): a
+child that returns `Err` because its peer dropped the other end, and has
+not already observed such a cancellation (TASK-2), fails independently.
+A pipeline stage therefore returns `Ok` on a disconnect, so it cannot
+outrank the failure that dropped its peer.
 
 ### 6.5 `Shared::with`
 
@@ -1029,6 +1094,15 @@ them; conformance tests check it.
 `env_var`, `stdin`, `http` peers, `proc` models), `sim.faults` (§9.4),
 `sim.node` (§9.5), and `sim.elapsed()`, `sim.records()`, and `sim.trace()`
 for assertions.
+Setup follows Rust's builders: `world.args(impl IntoIterator<Item:
+AsRef<OsStr>>)` and `world.env_var(k: impl AsRef<OsStr>, v: impl
+AsRef<OsStr>)` as `Command::args` and `Command::env` take them, and
+`world.stdin(impl AsRef<[u8]>)` and `world.file(path, contents: impl
+AsRef<[u8]>)` take bytes or text. `world.http(addr, peer)` takes `peer:
+impl Fn(&Request) -> Reply + Send + 'static`: the simulator calls it from
+whichever task's thread sends the request, so state it shares with the test
+body crosses tasks and must be a synchronization handle made from
+`sim.tasks`, such as a `Shared<u32>` counter, not an `Rc<Cell<u32>>`.
 The test body runs as the simulation's main task. `#[sim_test(seeds = N)]`
 gives a test a fresh `SimRoot` per seed; `tide test` runs 100 seeds by
 default and `tide sim --test` runs more.
@@ -1037,7 +1111,12 @@ default and `tide sim --test` runs more.
 
 - Monotonic time starts at zero, wall time at 2000-01-01T00:00:00Z.
   Computation takes no virtual time; capability operations take modeled
-  latencies drawn from the seed.
+  latencies drawn from the seed. Without faults, each network packet takes
+  1–10 ms, and a `Net::get` to a simulated peer is one round trip, two
+  packet delays (2–20 ms), plus the reply's `after(d)`; connection setup and
+  name resolution are inside that round trip. An address with no peer gives
+  `Refused` after one round trip, and a host that no peer or node names
+  gives `Dns` at once.
 - Virtual time advances only when every task on every node is blocked, and
   then jumps to the next timer or delivery. If no task can ever run again,
   the run fails with a global deadlock report: each blocked task, the span of
@@ -1083,8 +1162,19 @@ through the simulated network and filesystem.
 A crash is not a cancellation: the node's tasks stop at their current
 scheduling points without running destructors, its memory is freed, and
 peers' connections reset after a modeled delay. Only data made durable by
-`sync` or `sync_dir` (§1.1) survives; other writes and directory entries may
-be lost or torn, as the seed decides (D15, §9.4). `restart` reruns the entry
+`sync` or `sync_dir` (§1.1) survives; other writes may be lost or torn, as
+the seed decides (D15, §9.4). Each unsynced directory-entry change, a
+`create`, `rename`, `remove_file`, or new subdirectory, survives whole or is
+lost, never torn: after a crash, a `rename` either happened or did not.
+Either the target names the renamed file and the source name is gone, or
+both are as they were, so a replaced target names the old file or the new
+one, never neither. Which unsynced changes survive is otherwise
+unspecified, except that the surviving set is one a file system could
+reach: a change survives only if the changes that created its entry and
+every directory above it do. So a program may rely only on what `sync_dir`
+made durable and on each change being whole. This is POSIX's rename
+atomicity carried across a crash, which journaling file systems provide
+in practice and every atomic-replace protocol needs. `restart` reruns the entry
 with a fresh `NodeRoot` over the surviving durable storage; no volatile
 state survives. `sim.run_for(d)` and `sim.run_until(&handle)`, which returns
 the entry's `Result<T, E>`, drive the world; `node.fs()` inspects a node's

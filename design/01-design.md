@@ -843,7 +843,9 @@ lowering of Tide tasks); D18 reversed that.
   delays, partitions, disk errors, crashes and restarts of node scopes).
   Virtual time advances only when every task is blocked; a global deadlock is
   reported with the blocked-task graph. On a simulated crash, writes not made
-  durable by `sync` or `sync_dir` may be lost or torn, as the seed decides.
+  durable by `sync` or `sync_dir` may be lost or torn, as the seed decides;
+  each unsynced directory-entry change, a `rename` included, survives whole
+  or not at all, so atomic replace works as on a journaling file system.
 - `tide sim <binary>` runs a program's `main` under many seeds. A failure
   prints seed and commit and replays bit for bit, dependencies included.
 - Every simulated run writes a replay manifest: seed, the content hashes of
