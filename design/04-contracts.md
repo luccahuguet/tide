@@ -11,13 +11,13 @@ loop `invariant!`, `old`, `result`, and bounded quantifiers, checked at run time
 debug and test builds and driving property tests. §1.8 is the one normative
 statement of what a v0 clause means; v0 also uses the grammar of §1.1–§1.2
 for those forms, §2.3 and §2.4 as §1.8 applies them, release erasure (§2.6,
-first paragraph), and approval of changed contracts (§11, without its solver
-checks). v1: `prove` and per-item uses (§2.1, §2.5), the spec language of
-§1.3–§1.7 (`spec fn`, `proof fn`, `#[spec]`, views, mathematical integers,
-model equality), clause classes as §2.2 defines them, check deletion (§2.6),
-total correctness and `decreases` (§3), `final` and type invariants (§4),
-laws and trait contracts (§5), closure contracts (§6), §7–§10, and proof
-status and trust closures.
+first paragraph), approval of changed contracts (§11, without its solver
+checks), and sealed delegation boundaries (§11.1). v1: `prove` and per-item
+uses (§2.1, §2.5), the spec language of §1.3–§1.7 (`spec fn`, `proof fn`,
+`#[spec]`, views, mathematical integers, model equality), clause classes as
+§2.2 defines them, check deletion (§2.6), total correctness and `decreases`
+(§3), `final` and type invariants (§4), laws and trait contracts (§5),
+closure contracts (§6), §7–§10, and proof status and trust closures.
 Later: deferred overflow traps (§3.2); interactive-proof export (§13). v0
 overflow traps are precise.
 
@@ -1210,12 +1210,14 @@ refinement between the old and new closures, renamed apart:
 `old.requires ==> new.requires`, and
 `old.requires && new.ensures ==> old.ensures`. A refinement, or a contract on
 a previously unspecified item, is listed in review without a gate. v0 has
-no solver, so there every other changed hash is undecided. A weakened,
-incomparable, or undecided change needs approval and, in v1, comes with a
+no solver, so there every other changed hash is undecided, but review still
+labels a removed `ensures` or an added `requires` `weakened`, since neither
+can strengthen a contract. A weakened, incomparable, or undecided change needs approval and, in v1, comes with a
 distinguishing example, a solver model replayed as a concrete run. As D11
 lists, approval is needed for weakening or removing a contract, widening
 authority, adding a trust hole (including `#[diverges]`), downgrading a use,
-and changing or unprotecting a `#[protected]` test.
+changing or unprotecting a `#[protected]` test, and removing or changing a
+seal entry (§11.1).
 
 **Mechanism.** An approval record holds the item's stable ID, the old and new
 closure hashes, the change class, the approver's key ID, and a signature.
@@ -1227,6 +1229,221 @@ caches written in the same change never count. Locally, `tide check` reports
 `pending_approval`. CI runs a protected test only if its hash matches an
 approved one. Agent loops run `tide verify --deny-new-holes`, the mechanical
 cheat checker that brought VeruSAGE's cheating rates below 1.5%.
+
+### 11.1 Sealed delegation boundaries
+
+An orchestrator, a person or a supervising agent, fixes an interface and
+hands its implementation to delegates. A seal makes that boundary
+mechanical: a delegate may change the bodies of sealed functions, and the
+checker rejects any other change to what was sealed (D11). It is v0 core,
+and needs no solver: every check is a hash comparison.
+
+- **SEAL-1. The seal file.** `tide.seal`, next to `tide.toml`, lists the
+  targets it was sealed for and entries by stable ID (D14), each with its
+  item's path and a seal hash for each configuration (debug, test, and
+  release, per sealed target) the item exists in. `tide seal <path>..` adds
+  entries; a module path seals each public item in it, the methods and
+  associated constants of its inherent impls included, and an impl method is
+  named by its qualified path (`<Entry as PartialEq>::eq`). `--whole` makes
+  the entries whole, `--manifest` names the manifest entry, `--target
+  <triple>` seals for a target besides the host, and `--remove` removes the
+  named entries instead of adding them. Entries are written only by this
+  command, from the current tree. An item that exists in no sealed
+  configuration, such as one under a `feature` cfg, which no v0 build sets
+  (no manifest key enables a feature, and D18 bars user `--cfg`), cannot be
+  sealed. `--target` adds that target's hashes to every entry; like adding
+  an entry, it is not gated, and a candidate's added targets are not in
+  force until the base has them (SEAL-4). Only the crate's own `tide.seal`
+  is checked, never a dependency's, which the lockfile's content hash
+  already pins. (File name and flags provisional.)
+- **SEAL-2. What an entry fixes.** A seal hash is computed per
+  configuration, after `cfg` evaluation. It resolves names to stable IDs and
+  content hashes as §11 does, and records what each path, method call,
+  operator, and associated-type projection in the hashed text resolves to,
+  so replacing or shadowing an item that a sealed one names, or a new impl,
+  trait, or import that changes which item a sealed call selects, changes
+  it, while renaming that item does not; the standard library is hashed by
+  toolchain version and a dependency by its locked content hash, so a
+  toolchain or lockfile change can change an entry. Doc comments and
+  formatting are not hashed.
+  - An *interface* entry, the default for a function or method, fixes its
+    path, signature, contract use (§2.1), and contract, through §11's
+    spec-closure hash, computed here for every sealed function, public or
+    not, with or without a contract. It therefore covers, transitively, the
+    definitions of the types, aliases, constants, and traits the signature
+    and clauses name, and the bodies of the functions the clauses call, and
+    so the function's declared authority (03 §4.1), which the diagnostic
+    reports separately. The body is free. It does not fix a named type's
+    path, methods, or trait impls, beyond the bodies its clauses call: seal
+    the module that defines the type for that.
+  - A *whole* entry fixes an item's path and full definition: for a
+    function, its interface and body; for a type, its fields, variants,
+    generics, bounds, attributes, and derives, and every impl in the crate
+    that applies to it, inherent, trait, or blanket, in full except method
+    bodies: headers, associated types and constants with what they depend
+    on, and method signatures, refined return types included. An impl
+    applies to a type when its self type names the type, with any generic
+    arguments (`&Feed`, `Vec<Feed>`, or `Feed<T>` in `impl<T: Copy> Iterator
+    for Feed<T>`), or when it may hold for the type, for `&`, `&mut`, or
+    `Box` of it, or for a type containing it that the crate writes. Where
+    the driver's trait selection cannot rule an impl out, it counts as
+    applying, so `impl<T: Copy> Bar for T` applies to `Feed` through
+    `&Feed`. Adding or deleting an `impl PartialEq` is therefore a change,
+    and `type Item = u8` cannot become `u16`. Private inherent methods are
+    fixed too, so a delegate's helpers are free functions. For a trait, a
+    whole entry fixes its items, their contracts and default bodies, its
+    laws, and the impls of it in the crate at seal time, in the same way;
+    new impls of it may be added, except ones that apply to a type sealed
+    whole. Types, traits, constants, and tests are always sealed whole, and
+    `--whole` on a function replaces its interface entry. A test's entry
+    also covers everything the test reaches, transitively, including the
+    impls its calls, operators, and assertions select (the `PartialEq`
+    behind an `assert_eq!`), and stops only at functions with interface
+    entries, whose bodies are the delegate's. So a function under test that
+    has no interface entry is frozen too, and a test helper with one is
+    free: seal oracle helpers whole. Fewer seeds is a change.
+  - The *manifest* entry fixes the package's grants, each dependency's
+    grants, the authority policies (D17), and the whole `[contracts]` table,
+    whatever keys it holds.
+
+  A helper that a sealed clause calls is fixed with the clause, so the
+  orchestrator writes it before sealing. Sealing a module fixes the items it
+  has at seal time; a delegate may add items, except impls that apply to a
+  type sealed whole.
+- **SEAL-3. The check.** The admission driver (D18) checks each crate
+  against its own `tide.seal` before rustc runs, in each configuration it
+  builds. An entry is checked in the configurations it has a hash for, so a
+  sealed `#[cfg(test)]` test does not fail the debug build. A sealed item
+  whose hash differs, or that is missing from one of those configurations,
+  is `FX0920`, and so is a build for a target the seal does not list, until
+  the orchestrator seals for it. `FX0920` is an error: the crate is not
+  admitted, so nothing behind it builds or runs. The diagnostic names the
+  parts that changed (path, signature, authority, contract, use, body,
+  definition, or manifest key) and, for a contract, the changed clauses with
+  §11's `weakened` label. There is no fix plan: the delegate restores the
+  item, or stops and reports to whoever sealed it.
+- **SEAL-4. The seal in force, and unsealing.** A delegate can edit its own
+  `tide.seal`, so `tide check` alone is advisory, as `pending_approval` is.
+  `tide review <base>` and the CI gate of §11 check a candidate against the
+  base's seal, with any approved entry changes applied, recomputing every
+  hash it records, for every target and configuration, whatever the local
+  build covers. Adding an entry is not gated. Removing an entry or changing
+  any of its hashes is `FX0921` unless an approval record covers it: change
+  class `unseal`, the entry's stable ID (the package's, for the manifest
+  entry), and its old and new hash sets, the new one empty for a removal.
+  Each gated change needs its own record, so unsealing a contract and
+  weakening it are two. An approval clears only `FX0921`; `FX0920` against
+  the seal in force has no override. So two parties may unseal: whoever
+  writes the base, by changing the seal there, which is how an orchestrator
+  revises its own interface before delegates rebase; and, on a protected
+  branch, which only the CI gate writes, a human approver (D11). No new key
+  or approver class is involved. On an unprotected branch the guarantee
+  holds when its writer merges through `tide review`, as an orchestrator's
+  merge step does.
+- **SEAL-5. Review.** `tide review <base>` prints a `seals` section before
+  the trust diff's other sections: every `FX0920` and `FX0921` in the
+  candidate, then seal entries added, approved, or removed. Seal violations
+  fail the gate as a hole without a record does.
+- **SEAL-6. Limits.** A seal fixes definitions, not who calls them: unsealed
+  callers may route around a sealed function, so an orchestrator seals the
+  callers, tests, and `main` it relies on, `main` whole to fix its
+  attenuations, and the modules that define the types and traits its
+  interfaces name, deref to, or implement. Nor does a seal fix how unsealed
+  code resolves: a new impl, trait, re-export, or `Deref` target can change
+  which method an unsealed `f.go()` selects. Calls in whole entries and
+  tests are hashed by what they resolve to (SEAL-2), so the orchestrator
+  seals the callers whose resolution it relies on. A free body may behave
+  differently under test (`cfg!(test)`), so sealed tests bound a body only
+  as far as tests can. New trust holes that the sealed grants allow are not
+  seal violations; the trust diff lists them and D11 gates each. A
+  `#[protected]` test is gated by approval on protected branches whether or
+  not it is sealed; sealing it makes a delegate's change a rejection rather
+  than a pending approval.
+
+**Worked example.** The orchestrator writes the interface with its contract
+and a test, then seals the module's public items, the test, and the
+manifest:
+
+```rust
+// src/feed.rs, on the orchestrator's branch
+use std::net::{Net, NetError, Url};
+use std::time::{Duration, Instant};
+
+pub struct Entry {
+    pub title: String,
+    pub link: Url,
+}
+
+#[derive(Debug, Error)]
+pub enum FetchError {
+    #[error("network")]
+    Net(#[from] NetError),
+}
+
+#[requires(max > 0)]
+#[ensures(match &result { Ok(es) => es.len() <= max, Err(_) => true })]
+pub fn fetch_feed(
+    net: &Net,
+    url: &Url,
+    deadline: Instant,
+    max: usize,
+) -> Result<Vec<Entry>, FetchError> {
+    todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn times_out_when_network_drops() {
+        let sim = Root::sim(42);
+        let url = Url::parse("https://example.com/feed.json").unwrap();
+        let deadline = sim.clock.now() + Duration::from_secs(5);
+        let r = fetch_feed(&sim.net.drop_all(), &url, deadline, 10);
+        assert!(matches!(r, Err(FetchError::Net(NetError::Timeout))));
+    }
+}
+```
+
+```text
+$ tide seal crate::feed crate::feed::tests::times_out_when_network_drops --manifest
+sealed 5 entries in tide.seal: fetch_feed, Entry, FetchError, the test, the manifest
+```
+
+A delegate, told to add caching, gives `fetch_feed` a `cache: &Fs`
+parameter, passes one in the test, deletes the `ensures` that its cache
+can break, and adds `grants = ["unsafe"]` to the manifest. Its `tide check`
+fails before rustc runs:
+
+```text
+error[FX0920]: sealed item `feed::fetch_feed` changed
+  signature  + parameter `cache: &Fs`
+  authority  net -> net+fs  widened
+  contract   - #[ensures(match &result { .. })]  weakened
+error[FX0920]: sealed item `feed::tests::times_out_when_network_drops` changed
+  body       call to `fetch_feed` changed
+error[FX0920]: sealed manifest changed
+  grants     + "unsafe"
+  = these are fixed by tide.seal; restore them, or stop and report to whoever sealed them
+```
+
+If the delegate then runs `tide seal --remove` on those three entries, its
+own `tide check` passes, but the orchestrator's merge runs `tide review`
+against the base, whose seal is still in force:
+
+```text
+seals                                                         6 violations
+  - entry feed::fetch_feed removed                                      FX0921
+  - entry feed::tests::times_out_when_network_drops removed             FX0921
+  - entry manifest removed                                              FX0921
+  ~ feed::fetch_feed   signature, authority net -> net+fs, contract weakened   FX0920
+  ~ feed::tests::times_out_when_network_drops   body                    FX0920
+  ~ manifest           grants + "unsafe"                                FX0920
+```
+
+The gate fails, and the review shows both attempts. Caching that needs `Fs`
+is an interface change, so it goes back to the orchestrator.
 
 ## 12. Worked examples
 

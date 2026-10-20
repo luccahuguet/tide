@@ -2,14 +2,15 @@
 
 Status: the on-demand part of `design/reference.md`, the agent-facing
 reference for the v0 core. Load it when you want a Rust habit's fix, a
-complete program, the reading the reference takes where the design
-documents disagree, the simulator's fault injection and crashable nodes,
-or what v0 leaves out. Its sections continue the core's numbering, and a
-bare section number below 14 refers to the core. Sections 14–16 tabulate
-or illustrate rules the core states; 17 and Appendix A hold what the core
-only points to. It is outside the core's 25,000-token budget (D14).
+complete program, the reading the reference takes where the design documents
+disagree, the simulator's fault injection and crashable nodes, what a sealed
+interface allows, or what v0 leaves out. Its sections continue the core's
+numbering, and a bare section number below 14 refers to the core. Sections
+14–16 tabulate or illustrate rules the core states; 17, 18, and Appendix A
+hold what the core only points to. It is outside the core's 25,000-token
+budget (D14).
 
-Core count: 24,996 tokens on 2026-10-20, measured by
+Core count: 24,987 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -462,6 +463,33 @@ crashable nodes, records, and replay.
   Dropping it does not stop the node. (All provisional.)
 
 15.4 is a complete crash test.
+
+## 18. Sealed interfaces
+
+An orchestrator that hands you an interface to implement may seal it in
+`tide.seal` (04 §11.1). You may change the bodies of functions sealed by
+interface, the default, and add items other than impls that apply to sealed
+types (`impl Bar for &Feed` and blanket impls such as `impl<T> Bar for T`
+included); write helpers as free functions. You may not change, move, or
+delete a sealed item, the definitions of the types its signature or contract
+names, a function its contract calls, a sealed test or anything it reaches
+short of an interface-sealed body, or, if the manifest is sealed, its
+grants, policies, and `[contracts]` table. `tide check` rejects such a
+change before anything builds:
+
+```text
+error[FX0920]: sealed item `feed::fetch_feed` changed
+  signature  + parameter `cache: &Fs`
+  authority  net -> net+fs  widened
+  contract   - #[ensures(match &result { .. })]  weakened
+```
+
+Editing `tide.seal` yourself does not help: the merge checks your branch
+against the base's seal and reports a removed or changed entry as
+`FX0921`. When a sealed item blocks the task, for example because the work
+needs a capability the signature does not take, do not route around it in
+unsealed code: restore the item and report what the interface needs to
+whoever sealed it.
 
 ## Appendix A. Later tiers (not in v0)
 

@@ -79,7 +79,7 @@ later-tier feature, the tier table wins.
 
 | Tier | Contents |
 | --- | --- |
-| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
+| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
 | v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
@@ -723,13 +723,34 @@ execution internally; it runs tasks on baton-passed threads.
   change.
 - **What needs approval**: weakening or removing a contract, widening
   authority, adding a trust hole (including `diverges`), downgrading a
-  package or item from `prove` to `test` or `assert`, and changing a
-  `#[protected]` test.
+  package or item from `prove` to `test` or `assert`, changing a
+  `#[protected]` test, and removing or changing a seal entry.
 - **Approval lives outside the agent's write scope.** Approvals are records
   signed by a human-held key and verified by CI. A hash written in the same
   change is never approval, and proof caches are rebuilt in CI rather than
   trusted. Hashes cover everything a spec's meaning depends on, including the
   bodies of `spec fn`s it calls.
+- **Sealed delegation boundaries** (v0). An orchestrator fixes an interface
+  and hands its implementation to delegates (bead `fx-1am`; research/13,
+  needs 2 and 3). `tide seal` writes `tide.seal`, a lock of stable IDs (D14)
+  and hashes: a function's signature, declared authority, contract use, and
+  spec-closure hash; whole items, such as tests, types, or `main`; and the
+  manifest's grants, policies, and `[contracts]` table. The admission driver
+  (D18) rejects a crate whose sealed item differs from its entry, before
+  rustc runs; `tide review` and the CI gate check a candidate against the
+  base's seal, so a delegate that edits `tide.seal` gains nothing once its
+  work merges through them. Whoever writes the base changes its seal; on a
+  protected branch that takes an approval, the same records and keys as
+  above. Rules: `04-contracts.md` §11.1. Rejected: a `#[sealed]` attribute,
+  which cannot seal the manifest and spreads one delegation's boundary
+  across the source files delegates edit, where one lock file states it
+  whole; changes to sealed items gated by approval rather than rejected,
+  which lets a delegate's loop run on against a changed interface that
+  parallel delegates still assume; refinement-aware seals that admit a
+  stronger contract, which need v1's solver and buy little; a frozen count
+  of trust holes, a second gate on what the grants already bound and D11
+  already gates; and seals signed with orchestrator-agent keys, which would
+  add an approver class to the model above.
 
 ### D12. Compilation and backends
 

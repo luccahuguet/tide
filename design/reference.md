@@ -6,8 +6,8 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Syntax is provisional
 until the E1 gate (D0). `reference-companion.md`, loaded on demand, holds
 the Rust-habit tables (14), example programs (15), the readings taken where
-the documents disagree (16), simulated faults and nodes (17), and what is
-not in v0 (Appendix A).
+the documents disagree (16), simulated faults and nodes (17), sealed
+interfaces (18), and what is not in v0 (Appendix A).
 Budget: under 25,000 tokens (D14); the companion records the count.
 
 **(provisional)** marks a detail no normative document decides; this
@@ -943,11 +943,9 @@ pub fn push_all(dst: &mut Vec<i64>, src: &[i64]) { for x in src { dst.push(*x); 
 
 ### 10.3 Contracts in review
 
-A contract's hash
-covers the bodies of every function its clauses call, transitively, and v0
-has no solver to tell weakening from strengthening, so any change to a
-public item's contract needs human approval (11), except adding one where
-there was none.
+A contract's hash covers the bodies of every function its clauses call,
+transitively. v0 has no solver, so any change to a public item's contract
+needs human approval (11), except adding one where there was none.
 
 ## 11. Unsafe, trust holes, and review
 
@@ -963,9 +961,10 @@ authority (the capability types each public item can reach through its
 parameters), contracts, trust holes, and grants. Changes that need a human
 approval, recorded outside the agent's write scope and verified by CI:
 widening authority, weakening or removing a contract (10.3), adding a trust
-hole, and changing a `#[protected]` test. Never make one of these to get a
-green check: if a contract or `#[protected]` test looks wrong, stop and
-report it.
+hole, and changing a `#[protected]` test. Sealed items (`tide.seal`) are
+fixed, except bodies it leaves free (`FX0920`, companion 18). Never make
+one of these to get a green check: if a contract, sealed item, or
+`#[protected]` test looks wrong, stop and report it.
 
 ## 12. Modules and packages
 
@@ -1054,12 +1053,12 @@ only = ["crate::net::*"]         # no other module may declare Net
 
 ## 13. Toolchain loop
 
-- `tide check`: one verdict plus NDJSON diagnostics (stable codes, exact
-  and related spans, fixes marked `safe` or `suggest`); `tide fix` applies
-  safe fixes (`--thread <Cap> --to <fn>` threads a capability).
+- `tide check`: one verdict plus NDJSON diagnostics with fixes marked
+  `safe` or `suggest`; `tide fix` applies safe fixes (`--thread <Cap>
+  --to <fn>` threads a capability).
 - `tide test [filter] [--seed N] [--trace]`: tests, property tests, and sim
-  tests, reporting diff, panic span, seed, shrunk input, replay command,
-  event trace. `tide sim <bin> -- args` runs `main` under many seeds;
+  tests, reporting each failure's seed and replay command.
+  `tide sim <bin> -- args` runs `main` under many seeds;
   `tide sim --replay <manifest>` replays a run (companion 17).
 - `tide eval '<expr>'` evaluates an expression against the package;
   `tide explain FX0201` explains a code with a before/after example;
@@ -1070,6 +1069,5 @@ only = ["crate::net::*"]         # no other module may declare Net
 `tide check` checks the rest and reports the hole's expected type,
 bindings in scope, and candidate functions.
 
-Not in v0: proofs and other v1 contract forms, FFI, imported Rust crates,
-the evented runtime, `par_reduce`, field-borrow declarations, codec formats
-other than JSON, and more (companion Appendix A).
+Not in v0: proofs, FFI, imported Rust crates, the evented runtime,
+`par_reduce`, and more (companion Appendix A).
