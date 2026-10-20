@@ -9,7 +9,7 @@ bare section number below 14 refers to the core. Sections 14–16 tabulate
 or illustrate rules the core states; 17 and Appendix A hold what the core
 only points to. It is outside the core's 25,000-token budget (D14).
 
-Core count: 24,954 tokens on 2026-10-19, measured by
+Core count: 24,989 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -39,6 +39,7 @@ Rerun it after any change to the core and update this line.
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |
 | `async fn`, `.await`, `#[tokio::main]` | plain `fn` taking capabilities | `FX0601` safe |
 | `thread::spawn`, `tokio::spawn` | `tasks.scope(\|s\| s.spawn(..))` | `FX0602` |
+| `tasks.scope(\|s\| { .. })?;` into an error type other than `TaskError`, when no `Err` in the scope names one | annotate the body: `\|s\| -> Result<(), MyError> { .. }` | rustc E0283 |
 | I/O or a nested `with` inside a `Shared::with` closure | do it before or after | `FX0603` |
 | `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `FX0604` |
 | `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `FX0505` |

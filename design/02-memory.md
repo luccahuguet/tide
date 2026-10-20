@@ -1115,8 +1115,9 @@ fn reachable(g: &Arena<Node>, start: Id<Node>) -> Vec<&str> {
 Rust: the same code with `slotmap::SlotMap` or `generational_arena`.
 
 **Accepted.** `Id<T>` (a `u32` index and a `u32` generation) is `Copy`,
-`Owned`, `Pure`, `Send` and `Sync`, so it can be stored anywhere. A
-stale handle panics on indexing; `get` returns `None`. Two nodes are mutated
+`Eq`, `Hash`, `Pure`, `Send` and `Sync` for every `T`, so it can be used as
+a key whatever `T` implements, and `Owned` when `T` is. A stale handle
+panics on indexing; `get` returns `None`. Two nodes are mutated
 together with `g.get_disjoint_mut([a, b])`, checked at run time.
 
 ### 10.10 `Rc<RefCell<T>>`
@@ -1316,7 +1317,9 @@ compares the two checkers' verdicts.
 9. **Agent-facing repair.** E1 should measure whether agents find the right
    lifetime from diagnostics; the origin trial produced no borrow errors to
    repair (`trials/e1-origins/grading.md`). It also did not exercise
-   outlives bounds, `use<..>`, or `Scope<'s, 'env, E>`.
+   outlives bounds, `use<..>`, or `Scope<'s, 'env, E>`; the held-out round
+   `trials/e1-dialect/` did, with no borrow errors to repair either
+   (provisional: one writer, eleven tasks).
 
 ## 13. Changes this chapter asked of `01-design.md`
 

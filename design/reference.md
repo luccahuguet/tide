@@ -231,9 +231,9 @@ g.remove(b);
 assert!(g.get(b).is_none());      // stale handle: None, never a dangling read
 ```
 
-`Id<T>` (a `u32` index and generation) is `Copy`, `Eq`, `Hash`, `'static`,
-`Pure`, `Send`, `Sync` (02 §10.9), and also `Ord` and `Debug`
-(provisional).
+`Id<T>` (a `u32` index and generation) is `Copy`, `Eq`, `Hash`, `Pure`,
+`Send`, `Sync` for every `T`, `'static` when `T` is (02 §10.9), and also
+`Ord` and `Debug` (provisional).
 `Arena` has `new`, `insert(T) -> Id<T>`, `get(id) -> Option<&T>`,
 `get_mut`, `remove(id) -> Option<T>`,
 `get_disjoint_mut([a, b]) -> Option<[&mut T; 2]>`, `len`, and
@@ -596,7 +596,8 @@ impl Tasks {
     fn shield<T>(&self, f: impl FnOnce() -> T) -> T;   // ignore enclosing cancellation
     fn checkpoint(&self) -> Result<(), Cancelled>;
 }
-impl<'s, 'env, E> Scope<'s, 'env, E> {               // Copy + Send + Sync: pass by value
+pub struct Scope<'s, 'env: 's, E> { .. }            // Copy + Send + Sync: pass by value
+impl<'s, 'env, E> Scope<'s, 'env, E> {
     fn spawn<U: Send + 's>(self, f: impl FnOnce() -> Result<U, E> + Send + 's) -> Task<'s, U, E>;
     fn set_deadline(self, at: Instant);
     fn cancel(self);

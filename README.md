@@ -122,8 +122,8 @@ Cited evidence behind the decisions, in [research/](research/):
   whole. `dialect-codex.md` is the second-model review of
   `research/15-rust-dialect.md`.
 - [trials/](trials/): E1 learnability trials. A fresh agent that saw only a
-  reference wrote the programs, and `grading.md` grades them without a
-  compiler against the normative chapters.
+  reference wrote the programs, and `grading.md` grades them against the
+  normative chapters.
   - `e1/`: the pilot. It estimated a 6/10 first-check pass rate against
     about 9/10 for Rust, with no leaked Rust habits; the misses trace to
     gaps in the reference and one design gap.
@@ -133,6 +133,11 @@ Cited evidence behind the decisions, in [research/](research/):
     clauses and once with Rust lifetime syntax. Both arms passed 10/10 with
     no borrow errors, and Rust syntax needed about 3.5 times the
     annotations; the tie decided D2's Rust spelling.
+  - `e1-dialect/`: the first round under D18, on held-out tasks covering
+    outlives bounds, `use<..>`, scopes, capabilities, the simulator, and
+    attribute contracts. One writer passed 11/11 with no definite errors; a
+    rustc oracle against a stub std (`rustc/run.sh`) confirmed every type
+    and borrow verdict. It records the writer's token cost.
 
 ## v0 Core and Later Tiers
 

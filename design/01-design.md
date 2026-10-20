@@ -289,8 +289,9 @@ clauses on the trial's tasks (a declaration on every borrowing type and
 impl, and a name at every use); Rust's `&'a mut T<'a>` trap stays writable,
 as in Rust, though elision avoids it; Rust 2024's capture rule can
 over-capture, fixed with `+ use<..>`; self-referential structs need
-`unsafe`. The trial did not exercise outlives bounds, `use<..>`, or
-`Scope<'s, 'env, E>`; E1 must.
+`unsafe`. That trial did not exercise outlives bounds, `use<..>`, or
+`Scope<'s, 'env, E>`; the held-out round `trials/e1-dialect/` did, with no
+borrow-related error (provisional: one writer, eleven tasks).
 
 ### D3. Types: small, decidable, explicit at boundaries
 
