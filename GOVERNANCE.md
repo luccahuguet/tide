@@ -39,14 +39,13 @@ Tide also follows an **AI supervisor merge rule**.
 
 Primary rule:
 
-> No PR should be merged without an AI supervisor pass.
+> No change lands on `main`, by PR or direct commit, without an AI supervisor pass.
 
 Current operating model:
 
-* one OpenAI supervisor per PR
-* for code, tests, or scripts, converge finishes the change first and the supervisor then reviews the converged diff; docs-only design work uses review rounds instead
-* `xhigh` effort for core compiler, semantics, parser, type checker, ownership, effects, runtime, or spec-shaping changes
-* `high` effort for normal tooling, tests, infrastructure, docs, and maintenance PRs
+* the Opus review passes come first: converge for code, tests, or scripts; review rounds for docs-only design work. When they come clean, one Codex supervisor pass (`gpt-6.1-sol`, always `xhigh` effort) reviews the converged diff
+* if the supervisor pass leads to any change, run one narrow Opus confirmation round, then a narrow supervisor re-check of those fixes; text-only fixes restart this loop at most twice
+* planning-only changes (bead filings) skip the supervisor pass
 * human maintainer remains final merge authority; overrides should be rare and recorded
 
 The supervisor reads the diff, the touched files, the surrounding code needed for context, the relevant spec sections, and the relevant tests, and reviews the change against:
@@ -69,9 +68,9 @@ The supervisor should not block on style-only preferences, speculative abstracti
 
 The review gives the verdict, its confidence, blocking findings, non-blocking improvements, alternative designs, the minimal patch for approval, and its reasoning. Every blocking finding cites files and states the concrete risk; a proposed change is the smallest patch that makes the PR acceptable.
 
-Escalate, by rerunning at `xhigh` or adding a second independent review, when the PR changes core semantics or safety invariants, the supervisor has low confidence, or the maintainer disagrees with the review.
+Escalate, by adding a second independent review, when the PR changes core semantics or safety invariants, the supervisor has low confidence, or the maintainer disagrees with the review.
 
-Record each pass in the PR discussion or maintainer notes: model, effort level, verdict, blocking findings, and any override.
+Record each pass in the PR discussion, or for a direct commit in `reviews/` as `round<N>-codex.md`: model, effort level, verdict, blocking findings, and any override.
 
 Give the supervisor this section as its brief.
 

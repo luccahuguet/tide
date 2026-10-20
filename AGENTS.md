@@ -227,10 +227,14 @@ the superseded first design and its early Rust scaffold.
 
 - production code is agent-produced; mark any human-written production code as
   an explicit exception;
-- no PR merges without an AI supervisor verdict. For code, tests, or scripts,
-  converge (AP-PROOF-001) finishes the change first, and the supervisor then
-  reviews the converged diff before merge; docs-only design work uses review
-  rounds instead of converge;
+- no change lands on `main`, by PR or direct commit, without an AI
+  supervisor verdict. The Opus review passes come first: converge
+  (AP-PROOF-001) for code, tests, or scripts; review rounds for docs-only
+  design work. When they come clean, run one Codex pass (`gpt-6.1-sol`,
+  always `xhigh`) on the converged diff. If it leads to any change, run one
+  narrow Opus confirmation round, then a narrow Codex re-check of those
+  fixes; text-only fixes restart this loop at most twice. Planning-only
+  changes skip the Codex pass;
 - substantial language or toolchain additions pass the low-entropy design
   admission filter.
 
