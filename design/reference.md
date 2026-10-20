@@ -5,9 +5,8 @@ tier table of `design/01-design.md` (draft 3.7, the decision record) defines
 it. It summarizes 01 and the normative chapters `02-memory.md`,
 `03-authority-concurrency.md`, and `04-contracts.md`. Syntax is provisional
 until the E1 gate (D0). `reference-companion.md`, loaded on demand, holds
-the Rust-habit tables (14), example programs (15), the readings taken where
-the documents disagree (16), simulated faults and nodes (17), sealed
-interfaces (18), and what is not in v0 (Appendix A).
+Rust-habit tables, example programs, readings where the documents
+disagree, and the sections cited here as "companion N".
 Budget: under 25,000 tokens (D14); the companion records the count.
 
 **(provisional)** marks a detail no normative document decides; this
@@ -951,20 +950,21 @@ needs human approval (11), except adding one where there was none.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason (`unsafe impl Pure` conflicts with std's blanket impl) | `unsafe` grant |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
 | Raw pointers | `*const T`, `*mut T`, `p as usize`, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
-authority (the capability types each public item can reach through its
-parameters), contracts, trust holes, and grants. Changes that need a human
+authority (12.4), contracts, trust holes, and grants. Changes that need a human
 approval, recorded outside the agent's write scope and verified by CI:
 widening authority, weakening or removing a contract (10.3), adding a trust
 hole, and changing a `#[protected]` test. Sealed items (`tide.seal`) are
 fixed, except bodies it leaves free (`FX0920`, companion 18). Never make
 one of these to get a green check: if a contract, sealed item, or
-`#[protected]` test looks wrong, stop and report it.
+`#[protected]` test looks wrong, stop and report it. Test another agent's
+branch without its own VM only if `tide review` against a reviewed base
+prints `run: covered` (companion 19).
 
 ## 12. Modules and packages
 

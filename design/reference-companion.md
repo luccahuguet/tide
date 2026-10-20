@@ -4,13 +4,14 @@ Status: the on-demand part of `design/reference.md`, the agent-facing
 reference for the v0 core. Load it when you want a Rust habit's fix, a
 complete program, the reading the reference takes where the design documents
 disagree, the simulator's fault injection and crashable nodes, what a sealed
-interface allows, or what v0 leaves out. Its sections continue the core's
+interface allows, when another agent's branch is safe to test without a VM,
+or what v0 leaves out. Its sections continue the core's
 numbering, and a bare section number below 14 refers to the core. Sections
-14–16 tabulate or illustrate rules the core states; 17, 18, and Appendix A
+14–16 tabulate or illustrate rules the core states; 17–19 and Appendix A
 hold what the core only points to. It is outside the core's 25,000-token
 budget (D14).
 
-Core count: 24,987 tokens on 2026-10-20, measured by
+Core count: 24,995 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -490,6 +491,36 @@ against the base's seal and reports a removed or changed entry as
 needs a capability the signature does not take, do not route around it in
 unsealed code: restore the item and report what the interface needs to
 whoever sealed it.
+
+## 19. Testing an unreviewed branch
+
+`tide check`, `tide test`, and `tide sim` on a branch no one has reviewed
+reach nothing outside the run except through the holes 03 §2.6 lists. Test
+code holds only simulated capabilities, the build reads only the branch's
+tree, and each test process runs with a toolchain-set environment, no
+terminal, and an OS sandbox that admits file opens only of its binary,
+libraries, and output directory and refuses new processes and sockets.
+Before testing another agent's branch without a VM of its own, run `tide
+review <base>`, where `<base>` is a reviewed revision, such as a commit
+fetched from the protected remote, never a commit of the branch itself:
+
+```text
+run: not covered    sandbox: full    base 87f9cd3    snapshot 9c41e2…
+  + grant unsafe          acme/fastcrc
+  ~ src/ring.rs           package has an unsafe grant
+```
+
+Run the branch's tests in your session without a VM of their own only when
+its first line says `run: covered` and `sandbox: full`, and then only as
+`tide test --snapshot <hash>` and `tide sim --snapshot <hash>` with the full
+hash from `tide review --json`, which run no test on any other tree.
+Otherwise review the listed holes first, or run the tests inside a VM. For
+a covered branch too, treat a pass as evidence, not proof: a toolchain bug or an unsound
+reviewed `unsafe` abstraction can forge results. A covered branch can still
+exhaust CPU, memory, or output, so set time and memory limits. This covers
+`tide check`, `tide test`, `tide sim`, and `tide review` only: `tide run`,
+`tide eval`, a built binary, and anything else the branch asks you to
+execute still need your session's sandbox.
 
 ## Appendix A. Later tiers (not in v0)
 

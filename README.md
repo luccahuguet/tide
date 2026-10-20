@@ -147,7 +147,8 @@ Cited evidence behind the decisions, in [research/](research/):
   runtimes; channels, `Shared::with`, `join`, `par_map`, and `par_for`;
   executable contracts as runtime checks and property-test drivers; the
   simulator with crashes and durability; the declared-authority trust diff;
-  sealed delegation boundaries; per-dependency grants; the admission
+  sealed delegation boundaries; unreviewed branches tested without a VM
+  per run, in a fixed OS sandbox on Linux; per-dependency grants; the admission
   allowlist; the agent toolchain on rustc builds gated by the admission
   driver, then Tide's incremental front end (D18).
 - **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the

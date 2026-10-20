@@ -79,7 +79,7 @@ later-tier feature, the tier table wins.
 
 | Tier | Contents |
 | --- | --- |
-| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
+| v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); the unreviewed-branch guarantee and the test sandbox on Linux (D13); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
 | v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
@@ -425,9 +425,10 @@ serialization as the default (5–7x slower in prior art).
   impls observe addresses, and every address observer (`addr`, `{:p}`);
   atomics not created through `Tasks`; float observers and math methods
   (D3); I/O methods on re-exported std types (`Path::exists`, `metadata`);
-  `io::Error::last_os_error`; timed waits such as `recv_timeout`; and
+  `io::Error::last_os_error`; timed waits such as `recv_timeout`;
   compile-time reads of files and the build environment (`include_str!`,
-  `env!`, `option_env!`). The allowlist is reviewed with every rustc pin.
+  `env!`, `option_env!`); and `global_asm!` without an `unsafe` grant. The
+  allowlist is reviewed with every rustc pin.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
@@ -717,7 +718,9 @@ execution internally; it runs tasks on baton-passed threads.
   logic.
 - **Behavior diff** (v1): `tide review` reruns the same simulation seeds on
   base and head and diffs the capability events each run produced, so
-  reviewers see what the change does, not only what it may do.
+  reviewers see what the change does, not only what it may do. It runs
+  only for a branch that 03's RUN-5 calls covered, on a host whose test
+  sandbox is full, unless the operator asks.
 - Contract hashes cover the bodies of every function a clause calls,
   transitively, so editing a predicate a contract relies on is a contract
   change.
@@ -824,6 +827,38 @@ lowering of Tide tasks); D18 reversed that.
   and only it, against Tide's std. Types Tide's std re-exports from Rust's are
   shared, and Tide-owned types (`HashMap`, `Arc`, channel ends, capabilities)
   need adapters at the boundary.
+- **Unreviewed branches** (v0; bead `fx-arx`; research/13, X3, X8, E6).
+  `tide check`, `tide test`, and `tide sim` on a branch no one has reviewed
+  run its code only in rustc's compile-time evaluation and in test and
+  simulation processes whose capabilities are all simulated, so it reaches
+  nothing outside the run except through listed holes (03 §2.6, RUN-1). The
+  build reads only the branch's tree, under an environment the toolchain
+  sets and in a build sandbox that also bounds assembler file reads; the
+  branch cannot choose the toolchain, linker, or flags (RUN-2).
+  Each test or simulation process starts with that environment, no terminal,
+  and a fixed OS sandbox: Landlock and seccomp allowlists on Linux, which
+  admit file opens only of its binary, libraries, and output directory and
+  refuse new processes, sockets, System V IPC, keyrings, and tracing
+  (RUN-3). The holes are `unsafe` grants (unsafe attributes and
+  `global_asm!` included), `ffi` grants, imported Rust crates and their
+  sandboxed build scripts, the Bend boundary, toolchain and kernel bugs, and
+  resource use and side channels (RUN-4). Before anything runs, `tide review
+  <base>` reports the host's sandbox level and `run: covered` when, relative
+  to a reviewed base, the branch adds no hole or grant and changes no
+  package with an `unsafe` or `ffi` grant, no dependency of one, and no
+  imported Rust crate or Bend dependency (RUN-5). On a host whose sandbox is
+  full, such a branch can be tested inside the agent's session without a VM
+  per run, though a toolchain bug or an unsound reviewed abstraction can
+  still forge its results (RUN-6). This complements, and does not replace,
+  one microVM or OS sandbox per agent session, which agents need because
+  they run arbitrary shell commands, and inside which the build itself runs;
+  kernel enforcement (D7, v1) gives the deployed process its own sandbox. A
+  microVM, for its part, does not protect the credentials inside it, gives
+  reviewers no evidence, and is gone in production. Rejected: a VM per test
+  run, which adds a boot and a queue to every validation (X3) where RUN-1
+  needs neither for covered branches; and a guarantee resting on the type
+  system alone, since rustc has open soundness bugs that safe code can
+  exploit.
 
 ### D14. Toolchain contract for agents
 

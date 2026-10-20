@@ -407,6 +407,9 @@ so the rules above also need an admission check (D7).
     `mpsc::Receiver::recv_timeout`, which read time without a `Clock`;
   - compile-time reads of files and the build environment (`include_str!`,
     `env!`, `option_env!`), inside attributes too;
+  - `global_asm!`, which places machine code without an `unsafe` block,
+    in a package without an `unsafe` grant; under the grant it is an
+    `unsafe` hole (RUN-4);
   - the internal runtime entry points of Tide's std.
 
   The allowlist is versioned with the rustc pin and reviewed whenever the
@@ -416,6 +419,239 @@ so the rules above also need an admission check (D7).
   flags, and passes `-Zallow-features=` so user code cannot enable unstable
   features. A build that skips the checker, such as Cargo with Rust's own
   std, is not a Tide build and carries none of this chapter's guarantees.
+
+### 2.6 Running an unreviewed branch
+
+An orchestrator runs `tide check`, `tide test`, and `tide sim` on branches
+no one has reviewed (D13; research/13, X3, X8, and E6). These rules state
+what that can do. The *candidate* is the branch's tree; its *base* is a
+reviewed revision, such as the head of the protected branch it will merge
+into, fetched from the protected remote.
+
+- **RUN-1. The guarantee.** `tide check`, `tide test`, `tide sim`, and `tide
+  sim --replay` run the candidate's code in two places only. One is
+  compile-time evaluation inside rustc (`const fn`, and the toolchain's own
+  derives and attributes expanding the candidate's source), which performs
+  no I/O. The other is the test and simulation processes of RUN-3, where the
+  candidate's code holds no real capability: test code cannot name a real
+  `Root` (ROOT-1, ROOT-5) or the runtime's minting entry point (ADMIT-1),
+  and builds only simulated ones (ROOT-3), and `tide sim <bin>` runs `main`
+  on a simulated root that the runtime builds. A simulated root's clock,
+  filesystem, network, randomness, environment, standard input, and
+  processes are the simulator's models (§9), and the sinks go to pipes the
+  harness reads (RUN-3). A replay manifest holds what it replays inline
+  (REPLAY-1), so `--replay` reads no other host path. So the candidate's
+  code reads, writes, sends, and starts nothing outside the run except
+  through the holes of RUN-4. The toolchain itself reads the candidate's
+  tree, writes its artifact cache, the run's output directory, and the
+  copies in `target/sim/`, and fetches locked packages from the registries
+  the operator's configuration names, never the tree, running none of their
+  code (D13).
+- **RUN-2. The build reads only the candidate's tree.** The driver (ADMIT-2)
+  gives rustc nothing else to read or run:
+  - rustc reads source through the driver's file loader, which serves only
+    `.rs` files under the package's source directories and the toolchain's
+    own inputs. Any other path reads as missing, so `include_str!`,
+    `include_bytes!`, `include!`, and `#[path]` never read a file outside
+    them, though ADMIT-1 and `FX0911` reject them anyway, and no byte of an
+    outside file can reach a diagnostic. An attribute that rustc resolves to
+    a file read outside the loader, such as `#[debugger_visualizer]`, is
+    rejected before the pass that reads it;
+  - rustc, with its LLVM backend, and the linker run in a build sandbox,
+    Landlock and seccomp on Linux as in RUN-3: they may read only the
+    package's source directories, the toolchain (the host C library and
+    start files the linker needs included), and the artifact cache, write
+    only the cache, which also holds their temporary files, create no
+    socket, and start no program but the toolchain's linker. So a read the
+    file loader never sees, such as an assembler `.include` or `.incbin` in
+    granted `unsafe` assembly, cannot reach outside them, though it can
+    embed a cache entry. One level, reported as RUN-3 says, covers this
+    sandbox and RUN-3's; a build that cannot install it fails, and without
+    `full` the build's reads rest on the loader alone;
+  - every path the toolchain resolves in the candidate's tree or the run's
+    output directory, the file loader's and the harness's included, resolves
+    beneath that root, as `Fs` paths do (§1.1): a symbolic link or `..` that
+    leaves it reads as missing. Each run's output directory is fresh and
+    lies in the toolchain's state directory, outside the tree; the harness
+    copies the manifests and traces it reports into `target/sim/` (§9.6),
+    replacing, never following, whatever is at each copy's path;
+  - rustc and the driver run with an environment the toolchain sets, not the
+    caller's, so `env!` and `option_env!` find nothing of the operator's
+    even before ADMIT-1 rejects them;
+  - nothing in the candidate's tree chooses the toolchain, the linker, rustc
+    flags, or a program to run: the toolchain ignores `rust-toolchain.toml`,
+    `.cargo/config.toml`, `RUSTFLAGS`, and `RUSTC_WRAPPER`, and neither the
+    manifest nor the lockfile names a program or a source outside the
+    repository and the operator's registries;
+  - no build script, install hook, or proc macro of a Tide package runs
+    (D13, `FX0915`).
+- **RUN-3. Test and simulation processes.** `tide test` and `tide sim` run
+  each test or simulation binary as a child process (PANIC-1). The harness
+  starts it with an environment the toolchain sets, not the caller's; in a
+  new session with no controlling terminal; with both soft and hard
+  core-size limits at exactly one byte, which survive exec and stop core
+  dumps to a file or a piped collector, or it fails to start, saying why (as
+  on a host whose hard limit is below one byte, which an unprivileged
+  harness cannot raise); and with no inherited descriptor but an empty
+  standard input, pipes for standard output and error, the result channel
+  (RUN-6), the run's output directory, the contents of any `--replay`
+  manifest or `--faults` plan, which the harness reads and passes in, and,
+  in the later tier, a connection to each Bend kernel server it needs
+  (RUN-4, hole 4). Between fork and exec it installs an operating-system
+  sandbox, which therefore covers everything the binary runs, its static
+  constructors included. On Linux (v0) the sandbox is Landlock and seccomp,
+  both as allowlists:
+  - Landlock lets the child open by path only the binary and the libraries
+    it loads, to read and execute, and the run's output directory, where it
+    may create only regular files and directories, and no links; its scopes
+    confine signals and abstract Unix sockets to the child;
+  - seccomp admits only the system calls the runtime needs, among them
+    memory, threads, futexes, clocks, randomness, polling, signal handling
+    within the process, reads, writes, seeks, and closes on open
+    descriptors, the opens that Landlock confines, `stat`-family and
+    `access` calls, and exit. Threads are created only by `clone` with
+    thread flags, which seccomp can inspect (`clone3` reports `ENOSYS`, so
+    the runtime falls back to `clone`), and `execve` succeeds only for what
+    Landlock lets the child execute, its own binary with the loader and
+    libraries it maps, so the child starts no other program or process.
+    Every other call fails, among them process creation, namespaces,
+    sockets, io_uring (which seccomp cannot inspect, research/10), keyrings,
+    System V IPC (shared memory, semaphores, and message queues), POSIX
+    message queues, extended-attribute and link reads, metadata changes
+    (permissions, owners, extended attributes, times), resource-limit
+    changes (`prlimit64` passes only when it sets no new limit), and
+    tracing.
+
+  Neither mechanism confines reading the metadata of a host path (whether it
+  exists, and its type, mode, owner, size, and times), so code that reaches
+  hole 1 or 5 of RUN-4 can read that much. A foreign file or socket call
+  that no model intercepts is refused (§9.8). The toolchain reports the
+  sandbox level, of builds and runs alike, in `tide review` (RUN-5) before
+  anything runs, in `tide check`'s verdict, and in every run result:
+  `sandbox: full`; `partial`, naming what the kernel cannot enforce; or
+  `none` (other operating systems in v0). If the harness cannot install the
+  level it reports for this host, it fails the run. Without `full`, RUN-1
+  rests on the checker and compiler alone. This fixed policy is separate
+  from kernel enforcement of a deployed program's attenuated `Root` (D7,
+  v1).
+- **RUN-4. Holes.** RUN-1 does not hold through the following; any other
+  route is a defect in RUN-1 to RUN-3.
+  1. **`unsafe` grants.** `unsafe` blocks and functions, Rust 2024's unsafe
+     attributes (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
+     `#[unsafe(link_section)]`), and `#[trusted_pure]` need the package's
+     `unsafe` grant (`FX0901`), and so does `global_asm!` (`FX0520`,
+     ADMIT-1); all are trust holes. Unsafe code can forge a capability
+     (ROOT-4), read process memory, replace symbols the runtime calls, make
+     raw system calls, and write the result channel. The candidate's safe
+     code reaches the same through an unsound `unsafe` abstraction the base
+     already holds.
+  2. **`ffi` grants** (v1). Foreign code ignores capabilities (FFI-4), and a
+     foreign effect with no simulator model (`FX0514`) acts on the host
+     unless the sandbox refuses it.
+  3. **Imported Rust crates** (v1): their code (RUST-1 to RUST-4), and their
+     build scripts and proc macros, which run at build time in RUST-5's
+     sandbox and can emit code into the build (§11).
+  4. **The Bend boundary** (later, §10). The pinned `bend` checks and builds
+     the candidate's kernels at build time, and Tide trusts its rejection of
+     IO-typed, foreign, and `@unsafe` defs. Since the child may create no
+     socket, a test calling a kernel without a `reference` reaches a server
+     that the harness starts, restarts, and stops under a sandbox of its
+     own, connected to the child by an inherited descriptor; the Bend
+     runtime's bugs are reachable through it.
+  5. **The toolchain and the kernel**: soundness bugs in rustc, LLVM, the
+     driver, Tide's checker, Tide's std, the toolchain's derives and
+     contract macros, or the linker; an allowlisted item that reaches the
+     world (ADMIT-1); bugs that input can exploit in the compiler, the
+     harness (which reads the child's pipes, result channel, and output
+     directory outside the sandbox), the toolchain's parsers of the
+     manifest, lockfile, `tide.seal`, approval records, replay manifests,
+     and fault plans, or the fetcher (which unpacks the registry archives
+     the lockfile picks); and bugs in the operating-system kernel that
+     enforces RUN-3. rustc has open soundness bugs that safe code can turn
+     into memory corruption (rust-lang/rust#25860, which the `cve-rs` crate
+     uses), so even safe code can forge a capability.
+  6. **Availability and side channels.** A candidate can spin, allocate,
+     recurse, spawn tasks, and write sink output until a limit the operator
+     sets stops it. RUN-1 bounds what a run reaches, not what it consumes,
+     nor side channels such as timing (§9.8).
+- **RUN-5. Surfacing holes before running.** `tide review <base>` runs the
+  candidate's code only at compile time (RUN-1) and starts no process from
+  the candidate's build except the behavior diff's RUN-3 children below. Its
+  first line, and fields under `--json`, give `run: covered` or `run: not
+  covered`, the sandbox level this host's runs get (RUN-3), the base commit
+  it resolved, and the candidate's snapshot hash (D14) over the bytes the
+  build reads; the reasons follow. The base must be a reviewed revision,
+  such as a commit fetched from the protected remote, never a commit of the
+  candidate itself. `tide test --snapshot <hash>` and `tide sim --snapshot
+  <hash>` start no test unless the full hash of the bytes their build read
+  matches, so a verdict applies to the tree it judged. A candidate is
+  covered when, against the base, it adds or widens no grant; adds or
+  changes no imported Rust crate (its declaration or lockfile entry), build
+  script, or Bend dependency (its pin, kernel sources, or law files); adds
+  no trust hole; and adds, removes, or changes neither a source file nor the
+  lockfile entry (version, source, or content hash) of a package with an
+  `unsafe` or `ffi` grant or of any package such a package depends on,
+  transitively, since the soundness of `unsafe` code can rest on any item
+  its crate can see. A covered candidate reaches only holes reviewed in the
+  base. v1's behavior diff (D11), which runs the candidate's seeds under
+  RUN-3, runs only for a covered candidate on a host with `sandbox: full`,
+  unless the operator asks for it.
+- **RUN-6. Results.** Results travel on a channel that no sink writes, so
+  printing cannot forge a pass. A child that exits, at any status, before
+  writing the result of a test it started fails that test and the run, and
+  tests it never started run in a fresh child (PANIC-1). The harness builds
+  every command it prints, such as a replay command, only from values it
+  checks: a test name the build declared, an integer seed, and a path it
+  chose, so nothing the child writes reaches a printed command. The
+  toolchain escapes control characters (C0 and C1) and bidirectional
+  overrides in everything it prints, to a terminal, pipe, or log: the
+  child's output, diagnostics, and `tide review`'s lines, file names
+  included. Code that reaches hole 1 or 5 of RUN-4 can still write the
+  channel and forge results and traces, a `#[protected]` test's results and
+  v1's behavior diff included, so a pass from an unreviewed candidate is
+  evidence only up to those holes.
+
+**Operating guidance.** For a covered candidate on a host whose sandbox is
+`full`, an orchestrator runs `tide test` and `tide sim` inside its agent
+session without a VM per run. What remains is confined as follows: an
+unsound reviewed abstraction and toolchain soundness bugs at run time meet
+RUN-3's sandbox, though they can forge results (RUN-6) and read host
+metadata; the Bend runtime serving reviewed kernels meets its server's
+sandbox; compiler bugs exploited at build time meet the build sandbox
+(RUN-2), which bounds their file and network access but not the code they
+emit; and bugs in the harness, the parsers, the fetcher, or the kernel, and
+resource use meet only the session's sandbox, which confines a kernel bug
+only if it is a VM. So the build, `tide check` and `tide review` included,
+also runs inside the session's sandbox, and artifacts built from an
+unreviewed candidate are not shared with builds outside it. For any other
+candidate, the orchestrator reviews the listed holes first, or runs the
+branch inside a VM.
+
+What RUN-1 does not cover: an agent session runs arbitrary commands (`git`,
+package managers, `curl`), and `tide run` and a built binary run with a real
+`Root`, and `tide eval`'s root and sandbox are not yet set (D14). Only a
+microVM or OS confinement (Landlock, seccomp) bounds those, so a fleet keeps
+one sandbox per agent session; RUN-1 removes the need for one per test run,
+since tests and seeded simulations run in sandboxed child processes with
+simulated capabilities and virtual time. Kernel enforcement (D7, v1) gives
+the deployed process its own OS sandbox, derived from `main`'s attenuations.
+A microVM, for its part, does not protect the credentials inside it, which
+RUN-3's environment and sandbox keep from test code; gives a reviewer no
+evidence of what changed in what code may do, which the trust diff does; and
+is gone in production (research/13, X8 and E6).
+
+Conformance tests (D0), by rule. A *canary* is a file, environment variable,
+listener, or program planted outside the candidate that the test watches for
+any access.
+
+| Rule | Tests |
+| --- | --- |
+| RUN-1 | A test and `tide sim <bin>` exercise every capability of a simulated root: each call appears in the simulator's trace, and no host canary sees an access. `tide sim --replay` of a manifest naming a canary path opens no host path. |
+| RUN-2 | `include_str!`, `include_bytes!`, `include!`, `#[path]`, and `#[debugger_visualizer]` naming a canary file: each is rejected, an access trace of the build shows no open of the canary, and its bytes appear in no diagnostic, artifact, or cache entry. A committed symbolic link from a source directory to a canary reads as missing, and the canary is never opened; one committed at `target/sim/` is replaced, and the harness writes nothing through it. `env!` and `option_env!` of a canary variable set in the caller's environment: rejected, and the value appears nowhere. A `rust-toolchain.toml`, a `.cargo/config.toml` naming a canary `rustc-wrapper` and `linker`, and `RUSTFLAGS` and `RUSTC_WRAPPER` in the caller's environment: none takes effect. On a host with `sandbox: full`, under an `unsafe` grant, `global_asm!` and `asm!` with `.include` and `.incbin` naming a canary, written directly and built by an assembler macro: the build opens nothing outside its allowed set, and the canary's bytes appear in no diagnostic, artifact, or cache entry. A `build.rs`: `FX0915`, and it never runs. A manifest or lockfile naming a source outside the repository and the operator's registries: rejected. |
+| RUN-3 | Under an `unsafe` grant, a test and a static constructor (`#[unsafe(link_section = ".init_array")]`) each try to open a canary file, connect to a canary listener, run a canary program, set up io_uring, create a link, FIFO, or socket file in the output directory, change a canary file's permissions, owner, extended attributes, or times, read the user keyring, open a message queue or System V shared memory, read a canary's extended attributes or a link outside the run, fork a process, trace or signal the harness, read a canary variable from the caller's environment, and crash, on a host that pipes core dumps to a collector, with the harness started under a soft core-size limit of zero, and again after the test tries to lower its own soft limit to zero: each fails or writes nothing outside the run, the result says `sandbox: full`, and no canary sees an access. Run on a pseudo-terminal, a test that tries to inject input into the terminal receives none, since the child has no controlling terminal and its streams are pipes. On a Linux kernel without Landlock, `tide review` and the result say `sandbox: partial`, naming Landlock. |
+| RUN-4 | Each unsafe attribute without an `unsafe` grant is `FX0901`, and `global_asm!` is `FX0520`; under the grant, each appears in the trust diff as a hole. |
+| RUN-5 | `run: not covered`, naming the reason, for each of: a new or widened grant; a new `unsafe` block; an edit to a safe function in a package with an `unsafe` grant, in a descendant module of the one holding the `unsafe` block too; an edit to an ungranted in-tree package that a granted package depends on; a new version, source, or content hash in the lockfile for a granted dependency or for a package it depends on; a new dependency without grants whose own manifest grants `unsafe` to one of its dependencies; a changed lockfile entry of an imported Rust crate; an edited Bend kernel source; a new imported Rust crate or `build = true`; a new Bend dependency. `run: covered` for a candidate that edits only packages that hold no grant and that no granted package depends on. An access trace of `tide review` shows no process started from the candidate's build except behavior-diff children, and none of those for a candidate not covered or on a host without `sandbox: full`. `tide test --snapshot` with a hash from another tree starts no test. |
+| RUN-6 | A test that prints a pass record to stdout does not pass. A child that exits with status 0 inside a started test fails that test and the run, and the tests it never started run in a fresh child. Control characters and bidirectional overrides in a test's output, in a diagnostic's file name, and in a `tide review` line reach a pseudo-terminal and a log escaped. A test name and a replay manifest path written by the child with shell metacharacters never appear in a printed command; the printed replay command names only the declared test, the seed, and the harness's path. |
 
 ## 3. `Pure` and Authority-Free Functions
 
@@ -1267,9 +1503,9 @@ operation with its source span, its arguments, and its result.
   uncommitted edit changes them); a semantic build identity, which is the
   compiler version, the target, and every option that affects semantics,
   such as the profile and `cfg` settings; the simulated root's
-  configuration (program arguments, environment, files, scheduler strategy,
-  and fault plan); and every injected input, appended as the run goes
-  (PANIC-1).
+  configuration (program arguments, environment, files with their
+  contents, scheduler strategy, and fault plan, all inline, never as host
+  paths); and every injected input, appended as the run goes (PANIC-1).
 - **REPLAY-2. Identity check.** `tide sim --replay <manifest>` refuses to
   run, before executing anything, unless the current source hashes and
   build identity equal the manifest's; it then reruns exactly what the
