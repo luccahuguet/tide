@@ -390,6 +390,15 @@ so the rules above also need an admission check (D7).
     from either branch (`02-memory.md` §9). Tide's std does not export
     them, and the driver reports a path to Rust's as `FX0520`, not as
     rustc's unresolved path; `OnceCell` and `LazyCell` stay;
+  - any conversion `io::Error::new` and `io::Error::other` perform that
+    does not reach, through core's blanket `Into`, one of alloc's four
+    `From` impls for `Box<dyn Error + Send + Sync>` from a `Pure` error or a
+    string, including a user `From` or `Into` impl and the reflexive
+    `From<T> for T` (`FX0517`, `02-memory.md` §9);
+  - `core::task` and `alloc::task` (`Waker`, `Context`, `Wake`), which
+    exist only for async (D8) and hide the code a wake runs. Tide's
+    `std::task` does not export them, and the driver reports
+    `std::task::Waker` and the like as `FX0520`, as for `OnceLock`;
   - float observers and math methods (`to_bits`, `copysign`, `total_cmp`,
     `min`, `max`, `sin`, `exp`, and the rest; PAR-3);
   - I/O methods on re-exported std types (`Path::exists`, `metadata`,
@@ -423,12 +432,14 @@ as at a user-written bound, a `Pure` supertrait's impl, or a coercion to a
 authority-free in fact, such as a foreign handle, may be marked
 `#[trusted_pure(reason = "...")]` in a package granted `unsafe`, and each
 such mark is a trust hole. `Pure` is deep: it looks through every field,
-private ones included, and through `Box` and `Rc`; recursive types take the
+private ones included, and through `Box` and `Rc`, with std's two
+exceptions (`02-memory.md` §9); recursive types take the
 greatest fixed point; `impl Trait` types are `Pure`, `Send`, or `Sync` only
 if their bounds name it, and `dyn` types are `Send` or `Sync` only if they
 name it and `Pure` only through a companion supertrait (below); `Owned`
-follows origins (`02-memory.md` §3.7); a type parameter has one only if
-bounded by it. `02-memory.md` §9 has the full table.
+follows origins (`02-memory.md` §3.7); a type parameter, or a projection
+on one that does not normalize, has one only if bounded by it.
+`02-memory.md` §9 has the full table.
 
 **`Pure`** means that no authority is reachable. Not `Pure`:
 
@@ -439,7 +450,7 @@ bounded by it. `02-memory.md` §9 has the full table.
 - foreign handles: raw pointers, `extern` types, foreign function pointers;
 - `ThreadBound` types;
 - `dyn Trait` whose trait does not have `Pure` as a supertrait, and
-  unbounded type parameters.
+  unbounded type parameters and projections on them.
 
 Everything else is `Pure` exactly when its components are, including `Cell`,
 `RefCell`, `Rc`, collections, closures, and Tide function pointers (a
@@ -500,7 +511,9 @@ For an authority-free function `f`:
    including the simulator, and in every build profile (D12).
 
 The argument: safe code has no ambient source (§2.1, §2.2); `Pure` arguments
-reach no capability or handle, and the body cannot create a handle without
+reach no capability or handle, since std's types are walked like any other
+and an erased payload is `Pure` only when std admits only `Pure` concrete
+payloads into it (`02-memory.md` §9), and the body cannot create a handle without
 `&Tasks`; and the memory they reach cannot be mutated concurrently, because
 every std type that is `Sync` and mutable through `&` is a synchronization
 handle and therefore not `Pure`, or is not admitted (`OnceLock`,
@@ -536,7 +549,7 @@ user code at timing-dependent points (GLOBAL-6).
 | compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters; a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
 | `static` (computed at compile time, GLOBAL-2) | `Sync + Pure`, and `'static` as in Rust |
 | `Shared<T>` payloads | `T: Send + Pure` |
-| `Shared::with` closures | `Pure`, so every call in them is authority-free |
+| `Shared::with` closures | `Pure`, so nothing they reach holds authority (LOCK-4) |
 | contract clauses (v0) | as `04-contracts.md` CLAUSE-3: calls only to authority-free functions with `Pure + Sync` argument types that take `&mut` only to temporaries the clause creates |
 | `spec fn`, `#[spec]` functions (v1) | as `04-contracts.md` §1.5–§1.7: concrete parameter types `Pure`; type parameters of spec and proof fns need no bound |
 | foreign callbacks (v1) | authority-free (§5.3) |
@@ -906,8 +919,9 @@ These methods replace draft 2's `lock` keyword (D8).
   checkpoint: a task in a cancelled scope still acquires, runs `f`, and
   observes cancellation at its next checkpoint.
 - **LOCK-4. Closure.** `f` must be `Pure` (`FX0603`): it captures no
-  capability, channel end, or `Shared` handle, so every call in it is
-  authority-free and it cannot suspend, touch a capability, or call `with`
+  capability, channel end, or `Shared` handle, so nothing it reaches holds
+  authority, including the `fmt::Arguments` that `format!` and the sinks
+  build in it, and it cannot suspend, touch a capability, or call `with`
   again. `return` and `?` leave `f`. Sinks are allowed; printing is lint
   `FX0607`.
 - **LOCK-5. Result.** Each method returns `Result<R, LockError>`, where `R` is
@@ -950,7 +964,11 @@ simultaneously and so require `Send`.
   when the callee value's type or any argument's type is not `Pure` (D7):
   a captureless closure or a `fn` pointer is `Pure`, but `f(net, url)` still
   passes `&Net`. This is the semantic rule and the interface flag;
-  authority-free code never suspends.
+  authority-free code never suspends. A call from an instance SUSP-1 does
+  not classify may-suspend never suspends either: every value it calls or
+  passes that is not `Pure`, such as the `Formatter` that `to_string`
+  passes to `T::fmt`, was built from `Pure` values (§3.3). How the evented
+  runtime lowers such a call from a native frame is open (§7.2).
 - **SUSP-2.** Generic code is classified per instance. `map(xs, |x| f(net, x))`
   gets a may-suspend instance because the closure captures `&Net`;
   `map(xs, |x| x + 1)` gets an ordinary one.

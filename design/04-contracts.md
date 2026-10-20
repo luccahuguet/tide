@@ -884,11 +884,10 @@ verified with `x: &mut T` and `y: &mut U`. It assumes `inv(*x)` and
 distinctness check comes first (`Err(Aliased)` otherwise). It owes total
 correctness and `inv(final(*x))`, `inv(final(*y))`. This is the
 lock-invariant rule of concurrent separation logic, and it needs no
-interference reasoning here: D8 closures are `Pure`, so they call only
-authority-free functions, cannot call `with` or suspend, and hold `Pure`
-payloads, and a panicking closure poisons its cells. If the payload type's
-defining module has unproved functions, the entry assumption joins the trust
-closure.
+interference reasoning here: D8 closures are `Pure`, so neither they nor
+their `Pure` payloads reach authority; they cannot call `with` or suspend,
+and a panicking closure poisons its cells. If the payload type's defining
+module has unproved functions, the entry assumption joins the trust closure.
 
 Callers learn only about the `R` in `Ok(r)`, constrained by the closure's
 `ensures` with the payload's entry and final values existentially

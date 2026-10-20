@@ -91,7 +91,8 @@ They and the `Error` trait are in the prelude (12.3); remove
 
 Std error types (`io::Error`, `NetError`, `UrlError`, `TaskError`,
 `LockError`, `Panicked`, `Cancelled`, `json::Error`) are
-`Error + Send + Sync`.
+`Error + Send + Sync + Pure`; `io::Error::new` and `other` take only a `Pure`
+error or a string.
 
 ### 2.3 `const fn`, attributes, `cfg`
 
@@ -474,8 +475,8 @@ pointers; a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded
 type parameter. **Everything else is `Pure` exactly when its parts are**,
 including references, collections, `Arena`, `Box`, structs, enums,
 closures, and `Rc`, `Cell`, and `RefCell`, which are not `Sync`, so their
-state never leaves one task. `Arc` is not `Pure` (D7): share data by
-reference inside a scope instead.
+state never leaves one task. `Arc` is not `Pure` (D7): share by reference
+inside a scope.
 
 `dyn Trait + Pure` is not Rust (E0225). Declare a companion trait with a
 blanket impl and use its object, which upcasts to `&dyn Value`:

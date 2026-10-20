@@ -801,7 +801,8 @@ on the type depends on other tasks. It is **deep**:
 - opaque types have exactly the auto traits and `Pure` their bounds state,
   and `dyn` types those their trait and its supertraits state (§5.1);
   `Owned` alone follows `orig` (§3.7);
-- a type parameter is `Pure` only if it is bounded by it.
+- a type parameter, or a projection on one that does not normalize
+  (`<B as ToOwned>::Owned`), is `Pure` only if it is bounded by it.
 
 Coherence never treats a missing auto or marker trait or bound (`Send`,
 `Sync`, `Pure`, `'static`) as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
@@ -824,14 +825,15 @@ These are **not `Pure`**:
   that RUST-2 makes resource handles (03 §0);
 - the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
   `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>`,
-  every atomic type, and everything in `std::sync::raw` (`Mutex`,
-  `RwLock`);
-- the foreign handles: raw pointers, `extern` types and foreign function
-  pointers;
+  every atomic type, everything in `std::sync::raw` (`Mutex`, `RwLock`),
+  and any std type that holds one, such as the iterators a `Receiver`
+  returns;
+- the foreign handles: raw pointers (`*const T`, `*mut T`, `NonNull<T>`),
+  `extern` types and foreign function pointers;
 - `ThreadBound` types;
 - `dyn Trait` unless `Trait` has `Pure` as a supertrait (a companion trait,
   §5.1);
-- an unbounded type parameter.
+- an unbounded type parameter, or an unbounded projection on one.
 
 **Everything else is `Pure` exactly when its components are**, including
 references, std collections, `Rc`, `rc::Weak`, `Cell`, `RefCell`,
@@ -859,6 +861,44 @@ when another clone exists, and `upgrade` observes other tasks' drops. Tide's
 `Arc` also omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap` and
 `into_inner`. Authority-free and parallel code shares data by reference
 inside a scope instead.
+
+**Std's types**, including the `core` and `alloc` items ADMIT-1 admits, are
+walked like any other, with two exceptions, and a type the list above names
+is not `Pure` whatever its fields. A raw pointer through which a std type
+owns or borrows values, of a type argument (`Box`, `Vec`, `String`, `Rc`,
+the collections, slice iterators) or of a fixed type (`string::Drain`'s
+`String`, `panic::Location`'s `str`, `io::Error`'s tagged representation),
+counts as owning or borrowing that type. An erased payload counts as `Pure`
+when every std constructor that fills it admits only `Pure` concrete
+payloads. `io::Error::new` and `io::Error::other` accept an
+`E: Error + Send + Sync + Pure + 'static`, which std boxes unchanged, or a
+`String`, `&str`, or `Cow<'_, str>`, which it boxes as a private string
+error. The conversion their `E: Into<Box<dyn Error + Send + Sync>>` bound
+performs must reach one of alloc's four `From` impls for
+`Box<dyn Error + Send + Sync>`, by identity (ADMIT-1): from an
+`E: Error + Send + Sync` with `E: Pure`, from `String`, from `&str`, or from
+`Cow<'_, str>`. Anything else is `FX0517`, including a user `From` or `Into`
+impl and the reflexive `From<T> for T`. A bound on the input alone is not
+enough: a user conversion could turn a `Pure` key into a payload whose type
+has room for a `Shared`, and `get_mut` with `downcast_mut` could put one
+there later. Generic code
+that wraps these constructors bounds its parameter by
+`Error + Send + Sync + Pure + 'static`, and the check runs at its
+definition (D4). Any other erased payload follows the
+`dyn` rule, so `Box<dyn Error + Send + Sync>`, `dyn Any`, `fmt::Arguments`
+and `fmt::Formatter` are not `Pure`; `Waker` is not admitted (ADMIT-1).
+Without these verdicts, a payload whose `Display` calls `Shared::with` would
+let two `join` branches formatting their own value observe each other. The
+cost: a `with` closure cannot capture a `Formatter` or a passed-in
+`fmt::Arguments` (copy the data out, then format:
+`let n = self.cell.with(|c| c.hits).map_err(|_| fmt::Error)?;`
+then `write!(f, "{n}")`), a helper that takes `fmt::Arguments` is not
+authority-free, an already-boxed `Box<dyn Error + Send + Sync>`, such as
+`into_inner()`'s result, cannot be wrapped in an `io::Error` again (wrap the
+concrete error), and every `Display::fmt` instance is may-suspend
+(03 SUSP-1), as a `Formatter` over a socket is.
+Authority-free code still formats: `format!` and the sinks build their
+`Arguments` and `Formatter` locally (reference 6.5).
 
 ### `Pure + Sync` replaces `Frozen`
 
