@@ -825,12 +825,13 @@ builds, erased in release, and used to drive property tests.
 | --- | --- | --- |
 | `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`FX0802`) | precondition, checked at entry; a failure blames the caller |
 | `#[ensures(e)]` | as `requires` | postcondition, checked at each return; a failure blames the callee |
-| `invariant!(e);` | first statements of a loop body | checked at loop entry (even for zero iterations) and exit; under `tide test`, also after every iteration |
+| `invariant!(e);` | first statements of a loop body | checked at each loop head: entry (even for zero iterations), every iteration, exit |
 
 - **Loops.** `invariant!` needs `#[invariants]` or any contract attribute on
   its fn, which rewrites its loops. In `for x in a..b`, an invariant sees
   `x` as the next iteration's index: `x == a` before the first iteration,
-  `x == max(a, b)` at exit.
+  `x == max(a, b)` at exit. In `while` and `while let`, the head precedes
+  each condition evaluation.
 - **One expression per clause**: `#[requires(a, b)]` is an error (the safe
   fix splits it). Repeated clauses of one kind, `invariant!` included, are
   conjoined in order.
@@ -863,7 +864,8 @@ builds, erased in release, and used to drive property tests.
   such data). So no clause reaches a capability, `Shared`, `Cell`, or
   `RefCell`, not even `cells.len()` on a slice of handles. A clause that
   uses a value of a type parameter `T` needs `T: Pure + Sync` (the fix adds
-  the bound); no instantiation skips a clause.
+  the bound); no instantiation skips a clause. A clause names what the
+  body can, private fields included.
 - **Added syntax**, clauses only: `a ==> b` (implication, lowest precedence,
   right-associative); `forall |i: T| guard ==> p` and
   `exists |i: T| guard && p`, where `guard` bounds the binder as
@@ -874,20 +876,18 @@ builds, erased in release, and used to drive property tests.
   `result == (exists |i: usize| i < xs.len() && xs[i] == x)`. A quantified
   invariant costs a linear scan each time it is checked.
 - **When clauses run.** A clause built only from operators on std types,
-  literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
-  `is_empty`, indexing, `get`, `contains`, `is_some`) is *checked*; any
-  other, such as one with a quantifier, a closure, or a call to your own
+  literals, `result`, fields, `old` of `Copy` values, and std's accessors
+  (`len`, `is_empty`, indexing, `get`, `contains`, `is_some`) is *checked*;
+  any other, such as one with a quantifier, a closure, or a call to your own
   function, is *sampled*. Debug and test builds evaluate checked clauses at
-  the points in the table; `tide test` also checks sampled clauses on every
+  the points in the table (debug builds: `for` over `a..b` only at entry
+  and exit); `tide test` also checks sampled clauses on every
   call, each under a step budget, so the outcome depends only on the
   inputs. One that runs over budget is reported as unchecked, not failed.
   Release builds erase clauses.
-- **Visibility.** A `pub` function's contract may call only `pub` functions
-  (Rust's private-in-public rule; provisional for v0).
 - **Violations.** A clause that is false, or whose evaluation panics, is
   violated, and panics with `requires violated: <clause text>` (or
-  `ensures`, `invariant`), the function's name, and the blamed span
-  (provisional).
+  `ensures`, `invariant`), the function's name, and the blamed span.
 
 ```rust
 #[requires(xs.len() > 0)]
@@ -929,13 +929,13 @@ pub fn push_all(dst: &mut Vec<i64>, src: &[i64]) { for x in src { dst.push(*x); 
 - **Vacuity.** `tide test` runs a property test until 100 cases (or `N`,
   for `seeds = N`) satisfy its `requires`. If under 1% of generated cases
   do, it fails the test as `vacuous` and names the conjunct that rejected
-  most. For a rare condition (a random `Vec` is seldom sorted), construct
-  such inputs (`xs.sort()`), use a recognized shape, or implement
-  `Arbitrary`.
+  most. For a rare condition, construct such inputs (`xs.sort()`), use a
+  recognized shape, or implement `Arbitrary`.
 - **Generated contract tests** (04 §2.4). `tide test` also tests every
   function with an `ensures` on generated inputs satisfying its `requires`,
   under the same vacuity floor: capabilities from a fresh `Root::sim(seed)`,
-  private-field types by random public constructor and method calls, type
+  private-field types by random public constructor and method calls
+  that meet their `requires`, scalars over their full range, type
   parameters as `i64` if it meets the bounds, else `String`. A function
   that cannot be generated (closure, `dyn`, or handle parameters; unmet
   bounds) is skipped as unchecked.

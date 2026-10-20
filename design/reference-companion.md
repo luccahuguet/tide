@@ -9,7 +9,7 @@ bare section number below 14 refers to the core. Sections 14–16 tabulate
 or illustrate rules the core states; 17 and Appendix A hold what the core
 only points to. It is outside the core's 25,000-token budget (D14).
 
-Core count: 24,989 tokens on 2026-10-20, measured by
+Core count: 24,996 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 

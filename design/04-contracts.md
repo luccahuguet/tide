@@ -299,8 +299,9 @@ standard collection is also its spec encoding, which is why `==` on two
 `Vec`s is extensional on their elements. The word "model" in D10 means this
 view.
 
-Visibility follows Rust's private-in-public rule: a public contract may
-mention only public spec fns. A public spec fn whose body reads private
+Under `prove`, visibility follows Rust's private-in-public rule: a public
+contract may mention only public spec fns (v0 clauses resolve names as the
+body does, CLAUSE-2). A public spec fn whose body reads private
 fields is *closed*: its body is part of the interface hash and the
 documentation, but other modules' proofs cannot unfold it. That is Verus's
 `closed spec fn`, inferred instead of declared.
@@ -393,7 +394,10 @@ rule CLAUSE-*n*.
    and `==` and `<` through `PartialEq` and `PartialOrd`. So
    `#[ensures(result == a + b)] fn widen(a: u8, b: u8) -> u16` is a type error;
    write `result == a as u16 + b as u16`. Mathematical integers and model
-   equality apply only under `prove` (v1).
+   equality apply only under `prove` (v1). Names resolve as in the
+   function's body, so a `pub` function's clause may read private fields
+   and call private functions; §1.4's visibility rule applies only under
+   `prove`.
 3. **CLAUSE-3. Read-only evaluation.** A clause calls only authority-free
    functions whose argument types are `Pure + Sync` and that take `&mut` only
    to temporaries created inside the clause, such as the iterator in
@@ -445,29 +449,50 @@ rule CLAUSE-*n*.
    implicit snapshots follow item 3 and treat a panic as a violation, as
    `old` does, but do not change a clause's class (item 5).
 5. **CLAUSE-5. Classes.** A clause built only from operators on std types,
-   literals, `result`, `old` of `Copy` values, and std's accessors (`len`,
-   `is_empty`, indexing, `get`, `contains`, `is_some`, `is_ok`, and similar)
-   is `checked`. Every other clause is `sampled`: one with a quantifier, one
-   that calls a std function that is not an accessor, and one that calls a
-   user-defined function, which includes a closure literal and an operator
-   or `Clone` that reaches a user type's impl. The class depends on syntax,
+   literals, `result`, field reads, `old` of `Copy` values, and std's
+   accessors (`len`, `is_empty`, indexing, `get`, `contains`, `is_some`,
+   `is_ok`, and similar) is `checked`. Every other clause is `sampled`: one
+   with a quantifier, one that calls a std function that is not an
+   accessor, and one that calls a user-defined function, which includes a
+   closure literal and an operator or `Clone` that reaches a user type's
+   impl. The class depends on syntax,
    not cost, so `a == b` on two `Vec<i64>` is `checked`.
 6. **CLAUSE-6. When clauses run: one skip rule** (D10). Debug and test
    builds evaluate `checked` clauses: `requires` at entry, `ensures` at each
-   return, and loop invariants at loop entry and exit (§2.3). `tide test`
-   also evaluates `sampled` clauses on §2.4's schedule, evaluates loop
-   invariants after every iteration, and runs generated tests (§2.4).
+   return, and loop invariants at loop heads (§2.3). Control reaches a
+   `while` or `while let` loop's head before each evaluation of its
+   condition. The check before the evaluation that ends the loop is the
+   exit check, and a side effect of that evaluation is not checked. A `for`
+   loop's head comes before each call to its iterator's `next`; over `a..b`
+   the invariant sees the loop variable as the next index (§2.4), and over
+   any other iterator it cannot name the loop pattern's bindings. A
+   `loop`'s head is the top of each iteration. A loop left by `break`,
+   `return`, or `?` gets no exit check. Debug builds check
+   a `for` over `a..b` only at entry and exit, and every other loop at
+   every head, because its exit is known only once its condition or
+   iterator ends it. `tide test`
+   checks every head, evaluates `sampled` clauses on §2.4's schedule, and
+   runs generated tests (§2.4).
    Release builds erase clauses (§2.6). Apart from a `sampled` clause's
    step budget (item 7), nothing else decides whether a clause runs.
 7. **CLAUSE-7. Outcomes.** A clause that evaluates to `false` is a
    violation, and so is a clause whose evaluation panics, including a panic
    while taking one of its `old` snapshots (item 4); a violation panics (D5)
    and blames the caller for `requires` and the callee for `ensures` and
-   invariants. Each evaluation of a `sampled` clause has a step budget, and
-   one that exceeds it is reported as unchecked, not as failed. The report
-   lists every clause a build or test run did not evaluate. Not yet
-   implemented in the D18 spike: reporting a panic inside a clause as a
-   violation, step budgets, entry values of by-value parameters in
+   invariants. The panic message begins `requires violated: `,
+   `ensures violated: `, or `invariant violated: `, followed by the
+   clause's source text, then names the function and the blamed span, so
+   a test expects a violation with
+   `#[should_panic(expected = "requires violated")]`. Each evaluation of a
+   `sampled` clause has a step budget, and one that exceeds it is
+   reported as unchecked, not as failed. The report
+   lists every clause a build or test run did not evaluate. Where the D18
+   spike differs: it checks every head of a `for` over `a..b` in debug
+   builds, and its message names the function but not the blamed span and
+   prints the clause's tokens rather than its source text. Not yet
+   implemented in the D18 spike: clause classes (it evaluates every clause
+   in debug builds), generated tests, reporting a panic inside a clause as
+   a violation, step budgets, entry values of by-value parameters in
    `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
    closure lowering rejects with E0521 (`research/15-rust-dialect.md`,
    Spike results). The lowering item 4 describes also needs a generic
@@ -529,7 +554,7 @@ Debug and test builds evaluate `checked` clauses:
 - `ensures` at each return; a failure blames the callee;
 - type invariants (v1) at the exits of functions in the type's defining
   module that produce a value of the type or hold `&mut` to one (§4.2);
-- loop invariants at loop entry and at loop exit, through the function
+- loop invariants at loop heads (CLAUSE-6), through the function
   attribute's rewrite of the loop (§1.2 rule 10).
 
 Clauses are evaluated with §1.8's code semantics; overflow traps are precise
@@ -548,7 +573,10 @@ unchecked, never as checked or failed (D10). Packages can change the
 budget. The D18 spike does not yet implement budgets.
 
 **Loop invariants and measures.** Executable loop invariants are evaluated
-before the first iteration, after every iteration, and at exit. `sampled`
+at every loop head (CLAUSE-6): before the first iteration, after every
+iteration, and at exit. In `while` and `while let`, a head comes before
+each evaluation of the condition, so the exit check precedes the
+evaluation that ends the loop. `sampled`
 invariants are evaluated on iterations 1–64, 128, 256, and so on, a
 schedule that depends only on the iteration index and so stays the same for
 the same inputs; it turns `max_index`'s quadratic invariant into linear
@@ -559,8 +587,8 @@ non-negative and strictly decrease. In `for x in a..b`, an invariant sees
 the first iteration, even when the range is empty, and with
 `x == max(a, b)` at exit. This is Dafny's rule, and `max_index` needs it to
 conclude `best < xs.len()`. The function attribute's loop rewrite binds the
-next index; the D18 spike does so for `a..b` ranges, not yet for `a..=b` or
-general iterators, and it does not yet rewrite `loop {}`.
+next index of an integer range (CLAUSE-6); the D18 spike does so for `a..b`,
+not yet for `a..=b`, and it does not yet rewrite `loop {}`.
 
 **Generated tests.** Every function with an `ensures`, and every law (§5),
 gets a property test.
@@ -568,6 +596,12 @@ gets a property test.
 1. Structural types derive a generator; a type implementing std's
    `Arbitrary` supplies its own. A type with an invariant or private fields is
    built only through random sequences of public constructor and method calls.
+   The generator is their caller: it evaluates each call's `requires` first
+   and skips a call that fails it, so building a value never reports a
+   `requires` violation (a failing `ensures` is still reported). Scalars
+   range over their whole type, biased toward small values and boundaries
+   (`0`, `1`, `MIN`, `MAX`), so `with_capacity(n)` sees `usize::MAX`; a
+   limit belongs in the `requires`.
    Capabilities come from `Root::sim(seed)` with fault injection. Function
    parameters are not generated in v0 or v1.
 2. The `requires` conjuncts are matched against generator shapes: scalar

@@ -584,7 +584,8 @@ union of its field borrows. The impl's named lifetimes keep their meaning.
 
 - The declared set is part of the signature and of the package interface.
 - A method visible outside its package may name only fields that are also
-  visible outside it, so private field names never enter a public API.
+  visible outside it, so a declaration never puts private field names in a
+  public API (a v0 clause may still read them, 04 CLAUSE-2).
 - For an exported method, removing a field from the set, or weakening
   `&mut` to `&`, is compatible. Adding a field or strengthening a mode is a
   breaking change.

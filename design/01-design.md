@@ -602,9 +602,13 @@ execution internally; it runs tasks on baton-passed threads.
   loop body in a function marked `#[invariants]` or carrying any contract
   attribute; and in v1 `#[decreases(..)]` and `#[diverges]` on functions,
   `decreases!(..)` in loops, and `#[invariant(..)]` on types. The
-  function-level attribute rewrites each loop, so an invariant is checked at
-  loop entry (also when the loop runs zero times) and at exit, and under
-  `tide test` after every iteration. A closure's clauses (v1) are `requires!(..)` and `ensures!(..)`
+  function-level attribute rewrites each loop, so an invariant is checked
+  where control reaches the loop head: before each evaluation of a `while`
+  or `while let` condition, and before each step of a `for` loop. Debug
+  builds check a `for` over `a..b` at entry (also when the loop runs zero
+  times) and exit, and every other loop at every head, since its exit is
+  known only once its condition or iterator ends it; `tide test` checks
+  every head. A closure's clauses (v1) are `requires!(..)` and `ensures!(..)`
   statements at the top of its block body, rewritten the same way, because
   attributes on closure expressions are unstable Rust. The `!` clause forms
   are not exported macros: the enclosing function attribute recognizes and
