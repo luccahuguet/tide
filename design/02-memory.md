@@ -611,6 +611,7 @@ structurally, as in Rust:
 | --- | --- | --- |
 | `Rc<T>`, `rc::Weak<T>`, raw pointers, `ThreadBound` types | no | no |
 | `Cell<T>`, `RefCell<T>`, `OnceCell<T>` | if `T: Send` | no |
+| `LazyCell<T, F>` | if `T, F: Send` | no |
 | `&T` | if `T: Sync` | if `T: Sync` |
 | `&mut T` | if `T: Send` | if `T: Sync` |
 | `Arc<T>` | if `T: Send + Sync` | if `T: Send + Sync` |
@@ -619,8 +620,8 @@ structurally, as in Rust:
 | `Task<'s, U, E>` | if `U, E: Send` | if `U, E: Send` |
 | capabilities, `Scope<'s, 'env, E>`, atomics | yes | yes |
 
-`unsafe impl Send` is allowed in packages granted `unsafe`, and each one is a
-trust hole.
+`unsafe impl Send` and `unsafe impl Sync` are allowed in packages granted
+`unsafe`, and each one is a trust hole.
 
 **Task boundaries** require `Send` (by value) or `Sync` (by reference): a
 spawned child's captures, so the closure is `Send`; channel messages;
@@ -791,7 +792,8 @@ structurally wherever a type meets a `Pure`-implying obligation or is
 coerced to a `Pure` trait object, not at the blanket impl. Outside std, a
 type the rule rejects is declared `Pure` only by `#[trusted_pure]` with a
 reason, in a package granted `unsafe`, and each such attribute is a trust
-hole. It is **deep**:
+hole; it claims what `Pure` guarantees below, including that no operation
+on the type depends on other tasks. It is **deep**:
 
 - it looks through every field, private ones included, and through `Box` and
   `Rc`, with type arguments substituted;
@@ -821,8 +823,9 @@ These are **not `Pure`**:
   the iterator `Stdin::lines()` returns; from v1, also the opaque types
   that RUST-2 makes resource handles (03 §0);
 - the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
-  `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>` and
-  every atomic type;
+  `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>`,
+  every atomic type, and everything in `std::sync::raw` (`Mutex`,
+  `RwLock`);
 - the foreign handles: raw pointers, `extern` types and foreign function
   pointers;
 - `ThreadBound` types;
@@ -831,15 +834,20 @@ These are **not `Pure`**:
 - an unbounded type parameter.
 
 **Everything else is `Pure` exactly when its components are**, including
-references, std collections, `Rc`, `rc::Weak`, `Cell`, `RefCell`, `Arena`,
-structs, enums and closures. Tide function pointers are `Pure`: any
-authority the pointee uses arrives through its arguments.
+references, std collections, `Rc`, `rc::Weak`, `Cell`, `RefCell`,
+`OnceCell`, `LazyCell`, `Arena`, structs, enums and closures. Tide function
+pointers are `Pure`: any authority the pointee uses arrives through its
+arguments.
 
 **What `Pure` guarantees.** A function whose parameter and capture types are
 all `Pure` is authority-free: no I/O, time, randomness, synchronization with
 other tasks, or suspension. Its result is a function of the state of memory
 reachable from its arguments. `Cell`, `RefCell` and `Rc` are `Pure` because
-that state is private to the task. Creating a synchronization handle takes
+that state is private to the task. `OnceLock` and `LazyLock` are not
+admitted (ADMIT-1, `FX0520`): shared by `&` in a parallel region, they would
+reveal which branch initialized them, through the value, its sink output,
+or its panic. Build the value before the parallel region; between spawned
+tasks, use a `Shared<Option<T>>`. Creating a synchronization handle takes
 `&Tasks`, which is not `Pure`, so authority-free code can neither receive
 nor create one (D7).
 

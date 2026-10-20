@@ -429,7 +429,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 ### 6.4 No globals; deterministic hashing
 
 Safe code has no mutable globals or thread-locals (`static mut`, a
-`static` holding atomics, `Mutex`, `OnceLock`, or `Cell`, `thread_local!`,
+`static` holding atomics, `Mutex`, or `Cell`, `thread_local!`,
 `lazy_static!`: `FX0502`). A `static` must be `'static + Sync + Pure`, its
 value computed at compile time by `const fn`. Build a value that needs
 run-time work in `main` and pass it down.
@@ -469,14 +469,13 @@ it structurally wherever a type meets a `Pure` bound or is coerced to a
 `Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
 own code). **Not `Pure`**: the capability types and `File`, `TcpStream`, and
 other handles derived from them; synchronization handles (`Shared`, channel
-ends, `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `OnceLock`, and any
-`Sync` type whose `&self` API can observe or cause mutation); raw pointers;
-a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded type
-parameter. **Everything else is `Pure` exactly when its parts are**,
+ends, `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `std::sync::raw`); raw
+pointers; a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded
+type parameter. **Everything else is `Pure` exactly when its parts are**,
 including references, collections, `Arena`, `Box`, structs, enums,
 closures, and `Rc`, `Cell`, and `RefCell`, which are not `Sync`, so their
-state never leaves one task. `Arc` is not `Pure` because drop timing can
-reveal scheduling (D7): share data by reference inside a scope instead.
+state never leaves one task. `Arc` is not `Pure` (D7): share data by
+reference inside a scope instead.
 
 `dyn Trait + Pure` is not Rust (E0225). Declare a companion trait with a
 blanket impl and use its object, which upcasts to `&dyn Value`:
@@ -553,10 +552,11 @@ capability in scope or proposes adding the parameter (companion 14.2).
 The checker admits only listed `core`, `alloc`, and std inherent items;
 everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
 raw pointer types and address observers (`addr()`, `{:p}`) without the
-`unsafe` grant; `core::sync::atomic`; float observers and math methods
-(4.3); I/O methods on re-exported std types (`Path::exists`, `metadata`; use
-`fs`); `io::Error::last_os_error`; timed waits such as `recv_timeout` (use
-`recv_deadline`); and `include_str!`, `env!`, `option_env!`.
+`unsafe` grant; `core::sync::atomic`; `OnceLock`, `LazyLock`; float
+observers and math methods (4.3); I/O methods on re-exported std types
+(`Path::exists`, `metadata`; use `fs`); `io::Error::last_os_error`; timed
+waits such as `recv_timeout` (use `recv_deadline`); and `include_str!`,
+`env!`, `option_env!`.
 
 ### 6.10 Patterns
 

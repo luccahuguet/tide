@@ -386,6 +386,10 @@ so the rules above also need an admission check (D7).
   - raw pointer types without an `unsafe` grant, and every address observer
     (GLOBAL-4);
   - `core` atomics, which are created without `&Tasks` (§1.2);
+  - `OnceLock` and `LazyLock`, which a parallel region could initialize
+    from either branch (`02-memory.md` §9). Tide's std does not export
+    them, and the driver reports a path to Rust's as `FX0520`, not as
+    rustc's unresolved path; `OnceCell` and `LazyCell` stay;
   - float observers and math methods (`to_bits`, `copysign`, `total_cmp`,
     `min`, `max`, `sin`, `exp`, and the rest; PAR-3);
   - I/O methods on re-exported std types (`Path::exists`, `metadata`,
@@ -498,11 +502,19 @@ For an authority-free function `f`:
 The argument: safe code has no ambient source (§2.1, §2.2); `Pure` arguments
 reach no capability or handle, and the body cannot create a handle without
 `&Tasks`; and the memory they reach cannot be mutated concurrently, because
-every type that is `Sync` and mutable through `&` is a synchronization handle
-and therefore not `Pure`, while `Cell`, `RefCell`, and `Rc` are not `Sync`
-and so cannot be shared with another task. `Arc` is a handle too, because
-its last release and `make_mut` run user code at timing-dependent points
-(GLOBAL-6).
+every std type that is `Sync` and mutable through `&` is a synchronization
+handle and therefore not `Pure`, or is not admitted (`OnceLock`,
+`LazyLock`), while `Cell`, `RefCell`, `OnceCell`, `LazyCell`, and `Rc` are
+not `Sync` and so cannot be shared with another task. Outside std, a `Sync`
+type that is mutable through `&` either has such a std type as a field, and
+so is not `Pure` (the rule is deep), or reaches an `UnsafeCell` through
+`unsafe impl Sync`, a trust hole under the `unsafe` grant (`02-memory.md`
+§8.1). A sound one either keeps readers and writers apart statically, as a
+token-branded cell does through `&mut`, or synchronizes at run time through
+atomics, `std::sync::raw`, raw pointers, or foreign calls, none of which is
+`Pure`; an unsound one breaks this argument as an unsound `unsafe impl Send`
+does. `Arc` is a handle too, because its last release and `make_mut` run
+user code at timing-dependent points (GLOBAL-6).
 
 ### 3.4 What it does not guarantee
 

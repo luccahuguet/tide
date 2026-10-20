@@ -9,7 +9,7 @@ bare section number below 14 refers to the core. Sections 14–16 tabulate
 or illustrate rules the core states; 17 and Appendix A hold what the core
 only points to. It is outside the core's 25,000-token budget (D14).
 
-Core count: 24,997 tokens on 2026-10-20, measured by
+Core count: 24,969 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -32,7 +32,8 @@ Rerun it after any change to the core and update this line.
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
 | `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (14.2) | `FX0501` |
-| `static COUNTER: AtomicUsize`, `OnceLock`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
+| a local or `static` `OnceLock` or `LazyLock` | build the value first; between tasks, `Shared<Option<T>>`; `OnceCell` within one task | `FX0520` |
+| `static COUNTER: AtomicUsize`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
 | `fn main()` or `fn main(root: Root)` without the attribute | add `#[tide::main]` | `FX0512` safe |
 | `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
 | `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
