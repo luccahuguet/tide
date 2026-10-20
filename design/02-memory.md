@@ -813,6 +813,13 @@ These are **not `Pure`**:
 
 - the capability types `Root`, `Fs`, `Net`, `Clock`, `Rand`, `Env`, `Stdin`,
   `Proc`, `Tasks` and `Accel`, and their attenuated forms;
+- the resource handles: types whose values act on the world with no
+  capability argument, because they carry the authority of the capability
+  that made them. In std these are `File`, `ReadDir`, `DirEntry`,
+  `TcpStream`, `TcpListener`, `UdpSocket`, `Command`, `Child`, `Signals`,
+  and any other such type a capability or handle method returns, such as
+  the iterator `Stdin::lines()` returns; from v1, also the opaque types
+  that RUST-2 makes resource handles (03 §0);
 - the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
   `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>` and
   every atomic type;

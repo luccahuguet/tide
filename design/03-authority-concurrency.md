@@ -31,10 +31,14 @@ provisional in `reference.md` or its companion are fixed here unless noted.
 ## 0. Terms
 
 - **Capability**: a value of a standard capability type (§1.1) or of a
-  resource handle derived from one (`File`, `ReadDir`, `DirEntry`,
-  `TcpStream`, `TcpListener`, `Child`). Every operation that reads or
-  changes the outside world, or that observes nondeterminism, is a method
-  on a capability.
+  resource handle derived from one: a type whose values act on the world
+  with no capability argument, because they carry the authority of the
+  capability that made them (`File`, `ReadDir`, `DirEntry`, `TcpStream`,
+  `TcpListener`, `UdpSocket`, `Command`, `Child`, `Signals`, any other
+  such type a capability or handle method returns, and from v1 the opaque
+  types that RUST-2 makes resource handles). Every operation that reads
+  or changes the outside world, or that observes nondeterminism, is a
+  method on a capability.
 - **Synchronization handle**: a value through which tasks observe each other's
   timing or cancellation: `Shared<T>`, channel ends, `Scope<'s, 'env, E>`, `Task<'s, U, E>`,
   `Arc<T>`, `sync::Weak<T>`, and atomics. Creating one takes `&Tasks` (D7), so
