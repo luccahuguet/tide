@@ -179,7 +179,10 @@ Cited evidence behind the decisions, in [research/](research/):
 - `scripts/autorun.sh` runs fresh headless sessions back to back: it
   continues a handed-off bead, else works the top ready one, judges each
   outcome from `br` and `git`, logs it to `.autorun/log`, stops on no work,
-  repeated handoffs, repeated failures, or its caps, and never pushes.
+  repeated handoffs, repeated failures, or its caps, and never pushes. After
+  every 10th session of each run, and when it stops with no work left, it
+  runs the `correct` skill in a session of its own and logs the beads it
+  filed and its cost; those beads stay uncommitted in `.beads/`.
   `scripts/autorun-test.sh` tests it offline with a stub agent.
 
 ## History

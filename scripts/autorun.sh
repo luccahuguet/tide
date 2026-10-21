@@ -26,6 +26,21 @@
 # one. The owner reviews the blocked beads it lists when it stops; it never
 # retries a blocked bead.
 #
+# It also runs the correct skill, which files beads for corrections the owner
+# keeps repeating (bead fx-mr4), in a session of its own: after every 10th
+# session of a run, and when it stops because no work remains, unless that
+# stop directly follows such a run. It skips that run while a claude or codex
+# process works in this checkout. It runs under the same permissions, timeout,
+# and budget as a bead session but does not count toward the session cap or
+# the failure and handoff rules. Its log line holds the time, "/correct", the
+# beads it filed (read from br before and after), "none", or "bead ids
+# unavailable" when br cannot be read afterwards, which also stops the run,
+# plus its exit status when non-zero, and its cost. The beads it files stay
+# uncommitted in .beads/, which the dirty-tree check ignores, so the next
+# session or the owner commits them. The runner only lists what was filed; it
+# leaves duplicates to the skill, which checks existing beads before it files
+# and may miss a class whose bead was closed, so a class can be filed again.
+#
 # Permissions: sessions run `claude -p --permission-mode auto`, the owner's
 # default mode, in which a classifier gates each action and the owner's hooks
 # still apply. It lets a session edit, commit, and run br, cargo, and codex;
@@ -45,9 +60,10 @@
 #   AUTORUN_TIMEOUT        per-session timeout for timeout(1) (default 3h)
 #   AUTORUN_AGENT          path of an agent executable that replaces claude,
 #                          for tests. It runs as `"$AUTORUN_AGENT" <prompt>`
-#                          with AUTORUN_BEAD and AUTORUN_SESSION_CAP set; a
-#                          JSON object it prints with total_cost_usd is its
-#                          cost.
+#                          with AUTORUN_BEAD and AUTORUN_SESSION_CAP set
+#                          (for a correct run, the prompt is "/correct" and
+#                          AUTORUN_BEAD is empty); a JSON object it prints
+#                          with total_cost_usd is its cost.
 # Logs, session output, and the lock live in .autorun/ (git-ignored). Ctrl-C
 # stops the current session and the run. Needs br, git, jq, flock, timeout.
 set -uo pipefail
@@ -77,18 +93,19 @@ stop() {
 }
 calc() { awk "BEGIN { print $1 }"; }
 
-# brj <jq filter> <br args...>: run br with --json, apply the filter, and set
-# BR to the result. Any br failure, error envelope, or filter failure stops
-# the run. Helpers that can stop set globals, never print into $(...), since
-# an exit there would only leave the subshell.
-brj() {
+# brq <jq filter> <br args...>: run br with --json, apply the filter, and set
+# BR to the result, or fail on any br failure, error envelope, or filter
+# failure. brj does the same but stops the run on failure. Helpers that can
+# stop set globals, never print into $(...), since an exit there would only
+# leave the subshell.
+brq() {
   local filter="$1" out
   shift
   out="$(br "$@" --json 2>/dev/null)" &&
     jq -e 'type != "object" or (has("error") | not)' <<<"$out" >/dev/null &&
-    BR="$(jq -r "$filter" <<<"$out")" ||
-    stop "cannot read br state (br $*)"
+    BR="$(jq -r "$filter" <<<"$out")"
 }
+brj() { brq "$@" || { shift; stop "cannot read br state (br $*)"; }; }
 is_handoff() { jq -e '. != null and (.text | test("^Handoff"))' <<<"$1" >/dev/null; }
 latest_comment() { brj 'max_by(.id) // null | tojson' comments list "$1"; COMMENT="$BR"; }
 upstream() { git rev-parse -q --verify '@{u}' 2>/dev/null || echo none; }
@@ -133,6 +150,51 @@ pick() {
   id="$BR" mode=work
 }
 
+# allowance: set cap to the lesser of the per-session cap and what remains of
+# the budget, or fail when nothing remains.
+allowance() {
+  local remaining
+  remaining="$(calc "$BUDGET - $spent")"
+  awk -v r="$remaining" 'BEGIN { exit !(r > 0) }' || return 1
+  cap="$(awk -v r="$remaining" -v s="$SESSION_USD" 'BEGIN { print (r < s ? r : s) }')"
+}
+# charge: set cost from the session's output in $out and add it to spent; a
+# session that reports no cost is charged its whole allowance.
+charge() {
+  cost="$(jq -rR 'fromjson? | select(type == "object") | .total_cost_usd | numbers' "$out" | tail -1)"
+  spent="$(calc "$spent + ${cost:-$cap}")"
+}
+
+# correct: run the correct skill in its own session if the budget allows and
+# no other agent works here (the next pick then stops the run), and log the
+# beads it filed and its cost. The prompt carries no arguments, since the
+# skill would read a slash command's arguments as an owner message.
+correct() {
+  local before filed rc up br_ok=1 id=""
+  allowance || return
+  live_agent && return
+  brj '[.issues[].id]' list --status all
+  before="$BR"
+  up="$(upstream)"
+  say "correct (cap \$$cap)"
+  out="$STATE/correct-$(date -u +%Y%m%dT%H%M%SZ).out"
+  run_agent /correct "$cap"
+  rc=$?
+  charge
+  # The run is paid for, so log it even when br cannot be read, then stop.
+  if brq '[.issues[].id]' list --status all; then
+    filed="$(jq -rn --argjson a "$BR" --argjson b "$before" '$a - $b | join(" ")')"
+    filed="${filed:-none}"
+  else
+    filed="bead ids unavailable" br_ok=""
+  fi
+  ((rc)) && filed+=" (exit $rc)"
+  printf '%s\t/correct\t%s\t%s\n' "$(date -u +%FT%TZ)" "$filed" "${cost:+\$}${cost:-unreported}" >>"$LOG"
+  say "correct: filed $filed (spent \$$spent)"
+  [[ "$(upstream)" == "$up" ]] || stop "the upstream ref moved during the correct run"
+  [[ -n "$br_ok" ]] || stop "cannot read br state (br list --status all)"
+}
+
 # run_agent <prompt> <cap>: stdout to $out, stderr to $out.err. The session
 # inherits the lock (fd 9) on purpose; see the flock line.
 run_agent() {
@@ -159,11 +221,12 @@ run_agent() {
 sessions=0 failures=0 spent=0 last_handoff="" handoffs=0
 while :; do
   ((sessions < MAX_SESSIONS)) || stop "session cap $MAX_SESSIONS reached"
-  remaining="$(calc "$BUDGET - $spent")"
-  awk -v r="$remaining" 'BEGIN { exit !(r > 0) }' || stop "budget cap \$$BUDGET reached (spent \$$spent)"
-  cap="$(awk -v r="$remaining" -v s="$SESSION_USD" 'BEGIN { print (r < s ? r : s) }')"
+  allowance || stop "budget cap \$$BUDGET reached (spent \$$spent)"
   pick
-  [[ -n "$id" ]] || stop "no work remains"
+  if [[ -z "$id" ]]; then
+    ((sessions == 0 || sessions % 10)) && correct
+    stop "no work remains"
+  fi
 
   if [[ "$mode" == continue ]]; then
     prompt="prime, then continue $id from its handoff."
@@ -181,8 +244,7 @@ while :; do
   run_agent "$prompt" "$cap"
   rc=$?
 
-  cost="$(jq -rR 'fromjson? | select(type == "object") | .total_cost_usd | numbers' "$out" | tail -1)"
-  spent="$(calc "$spent + ${cost:-$cap}")"
+  charge
   after_head="$(git rev-parse HEAD)"
   range="none"
   [[ "$after_head" != "$before_head" ]] && range="${before_head:0:7}..${after_head:0:7}"
@@ -215,4 +277,5 @@ while :; do
   else
     last_handoff="" handoffs=0
   fi
+  ((sessions % 10)) || correct
 done

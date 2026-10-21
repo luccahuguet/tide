@@ -3,8 +3,10 @@
 # beads, a stub agent closes, hands off, blocks, fails, stalls, pushes,
 # leaves a process behind, or does nothing as each scenario tells it, and the
 # test checks which beads the runner picks and with which prompts, the beads,
-# outcomes, and commit ranges it logs, and why it stops. Spends no tokens. Needs br, git, jq, flock, timeout,
-# setsid.
+# outcomes, and commit ranges it logs, and why it stops. Given "/correct", the
+# stub stands in for a correct run that may report a cost, file a bead, or
+# fail, and the test checks when those runs happen, their allowance, and what
+# they log. Spends no tokens. Needs br, git, jq, flock, timeout, setsid.
 # Usage: scripts/autorun-test.sh
 set -uo pipefail
 RUNNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/autorun.sh"
@@ -12,9 +14,23 @@ TMP="$(mktemp -d)"
 trap 'rm -r "$TMP"' EXIT
 fail=0
 
-# The stub pops its next action for $AUTORUN_BEAD from actions/<bead>.
+# The stub pops its next action for $AUTORUN_BEAD from actions/<bead>, or,
+# as a correct run, from actions/correct, recording "/correct" as its pick.
+# A correct run that sees a bead in AUTORUN_BEAD exits 9.
 cat >"$TMP/stub" <<'EOF'
 #!/usr/bin/env bash
+if [[ "$1" == /correct ]]; then
+  f="$STUB_DIR/actions/correct"
+  action="$(head -n1 "$f" 2>/dev/null)"; sed -i 1d "$f" 2>/dev/null
+  echo /correct >>"$STUB_DIR/picked"
+  echo "$AUTORUN_SESSION_CAP" >>"$STUB_DIR/caps"
+  [[ -n "$AUTORUN_BEAD" ]] && exit 9
+  # break: report no cost, exit 2, and make br fail from now on (see postbr).
+  [[ "$action" == break ]] && { touch "$STUB_DIR/brbroken"; exit 2; }
+  echo '{"total_cost_usd":0.25}'
+  [[ "$action" == file ]] && br create "repeated correction" -t decision -p 4 --silent >"$STUB_DIR/actions/filed"
+  exit 0
+fi
 f="$STUB_DIR/actions/$AUTORUN_BEAD"
 action="$(head -n1 "$f" 2>/dev/null)"; sed -i 1d "$f" 2>/dev/null
 echo "$AUTORUN_BEAD" >>"$STUB_DIR/picked"
@@ -34,6 +50,8 @@ case "$action" in
   block) br update "$AUTORUN_BEAD" --status blocked >/dev/null ;;
   linger) setsid sleep 47 </dev/null >/dev/null 2>&1 &
     br close "$AUTORUN_BEAD" --reason done >/dev/null ;;
+  live) setsid "$STUB_DIR/../fake/claude" 60 </dev/null >/dev/null 2>&1 &
+    echo $! >"$STUB_DIR/fake.pid"; br close "$AUTORUN_BEAD" --reason done >/dev/null ;;
   fail) exit 1 ;;
   stall) sleep 30 ;;
   push) git commit -q --allow-empty -m pushed; git push -q 2>/dev/null ;;
@@ -85,11 +103,25 @@ scenario() {
 }
 acts() { printf '%s\n' "${@:2}" >"actions/${!1}"; }
 
-scenario no-work "no work remains" "a b" "closed,closed" -- \
+# A correct run logs "/correct" as its bead, and its filed beads as its outcome.
+check_extra() { [[ "$(cut -f4 .autorun/log | tail -1)" == "\$0.25" ]]; }
+scenario no-work "no work remains" "a b /correct" "closed,closed,none" -- \
   eval 'acts a close; acts b close'
+scenario idle "no work remains" "/correct" "none" -- \
+  eval 'br close $a $b --reason done >/dev/null'
+# After every 10th session, not at the session cap, with the allowance a
+# session would get, and charged like one. The bead it files leaves .beads/
+# dirty, which keeps no later session out.
+check_extra() { [[ "$(awk -F'\t' '$2 == "/correct" { print $3 }' .autorun/log)" == "$(cat actions/filed)" &&
+                  "$(paste -sd' ' caps)" == "1 1 1 1 1 1 1 1 1 1 0.5 0.25" ]]; }
+BUDGET=10.5 MAX=12 scenario tenth "budget cap" "a a a a a a a a a a /correct a" - -- \
+  eval 'acts a $(printf "commit-handoff %.0s" {1..10}) close; echo file >actions/correct'
+# No second correct run when no work remains after the 10th session.
+MAX=20 scenario tenth-then-idle "no work remains" "a a a a a a a a a a /correct" - -- \
+  eval 'br close $b --reason done >/dev/null; acts a $(printf "commit-handoff %.0s" {1..9}) close'
 check_extra() { [[ "$(sed -n 1p prompts)" == "prime, then continue $b from its handoff. "* &&
                   "$(sed -n 2p prompts)" == "prime, then work $a. "* ]]; }
-scenario handoff-first " (continue" "b a" "closed,closed" -- \
+scenario handoff-first " (continue" "b a /correct" "closed,closed,none" -- \
   eval 'br update $b --status in_progress >/dev/null; br comments add $b "Handoff (x)." >/dev/null; acts b close; acts a close'
 scenario live-worker "in progress without a handoff" "" - -- \
   eval 'br update $a --status in_progress >/dev/null'
@@ -98,13 +130,13 @@ scenario stale-handoff "in progress without a handoff" "" - -- \
 check_extra() { [[ "$(cut -f4 .autorun/log | paste -sd,)" == none,???????..???????,none ]]; }
 scenario three-handoffs "handed off 3 times in a row with no new commit" "a a a" \
   "handed off,handed off,handed off" -- eval 'acts a handoff beads-handoff handoff'
-check_extra() { [[ "$(cut -f4 .autorun/log | paste -sd,)" == none,none,???????..???????,none,none ]]; }
-scenario commit-resets "no work remains" "a a a a b" \
-  "handed off,handed off,handed off,closed,closed" -- \
+check_extra() { [[ "$(cut -f4 .autorun/log | paste -sd,)" == none,none,???????..???????,none,none,"\$0.25" ]]; }
+scenario commit-resets "no work remains" "a a a a b /correct" \
+  "handed off,handed off,handed off,closed,closed,none" -- \
   eval 'acts a handoff handoff commit-handoff close; acts b close'
 TO=2s scenario two-failures "2 sessions in a row failed or timed out" "a a" "failed,timed out" -- \
   eval 'acts a fail stall'
-scenario failures-reset "no work remains" "a a b b" "failed,closed,failed,closed" -- \
+scenario failures-reset "no work remains" "a a b b /correct" "failed,closed,failed,closed,none" -- \
   eval 'acts a fail close; acts b fail close'
 scenario noop-fails "2 sessions in a row failed" "a a" "failed,failed" -- \
   eval 'acts a noop noop'
@@ -129,6 +161,17 @@ exec $(command -v br) "\$@"
 EOF
 chmod +x "$TMP/badbr/br"
 XPATH="$TMP/badbr:" scenario br-error "cannot read br state" "" - -- true
+# A correct run still logs its exit status and cost (here unreported) when br
+# fails after it, then the run stops.
+mkdir -p "$TMP/postbr" && cat >"$TMP/postbr/br" <<EOF
+#!/usr/bin/env bash
+[[ -e brbroken && "\$*" == "list --status all --json" ]] && { echo '{"error":{"code":"DATABASE_ERROR"}}'; exit 0; }
+exec $(command -v br) "\$@"
+EOF
+chmod +x "$TMP/postbr/br"
+check_extra() { [[ "$(cut -f2- .autorun/log)" == $'/correct\tbead ids unavailable (exit 2)\tunreported' ]]; }
+XPATH="$TMP/postbr:" scenario correct-br-error "cannot read br state (br list --status all)" "/correct" - -- \
+  eval 'br close $a $b --reason done >/dev/null; echo break >actions/correct'
 scenario push "upstream ref moved" "a" - -- \
   eval 'git init -q --bare ../push-remote.git; git remote add origin ../push-remote.git; git push -q -u origin HEAD 2>/dev/null; acts a push'
 
@@ -141,8 +184,12 @@ check_extra() { kill "$(cat fake.pid)"; }
 scenario manual-continue "is working in this checkout" "" - -- \
   eval 'br update ${b} --status in_progress >/dev/null; br comments add ${b} "Handoff (x)." >/dev/null; "$TMP/fake/claude" 60 & echo $! >fake.pid'
 check_extra() { kill "$(cat fake.pid)"; }
-scenario app-server-ignored "no work remains" "a b" "closed,closed" -- \
+scenario app-server-ignored "no work remains" "a b /correct" "closed,closed,none" -- \
   eval 'PATH="$TMP/fake:$PATH" "$TMP/fake/codex" app-server & echo $! >fake.pid; acts a close; acts b close'
+# A worker a 10th session leaves running keeps the correct run from starting.
+check_extra() { kill "$(cat fake.pid)"; }
+MAX=12 scenario tenth-live "is working in this checkout" "a a a a a a a a a a" - -- \
+  eval 'acts a $(printf "commit-handoff %.0s" {1..9}) live'
 
 # SIGTERM (as Ctrl-C would) stops a stalled session and the run.
 mkdir -p "$TMP/interrupt/actions" && cd "$TMP/interrupt" && git init -q &&
@@ -160,7 +207,7 @@ else echo "FAIL  interrupt"; sed "s/^/      /" "$TMP/interrupt.out"; fail=1; fi
 
 # A process a session leaves running keeps the next runner out (fail closed).
 check_extra() { "$RUNNER" >/dev/null 2>&1; local rc=$?; pkill -f "^sleep 47$"; [[ $rc -eq 3 ]]; }
-scenario lock-held-by-leftover "no work remains" "a b" - -- eval 'acts a linger; acts b close'
+scenario lock-held-by-leftover "no work remains" "a b /correct" - -- eval 'acts a linger; acts b close'
 
 # A second runner exits while the first holds the lock.
 mkdir -p "$TMP/lock" && cd "$TMP/lock" && git init -q
