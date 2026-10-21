@@ -54,8 +54,9 @@ provisional in `reference.md` or its companion are fixed here unless noted.
 - **Suspend**: give up the current OS thread or worker until an event
   arrives. Only capability and synchronization operations suspend.
 - **Checkpoint**: an operation at which a task observes cancellation. Every
-  capability operation that may suspend is a checkpoint. Joins and
-  `Shared::with` acquisition are not (§6).
+  capability operation that may suspend is a checkpoint, except the shielded
+  ones marked in §1.1, such as `File::close`. Joins and `Shared::with`
+  acquisition are not checkpoints either (§6).
 - **Task**: a unit of concurrent execution with its own cancellation state,
   sink buffers, and, under the evented runtime, frame stack. `main` runs as
   the main task.
@@ -65,14 +66,14 @@ provisional in `reference.md` or its companion are fixed here unless noted.
 ### 1.1 Capability types
 
 The standard library reference holds the full signatures. "Suspends" lists
-the operations that may suspend; all are checkpoints except the shielded
-scope-exit join. Every capability error type has a cancellation variant whose
+the operations that may suspend; all are checkpoints except those marked
+shielded. Every capability error type has a cancellation variant whose
 `is_cancelled()` is true (`NetError::Cancelled`, `io::ErrorKind::Cancelled`).
 
 | Type | Main operations | Attenuation | Suspends |
 | --- | --- | --- | --- |
 | `Fs` | `read`, `read_to_string`, `write`, `write_synced`, `open`, `create`, `open_with(p, &OpenOptions)`, `sync_dir`, `create_dir_all`, `read_dir`, `metadata`, `exists`, `rename`, `remove_file`, `remove_dir`, `remove_dir_all` | `dir(path, Mode::Read \| Mode::ReadWrite)`, `read_only()` | all |
-| `File` | `read`, `read_owned`, `write`, `write_owned`, `seek`, `sync`, `set_len`, `close` | none | all |
+| `File` | `read`, `read_owned`, `write`, `write_owned`, `seek`, `sync`, `set_len`, `close` | none | all; `close` shielded |
 | `Net` | `connect(addr)`, `bind(addr)`, `bind_udp(addr)`, `resolve(host)`, `get(&Url, deadline)` | `only(["host:port", ..])`, `no_bind()` | all |
 | `ReadDir`, `DirEntry` | iteration, `path`, `file_name`, `metadata`, `file_type` | none | iteration, `metadata`, `file_type` |
 | `TcpStream`, `TcpListener`, `UdpSocket` | `read`, `write`, `read_owned`, `write_owned`, `accept`, `send_to`, `recv_from`, `shutdown` | none | all |
@@ -186,7 +187,14 @@ Notes:
   are `None` and output read so far is lost. A port that binds the child
   without `mut` gets rustc's E0596 and its fix. Of the methods Rust lacks,
   `File::sync`, `read_owned`, `write_owned`, and `Signals::recv` take
-  `&self`, and `File::close` takes `self`.
+  `&self`, and `File::close` takes `self`. `close` is shielded: it always
+  closes the descriptor and returns the close's own result, even in a
+  cancelled scope, because reporting that result is its only purpose beyond
+  `drop`. Returning a cancellation error instead would lose the result.
+  Returning the `File` inside one, as TASK-3 asks of consuming checkpoints,
+  would need an error type other than `io::Error` and leave the caller a
+  retry that, cancellation being level-triggered, fails again unless
+  shielded. Like `drop`, it cannot be interrupted (TASK-5).
 - **`fault_point(name) -> bool`** returns `false` under every real runtime and
   folds to a constant; under the simulator it is a seed-driven fault trigger
   (§9.4).
@@ -1090,9 +1098,11 @@ no code after `scope` sees a place a panicking child was mutating; when
   echoes, and panics the rule does not report go to one `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
-  keeps doing so. Operations that consume a value return it inside the error
-  (`SendError::Cancelled(v)`). An in-flight kernel operation is cancelled
-  before the error returns. A cancelled write may already have reached the peer.
+  keeps doing so. Checkpoints that consume a value return it inside the
+  error (`SendError::Cancelled(v)`); `File::close` consumes its `File` but
+  is shielded, not a checkpoint (§1.1). An in-flight kernel operation is
+  cancelled before the error returns. A cancelled write may already have
+  reached the peer.
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
@@ -1108,16 +1118,18 @@ no code after `scope` sees a place a panicking child was mutating; when
   operation's own deadline fall on the same instant, the scope's
   cancellation is observed.
 - **TASK-5. What cancellation cannot interrupt.** Authority-free
-  computation, `Shared::with` acquisition and closures, foreign calls, and
-  joins.
+  computation, `Shared::with` acquisition and closures, foreign calls,
+  joins, and `File::close` (§1.1), which can block on a network file system
+  even inside a shielded scope with a deadline.
   Deadlines are therefore soft. The evented runtime logs a `warn!` record
   for a task that runs more than 100 ms (configurable) without reaching a
   checkpoint; the simulator reports the same condition by step count.
 - **TASK-6. Shielding.** Operations inside `tasks.shield(|| ..)` ignore the
   cancellation of enclosing scopes; bounded cleanup is a shielded scope with
   its own deadline. `Drop` in std does no I/O beyond closing descriptors; a
-  buffered writer dropped unflushed logs a `warn!`. Cleanup that needs I/O is
-  an explicit `close(self)` called under `shield`.
+  buffered writer dropped unflushed logs a `warn!`. `File::close` is itself
+  shielded (§1.1); other cleanup that needs I/O, such as a final write or
+  `sync`, runs under `shield`.
 
 ### 6.3 Joins
 

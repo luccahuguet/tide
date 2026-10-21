@@ -663,9 +663,9 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
   `io::ErrorKind::Cancelled`, `Cancelled` (`std::task`) from `clock.sleep`
   and `tasks.checkpoint()`, and channel errors whose `is_cancelled()` is
   true. Every capability operation that may suspend is a checkpoint;
-  authority-free code, `Shared::with*`, joins, and scope exit are not, and
-  are never interrupted. Work unwinds through ordinary `Err` returns;
-  operations that consume a value return it inside the error
+  authority-free code, `Shared::with*`, joins, scope exit, and `File::close`
+  are not, and are never interrupted. Work unwinds through ordinary `Err`
+  returns; operations that consume a value return it inside the error
   (`SendError::Cancelled(v)`).
 - **Operation deadlines.** `net.get(url, deadline)` returns
   `NetError::Timeout` when `deadline` passes; `clock.sleep_until(t)` and
