@@ -39,17 +39,17 @@ place ::= x            a local variable or parameter
 
 ### 1.2 Moves and copies
 
-- Using a place by value **moves** out of it unless its type is `Copy`, with
-  Rust's meaning: never `&mut T` or a type with a destructor.
-- A moved-out place is uninitialized. Reading or borrowing it is an error
-  until it is assigned. Initialization is tracked per place and flow by flow,
-  at field granularity for owned places (partial moves), as in Rust.
-- Nothing moves out of a place behind a reference, or out of a field of a
-  type with a destructor. `mem::take`, `mem::replace` and `Option::take`
-  cover those cases.
-- A closure captures each place path it uses (Rust 2021 disjoint captures) in
-  the weakest mode its body needs: shared borrow, mutable borrow, or move.
-  `move` forces by-value capture.
+- **MOVE-1.** Using a place by value **moves** out of it unless its type is
+  `Copy`, with Rust's meaning: never `&mut T` or a type with a destructor.
+- **MOVE-2.** A moved-out place is uninitialized. Reading or borrowing it is
+  an error until it is assigned. Initialization is tracked per place and flow
+  by flow, at field granularity for owned places (partial moves), as in Rust.
+- **MOVE-3.** Nothing moves out of a place behind a reference, or out of a
+  field of a type with a destructor. `mem::take`, `mem::replace` and
+  `Option::take` cover those cases.
+- **MOVE-4.** A closure captures each place path it uses (Rust 2021 disjoint
+  captures) in the weakest mode its body needs: shared borrow, mutable
+  borrow, or move. `move` forces by-value capture.
 
 ### 1.3 Drops
 
@@ -65,15 +65,15 @@ place ::= x            a local variable or parameter
 Evaluating `&p` or `&mut p` at program point `P` creates a **loan**
 `ℓ = (p, mode, P)`, and the new reference's origin contains `ℓ` (§2.1).
 
-**Reborrows.** If `p` dereferences references, the checker walks them from
-the one nearest `p` inward. The new reference's origin includes each one's
-origin, and the walk stops after the first shared reference (Rust's
+**LOAN-1. Reborrows.** If `p` dereferences references, the checker walks them
+from the one nearest `p` inward. The new reference's origin includes each
+one's origin, and the walk stops after the first shared reference (Rust's
 supporting-prefixes rule). `&self.src[a..b]` inside a `&mut self` method
 therefore carries `src`'s loans and not the `&mut self` borrow, so it can
 outlive that borrow.
 
-**Accesses** are reads, shared borrows, writes, mutable borrows, moves,
-storage death (end of scope) and drops. An access of kind `k` to `q`
+**LOAN-2.** **Accesses** are reads, shared borrows, writes, mutable borrows,
+moves, storage death (end of scope) and drops. An access of kind `k` to `q`
 **conflicts** with `ℓ = (p, m)` if `p` and `q` overlap and either `m` is
 mutable or `k` is not a read or a shared borrow. Storage death of `x`
 conflicts only with loans of places that `x` owns. Data behind a reference
@@ -89,14 +89,14 @@ does not die with the reference, which is why a method may return
 A loan is **live** at `P` if it belongs to an origin that is live at `P`. An
 origin is live at `P` if a variable that may still be used, or may still be
 dropped with that origin in its drop set (§6), has a type that mentions it.
-Assigning to a reference variable `r` **kills** the loans of places reached
-through `*r`.
+**LOAN-3.** Assigning to a reference variable `r` **kills** the loans of
+places reached through `*r`.
 
-**Implicit reborrow.** Where a `&mut T` value is used and a `&mut T` is
-expected (a call argument, a method receiver, an annotated `let`), it is
+**LOAN-4. Implicit reborrow.** Where a `&mut T` value is used and a `&mut T`
+is expected (a call argument, a method receiver, an annotated `let`), it is
 reborrowed as `&mut *r` rather than moved.
 
-**Two-phase borrows** apply in exactly Rust's three cases:
+**LOAN-5.** **Two-phase borrows** apply in exactly Rust's three cases:
 
 - the autoref `&mut` of a method receiver;
 - a mutable reborrow in a call argument;
@@ -113,9 +113,9 @@ An **origin** is a set of loans: the loans that a reference, or a value of a
 borrowing type, may have been derived from. This is Polonius's reading of a
 Rust lifetime.
 
-- When a value of type `&ρ1 T` flows into a place of type `&ρ2 T`, the
-  checker requires `ρ1 ⊆ ρ2`. Rust's outlives relation `'a: 'b` is the subset
-  relation `ρa ⊆ ρb`.
+- **ORIGIN-1.** When a value of type `&ρ1 T` flows into a place of type
+  `&ρ2 T`, the checker requires `ρ1 ⊆ ρ2`. Rust's outlives relation `'a: 'b`
+  is the subset relation `ρa ⊆ ρb`.
 - `'static` holds no loans and is a subset of every origin.
 - Inside a body, origins are unknowns that the checker solves.
 - In a signature, origins are universally quantified: the caller chooses
@@ -143,9 +143,9 @@ orig(T), T a type parameter = an abstract set
 orig(scalars, str, String, fn pointers, 'static references to Owned data) = ∅
 ```
 
-A reference lists only its outer origin. Well-formedness of `&ρ T` requires
-`σ ⊆ ρ` for every `σ` in `orig(T)`, so `ρ` already covers everything the
-pointee borrows.
+**ORIGIN-2.** Well-formedness of `&ρ T` requires `σ ⊆ ρ` for every `σ` in
+`orig(T)`, so `ρ` already covers everything the pointee borrows, and a
+reference lists only its outer origin.
 
 **The origins of a place** are `orig(p) = orig(type of p)`: the loans held by
 the value stored at `p`. Diagnostics use them to say what a borrow came from.
@@ -166,16 +166,14 @@ RefType      ::= '&' [Lifetime] ['mut'] Type
 PathType     ::= Path ['<' Lifetime (',' Lifetime)* [',' Type (',' Type)*] '>']
 Bound        ::= TraitBound | Lifetime            in `T: ..`, `impl ..`, `dyn ..`
 WherePred    ::= Type ':' Bound ('+' Bound)* | Lifetime ':' Lifetime ('+' Lifetime)*
-Capture      ::= 'use' '<' .. '>'                 only on a return-position `impl Trait`;
-                                   lists every type parameter in scope and every
-                                   lifetime its bounds name, so it cannot be
-                                   written while an argument-position
-                                   `impl Trait` is in scope
+Capture      ::= 'use' '<' .. '>'                 placement in LIFE-2
 ```
 
 - A lifetime parameter is declared on the item that uses it: `fn f<'a, T>`,
   `struct S<'a>`, `enum E<'a>`, `impl<'a> S<'a>`,
   `impl<'a> Iterator for S<'a>`. Each names one origin.
+- **LIFE-1.** Lifetime parameters come before type parameters, as
+  `Generics` gives.
 - `'_` is an elided lifetime (§2.5). In a signature, a borrowing type
   written without its lifetime arguments (`Lexer` for `Lexer<'_>`) elides
   them, as in Rust; in an impl header the bare name is an error (§2.5).
@@ -184,7 +182,11 @@ Capture      ::= 'use' '<' .. '>'                 only on a return-position `imp
   bounds (§2.4 item 3). `T: 'static` is the bound this chapter calls
   `Owned` (§3.7). `+ use<..>` lists what a returned `impl Trait`
   captures (§5.2).
-- **Not accepted** (`FX0201`, `FX0403`, `FX0404`, with a suggested
+- **LIFE-2.** `use<..>` is written only on a return-position `impl Trait`.
+  It lists every type parameter in scope and every lifetime its bounds name,
+  so it cannot be written while an argument-position `impl Trait` is in
+  scope.
+- **LIFE-3. Not accepted** (`FX0201`, `FX0403`, `FX0404`, with a suggested
   rewrite), as beyond D4's power ceiling: lifetime parameters on traits
   (`trait Parse<'a>`), explicit `for<'a>` (higher-ranked lifetimes come from
   elision in `Fn` sugar and `fn` pointer types, §5.4), and generic
@@ -230,18 +232,18 @@ Elision follows Rust's rules exactly.
   every elided output position gets it.
 - **Rule 2.** If the receiver is `&self` or `&mut self`, every elided output
   position gets the receiver reference's origin.
-- **Otherwise** an elided output lifetime is an error (`FX0202`). The fix
-  lists the candidate named lifetimes and `'static`.
+- **LIFE-4. Otherwise** an elided output lifetime is an error (`FX0202`).
+  The fix lists the candidate named lifetimes and `'static`.
 - **Closure-bound sugar.** Inside `Fn(&A) -> &B`, the same rules apply, and
   the argument origins are higher-ranked.
-- **Consts and statics.** Elided lifetimes are `'static`.
-- **Fields** have no elision: a reference field uses a lifetime parameter of
-  its struct (§3.1) or `'static`.
-- **Impl headers.** Each `'_` is a fresh lifetime parameter of the impl
-  (`impl Collector<'_, '_>`). The bare name of a borrowing type is an error,
-  as in Rust (E0726), whose fix adds `<'_>`.
-- **Associated types in impls** have no elision, as in Rust. Write the impl's
-  lifetime: `type Item = &'a str`.
+- **LIFE-5. Consts and statics.** Elided lifetimes are `'static`.
+- **LIFE-6. Fields** have no elision: a reference field uses a lifetime
+  parameter of its struct (§3.1) or `'static`.
+- **LIFE-7. Impl headers.** Each `'_` is a fresh lifetime parameter of the
+  impl (`impl Collector<'_, '_>`). The bare name of a borrowing type is an
+  error, as in Rust (E0726), whose fix adds `<'_>`.
+- **LIFE-8. Associated types in impls** have no elision, as in Rust. Write
+  the impl's lifetime: `type Item = &'a str`.
 - **Default `dyn` bounds** are in §5.1.
 
 ### 2.6 Relation to Rust lifetimes
@@ -272,23 +274,24 @@ whole.
   coercion adds subset constraints by variance (§4); the signature's
   relations become constraints on the fresh origins. The callee's body is
   never consulted.
-- **Bodies.** Signature origins are placeholders, and they are live at every
-  point of the body. Inclusions between placeholders come from the
-  signature's declared outlives bounds and from the well-formedness of its
-  parameter and return types (§2.1, §2.4). Any other inclusion the body
+- **ORIGIN-3. Bodies.** Signature origins are placeholders, and they are
+  live at every point of the body. Inclusions between placeholders come from
+  the signature's declared outlives bounds and from the well-formedness of
+  its parameter and return types (§2.1, §2.4). Any other inclusion the body
   needs is an error; its fix suggests the bound (`'a: 'b`) or a shared
   lifetime, as rustc does.
-- **A local loan reaching a placeholder origin** (a returned reference to a
-  local) conflicts with the local's storage death: "returns a value borrowed
-  from local `x`".
-- **Trait impls.** An impl's method signature must be at least as general as
-  the trait's, checked by subtyping on the instantiated signatures, as rustc
-  does.
+- **ORIGIN-4. A local loan reaching a placeholder origin** (a returned
+  reference to a local) conflicts with the local's storage death: "returns a
+  value borrowed from local `x`".
+- **ORIGIN-5. Trait impls.** An impl's method signature must be at least as
+  general as the trait's, checked by subtyping on the instantiated
+  signatures, as rustc does.
 
 ### 2.8 Precision
 
-v0 accepts a body exactly when Rust's NLL borrow checker accepts it (§11).
-The field-borrow declarations of §7 (v1) map to Rust exactly.
+**ORIGIN-6.** v0 accepts a body exactly when Rust's NLL borrow checker accepts
+it (§11), apart from CLOSURE-3's `fn`-pointer re-check. The field-borrow
+declarations of §7 (v1) map to Rust exactly.
 
 In NLL terms, subset constraints hold at every point of the body, and a
 loan is live where its origin is live and reachable from the borrow without a
@@ -301,9 +304,10 @@ to this definition.
 
 ### 3.1 Lifetime parameters
 
-A struct or enum declares its lifetime parameters as in Rust, and each names
-one origin of the type. Every reference, borrowing type, and `dyn Trait`
-object bound in a field type uses a declared lifetime or `'static`.
+**BORROW-1.** A struct or enum declares its lifetime parameters as in Rust,
+and each names one origin of the type. Every reference, borrowing type, and
+`dyn Trait` object bound in a field type uses a declared lifetime or
+`'static`.
 
 - Origins carried by the type's own type parameters are not lifetime
   parameters. They ride with the type arguments (§3.4).
@@ -356,8 +360,9 @@ denotes `Lexer<'a>`.
   `text`'s origin flows into `src`.
 - `fn lex(text: &str) -> Lexer<'_>`: by rule 1, `Lexer`'s origin is
   `text`'s.
-- In an impl, a constructor is written `fn new(src: &'a str) -> Self`.
-  `fn new(src: &str) -> Self` is an error whose fix names `'a`.
+- **BORROW-2.** In an impl, a constructor is written
+  `fn new(src: &'a str) -> Self`. `fn new(src: &str) -> Self` is an error
+  whose fix names `'a`.
 - A returned type with several origins names each one:
   `-> Match<'n, 'l>` (§10.7).
 
@@ -372,16 +377,16 @@ denotes `Lexer<'a>`.
   `Pure` (`03-authority-concurrency.md` GLOBAL-1), since D7 allows no mutable
   globals. v0 has no lazy statics: a static's value is computed at compile
   time by `const fn` (D7).
-- `Owned` is required by `Box<dyn Trait>` contents in a signature or field
-  (§5.1), `dyn Any`, values handed to tasks that outlive their creator
-  (§8.2), and global registrations.
+- **BORROW-3.** `Owned` is required by `Box<dyn Trait>` contents in a
+  signature or field (§5.1), `dyn Any`, `spawn_isolated` closures (§8.2),
+  and global registrations.
 
 ## 4. Variance and subtyping
 
 ### 4.1 Rules
 
-Tide subtyping comes only from origins and from instantiating higher-ranked
-origins.
+**VAR-1.** Tide subtyping comes only from origins and from instantiating
+higher-ranked origins.
 
 ```
   ρ1 ⊆ ρ2    T1 <: T2              ρ1 ⊆ ρ2    T1 ≡ T2
@@ -389,9 +394,10 @@ origins.
   &ρ1 T1 <: &ρ2 T2               &ρ1 mut T1 <: &ρ2 mut T2
 ```
 
-Each origin parameter and type parameter of a struct or enum gets a variance,
-computed as in Rust: the meet of the variances of its occurrences in the
-field types. Recursive types start from bivariant and take the fixed point.
+**VAR-2.** Each origin parameter and type parameter of a struct or enum gets a
+variance, computed as in Rust: the meet of the variances of its occurrences in
+the field types. Recursive types start from bivariant and take the fixed
+point.
 
 | Constructor | Variance |
 | --- | --- |
@@ -404,7 +410,9 @@ field types. Recursive types start from bivariant and take the fixed point.
 
 `S<ρ̄1> <: S<ρ̄2>` holds per parameter: `ρ1 ⊆ ρ2` when covariant, `ρ2 ⊆ ρ1`
 when contravariant, and equality when invariant. Subtyping applies at Rust's
-coercion sites. Unsizing to `dyn` may shorten the object's origin even behind
+coercion sites.
+
+**VAR-3.** Unsizing to `dyn` may shorten the object's origin even behind
 `&mut`, which is sound because an unsized place cannot be overwritten (Rust
 allows the same).
 
@@ -440,7 +448,7 @@ the `Vec` can end while its elements' origin lives on.
 
 ### 5.1 `dyn Trait`
 
-D2 follows Rust's object-lifetime defaults: outside a body,
+**DYN-1.** D2 follows Rust's object-lifetime defaults: outside a body,
 `Box<dyn Trait>` is `Owned`, while `&dyn Trait` and `&mut dyn Trait` take
 the reference's origin. In detail:
 
@@ -457,7 +465,7 @@ the reference's origin. In detail:
 - `dyn Trait + '_` is an elided origin and follows the elision rules. A
   field names a declared lifetime: `Box<dyn Fn(&Row) -> bool + 'p>`.
 - `dyn Trait + 'static` is `Owned`.
-- A `dyn` type is `Send` or `Sync` only if it names them
+- **DYN-2.** A `dyn` type is `Send` or `Sync` only if it names them
   (`dyn Fn() + Send`), and `Pure` or, in v1, `ThreadBound` only if its trait
   has it as a supertrait, a companion trait such as
   `trait PureFn: Fn() + Pure {}`, because `dyn Fn() + Pure` is not Rust
@@ -468,22 +476,27 @@ the reference's origin. In detail:
 
 - **Argument position.** `impl Trait` is an anonymous type parameter, as in
   Rust.
-- **Return position.** As in Rust 2024, the opaque type captures every
-  generic parameter in scope, lifetimes included, elided ones too;
-  `+ use<..>` lists the captured parameters instead. It is `Owned` when
-  every captured parameter is, or when its bounds state `+ 'static`, which the hidden type must then satisfy. So
+- **OPAQUE-1. Return position.** As in Rust 2024, the opaque type captures
+  every generic parameter in scope, lifetimes included, elided ones too;
+  `+ use<..>` lists the captured parameters instead. It is `Owned` when every
+  captured parameter is, or when its bounds state `+ 'static`, which the
+  hidden type must then satisfy. So
   `fn evens(xs: &[u32]) -> impl Iterator<Item = u32>` borrows `xs` with no
-  annotation, and `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn()
-  -> usize + use<'a>` releases the caller's `key` borrow at the call.
+  annotation, and
+  `fn len_of<'a>(xs: &'a [String], key: &str) -> impl Fn() -> usize + use<'a>`
+  releases the caller's `key` borrow at the call.
 - **Type parameters** are captured as in Rust.
-- **Auto traits.** An opaque type is `Send`, `Sync`, or `Pure` only if its
-  bounds state it, and the hidden type must then satisfy them. Rust's
-  auto-trait leakage would make dependents depend on the function's body,
-  which D12 forbids. In v1 a hidden type that is `ThreadBound` must be
-  returned as `impl Trait + ThreadBound`, as a `dyn` must carry it through a
-  companion supertrait (`03-authority-concurrency.md` §5.4), so erasure cannot hide it from
-  pinning; the opaque type is then `ThreadBound`. `Owned` follows `orig`
-  (§2.2, §3.7), as Rust's `'static` does.
+- **OPAQUE-2. Auto traits.** An opaque type is `Send`, `Sync`, or `Pure` only
+  if its bounds state it, and the hidden type must then satisfy them. Using
+  one as `Send` or `Sync` that its bounds do not state is `FX0205`, which
+  rustc accepts when the hidden type has the trait; a missing `Pure` is
+  `FX0517` (§9). Rust's auto-trait leakage would make dependents depend on the
+  function's body, which D12 forbids. In v1 a hidden type that is
+  `ThreadBound` must be returned as `impl Trait + ThreadBound`, as a `dyn`
+  must carry it through a companion supertrait (`03-authority-concurrency.md`
+  §5.4), so erasure cannot hide it from pinning; the opaque type is then
+  `ThreadBound`. `Owned` follows `orig` (§2.2, §3.7), as Rust's `'static`
+  does.
 
 ### 5.3 Closures
 
@@ -493,17 +506,17 @@ the reference's origin. In detail:
 - A closure that captures a borrow is a borrowing value: it may be used
   locally, passed as an argument, or stored inside a borrowing type such as
   `Map<I, F>`.
-- It may be returned, or stored in a field, only where its origins are named
-  or captured: a returned `impl Fn() -> usize` (§5.2),
-  `-> Box<dyn Fn() + 'a>`, a field
-  `pred: Box<dyn Fn(&Row) -> bool + 'p>`, or a field whose type is a type
-  parameter.
+- **CLOSURE-1.** It may be returned, or stored in a field, only where its
+  origins are named or captured: a returned `impl Fn() -> usize` (§5.2),
+  `-> Box<dyn Fn() + 'a>`, a field `pred: Box<dyn Fn(&Row) -> bool + 'p>`, or
+  a field whose type is a type parameter.
 - `move` changes the capture mode, not whether the closure borrows. A `move`
   closure that captures a `&str` still carries that string's origin. A
   closure is `Owned` exactly when every captured value is `Owned`.
 - Where `Owned` is required (`Box<dyn Fn()>` in a signature or field, a
-  task that outlives its creator, a global registration), the usual fix is `move` plus owning the
-  data (`to_string()`, `clone()`, or an `Arc`, created with `&Tasks`).
+  `spawn_isolated` closure, a global registration), the usual fix is `move`
+  plus owning the data (`to_string()`, `clone()`, or an `Arc`, created with
+  `&Tasks`).
 
 ### 5.4 Higher-ranked origins
 
@@ -511,26 +524,33 @@ the reference's origin. In detail:
   and of `fn` pointer types, are higher-ranked as in Rust.
   `F: Fn(&T) -> bool` is `for<'x> Fn(&'x T) -> bool`. D4's "no rank-N types"
   restricts types, not origins.
-- A closure literal takes its signature from its expected type. If a closure
-  returns a borrow of its argument and has no expected type, that is an
-  error. The fix annotates the closure's parameter and return types.
+- **CLOSURE-2.** A closure literal takes its signature from its expected
+  type. With none, a parameter annotation that elides its lifetime makes
+  that origin higher-ranked, as in Rust, so returning a borrow of the
+  parameter is an error: in `|t: &str| -> &str { t }` the two `&str`
+  origins are unrelated. A named lifetime (`|t: &'a str| -> &'a str { t }`)
+  or no annotation (`let f = |t| t;`, typed by its call) is accepted. The
+  fix passes the closure straight to a parameter bounded by
+  `Fn(&str) -> &str`, names the lifetime, or writes a `fn` item.
 - A higher-ranked origin gets a lower bound only through the
   well-formedness of the argument type that carries it: in
   `FnOnce(Scope<'_, 'env, E>)`, `Scope`'s declared `'env: 's` gives
   `ρenv ⊆ ρs`, so the
   closure must work for every `ρs` that carries the loans of `'env`.
   Scoped tasks use this (§8.2), as Rust's `std::thread::scope` does.
-- When a function item is coerced to a `fn` pointer type, the bounds implied
-  by its signature are checked again at the target instantiation. This closes
+- **CLOSURE-3.** When a function item is coerced to a `fn` pointer type, the
+  bounds implied by its signature are checked again at the target
+  instantiation; one that fails is `FX0206`, which rustc accepts. This closes
   the class of rustc bug rust-lang/rust#25860, where implied bounds are lost
   through `fn` pointer variance.
 
 ## 6. Drop check
 
-**Rule DC.** When a value of type `T` is dropped at point `P`, by scope end,
-reassignment or temporary cleanup, every origin in `dropck(T)` must be live
-at `P`. In words, data borrowed by a value with a destructor must strictly
-outlive that value: its loans are still valid when the destructor runs.
+**DROP-1. Rule DC.** When a value of type `T` is dropped at point `P`, by
+scope end, reassignment or temporary cleanup, every origin in `dropck(T)` must
+be live at `P`. In words, data borrowed by a value with a destructor must
+strictly outlive that value: its loans are still valid when the destructor
+runs.
 
 ```
 dropck(T)            = orig(T)    T has a user `impl Drop`, is `dyn`, or is a type parameter
@@ -552,7 +572,9 @@ their elements and free memory: `Box`, `Vec`, `VecDeque`, `HashMap`,
 `Shared` and the channel ends. These use the container rule above, which is
 the equivalent of Rust's `#[may_dangle]`. Each exemption is std-internal,
 counted in std's trust surface, and covered by tests under a Miri-style
-checker. Users cannot write one.
+checker. **DROP-2.** Users cannot write one: `#[may_dangle]` is an unstable
+feature, which the driver never enables (`03-authority-concurrency.md`
+ADMIT-2).
 
 A user type with `impl Drop` gets the conservative rule; the fix is to keep
 the destructor on an inner owned type. Thanks to the exemption, a
@@ -604,8 +626,8 @@ rustc accepts as disjoint borrows.
 ### 8.1 `Send`, `Sync` and task isolation
 
 `Send` means a value may move to another task. `Sync` means `&T` may be
-shared with another task; `T: Sync` exactly when `&T: Send`. Both are derived
-structurally, as in Rust:
+shared with another task; `T: Sync` exactly when `&T: Send`. **SEND-1.** Both
+are derived structurally, as in Rust:
 
 | Type | `Send` | `Sync` |
 | --- | --- | --- |
@@ -620,13 +642,14 @@ structurally, as in Rust:
 | `Task<'s, U, E>` | if `U, E: Send` | if `U, E: Send` |
 | capabilities, `Scope<'s, 'env, E>`, atomics | yes | yes |
 
-`unsafe impl Send` and `unsafe impl Sync` are allowed in packages granted
-`unsafe`, and each one is a trust hole.
+**SEND-2.** `unsafe impl Send` and `unsafe impl Sync` are allowed only in
+packages granted `unsafe` (`FX0901`), and each one is a trust hole.
 
-**Task boundaries** require `Send` (by value) or `Sync` (by reference): a
-spawned child's captures, so the closure is `Send`; channel messages;
-`Shared` payloads; a child's result; and the branches of `join`, `par_map`
-and `par_for`, including the slice elements they share or split (§8.5).
+**SEND-3. Task boundaries** require `Send` (by value) or `Sync` (by
+reference): a spawned child's captures, so the closure is `Send`; channel
+messages; `Shared` payloads; a child's result; and the branches of `join`,
+`par_map` and `par_for`, including the slice elements they share or split
+(§8.5).
 
 **Task isolation (D8).** Under the evented runtime (v1), a task may migrate
 between OS threads at a suspension point while it holds values that are not
@@ -679,7 +702,7 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
   higher-ranked (§5.4): `body` must work for every `σ` that carries the
   loans of the `&Tasks` borrow. Because the caller chooses that borrow,
   children can borrow anything that outlives the `scope` call.
-- **`F: .. + 's` and `U: 's`** impose `F: σ` and `U: σ`.
+- **SCOPE-1. `F: .. + 's` and `U: 's`** impose `F: σ` and `U: σ`.
   Everything a child borrows stays borrowed until the scope ends:
   - inside the body, `σ` is a placeholder, so it is live at every point;
   - scope exit joins every child and cannot be cancelled (D8);
@@ -687,19 +710,20 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
 
   The parent body therefore cannot mutate, move or free a place that a child
   borrows.
-- **`Task<'s, U, E>`** has origin `σ`. Because `σ` is higher-ranked, neither
-  a `Scope` nor a `Task` can escape through `T`.
-- **`spawn_isolated`** takes an `Owned` closure, so it borrows nothing from
-  the caller and has no origin to check.
+- **SCOPE-2. `Task<'s, U, E>`** has origin `σ`. Because `σ` is higher-ranked,
+  neither a `Scope` nor a `Task` can escape through `T`.
+- **SCOPE-3. `spawn_isolated`** takes an `Owned` closure (`FX0203`), so it
+  borrows nothing from the caller and has no origin to check.
 - **Grandchildren.** A child may capture the `Scope` (`Scope: σ` holds).
   `σ` is invariant, so it cannot shrink to admit shorter borrows.
-- **A scope passed down** (`fn serve(bg: Scope<'_, '_, E>, conn: Conn)`)
-  carries a signature origin in `serve`. A child spawned there must outlive
-  it. That means it owns its data, or it borrows what the signature ties to
-  the scope, as in `fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`.
-  This is the precise form of D2's "tasks spawned into a long-lived scope
-  capture `Owned` values": a function's own locals never outlive a scope it
-  received, so its children cannot borrow them.
+- **SCOPE-4. A scope passed down**
+  (`fn serve(bg: Scope<'_, '_, E>, conn: Conn)`) carries a signature origin in
+  `serve`. A child spawned there must outlive it. That means it owns its data,
+  or it borrows what the signature ties to the scope, as in
+  `fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`. This is the precise
+  form of D2's "tasks spawned into a long-lived scope capture `Owned` values":
+  a function's own locals never outlive a scope it received, so its children
+  cannot borrow them.
 
 In Rust: Tide's std implements it over `std::thread::scope`, with `'env`
 taken to be the `&Tasks` borrow. `Scope<'s, 'env, E>` maps to `&'s std::thread::Scope<'s, 'env>`.
@@ -738,12 +762,12 @@ it.
 - **`Shared<T>`** requires `T: Send + Pure` (D8). It is a counted handle,
   invariant in `T`, with `orig(Shared<T>) = orig(T)`. It is `Send` and
   `Sync`, not `Pure`, and creating one takes `&Tasks` (D7).
-- **`Shared::with(&a, f)`** and **`Shared::with2(&a, &b, f)`** (and the
-  provisional `with_all` over a slice) replace draft 2's `lock` keyword. The
-  closure has type `FnOnce(&mut T1, …) -> R`, which elision makes
-  `for<'σ> FnOnce(&'σ mut T1, …) -> R`: each payload
-  reference gets a fresh higher-ranked `σ`, so no value carrying `σ` escapes
-  into the result or into captured places.
+- **SHARED-1. `Shared::with(&a, f)`** and **`Shared::with2(&a, &b, f)`** (and
+  the provisional `with_all` over a slice) replace draft 2's `lock` keyword.
+  The closure has type `FnOnce(&mut T1, …) -> R`, which elision makes
+  `for<'σ> FnOnce(&'σ mut T1, …) -> R`: each payload reference gets a fresh
+  higher-ranked `σ`, so no value carrying `σ` escapes into the result or into
+  captured places.
 - **The closure** is `Pure`, so it captures no capability and no `Shared`
   handle; with `Pure` payloads it can neither suspend nor call `with` again
   (D8). Both methods return `Result<R, LockError>`, where `LockError` is

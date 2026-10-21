@@ -69,6 +69,9 @@ pub fn nest(tasks: &Tasks) {
   An error on an unmarked line, an uncoded error where no `error` mark is,
   or an error in another file fails the case. A case whose only marks are
   `FX` must pass rustc. Warnings are ignored.
+- A case has no manifest, so its package holds no grants: an `unsafe impl`
+  in a case is `FX0901`, and a case accepted under a grant waits for
+  manifests.
 
 The shape follows rustc's own UI tests (`//@` directives, `//~` marks) and
 the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
@@ -90,16 +93,17 @@ cannot express a verdict a rule needs, record the gap on the case's bead.
 
 A rule ID is `PREFIX-N`: an uppercase prefix naming a group of rules and a
 number counted from 1 within the prefix, as 03 already does (`ROOT-1`,
-`LOCK-4`). Each prefix belongs to one chapter, which defines each of
-its rules with a bold `**PREFIX-N.**` lead, optionally followed by a title,
-at the start of the rule's bullet or list item. An ID is never renumbered or
+`LOCK-4`). Each prefix belongs to one chapter, which defines each of its rules
+with a bold `**PREFIX-N.**` lead, optionally followed by a title, at the start
+of the rule's bullet, list item, or sentence. An ID is never renumbered or
 reused: a removed rule's ID stays retired, and a new rule takes the next
 number. A rule another chapter restates keeps its owner's ID, and the
-restatement cites it.
+restatement cites it. In `rules.md`'s first column a chapter's own ID goes
+bare (`MOVE-1`), and `= ID` marks a row that restates another chapter's rule.
 
-Most rules in 02 and 04, and a few in 03, have no ID yet (`none yet` in
-`rules.md`). The bead that writes their cases assigns them from these
-prefixes, defining each ID in its section:
+Some rules in 02, 03, and 04 have no ID yet (`none yet` in `rules.md`). The
+bead that writes their cases assigns them from these prefixes, defining each
+ID in its section:
 
 | Prefix | Section | Rules |
 | --- | --- | --- |

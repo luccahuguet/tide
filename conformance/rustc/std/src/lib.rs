@@ -211,8 +211,24 @@ pub mod task {
         {
             unimplemented!()
         }
+        pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
+        where
+            F: FnOnce() -> T + Send + 'static,
+        {
+            unimplemented!()
+        }
         pub fn limit(&self, n: usize) -> Tasks { unimplemented!() }
     }
+
+    /// Reference 7.1 (provisional); an `Error` (reference 2.2).
+    #[derive(Debug)]
+    pub struct Panicked {
+        pub message: String,
+    }
+    impl std::fmt::Display for Panicked {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
+    }
+    impl std::error::Error for Panicked {}
 
     /// `Scope<'s, 'env: 's, E>`: `Copy`, `'s` and `'env` invariant, as in std (02 §8.2).
     pub struct Scope<'s, 'env: 's, E> {
@@ -232,9 +248,16 @@ pub mod task {
         }
     }
 
+    /// `Send` and `Sync` exactly when `U, E: Send` (02 §8.1's table), through the
+    /// impls below: a `Mutex<(U, E)>` marker would give `Sync` iff `Send` but make
+    /// `U` and `E` invariant.
+    /// GUESS: the variance (`'s` invariant, `U` and `E` covariant); 02 §4 does
+    /// not table `Task`.
     pub struct Task<'s, U, E> {
-        _p: PhantomData<(&'s mut &'s (), fn() -> (U, E))>,
+        _p: PhantomData<(&'s mut &'s (), fn() -> (U, E), *const ())>,
     }
+    unsafe impl<U: Send, E: Send> Send for Task<'_, U, E> {}
+    unsafe impl<U: Send, E: Send> Sync for Task<'_, U, E> {}
     impl<U, E> Task<'_, U, E> {
         pub fn join(self) -> Result<U, E> { unimplemented!() }
     }

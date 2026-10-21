@@ -19,46 +19,53 @@ not cite is a best mapping that a case must confirm.
 
 | ID | Section (file:line of the definition) | Rule, one line | Decided by | FX code(s) / rustc |
 | --- | --- | --- | --- | --- |
-| none yet | §1.2, 02:43 | `Copy` never applies to `&mut T` or to a type with a destructor | rustc | E0184 / E0204 |
-| none yet | §1.2, 02:44 | Reading or borrowing a moved-out place before it is reassigned is an error | rustc | E0382 |
-| none yet | §1.2, 02:47 | Nothing moves out of a place behind a reference, or out of a field of a type with a destructor | rustc | E0507 / E0509 |
-| none yet | §1.4 [Loan], 02:84 | An access that conflicts with a live loan is an error | rustc | E0499 / E0502 / E0505 / E0506 |
-| none yet | §1.4, 02:99 | Two-phase borrows apply only in Rust's three cases | rustc | NLL |
-| none yet | §2.1, 02:116 | A value of `&ρ1 T` flowing into `&ρ2 T` needs `ρ1 ⊆ ρ2` | rustc | lifetime errors |
-| none yet | §2.2, 02:146 | Well-formedness of `&ρ T` needs every origin of `T` to be `⊆ ρ` | rustc | E0491 / implied bounds |
-| none yet | §2.3 grammar, 02:160 | Lifetime parameters come before type parameters | rustc | parse error |
-| none yet | §2.3 grammar, 02:169 | `use<..>` only on a return-position `impl Trait`, listing every in-scope type parameter; not while an argument-position `impl Trait` is in scope | rustc | precise-capturing errors |
-| none yet | §2.3, 02:187 | Rejects lifetime parameters on traits, explicit `for<'a>`, and GATs (beyond D4's ceiling) | checker | FX0201, FX0404, FX0403 |
-| none yet | §2.5, 02:233 | An elided output lifetime that rules 1 and 2 do not resolve is an error | both | FX0202; rustc E0106 |
-| none yet | §2.5, 02:238 | Fields have no elision: a reference field names a struct lifetime or `'static` | rustc | E0106 |
-| none yet | §2.5, 02:241 (also 02:181) | The bare name of a borrowing type in an impl header is an error | rustc | E0726 |
-| none yet | §2.5, 02:243 | Associated types in impls have no elision | rustc | E0106 / E0637 |
-| none yet | §2.7 Bodies, 02:275 | A body may use inclusions between signature origins only from declared or implied bounds | rustc | "lifetime may not live long enough" |
-| none yet | §2.7, 02:281 | A local loan reaching a placeholder origin (a returned reference to a local) is an error | rustc | E0515 |
-| none yet | §2.7, 02:284 | An impl method's signature must be at least as general as the trait's | rustc | E0195 / E0308 |
-| none yet | §2.8, 02:290 | v0 accepts a body exactly when NLL accepts it (no Polonius) | rustc | NLL |
-| none yet | §3.1, 02:305 | Every reference, borrowing type, and `dyn` bound in a field uses a declared lifetime or `'static` | rustc | E0106 / E0261 |
-| none yet | §3.6, 02:360 | In `impl<'a> Lexer<'a>`, `fn new(src: &str) -> Self` is an error | rustc | lifetime error |
-| none yet | §3.7, 02:375 | `Owned` (`'static`) needed for `Box<dyn Trait>` in a signature or field, `dyn Any`, and tasks that outlive their creator | both | rustc `'static` errors; FX0203 (ref:207) |
-| none yet | §4.1, 02:386 (table 02:396, per-parameter rule 02:405) | Subtyping comes only from origins; variances as tabled (`&mut T`, cells, `Shared` invariant) | rustc | lifetime / variance errors |
-| none yet | §5.1, 02:447 | `dyn` object-lifetime defaults: behind `&` it takes the reference's origin; elsewhere outside a body `'static` | rustc | `'static` errors |
-| none yet | §5.1, 02:460 | A `dyn` is `Send`/`Sync` only if it names them, and `Pure` only through a companion supertrait (`dyn Fn() + Pure` is E0225) | both | E0225 / E0277; FX0517 |
-| none yet | §5.2, 02:471 | A return-position `impl Trait` captures every in-scope generic; with `+ 'static` the hidden type must satisfy it | rustc | capture / `'static` errors |
-| none yet | §5.2, 02:479 | An opaque type is `Send`, `Sync`, or `Pure` only if its bounds state it (no auto-trait leakage) | checker | no FX code (rustc leaks `Send`/`Sync`, so it accepts what Tide rejects) |
-| none yet | §5.3, 02:496 | A closure that captures a borrow may be returned or stored only where its origins are named or captured | rustc | E0373 / lifetime errors |
-| none yet | §5.4, 02:514 | A closure that returns a borrow of its argument needs an expected type or annotations | rustc | lifetime error |
-| none yet | §5.4, 02:523 | Coercing a fn item to a `fn` pointer re-checks its implied bounds (closes rust#25860) | checker | no FX code (rustc accepts) |
-| none yet | §6, 02:530 | "Rule DC": Drop check: every origin in `dropck(T)` must be live where `T` drops | rustc | E0597 / E0713 |
-| none yet | §6, 02:555 | Users cannot write a drop-check exemption (`#[may_dangle]`) | rustc (unstable feature, under ADMIT-2) | E0658 / E0725 |
-| none yet | §8.1, 02:606 (table 02:610) | `Send`/`Sync` are derived structurally per the table | rustc | E0277 |
-| none yet | §8.1, 02:623 | `unsafe impl Send`/`Sync` only in packages granted `unsafe` | checker | FX0901 (ref:953) |
-| none yet | §8.1, 02:626 | Task boundaries need `Send` (by value) or `Sync` (by reference) | rustc | E0277 |
-| none yet | §8.2, 02:682 | Child captures and results outlive `σ`; the parent cannot mutate, move, or free a lent place before the scope ends | rustc | E0373 / E0499 / E0505 / E0597 |
-| none yet | §8.2, 02:690 | Neither a `Scope` nor a `Task` escapes the scope body through `T` | rustc | higher-ranked lifetime error |
-| none yet | §8.2, 02:692 | `spawn_isolated` takes an `Owned` closure | rustc | `'static` errors |
-| none yet | §8.2, 02:696 | A child spawned on a passed-down scope owns its data or borrows only what the signature ties to the scope | rustc | lifetime errors |
+| MOVE-1 | §1.2, 02:43 | `Copy` never applies to `&mut T` or to a type with a destructor | rustc | E0184 / E0204 |
+| MOVE-2 | §1.2, 02:44 | Reading or borrowing a moved-out place before it is reassigned is an error | rustc | E0382 |
+| MOVE-3 | §1.2, 02:47 | Nothing moves out of a place behind a reference, or out of a field of a type with a destructor | rustc | E0507 / E0509 |
+| MOVE-4 | §1.2, 02:50 | A closure captures each place path in the weakest mode its body needs (shared borrow, mutable borrow, or move); `move` forces by-value capture | rustc | E0382 / E0502 / E0503 |
+| LOAN-1 | §1.4 Reborrows, 02:68 | A reborrow's origin includes each dereferenced reference's origin, from the nearest inward, stopping after the first shared one | rustc | uncoded "lifetime may not live long enough" |
+| LOAN-2 | §1.4 [Loan], 02:84 | An access that conflicts with a live loan is an error | rustc | E0499 / E0502 / E0505 / E0506 |
+| LOAN-3 | §1.4, 02:92 | Assigning to a reference variable `r` kills the loans of places reached through `*r` | rustc | E0499 |
+| LOAN-4 | §1.4 Implicit reborrow, 02:95 | A `&mut T` used where a `&mut T` is expected is reborrowed, not moved | rustc | E0382 |
+| LOAN-5 | §1.4, 02:99 | Two-phase borrows apply only in Rust's three cases | rustc | NLL |
+| ORIGIN-1 | §2.1, 02:116 | A value of `&ρ1 T` flowing into `&ρ2 T` needs `ρ1 ⊆ ρ2` | rustc | lifetime errors |
+| ORIGIN-2 | §2.2, 02:146 | Well-formedness of `&ρ T` needs every origin of `T` to be `⊆ ρ` | rustc | E0491 / implied bounds |
+| LIFE-1 | §2.3 grammar, 02:160 | Lifetime parameters come before type parameters | rustc | parse error |
+| LIFE-2 | §2.3 grammar, 02:169 | `use<..>` only on a return-position `impl Trait`, listing every in-scope type parameter; not while an argument-position `impl Trait` is in scope | rustc | precise-capturing errors |
+| LIFE-3 | §2.3, 02:187 | Rejects lifetime parameters on traits, explicit `for<'a>`, and GATs (beyond D4's ceiling) | checker | FX0201, FX0404, FX0403 |
+| LIFE-4 | §2.5, 02:233 | An elided output lifetime that rules 1 and 2 do not resolve is an error | both | FX0202; rustc E0106 |
+| LIFE-5 | §2.5, 02:237 | Elided lifetimes in consts and statics are `'static` | rustc | E0597 |
+| LIFE-6 | §2.5, 02:238 | Fields have no elision: a reference field names a struct lifetime or `'static` | rustc | E0106 |
+| LIFE-7 | §2.5, 02:241 (also 02:181) | The bare name of a borrowing type in an impl header is an error | rustc | E0726 |
+| LIFE-8 | §2.5, 02:243 | Associated types in impls have no elision | rustc | uncoded error ("declared without lifetime parameters") |
+| ORIGIN-3 | §2.7 Bodies, 02:275 | A body may use inclusions between signature origins only from declared or implied bounds | rustc | "lifetime may not live long enough" |
+| ORIGIN-4 | §2.7, 02:281 | A local loan reaching a placeholder origin (a returned reference to a local) is an error | rustc | E0515 |
+| ORIGIN-5 | §2.7, 02:284 | An impl method's signature must be at least as general as the trait's | rustc | E0195; uncoded "`impl` item signature doesn't match" |
+| ORIGIN-6 | §2.8, 02:290 | v0 accepts a body exactly when NLL accepts it (no Polonius), apart from CLOSURE-3's `fn`-pointer re-check | rustc | NLL |
+| BORROW-1 | §3.1, 02:305 | Every reference, borrowing type, and `dyn` bound in a field uses a declared lifetime or `'static` | rustc | E0106 / E0261 |
+| BORROW-2 | §3.6, 02:360 | In `impl<'a> Lexer<'a>`, `fn new(src: &str) -> Self` is an error | rustc | lifetime error |
+| BORROW-3 | §3.7, 02:375 | `Owned` (`'static`) needed for `Box<dyn Trait>` in a signature or field, `dyn Any`, and `spawn_isolated` closures (SCOPE-3) | both | rustc `'static` errors; FX0203 (ref:207) |
+| VAR-1 | §4.1, 02:383 | Subtyping comes only from origins: `&` is covariant, `&mut T` invariant in `T` | rustc | lifetime / variance errors |
+| VAR-2 | §4.1, 02:392 (table 02:396, per-parameter rule 02:405) | Variances as tabled and computed per parameter of a struct or enum (cells, `Shared`, and `dyn Trait<A>`'s `A` invariant; `fn` arguments contravariant) | rustc | lifetime / variance errors |
+| VAR-3 | §4.1, 02:407 | Unsizing to `dyn` may shorten the object's origin even behind `&mut` | rustc | lifetime errors |
+| DYN-1 | §5.1, 02:447 | `dyn` object-lifetime defaults: behind `&` it takes the reference's origin; elsewhere outside a body `'static` | rustc | `'static` errors |
+| DYN-2 | §5.1, 02:460 | A `dyn` is `Send`/`Sync` only if it names them, and `Pure` only through a companion supertrait (`dyn Fn() + Pure` is E0225) | both | E0225 / E0277; FX0517 |
+| OPAQUE-1 | §5.2, 02:471 | A return-position `impl Trait` captures every in-scope generic; with `+ 'static` the hidden type must satisfy it | rustc | capture / `'static` errors |
+| OPAQUE-2 | §5.2, 02:479 | An opaque type is `Send`, `Sync`, or `Pure` only if its bounds state it (no auto-trait leakage) | checker | FX0205 (`Send`/`Sync`, defined in 02 §5.2; rustc accepts it when the hidden type has the trait); FX0517 (`Pure`) |
+| CLOSURE-1 | §5.3, 02:496 | A closure that captures a borrow may be returned or stored only where its origins are named or captured | rustc | E0373 / lifetime errors |
+| CLOSURE-2 | §5.4, 02:514 | With no expected type, a closure cannot return a borrow of a parameter whose annotation elides its lifetime (a named lifetime or inferred types are accepted) | rustc | lifetime error |
+| CLOSURE-3 | §5.4, 02:523 | Coercing a fn item to a `fn` pointer re-checks its implied bounds (closes rust#25860) | checker | FX0206 (defined in 02 §5.4; rustc accepts) |
+| DROP-1 | §6, 02:530 | "Rule DC": Drop check: every origin in `dropck(T)` must be live where `T` drops | rustc | E0597 / E0713 |
+| DROP-2 | §6, 02:555 | Users cannot write a drop-check exemption (`#[may_dangle]`) | rustc (unstable feature, under ADMIT-2) | E0658 / E0725 |
+| SEND-1 | §8.1, 02:606 (table 02:610) | `Send`/`Sync` are derived structurally per the table | rustc | E0277 |
+| SEND-2 | §8.1, 02:623 | `unsafe impl Send`/`Sync` only in packages granted `unsafe`; an accepting case under a grant awaits manifests | checker | FX0901 (ref:953) |
+| SEND-3 | §8.1, 02:626 | Task boundaries need `Send` (by value) or `Sync` (by reference) | rustc | E0277 |
+| SCOPE-1 | §8.2, 02:682 | Child captures and results outlive `σ`; the parent cannot mutate, move, or free a lent place before the scope ends | rustc | E0373 / E0499 / E0505 / E0506 / E0597 |
+| SCOPE-2 | §8.2, 02:690 | Neither a `Scope` nor a `Task` escapes the scope body through `T` | rustc | higher-ranked lifetime error (uncoded) |
+| SCOPE-3 | §8.2, 02:692 | `spawn_isolated` takes an `Owned` closure | both | FX0203 (ref:207); E0373 / E0521 |
+| SCOPE-4 | §8.2, 02:696 | A child spawned on a passed-down scope owns its data or borrows only what the signature ties to the scope | rustc | E0373 / E0621 |
 | = LOCK-1 | §8.4, 02:738 | `Shared<T>` needs `T: Send + Pure`; creating one takes `&Tasks` | both | FX0606; FX0505 (ref:725); E0277 / E0061 |
-| none yet | §8.4, 02:743 | `with`/`with2` payload references are higher-ranked, so nothing carrying `σ` escapes | rustc | higher-ranked lifetime error |
+| SHARED-1 | §8.4, 02:743 | `with`/`with2` payload references are higher-ranked, so nothing carrying `σ` escapes | rustc | higher-ranked lifetime error (uncoded) / E0521 |
 | = LOCK-4 | §8.4, 02:747 | The `with` closure is `Pure` | checker | FX0603 |
 | none yet | §8.5, 02:764 (restates 03 §8.1) | `join`: `FnOnce + Pure + Send`; `par_map`/`par_for`: `Fn + Pure + Send + Sync`; shared captures `Pure + Sync`; `&mut` captures disjoint | both | FX0610, FX0611; E0277 / E0499 |
 | = PAR-4 | §8.5, 02:775 | Elements: `Pure`, plus `Sync` when shared and `Send` when split or moved | both | FX0612; E0277 |
