@@ -5,13 +5,13 @@ reference for the v0 core. Load it when you want a Rust habit's fix, a
 complete program, the reading the reference takes where the design documents
 disagree, the simulator's fault injection and crashable nodes, what a sealed
 interface allows, when another agent's branch is safe to test without a VM,
-or what v0 leaves out. Its sections continue the core's
-numbering, and a bare section number below 14 refers to the core. Sections
-14–16 tabulate or illustrate rules the core states; 17–19 and Appendix A
-hold what the core only points to. It is outside the core's 25,000-token
-budget (D14).
+how process handles work, or what v0 leaves out. Its sections continue the
+core's numbering, and a bare section number below 14 refers to the core.
+Sections 14–16 tabulate or illustrate rules the core states; 17–20 and
+Appendix A hold what the core only points to. It is outside the core's
+25,000-token budget (D14).
 
-Core count: 24,995 tokens on 2026-10-20, measured by
+Core count: 24,993 tokens on 2026-10-20, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -521,6 +521,52 @@ exhaust CPU, memory, or output, so set time and memory limits. This covers
 `tide check`, `tide test`, `tide sim`, and `tide review` only: `tide run`,
 `tide eval`, a built binary, and anything else the branch asks you to
 execute still need your session's sandbox.
+
+## 20. Process handles
+
+A `Command`, like a `File`, is a resource handle: it carries the authority
+of the `Proc` that made it, because `output()`, `status()`, and `spawn()`
+start a process with no capability argument. So `fn configure(cmd: &mut
+Command)` is not authority-free, and `Command` is not `Pure`. `OpenOptions`
+is the opposite: `Pure` data that does nothing until `fs.open_with` takes
+it.
+
+```rust
+use std::{io::Write, process::Stdio};
+let mut child = proc.command("sort")
+    .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+let mut input = child.stdin.take().unwrap();   // ChildStdin: write to the child
+input.write_all(b"b\na\n")?;
+drop(input);                                   // close it: sort sees the end
+let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
+```
+
+- **Rust's API.** `Command` and `Child` keep Rust's methods and receivers,
+  with two exceptions. There is no ambient `Command::new` (`FX0501`), and
+  `wait_with_output` takes `&mut self`, not `self`, so a cancelled call
+  leaves the `Child` with you to `kill` and `wait` under `shield` (03 §1.1).
+  As in Rust, the builder methods, `output`, `status`, `spawn`, `wait`, and
+  `kill` take `&mut self`. `Child` keeps its public fields `stdin`,
+  `stdout`, and `stderr`, each an `Option` of a pipe end (`ChildStdin`,
+  `ChildStdout`, `ChildStderr`), so `child.stdout.take()` works. Each handle
+  still has a private field, so no struct literal can make one (03 ROOT-4).
+- **Pipe ends** carry `Proc`'s authority and are not `Pure`; their reads
+  and writes suspend and are checkpoints.
+- **`Stdio`** has `piped()`, `inherit()`, and `null()`, which take no
+  capability, and `From` a `File` or a pipe end, so
+  `.stdin(a.stdout.take().unwrap())` pipes child `a` into the next. It
+  has no other conversion: no `From<io::Stdout>`, since `stdout()` is a
+  sink, not a file descriptor (6.5), and no `From<OwnedFd>`. A `Stdio`
+  can hold a handle, so it is not `Pure`.
+- **Signals.** `proc.signals(&[Signal]) -> io::Result<Signals>` subscribes
+  to the listed signals; `Signals::recv` suspends until one arrives.
+- **Paths.** `Command`, `Child`, the pipe ends, `Stdio`, `Signal`, and
+  `Signals` are in `std::process`, and `ReadDir` and `DirEntry` in
+  `std::fs`: Rust's paths, where Rust has the type.
+- **Receivers.** Only the capability types of 6.1 take `&self` for every
+  method. Handles keep Rust's receivers, except `wait_with_output`; of
+  Tide's own handle methods, `File::sync`, `read_owned`, `write_owned`,
+  and `Signals::recv` take `&self`, and `File::close` takes `self`.
 
 ## Appendix A. Later tiers (not in v0)
 

@@ -332,14 +332,14 @@ do, in every dependency.
 | `Rand` (`std::rand`) | `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
-| `Proc` (`std::process`) | `command(prog) -> Command` (Rust's builder), `exit(code: i32) -> !` | `only(["git", ..])` |
+| `Proc` (`std::process`) | `command(prog) -> Command` (a handle: companion 20), `exit(code: i32) -> !` | `only(["git", ..])` |
 | `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
-- Every capability method takes `&self` (provisional): `&Rand` or `&Stdin`
-  is enough. For many draws take `let mut rng = rand.rng();` once: a
-  `Pcg64` is an ordinary `Pure` value with `&mut self` methods (`next_u64`,
-  `gen_range`, `gen_bool`, `shuffle`); `Pcg64::seed_from_u64(n)` needs no
-  capability.
+- Their methods take `&self` (provisional; handles' receivers: companion
+  20): `&Rand` or `&Stdin` is enough. For many draws take `let mut
+  rng = rand.rng();` once: a `Pcg64` is an ordinary `Pure` value with
+  `&mut self` methods (`next_u64`, `gen_range`, `gen_bool`, `shuffle`);
+  `Pcg64::seed_from_u64(n)` needs no capability.
 - Capabilities are not `Copy` or `Pure` (6.6). They are `Clone` (same
   authority; provisional) and `Send + Sync`, so scoped children may borrow
   them. Pass them by reference: `fs: &Fs`.
@@ -467,7 +467,7 @@ capability, never suspend, and keep a function authority-free, so
 it with a blanket impl, so rustc accepts every bound; Tide's checker decides
 it structurally wherever a type meets a `Pure` bound or is coerced to a
 `Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
-own code). **Not `Pure`**: the capability types and `File`, `TcpStream`, and
+own code). **Not `Pure`**: the capability types and `File`, `Command`, and
 other handles derived from them; synchronization handles (`Shared`, channel
 ends, `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `std::sync::raw`); raw
 pointers; a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded
@@ -562,8 +562,8 @@ waits such as `recv_timeout` (use `recv_deadline`); and `include_str!`,
 
 **Thread a capability.** When a leaf starts needing authority, add the
 parameter along the call chain; never reach for a global or `Root`.
-`tide fix --thread Fs --to decode_user` makes that edit along the shortest
-path from a holder, test call sites included.
+`tide fix --thread Fs --to decode_user` makes that edit, test call sites
+included.
 
 **App-context struct.** For service code, bundle attenuated capabilities
 and clients built in `main` (`pub struct App { db: Db, files: Fs, clock:

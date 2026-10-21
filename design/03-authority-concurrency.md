@@ -34,7 +34,8 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   resource handle derived from one: a type whose values act on the world
   with no capability argument, because they carry the authority of the
   capability that made them (`File`, `ReadDir`, `DirEntry`, `TcpStream`,
-  `TcpListener`, `UdpSocket`, `Command`, `Child`, `Signals`, any other
+  `TcpListener`, `UdpSocket`, `Command`, `Child`, its pipe ends
+  `ChildStdin`, `ChildStdout`, and `ChildStderr`, `Signals`, any other
   such type a capability or handle method returns, and from v1 the opaque
   types that RUST-2 makes resource handles). Every operation that reads
   or changes the outside world, or that observes nondeterminism, is a
@@ -79,7 +80,7 @@ scope-exit join. Every capability error type has a cancellation variant whose
 | `Rand` | `next_u64`, `gen_range`, `gen_bool`, `fill_bytes`, `shuffle`, `rng() -> Pcg64` | none | none |
 | `Env` | `args()`, `var(k)`, `vars()`, `current_dir()` | `only(["HOME", ..])`, `args_only()` | none |
 | `Stdin` | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal` | none | all reads |
-| `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn()`), `signals(&[Signal])`, `exit(code)` | `only(["git", ..])` | `output`, `status`, `Child::wait`, `Signals::recv` |
+| `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn() -> io::Result<Child>`), `signals(&[Signal]) -> io::Result<Signals>`, `exit(code)` | `only(["git", ..])` | `output`, `status`, `Child::wait` and `wait_with_output`, pipe-end reads and writes, `Signals::recv` |
 | `Tasks` | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point`; creating synchronization handles (§1.2) | `limit(n)` (live children) | `checkpoint`, `yield_now`, `scope` exit and `spawn_isolated` (shielded) |
 | `Accel` (later) | generated Bend kernel calls (§10) | `budget(threads)`, `no_gpu()` | kernel calls |
 
@@ -148,6 +149,44 @@ Notes:
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
 - **Processes.** A child process is not capability-checked, so `Proc` is the
   widest grant in the set and `tide review` lists every new path to it.
+- **Process handles.** `Command`, `Child`, its pipe ends, `Stdio`, `Signal`,
+  and `Signals` live in `std::process`. They are Tide std's own types, like
+  `ReadDir`, so ADMIT-1's ban on I/O methods of re-exported std types does
+  not reach them. A `Command` is a resource handle that carries the
+  authority of the `Proc` that made it: `output`, `status`, and `spawn`
+  start a process with no capability argument, so `fn configure(cmd: &mut
+  Command)` is not authority-free. `OpenOptions` differs: it is `Pure` data
+  that does nothing until `Fs::open_with` takes it. `Command` and `Child`
+  otherwise keep Rust's API, without the ambient `Command::new` (`FX0501`;
+  use `proc.command`) and with `wait_with_output`'s receiver below. That API
+  includes `Child`'s public fields `stdin: Option<ChildStdin>`, `stdout:
+  Option<ChildStdout>`, and `stderr: Option<ChildStderr>`, so
+  `child.stdout.take()` ports unchanged; ROOT-4 allows such fields. The pipe
+  ends are resource handles with `Proc`'s authority (exercised kind `proc`);
+  their reads and writes suspend.
+- **`Stdio`.** `Stdio` has `piped()`, `inherit()`, `null()`, and `From` for
+  `File` and the three pipe ends; the last three pipe one child into
+  another. It has no other conversion. Rust's `From<io::Stdout>` and
+  `From<io::Stderr>` are gone, since those are sink handles (§2.4), not file
+  descriptors. `From<OwnedFd>`, `From<io::PipeReader>`, and
+  `From<io::PipeWriter>` are gone too, so every conversion into a `Stdio`
+  starts from a handle. A `Stdio` does nothing until a `Command` uses it, so
+  making one takes no capability, but it can hold a handle and is therefore
+  not `Pure`.
+- **Receivers.** The methods of `Fs`, `Net`, `Clock`, `Rand`, `Env`,
+  `Stdin`, `Proc`, `Tasks`, and `Accel` take `&self`. Resource handles keep
+  Rust's receivers where Rust has the method: `Command`'s builder methods,
+  `output`, `status`, `spawn`, and `Child::wait` take `&mut self`. The one
+  exception is `Child::wait_with_output`, which takes `&mut self`, not
+  Rust's `self`: it is a checkpoint, and TASK-3 requires a consuming
+  operation to return what it consumed inside its cancellation error, which
+  an `io::Error` cannot hold. A cancelled call leaves the `Child` with the
+  caller, to `kill` and `wait` under `shield`; as in Rust, the call has
+  already closed `stdin` and taken `stdout` and `stderr`, so those fields
+  are `None` and output read so far is lost. A port that binds the child
+  without `mut` gets rustc's E0596 and its fix. Of the methods Rust lacks,
+  `File::sync`, `read_owned`, `write_owned`, and `Signals::recv` take
+  `&self`, and `File::close` takes `self`.
 - **`fault_point(name) -> bool`** returns `false` under every real runtime and
   folds to a constant; under the simulator it is a seed-driven fault trigger
   (§9.4).
@@ -231,12 +270,17 @@ N1). Test builds add the simulator behind one predictable branch.
   `tide sim` the runtime, not user code, builds the simulated root. A
   dependency's test code is never compiled into its dependents, so a
   simulated capability cannot reach production code.
-- **ROOT-4.** Capability and handle types cannot be made from data: they have
-  no public fields, no `Default` or `Decode` impls, and no `Shape`
-  construction (D6). `mem::zeroed`, `transmute`, and raw-pointer reads in
-  safe std require `T: Pure`. Unsafe code can still forge a capability by
-  writing raw memory, so the lockfile marks every package with an `unsafe` or
-  `ffi` grant `authority: declared, unverified`.
+- **ROOT-4.** Capability and handle types cannot be made from data: each has
+  a private field, so no struct literal or `Shape` construction (D6) builds
+  one, and none has a `Default` or `Decode` impl. A public field holds a
+  capability or handle (`Root`'s capability fields), an `Option` of one
+  (`Child`'s pipe ends), sink configuration (`Root::log`), or test-only
+  simulator controls (`SimRoot`'s `world` and `faults`), so reading one
+  reaches only authority the value already carries. `mem::zeroed`,
+  `transmute`, and raw-pointer reads in safe std require `T: Pure`. Unsafe
+  code can still forge a capability by writing raw memory, so the lockfile
+  marks every package with an `unsafe` or `ffi` grant `authority: declared,
+  unverified`.
 - **ROOT-5.** No code calls `main` or uses it as a value (`FX0506`), so a
   test cannot mint a real `Root` through it.
 
