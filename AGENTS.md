@@ -265,3 +265,23 @@ including a bead's "owner decision" or "stop and ask" on a design choice.
 When in doubt, take a web research pass, then decide, record the decision
 and its reasons on the bead and in its owning design document, and report
 it.
+
+### Autonomous runs
+
+These rules apply when the owner does not attend the run: they asked for an
+unattended run, or a session runner started it. They add to AP-SCOPE-001,
+AP-PLAN-001, and AP-SESSION-001; AP-SESSION-001's budgets still apply.
+
+- Before work, take the bead's done condition from its Acceptance as a
+  runnable check or a named observation, and close the bead only when it
+  passes. Never weaken it to close the bead; weakening what done means is
+  the owner's scope call, while a technical correction that keeps or
+  strengthens the check is the agent's (see Decisions).
+- A plateau is not a stop. When progress stalls, change approach.
+- A dead end ends the bead's attempt: the done condition still fails after
+  at least two approaches that differ in mechanism, not reruns or tweaks
+  of one, or the bead needs an owner scope call (a technical question is
+  not one; see Decisions). Comment on the bead with what was tried and why
+  each attempt failed, or with the scope choice and a recommended answer;
+  run `br update <id> --status blocked`, adding `--add-label owner` when
+  only the owner can unblock it; and end the run. Never wait for an answer.
