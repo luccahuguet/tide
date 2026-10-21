@@ -823,7 +823,8 @@ and reports a failure as 03 §3.1 says (`FX0517` unless the rule that needs
 `Pure` only by `#[trusted_pure]` with a reason, in a package granted
 `unsafe` (03 UNSAFE-1), and each such attribute is a trust hole; it claims
 what `Pure` guarantees below, including that no operation on the type
-depends on other tasks. It is **deep**:
+depends on other tasks, for the type's own fields: a generic marked type is
+`Pure` only when its type arguments are (03 §3.1). It is **deep**:
 
 - it looks through every field, private ones included, and through `Box` and
   `Rc`, with type arguments substituted;
@@ -939,6 +940,25 @@ concrete error), and every `Display::fmt` instance is may-suspend
 (03 SUSP-1), as a `Formatter` over a socket is.
 Authority-free code still formats: `format!` and the sinks build their
 `Arguments` and `Formatter` locally (reference 6.5).
+
+The checker reads a std type off its type arguments, not its fields, which
+change with the pinned rustc: a std type the list above does not name is
+`Pure` exactly when its type arguments are. So the checker's copy of the
+list also names the std types whose erased payloads are not `Pure`
+(`fmt::Arguments`, `fmt::Formatter`) and those that hold such a payload with
+no type argument to show it: the builders that `debug_struct`,
+`debug_tuple`, `debug_list`, `debug_set`, and `debug_map` return, which hold
+the `Formatter`, `fmt`'s internal `Argument`, and `PanicMessage`. That agrees
+with the walk, except that a type argument std holds only as a marker counts
+too: `BuildHasherDefault<H>`, which holds a `PhantomData<fn() -> H>`, is
+`Pure` only if `H` is.
+
+A recursive type whose recursion changes its type arguments, as
+`enum Nested<T> { Leaf(T), Deeper(Box<Nested<Vec<T>>>) }` does, never meets
+the same type again, so no fixed point ends its walk. The checker gives up
+past 64 nested types and reports the type as not `Pure`, under the code of
+the rule that needs it, as rustc gives up past its recursion limit; such
+types are rare, and marking one `#[trusted_pure]` admits it under the grant.
 
 ### `Pure + Sync` replaces `Frozen`
 

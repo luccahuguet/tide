@@ -156,3 +156,24 @@ pub fn deep() -> {deep} {{
         "{stderr}"
     );
 }
+
+#[test]
+fn impl_items_that_do_not_match_their_trait_are_left_to_rustc() {
+    // rustc reports the mismatch (E0049); the walk skips the items rather than instantiate the
+    // trait item's bounds and where-clauses with the wrong arguments.
+    let source = "\
+pub trait Tr {
+    type A<V>: Clone;
+    fn f<U: Clone>(u: U);
+}
+pub struct X;
+impl Tr for X {
+    type A = u8;
+    fn f(u: u8) {}
+}
+";
+    let (code, stderr) = admit("mismatch", source, &[]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("lib.rs:7:11: error[E0049]"), "{stderr}");
+    assert!(stderr.contains("lib.rs:8:9: error[E0049]"), "{stderr}");
+}

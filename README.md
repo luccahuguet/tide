@@ -42,9 +42,12 @@ decisions.
 
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a
-rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`) and
-passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2); the `Pure`
-check and the driver's ownership of every rustc flag are not built yet. The
+rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
+decides `Pure` structurally under the codes of the rules that need it (D18:
+statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
+requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), and
+passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2); the driver's
+ownership of every rustc flag is not built yet. The
 root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
 pins, with the `rustc-dev` component:
 

@@ -348,10 +348,24 @@ N1). Test builds add the simulator behind one predictable branch.
   capability or handle (`Root`'s capability fields), an `Option` of one
   (`Child`'s pipe ends), sink configuration (`Root::log`), or test-only
   simulator controls (`SimRoot`'s `world` and `faults`), so reading one
-  reaches only authority the value already carries. Tide's std bounds the
-  type that `mem::zeroed`, `transmute`, and raw-pointer reads produce by
-  `Pure` (`FX0517`). Unsafe code can still forge a capability by writing
-  raw memory, so the lockfile marks every package with an `unsafe` or `ffi`
+  reaches only authority the value already carries. Tide's std bounds by
+  `Pure` (`FX0517`) the type that each std operation listed here produces,
+  under any path that names it: `mem::zeroed` and `transmute`, `core`'s
+  too; `MaybeUninit::assume_init` and its `Box` and `Rc` forms;
+  `slice::align_to`, which reinterprets bytes as `transmute` does;
+  `Vec::set_len`, which makes a buffer's raw memory into elements; and
+  raw-pointer reads. A raw-pointer read is a deref (`*p`, `&*p`, `&mut *p`,
+  `(*p).field`), a read method of a raw pointer or `NonNull`, or a
+  conversion of one to a reference or an owner (`as_ref`, `as_mut`,
+  `slice::from_raw_parts`, `Box::from_raw`, `Vec::from_raw_parts`), since
+  each hands safe code a value no constructor made. A union's field read,
+  by expression or pattern, counts too: it reinterprets another field's
+  bytes, as `transmute` does. Assigning to such a place, or borrowing it
+  raw (`&raw const (*p).field`), reads nothing. So generic unsafe code that
+  reads through a `*const T`, or sets a `Vec<T>`'s length, bounds `T` by
+  `Pure`. The bound is defense in depth over this list, not a closed
+  guarantee: unsafe code can still forge a capability by writing raw
+  memory, so the lockfile marks every package with an `unsafe` or `ffi`
   grant `authority: declared, unverified`.
 - **ROOT-5.** No code calls `main` or uses it as a value (`FX0506`), so a
   test cannot mint a real `Root` through it.
@@ -670,10 +684,11 @@ into, fetched from the protected remote.
   v1).
 - **RUN-4. Holes.** RUN-1 does not hold through the following; any other
   route is a defect in RUN-1 to RUN-3.
-  1. **UNSAFE-1. `unsafe` grants.** `unsafe` blocks and functions,
-     `unsafe impl` of any trait (`Send` and `Sync`, `02-memory.md` §8.1, or
-     a user's `unsafe trait`), Rust 2024's unsafe attributes
-     (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
+  1. **UNSAFE-1. `unsafe` grants.** `unsafe` blocks and functions (with a
+     body or not: a required trait method or a foreign function declared
+     `unsafe` too), `unsafe impl` of any trait (`Send` and `Sync`,
+     `02-memory.md` §8.1, or a user's `unsafe trait`), Rust 2024's unsafe
+     attributes (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
      `#[unsafe(link_section)]`), and `#[trusted_pure]` need the package's
      `unsafe` grant (`FX0901`), and so does `global_asm!` (`FX0520`,
      ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
@@ -808,14 +823,19 @@ user-written bound, a `Pure` supertrait's impl, or a coercion to a `Pure`
 trait object, as `FX0517`. A type the structural rule rejects that is
 authority-free in fact, such as a foreign handle, may be marked
 `#[trusted_pure(reason = "...")]` in a package granted `unsafe` (UNSAFE-1),
-and each such mark is a trust hole. `Pure` is deep: it looks through every
-field, private ones included, and through `Box` and `Rc`, with std's two
-exceptions (`02-memory.md` §9); recursive types take the
-greatest fixed point; `impl Trait` types are `Pure`, `Send`, or `Sync` only
-if their bounds name it, and `dyn` types are `Send` or `Sync` only if they
-name it and `Pure` only through a companion supertrait (below); `Owned`
-follows origins (`02-memory.md` §3.7); a type parameter, or a projection
-on one that does not normalize, has one only if bounded by it.
+and each such mark is a trust hole. The mark vouches for the type's own
+fields only: a generic marked type is `Pure` exactly when its type
+arguments are, as a std type is (`02-memory.md` §9), since its author can
+vouch for what they wrote but not for every type a caller passes, and
+failing closed keeps the trust hole as wide as what the reviewer approved.
+`Pure` is deep: it looks through every field, private ones included, and
+through `Box` and `Rc`, with std's two exceptions (`02-memory.md` §9);
+recursive types take the greatest fixed point; `impl Trait` types are
+`Pure`, `Send`, or `Sync` only if their bounds name it, and `dyn` types are
+`Send` or `Sync` only if they name it and `Pure` only through a companion
+supertrait (below); `Owned` follows origins (`02-memory.md` §3.7); a type
+parameter, or a projection on one that does not normalize, has one only if
+bounded by it.
 `02-memory.md` §9 has the full table.
 
 **`Pure`** means that no authority is reachable. Not `Pure`:
@@ -861,16 +881,19 @@ and every other synchronization handle, so nothing reachable from a
 A function, method, or closure is **authority-free** when every parameter
 type, including `self`, and every capture type is `Pure`. Generic functions
 are classified per instantiation; a generic definition that needs the
-property states it as a bound (`F: Fn(&T) -> U + Pure`). `extern` functions
-are never authority-free; their wrappers may be (§5). An authority-free body
-also cannot create a synchronization handle, since that takes `&Tasks`
-(§1.2).
+property states it as a bound (`F: Fn(&T) -> U + Pure`). Foreign functions,
+declared in `extern` blocks, are never authority-free (`#[pure]` on one is
+`FX0511`); their wrappers may be (§5), and so may a Tide function with a
+foreign ABI (`extern "C" fn f() {..}`), as a callback must be (FFI-6): its
+body is checked Tide code. An authority-free body also cannot create a
+synchronization handle, since that takes `&Tasks` (§1.2).
 
-- **AFREE-1.** `#[pure]` asserts authority-freedom for every instantiation
-  the bounds allow; an edit that breaks it is `FX0511`. Every public
-  function's interface records the property anyway, and `tide review`
-  reports its loss as an API change, which answers the design's open
-  question 4.
+- **AFREE-1.** `#[pure]` asserts authority-freedom of the function it marks,
+  with a body or not (a required trait method), but not of the items nested
+  in its body, for every instantiation the bounds allow; an edit that breaks
+  it is `FX0511`. Every public function's interface records the property
+  anyway, and `tide review` reports its loss as an API change, which answers
+  the design's open question 4.
 
 ### 3.3 What authority-freedom guarantees
 
@@ -933,10 +956,12 @@ user code at timing-dependent points (GLOBAL-6).
 | foreign callbacks (v1) | authority-free (§5.3) |
 
 - **AFREE-2. `const fn`.** A `const fn`'s parameter types are `Pure + Sync`,
-  and none is `&mut` (`FX0518`), although rustc accepts both. A type
-  parameter, including one in `Self`'s type, needs the bound at the
-  definition (§3.2, D4). Memoization rejects nothing: the compiler memoizes
-  only calls that meet the same conditions.
+  and none is `&mut` (`FX0518`; a type that names `&mut`, as
+  `Option<&mut T>` does, or holds one in a field, as
+  `struct Counter<'a>(&'a mut u32)` does, counts), although rustc accepts
+  both. A type parameter, including one in `Self`'s type, needs the bound at
+  the definition (§3.2, D4). Memoization rejects nothing: the compiler
+  memoizes only calls that meet the same conditions.
 
 ## 4. Declared and Exercised Authority
 

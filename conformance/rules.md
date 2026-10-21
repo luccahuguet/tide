@@ -91,7 +91,7 @@ not cite is a best mapping that a case must confirm.
 | ROOT-1 | §2.1, 03:268 | `Root` may be named only as the parameter of `#[tide::main] fn main` and in the path `Root::sim`; every binary's `main` carries the attribute | both | FX0503 for naming `Root` elsewhere; FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |
 | ROOT-2 | §2.1, 03:273 | `root` cannot be passed, borrowed into a call, stored, returned, or captured | checker | FX0503 |
 | ROOT-3 | §2.1, 03:277 | `Root::sim`, `SimRoot`, `NodeRoot`, and `std::sim` compile only in test code | checker | FX0504 |
-| ROOT-4 | §2.1, 03:283 | Capabilities and handles cannot be built from data (private field, no `Default`/`Decode`); Tide's std bounds what `mem::zeroed`, `transmute`, and raw reads produce by `Pure` | both | E0423 / E0599; `Pure` part FX0517; no own code |
+| ROOT-4 | §2.1, 03:283 | Capabilities and handles cannot be built from data (private field, no `Default`/`Decode`); Tide's std bounds what `mem::zeroed`, `transmute`, raw-pointer reads, and union field reads produce by `Pure` | both | E0423 / E0599; `Pure` part FX0517; no own code |
 | ROOT-5 | §2.1, 03:294 | No code calls `main` or uses it as a value | checker | FX0506 |
 | GLOBAL-1 | §2.2, 03:299 | A `static` must be `Sync + Pure + 'static`; no `static mut` in safe code | both | FX0502; E0277 for `Sync` |
 | GLOBAL-2 | §2.2, 03:302 | No lazy statics: a static's initializer is evaluated at compile time by `const fn` | both | rustc E0015; `LazyLock`/`OnceLock` FX0520; `lazy_static!` FX0502 |

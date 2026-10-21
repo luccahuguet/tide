@@ -6,6 +6,9 @@ use rustc_hir::ItemKind;
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::print::{
+    with_no_trimmed_paths, with_no_visible_paths, with_resolve_crate_name,
+};
 use rustc_span::hygiene::AstPass;
 use rustc_span::{ExpnKind, sym};
 
@@ -91,6 +94,32 @@ impl Crates {
     /// Whether Tide's std re-exports `def_id`, which makes it part of Tide's std's API.
     pub fn exported(&self, def_id: DefId) -> bool {
         self.exports.contains(&def_id)
+    }
+
+    /// Whether `def_id` is an item of `core`, `alloc`, Rust's std, or Tide's std.
+    pub fn is_std(&self, def_id: DefId) -> bool {
+        matches!(
+            self.role(def_id.krate),
+            Role::TideStd | Role::Core | Role::Alloc | Role::RustStd
+        )
+    }
+
+    /// The key the rules match an item by: its canonical path in its defining crate, with Tide's
+    /// std printed as `tide_std` whatever its crate is named.
+    pub fn key(&self, tcx: TyCtxt<'_>, def_id: DefId) -> String {
+        let path = with_no_visible_paths!(with_no_trimmed_paths!(with_resolve_crate_name!(
+            tcx.def_path_str(def_id)
+        )));
+        if self.role(def_id.krate) == Role::TideStd {
+            let name = tcx.crate_name(def_id.krate);
+            if let Some(rest) = path
+                .strip_prefix(name.as_str())
+                .and_then(|p| p.strip_prefix("::"))
+            {
+                return format!("tide_std::{rest}");
+            }
+        }
+        path
     }
 }
 

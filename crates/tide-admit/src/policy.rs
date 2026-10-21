@@ -158,11 +158,13 @@ pub const RULES: &[Rule] = &[
     // `derive(PartialEq)` expansions; both are unstable to name directly.
     allow("core::intrinsics::discriminant_value"),
     allow("core::intrinsics::unreachable"),
+    // `mem::transmute`, an `unsafe` fn, which needs the grant; what it makes is `Pure` (ROOT-4).
+    allow("core::intrinsics::transmute"),
     allow("core::iter::*"),
     allow("core::macros::*"), // `assert!`, `matches!`, `write!`, `format_args!`, derives
     allow("core::marker::*"),
     allow("core::io::*"),  // `io::Error` and `io::ErrorKind`
-    allow("core::mem::*"), // `zeroed` and `transmute` are `unsafe` fns, which need the grant
+    allow("core::mem::*"), // `zeroed` is an `unsafe` fn, which needs the grant
     allow("core::num::*"), // integer methods: `checked_*`, `wrapping_*`, `saturating_*`, ...
     allow("core::ops::*"),
     allow("core::option::*"),
@@ -234,7 +236,7 @@ pub const RULES: &[Rule] = &[
 ];
 
 /// Glob match where `*` matches any run of characters, `::` included; a leading `*` is literal.
-fn matches(pattern: &str, key: &str) -> bool {
+pub fn matches(pattern: &str, key: &str) -> bool {
     match pattern.strip_prefix('*') {
         Some(rest) => key.strip_prefix('*').is_some_and(|key| glob(rest, key)),
         None => glob(pattern, key),

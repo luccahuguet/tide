@@ -1,6 +1,7 @@
 //@ rules: UNSAFE-1
-// Without the `unsafe` grant: an `unsafe fn`, an `unsafe` block, an unsafe attribute, and
-// `unsafe impl` of a user's trait and of `Sync`. Declaring an `unsafe trait` needs no grant.
+// Without the `unsafe` grant: an `unsafe fn`, with a body or not (a required trait method, a
+// foreign function), an `unsafe` block, an unsafe attribute, and `unsafe impl` of a user's
+// trait and of `Sync`. Declaring an `unsafe trait` needs no grant.
 pub unsafe fn raw_len(p: &[u8]) -> usize { //~ FX0901
     p.len()
 }
@@ -13,6 +14,14 @@ pub fn len(p: &[u8]) -> usize {
 #[unsafe(no_mangle)] //~ FX0901
 pub fn tide_probe() -> u32 {
     7
+}
+
+pub trait RawRead {
+    unsafe fn read_raw(&self) -> u8; //~ FX0901
+}
+
+unsafe extern "C" {
+    fn tide_probe_ext(); //~ FX0901
 }
 
 pub unsafe trait Zeroable {}

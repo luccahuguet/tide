@@ -3,19 +3,23 @@
 //! It takes rustc's arguments plus its own `--tide-*` flags, always passes rustc
 //! `-Zallow-features=` so the crate cannot enable unstable features and `-Zpolonius=no` so
 //! borrows get NLL's verdicts (ADMIT-2, ORIGIN-6), and checks every use the crate makes against
-//! the admission allowlist (ADMIT-1), reporting each rejection as `FX0520` at the use's span. It
-//! checks after name resolution and before rustc's analysis, so a crate with rustc errors still
-//! gets its admission verdicts.
+//! the admission allowlist (ADMIT-1), reporting each rejection as `FX0520` at the use's span.
+//! It also decides `Pure` (`pure.rs`) and the rules on items that need it or the `unsafe` grant,
+//! each under its own FX code (D18). It checks after name resolution and before rustc's
+//! analysis, so a crate with rustc errors still gets its verdicts.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] <rustc args...>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line
 #![feature(rustc_private)]
 
+extern crate rustc_abi;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_hir;
+extern crate rustc_hir_typeck;
 extern crate rustc_infer;
 extern crate rustc_interface;
+extern crate rustc_lint;
 extern crate rustc_middle;
 extern crate rustc_span;
 extern crate rustc_trait_selection;
@@ -23,6 +27,7 @@ extern crate rustc_trait_selection;
 mod crates;
 mod diag;
 mod policy;
+mod pure;
 mod walk;
 
 use std::process::ExitCode;

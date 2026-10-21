@@ -8,17 +8,62 @@ use rustc_span::{BytePos, Span};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Code {
+    /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
+    Fx0502,
+    /// A `#[pure]` function whose parameter types are not all `Pure` (AFREE-1).
+    Fx0511,
+    /// A failed `Pure` obligation that no rule with a code of its own needs (PURE-1), or an
+    /// `io::Error` payload that does not reach one of alloc's four conversions (ADMIT-1).
+    Fx0517,
+    /// A `const fn` parameter that is `&mut` or not `Pure + Sync` (AFREE-2).
+    Fx0518,
     /// A use outside the admission allowlist (ADMIT-1).
     Fx0520,
+    /// A `Shared::with` closure that is not `Pure` (LOCK-4).
+    Fx0603,
+    /// A `Shared` payload that is not `Pure` (LOCK-1).
+    Fx0606,
+    /// A parallel closure that is not `Pure`, `Send`, and, when shared, `Fn` and `Sync`
+    /// (PAR-5, PAR-6).
+    Fx0610,
+    /// Shared data a parallel closure captures that is not `Pure + Sync` (PAR-7).
+    Fx0611,
+    /// Elements of a parallel slice method that are not `Pure` (PAR-4).
+    Fx0612,
+    /// Unsafe code, an unsafe attribute, or `#[trusted_pure]` without the `unsafe` grant
+    /// (UNSAFE-1).
+    Fx0901,
 }
 
 impl Code {
     /// Every code this driver decides, so a caller can tell its verdicts from ones it awaits.
-    pub const ALL: &[Code] = &[Code::Fx0520];
+    pub const ALL: &[Code] = &[
+        Code::Fx0502,
+        Code::Fx0511,
+        Code::Fx0517,
+        Code::Fx0518,
+        Code::Fx0520,
+        Code::Fx0603,
+        Code::Fx0606,
+        Code::Fx0610,
+        Code::Fx0611,
+        Code::Fx0612,
+        Code::Fx0901,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Code::Fx0502 => "FX0502",
+            Code::Fx0511 => "FX0511",
+            Code::Fx0517 => "FX0517",
+            Code::Fx0518 => "FX0518",
             Code::Fx0520 => "FX0520",
+            Code::Fx0603 => "FX0603",
+            Code::Fx0606 => "FX0606",
+            Code::Fx0610 => "FX0610",
+            Code::Fx0611 => "FX0611",
+            Code::Fx0612 => "FX0612",
+            Code::Fx0901 => "FX0901",
         }
     }
 }
