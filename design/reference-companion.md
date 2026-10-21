@@ -440,7 +440,9 @@ crashable nodes, records, and replay.
   an `Fn` closure, never `FnOnce`. It is `Send`, and its captures are
   `'static`, `Pure`, and `Sync`, so a run cannot change them; clone inside it
   what each run consumes. Unlike `Root`, a `NodeRoot` is an ordinary value:
-  pass it or its fields to helpers.
+  pass it or its fields to helpers. The simulator's handles (`SimRoot`,
+  `NodeRoot`, `sim.world`, `Faults`, `SimNode`, `NodeTask`) are not `Pure`
+  (02 §9), so an entry cannot capture a node or the fault controls.
 - **Crashes.** A crash stops a node's tasks at their current scheduling
   points without running destructors, frees its memory, and resets its
   peers' connections. Synced data survives (6.3) if its entry and the

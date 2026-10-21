@@ -815,7 +815,8 @@ For `Pure`, the blanket impl makes rustc agree.
 These are **not `Pure`**:
 
 - the capability types `Root`, `Fs`, `Net`, `Clock`, `Rand`, `Env`, `Stdin`,
-  `Proc`, `Tasks` and `Accel`, and their attenuated forms;
+  `Proc`, `Tasks` and `Accel`, their attenuated forms, and the simulated
+  roots `SimRoot` and `NodeRoot` (03 §9.2, §9.5);
 - the resource handles: types whose values act on the world with no
   capability argument, because they carry the authority of the capability
   that made them. In std these are `File`, `ReadDir`, `DirEntry`,
@@ -824,8 +825,13 @@ These are **not `Pure`**:
   other such type a capability or handle method returns, such as the
   iterator `Stdin::lines()` returns; from v1, also the opaque types that
   RUST-2 makes resource handles (03 §0);
+- the test-only simulator handles (03 ROOT-3): the type of `sim.world`,
+  `Faults` (the type of `sim.faults`), and `SimNode`, which act on the
+  simulated world with no capability argument, as resource handles do, and
+  `NodeTask`, which, like `Task`, observes another task (03 §9.2–9.5);
 - `Stdio`, which acts on nothing itself but can hold a `File` or a pipe
-  end (03 §1.1);
+  end (03 §1.1), and `LogConfig`, the type of `Root::log`, which can hold
+  the `File` that `to_file` takes (03 SINK-2);
 - the synchronization handles `Shared<T>`, `Sender<T>`, `SyncSender<T>`,
   `Receiver<T>`, `Scope<'s, 'env, E>`, `Task<'s, U, E>`, `Arc<T>`, `sync::Weak<T>`,
   every atomic type, everything in `std::sync::raw` (`Mutex`, `RwLock`),
