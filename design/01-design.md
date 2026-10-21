@@ -426,10 +426,10 @@ serialization as the default (5–7x slower in prior art).
   impls observe addresses, and every address observer (`addr`, `{:p}`);
   atomics not created through `Tasks`; float observers and math methods
   (D3); I/O methods on re-exported std types (`Path::exists`, `metadata`);
-  `io::Error::last_os_error`; timed waits such as `recv_timeout`;
-  compile-time reads of files and the build environment (`include_str!`,
-  `env!`, `option_env!`); and `global_asm!` without an `unsafe` grant. The
-  allowlist is reviewed with every rustc pin.
+  `io::Error::last_os_error`; compile-time reads of files and the build
+  environment (`include_str!`, `env!`, `option_env!`); and `global_asm!`
+  without an `unsafe` grant. The allowlist is reviewed with every rustc
+  pin.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
@@ -981,8 +981,8 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   inherent methods, keyed on crate identity. That closes what the std swap
   leaves open: safe hardware queries, raw pointer types and every address
   observer, atomics created without `Tasks`, float methods, I/O methods on
-  re-exported std types such as `Path::exists`, `io::Error::last_os_error`,
-  and timed waits such as `recv_timeout`.
+  re-exported std types such as `Path::exists`, and
+  `io::Error::last_os_error`.
 - **Checker architecture: A, then B.** (A) A `rustc_private` driver on the
   same pinned nightly that builds the code is the authoritative admission
   gate and the oracle; it checks rustc's own resolution, so no separate

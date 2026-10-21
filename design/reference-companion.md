@@ -76,6 +76,7 @@ Rerun it after any change to the core and update this line.
 | `std::env::args()` / `env::var(k)` | `env.args()` / `env.var(k)` |
 | `Instant::now()` / `SystemTime::now()` | `clock.now()` / `clock.system_time()` |
 | `std::thread::sleep(d)` | `clock.sleep(d)?` |
+| `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
 | `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
 | `Command::new("git")` | `proc.command("git")` |

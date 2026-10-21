@@ -545,18 +545,18 @@ wait, and read virtual time.
 ### 6.9 Ambient Rust calls and the admission allowlist
 
 Ambient std calls (`std::fs::read`, `File::open`, `env::args`,
-`Instant::now`, `thread::sleep`, `thread_rng`, `io::stdin()`,
-`Command::new`, `process::exit`, ...) are `FX0501`; the fix uses a
-capability in scope or proposes adding the parameter (companion 14.2).
+`Instant::now`, `thread::sleep`, `rx.recv_timeout(d)` (use
+`recv_deadline`), `thread_rng`, `io::stdin()`, `Command::new`,
+`process::exit`, ...) are `FX0501`; the fix uses a capability in scope or
+proposes adding the parameter (companion 14.2).
 
 The checker admits only listed `core`, `alloc`, and std inherent items;
 everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
 raw pointer types and address observers (`addr()`, `{:p}`) without the
 `unsafe` grant; `core::sync::atomic`; `OnceLock`, `LazyLock`; float
 observers and math methods (4.3); I/O methods on re-exported std types
-(`Path::exists`, `metadata`; use `fs`); `io::Error::last_os_error`; timed
-waits such as `recv_timeout` (use `recv_deadline`); and `include_str!`,
-`env!`, `option_env!`.
+(`Path::exists`, `metadata`; use `fs`); `io::Error::last_os_error`; and
+`include_str!`, `env!`, `option_env!`.
 
 ### 6.10 Patterns
 

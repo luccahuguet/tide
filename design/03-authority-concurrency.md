@@ -61,10 +61,13 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   sink buffers, and, under the evented runtime, frame stack. `main` runs as
   the main task.
 
-- **CAP-1. No ambient operations.** Tide's std has no free function or
-  constructor that does what a capability method does. The driver reports
-  a path to Rust's ambient one (`std::fs::read`, `Instant::now`,
-  `env::args`, `Command::new`) as `FX0501`, not as rustc's unresolved name.
+- **CAP-1. No ambient operations.** Tide's std has no free function,
+  constructor, or method that does what a capability method does. The
+  driver reports a path to Rust's ambient one (`std::fs::read`,
+  `Instant::now`, `env::args`, `Command::new`), or a call of a timed wait
+  such as `Receiver::recv_timeout`, which reads time without a `Clock`, as
+  `FX0501`, not as rustc's unresolved name; `recv_deadline(t)` takes an
+  `Instant` from a `Clock` (§1.2).
 
 ## 1. The Standard Capability Set
 
@@ -135,9 +138,10 @@ Notes:
   carries the authority of the `Fs` that listed it, so it is not `Pure`;
   advancing the iterator, `metadata()`, and `file_type()` are reads through
   that `Fs` and suspend. As Rust's does on Linux, a `ReadDir` ends after
-  yielding its first error. These are Tide std's own types, so ADMIT-1's
-  ban on I/O methods of re-exported std types does not reach them. `OsStr`
-  and `OsString` keep Rust's API, which does no I/O.
+  yielding its first error. These, `Metadata`, and `FileType` are Tide
+  std's own types with Rust's methods, so ADMIT-1's ban on I/O methods of
+  re-exported std types does not reach them. `OsStr` and `OsString` keep
+  Rust's API, which does no I/O.
 - **Standard input.** `Stdin`'s reads are inherent methods with `&self`
   receivers: `read_line(&mut String)`, `lines()`, `read_to_string(&mut
   String)`, `read_to_end(&mut Vec<u8>)`, and `is_terminal()`, which Rust
@@ -532,8 +536,7 @@ so the rules above also need an admission check (D7).
     `min`, `max`, `sin`, `exp`, and the rest; PAR-3);
   - I/O methods on re-exported std types (`Path::exists`, `metadata`,
     `read_dir`, `canonicalize`);
-  - `io::Error::last_os_error`, and timed waits such as
-    `mpsc::Receiver::recv_timeout`, which read time without a `Clock`;
+  - `io::Error::last_os_error`;
   - compile-time reads of files and the build environment (`include_str!`,
     `env!`, `option_env!`), inside attributes too;
   - `global_asm!`, which places machine code without an `unsafe` block,

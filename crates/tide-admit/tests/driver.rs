@@ -71,7 +71,8 @@ mod sub;
 }
 
 /// Safe hardware intrinsics read the host's processor (D18). `core::arch` has one module per
-/// target, so this runs on x86-64 hosts only, and the conformance corpus has no such case.
+/// target, so this runs on x86-64 hosts only, as `conformance/cases/authority/admit_hardware.rs`
+/// does.
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn hardware_queries_are_rejected() {

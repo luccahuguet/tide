@@ -25,7 +25,8 @@ two. It then checks the case the same two ways with the admission driver,
 `crates/tide-admit`, against the stub std built by the pinned nightly, passing
 `--tide-grant=unsafe` for `//@ grants: unsafe`. The driver's `FX` codes are
 the ones `tide-admit --tide-print-codes` lists, such as `FX0520`; its errors in
-those codes are the union of the two runs. It needs stable rustc and cargo
+those codes are the union of the two runs. It needs an x86_64 host
+(`authority/admit_hardware` names `core::arch::x86_64`), stable rustc and cargo
 1.96, the nightly that the root `rust-toolchain.toml` pins with `rustc-dev`,
 and the crates in `rustc/std/Cargo.lock`, offline. It prints one line per
 case:
