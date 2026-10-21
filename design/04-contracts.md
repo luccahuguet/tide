@@ -177,15 +177,17 @@ splace      = "*" ident { "." ( ident | int ) }           (* rooted at a &mut, �
 
 Rules that the grammar does not show:
 
-1. **One expression per clause.** A top-level comma in a clause is an error
-   whose safe fix splits it into repeated clauses (repeated attributes or
-   statements). Verus's comma lists are
+1. **FORM-1. One expression per clause.** A top-level comma in a clause is
+   `FX0804`, whose safe fix splits it into repeated clauses (repeated
+   attributes or statements). Verus's comma lists are
    rejected so that each clause gets its own classification and diagnostic.
 2. **Order.** Clauses of one kind are conjoined in source order. For
    well-formedness (§1.3), each `requires` may assume the earlier ones; each
    `ensures` may assume every `requires` and the earlier `ensures`.
-3. **`result`** is valid only in `ensures`. A function with `ensures` cannot
-   have a parameter named `result`; the safe fix renames it.
+3. **FORM-2. `result`** is valid only in `ensures`. A function with `ensures`
+   cannot have a parameter named `result`. Either error is `FX0805`; for the
+   parameter, the safe fix renames it, and a `result` outside an `ensures`
+   has no automatic fix.
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
    parameter means the caller's referent at return, even where the body
@@ -197,9 +199,9 @@ Rules that the grammar does not show:
 5. **`#[decreases]`** (v1) on a function bounds recursion; `decreases!` in
    a loop bounds iterations (§3.3). `#[diverges]` is legal only on exec
    functions.
-6. **Impls refine trait contracts** (v1). An impl method inherits its trait
-   method's contract and may weaken the precondition and strengthen the
-   postcondition, never the reverse (§5.2). In v0 a `requires` or
+6. **FORM-3. Impls refine trait contracts** (v1). An impl method inherits
+   its trait method's contract and may weaken the precondition and
+   strengthen the postcondition, never the reverse (§5.2). In v0 a `requires` or
    `ensures` on a trait method or a trait-impl method is `FX0802`; the fix
    states it on a function or inherent method that the impl calls.
    `#[invariants]` and loop `invariant!` are allowed there in v0.
@@ -210,13 +212,15 @@ Rules that the grammar does not show:
    fields (§4.2).
 9. **Quantifier, `choose`, and lambda bodies** extend as far right as
    possible, as in Verus and Dafny.
-10. **Loop and closure clauses.** `invariant!`, `decreases!`, `requires!`,
-    and `ensures!` must open the loop or closure block body, before any
-    other statement. The enclosing function must carry `#[invariants]` or a
-    contract attribute (`#[requires]`, `#[ensures]`, `#[decreases]`,
-    `#[diverges]`, `#[contracts]`), whose macro rewrites each loop and
-    closure in the body; an unrewritten clause statement is a compile error
-    whose safe fix adds `#[invariants]`.
+10. **FORM-4. Loop and closure clauses.** `invariant!`, `decreases!`,
+    `requires!`, and `ensures!` must open the loop or closure block body,
+    before any other statement. The enclosing function must carry
+    `#[invariants]` or a contract attribute (`#[requires]`, `#[ensures]`,
+    `#[decreases]`, `#[diverges]`, `#[contracts]`), whose macro rewrites
+    each loop and closure in the body; an unrewritten clause statement is
+    `FX0806`. Where the clause opens its body in a function without such an
+    attribute, the safe fix adds `#[invariants]`; a misplaced clause has no
+    automatic fix.
 
 ### 1.3 Spec expressions
 
@@ -386,7 +390,7 @@ rule CLAUSE-*n*.
    functions and loop `invariant!` statements (§1.2), with `result`,
    `old(e)`, `==>`, and `forall` and `exists` over a bounded binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
    `exists`), with `lo` and `hi` free of `x`, or `c.contains(&x) ==> p`; an
-   unsigned binder implies `0 <= x`. An unbounded quantifier is an error.
+   unsigned binder implies `0 <= x`. An unbounded quantifier is `FX0807`.
    `decreases`, `diverges`, `final`, type invariants, closure clauses, and
    the spec language of §1.3–§1.7 are v1.
 2. **CLAUSE-2. Code semantics.** A clause is a Rust boolean expression,
@@ -411,9 +415,9 @@ rule CLAUSE-*n*.
    clause in generic code is checked once, at its definition (D4), so a value
    whose type mentions a type parameter `T` may reach a call only if the
    definition bounds `T` by `Pure + Sync`, as generic definitions state the
-   properties they need (`03-authority-concurrency.md` §3.2). Without the
-   bound the clause is an error whose fix adds it; no instantiation skips a
-   clause.
+   properties they need (`03-authority-concurrency.md` §3.2). A clause that
+   breaks this rule is `FX0808`; without the bound, the fix adds it, and no
+   instantiation skips a clause.
 4. **CLAUSE-4. `old` and `&mut` parameters.** `old(e)` evaluates `e` at
    entry and snapshots the value it denotes (D10). A `Copy` value is copied
    and any other value is cloned, so `old(v.len())` costs one word and
@@ -442,8 +446,8 @@ rule CLAUSE-*n*.
    shared reference included, is copied at entry as it is. A non-`Copy` one
    is cloned at entry if it is `Clone + Pure + Sync`, the types whose
    `Clone` item 3 admits; in generic code, if the definition bounds it so
-   (D4). Any other is read in place, so naming it in an `ensures` is an
-   error when the body assigns, moves, or mutably borrows it (including
+   (D4). Any other is read in place, so naming it in an `ensures` is
+   `FX0809` when the body assigns, moves, or mutably borrows it (including
    through a `&mut` it holds). The fix narrows it, as in `old(x.len())`, or
    in generic code adds the bound (`T: Clone + Pure + Sync`). These
    implicit snapshots follow item 3 and treat a panic as a violation, as
@@ -492,8 +496,10 @@ rule CLAUSE-*n*.
    prints the clause's tokens rather than its source text. Not yet
    implemented in the D18 spike: clause classes (it evaluates every clause
    in debug builds), generated tests, reporting a panic inside a clause as
-   a violation, step budgets, entry values of by-value parameters in
-   `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
+   a violation, step budgets, invariants in a `loop` (it leaves their
+   `invariant!` unrewritten), the lower bound of a signed binder (it
+   assumes `0 <= x` where item 1 gives `FX0807`), entry values of
+   by-value parameters in `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
    closure lowering rejects with E0521 (`research/15-rust-dialect.md`,
    Spike results). The lowering item 4 describes also needs a generic
    helper call when the body returns a borrow of the reborrowed parameter,

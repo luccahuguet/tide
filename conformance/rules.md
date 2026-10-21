@@ -122,17 +122,20 @@ not cite is a best mapping that a case must confirm.
 
 | ID | Section (file:line of the definition) | Rule, one line | Decided by | FX code(s) / rustc |
 | --- | --- | --- | --- | --- |
-| none yet | §1.2, 04:180 (§1.2 rule 1) | One expression per clause: a top-level comma is an error (safe fix splits it) | checker (contract macro) | no FX code |
-| none yet | §1.2, 04:187 (§1.2 rule 3) | `result` only in `ensures`; a function with `ensures` cannot have a parameter named `result` | checker (contract macro) | no FX code |
-| none yet | §1.2, 04:202 (§1.2 rule 6; table 04:71, 04:109) | v0: `requires`/`ensures` on a trait method or trait-impl method is rejected; `#[invariants]` and `invariant!` are allowed there | checker | FX0802 |
-| none yet | §1.2, 04:213 (§1.2 rule 10; also 04:33) | `invariant!` must open the loop body, and the fn needs `#[invariants]` or a contract attribute; an unrewritten clause is a compile error | both | no FX code; the unexported `!` form also fails in rustc |
-| CLAUSE-1 | §1.8, 04:385 | v0 clause forms only; quantifiers must be bounded (`lo <= x && x < hi ==>` or `c.contains(&x) ==>`) | checker (contract macro) | no FX code |
-| CLAUSE-2 | §1.8, 04:392 | A clause is a Rust boolean expression, typed as code; names resolve as in the body | rustc | type errors (e.g. E0308) |
-| CLAUSE-3 | §1.8, 04:401 | Clauses call only authority-free fns with `Pure + Sync` arguments and `&mut` only to clause temporaries; generic code needs the bound at the definition | checker | no FX code |
-| CLAUSE-4 | §1.8, 04:417 (also §1.2 rule 4, 04:189) | `old` snapshots are borrow-checked; non-`Copy` non-`Clone` `old` is an error; `old(e)` cannot name `result` or a bound variable; prophetic `&mut` param outside `old` is FX0803; mutated non-snapshot param in `ensures` is an error | both | FX0803 (04:439); rest via rustc borrow and trait errors, or the macro |
-| CLAUSE-6 | §1.8, 04:466 | Name-resolution part: over an iterator other than `a..b`, a `for` loop's invariant cannot name the loop pattern's bindings | checker (contract macro) | no FX code |
+| FORM-1 | §1.2, 04:180 (§1.2 rule 1) | One expression per clause: a top-level comma is an error (safe fix splits it) | checker (contract macro) | FX0804 (defined in 04 §1.2); the D18 spike's lowering gives E0600 |
+| FORM-2 | §1.2, 04:187 (§1.2 rule 3) | `result` only in `ensures`; a function with `ensures` cannot have a parameter named `result` | checker (contract macro) | FX0805 (defined in 04 §1.2); E0425 where the lowering binds no `result` |
+| FORM-3 | §1.2, 04:202 (§1.2 rule 6; table 04:71, 04:109) | v0: `requires`/`ensures` on a trait method or trait-impl method is rejected; `#[invariants]` and `invariant!` are allowed there | checker | FX0802 |
+| FORM-4 | §1.2, 04:213 (§1.2 rule 10; also 04:33) | `invariant!` must open the loop body, and the fn needs `#[invariants]` or a contract attribute; an unrewritten clause is a compile error | both | FX0806 (defined in 04 §1.2); rustc uncoded error (the unexported `!` form, or the D18 spike's `compile_error!`) |
+| CLAUSE-1 | §1.8, 04:385 | v0 clause forms only; quantifiers must be bounded (`lo <= x && x < hi ==>` or `c.contains(&x) ==>`) | both | FX0807 (defined in 04 §1.8) for an unbounded quantifier, the D18 spike's `compile_error!` for some; a v1 form is an attribute v0's std lacks, rustc's uncoded error |
+| CLAUSE-2 | §1.8, 04:392 | A clause is a Rust boolean expression, typed as code; names resolve as in the body | rustc | type errors (e.g. E0308); E0425 for an unresolved name |
+| CLAUSE-3 | §1.8, 04:401 | Clauses call only authority-free fns with `Pure + Sync` arguments and `&mut` only to clause temporaries; generic code needs the bound at the definition | checker | FX0808 (defined in 04 §1.8) |
+| CLAUSE-4 | §1.8, 04:417 (also §1.2 rule 4, 04:189) | `old` snapshots are borrow-checked; non-`Copy` non-`Clone` `old` is an error; `old(e)` cannot name `result` or a bound variable; prophetic `&mut` param outside `old` is FX0803; mutated non-snapshot param in `ensures` is an error | both | FX0803 (04:439); FX0809 (defined in 04 §1.8) for the in-place parameter; the rest via the lowering's rustc errors (E0425, E0599, E0382, and E0500 in the D18 spike) |
+| CLAUSE-6 | §1.8, 04:466 | Name-resolution part: over an iterator other than `a..b`, a `for` loop's invariant cannot name the loop pattern's bindings | rustc (through the contract macros' lowering) | E0425: the head comes before `next`, so the bindings are out of scope |
 | SEAL-2 | §11.1, 04:1259 | What an interface, whole, or manifest seal entry fixes (the hash SEAL-3 compares) | checker (admission driver) | FX0920 via SEAL-3 |
 | SEAL-3 | §11.1, 04:1313 | Before rustc runs, the driver checks the crate against its own `tide.seal`; a changed or missing item, or an unlisted target, is an error and the crate is not admitted | checker (admission driver) | FX0920 |
+
+SEAL-2 and SEAL-3 need a crate together with its `tide.seal`, which a
+one-file case cannot hold; their cases wait for the admission driver.
 
 ## Considered and excluded (runtime, simulator, sandbox, tooling, non-rejecting, or v1)
 

@@ -84,7 +84,10 @@ every `Pure` verdict is the checker's (an `FX` mark). Its bodies are
 decided at run time, in the simulator, or in the sandbox are outside it
 (`rules.md` lists them). `rustc/std` is copied from
 `trials/e1-dialect/rustc/std`, whose copy stays frozen as the trial's record,
-and uses the trial's `macros` crate as is.
+and uses the trial's `macros` crate as is. Its contract macros are the D18
+spike's (`spikes/d18/macros`), so a contract case's rustc marks record that
+lowering's errors, and the case's comment says where they differ from the
+design's (04 §1.8, CLAUSE-7, lists the spike's known gaps).
 Add an item to the stub when a case needs it, with the signature the design
 gives, and mark `GUESS` on a signature no design document fixes. If the stub
 cannot express a verdict a rule needs, record the gap on the case's bead.
