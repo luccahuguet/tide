@@ -10,6 +10,8 @@ description = "Conformance rustc oracle: Tide std signatures with unimplemented 
 tide_macros = { path = "../../../spikes/d18/macros" }
 # The E1 trial's #[test] and #[sim_test] shims and derive(Error), used as is.
 oracle_macros = { path = "../../../trials/e1-dialect/rustc/macros" }
+# #[pure] and #[trusted_pure], which neither of the above defines.
+conformance_macros = { path = "../macros" }
 
 # Its own workspace, so no parent manifest is consulted.
 [workspace]

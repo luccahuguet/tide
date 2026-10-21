@@ -642,8 +642,9 @@ are derived structurally, as in Rust:
 | `Task<'s, U, E>` | if `U, E: Send` | if `U, E: Send` |
 | capabilities, `Scope<'s, 'env, E>`, atomics | yes | yes |
 
-**SEND-2.** `unsafe impl Send` and `unsafe impl Sync` are allowed only in
-packages granted `unsafe` (`FX0901`), and each one is a trust hole.
+`unsafe impl Send` and `unsafe impl Sync`, like every `unsafe impl`, are
+allowed only in packages granted `unsafe` (`FX0901`, 03 UNSAFE-1), and each
+one is a trust hole. (`SEND-2` is retired.)
 
 **SEND-3. Task boundaries** require `Send` (by value) or `Sync` (by
 reference): a spawned child's captures, so the closure is `Send`; channel
@@ -759,7 +760,8 @@ it.
 
 ### 8.4 `Shared<T>` and `Shared::with`
 
-- **`Shared<T>`** requires `T: Send + Pure` (D8). It is a counted handle,
+- **`Shared<T>`** requires `T: Send + Pure` (D8,
+  `03-authority-concurrency.md` LOCK-1). It is a counted handle,
   invariant in `T`, with `orig(Shared<T>) = orig(T)`. It is `Send` and
   `Sync`, not `Pure`, and creating one takes `&Tasks` (D7).
 - **SHARED-1. `Shared::with(&a, f)`** and **`Shared::with2(&a, &b, f)`** (and
@@ -768,10 +770,11 @@ it.
   `for<'σ> FnOnce(&'σ mut T1, …) -> R`: each payload reference gets a fresh
   higher-ranked `σ`, so no value carrying `σ` escapes into the result or into
   captured places.
-- **The closure** is `Pure`, so it captures no capability and no `Shared`
-  handle; with `Pure` payloads it can neither suspend nor call `with` again
-  (D8). Both methods return `Result<R, LockError>`, where `LockError` is
-  `Aliased` or `Poisoned` (`03-authority-concurrency.md` LOCK-5).
+- **The closure** is `Pure` (03 LOCK-4), so it captures no capability and no
+  `Shared` handle; with `Pure` payloads it can neither suspend nor call
+  `with` again (D8). Both methods return `Result<R, LockError>`, where
+  `LockError` is `Aliased` or `Poisoned` (`03-authority-concurrency.md`
+  LOCK-5).
 - **Distinctness.** Before acquiring anything, `with2` checks that the
   handles are distinct, since two `&mut` to one payload would be undefined
   behavior. If both name the same cell, it returns `Err(LockError::Aliased)`
@@ -810,14 +813,16 @@ after a panicking child (§8.3).
 
 ## 9. `Pure`
 
-`Pure` is a marker trait the checker owns (D7). Tide's std declares it with
-a blanket impl, so rustc accepts every `Pure` bound; the checker decides it
-structurally wherever a type meets a `Pure`-implying obligation or is
-coerced to a `Pure` trait object, not at the blanket impl. Outside std, a
-type the rule rejects is declared `Pure` only by `#[trusted_pure]` with a
-reason, in a package granted `unsafe`, and each such attribute is a trust
-hole; it claims what `Pure` guarantees below, including that no operation
-on the type depends on other tasks. It is **deep**:
+**PURE-1.** `Pure` is a marker trait the checker owns (D7). Tide's std
+declares it with a blanket impl, so rustc accepts every `Pure` bound; the
+checker decides it structurally wherever a type meets a `Pure`-implying
+obligation or is coerced to a `Pure` trait object, not at the blanket impl,
+and reports a failure as 03 §3.1 says (`FX0517` unless the rule that needs
+`Pure` has its own code). Outside std, a type the rule rejects is declared
+`Pure` only by `#[trusted_pure]` with a reason, in a package granted
+`unsafe` (03 UNSAFE-1), and each such attribute is a trust hole; it claims
+what `Pure` guarantees below, including that no operation on the type
+depends on other tasks. It is **deep**:
 
 - it looks through every field, private ones included, and through `Box` and
   `Rc`, with type arguments substituted;
@@ -828,11 +833,12 @@ on the type depends on other tasks. It is **deep**:
 - a type parameter, or a projection on one that does not normalize
   (`<B as ToOwned>::Owned`), is `Pure` only if it is bounded by it.
 
-Coherence never treats a missing auto or marker trait or bound (`Send`,
-`Sync`, `Pure`, `'static`) as making two impls disjoint (D4): `impl<T: Debug + Pure> K for T` and
-`impl K for Net` overlap, although `Net` is not `Pure`. So a private-field
-edit that changes a type's auto traits cannot create or remove an overlap.
-For `Pure`, the blanket impl makes rustc agree.
+**PURE-2.** Coherence never treats a missing auto or marker trait or bound
+(`Send`, `Sync`, `Pure`, `'static`) as making two impls disjoint (D4,
+`FX0402`): `impl<T: Debug + Pure> K for T` and `impl K for Net` overlap,
+although `Net` is not `Pure`. So a private-field edit that changes a type's
+auto traits cannot create or remove an overlap. rustc agrees (E0119), for
+`Pure` through the blanket impl.
 
 ### `Pure`: no authority reachable
 
@@ -888,12 +894,12 @@ nor create one (D7).
 
 **What std must provide in return.** No operation on a `Pure` type may return
 a result that depends on other tasks. `Arc` and `sync::Weak` are therefore
-synchronization handles (D7): even without count readers, the last release
-runs `T::drop` in whichever task drops last, `make_mut` calls `Clone` only
-when another clone exists, and `upgrade` observes other tasks' drops. Tide's
-`Arc` also omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap` and
-`into_inner`. Authority-free and parallel code shares data by reference
-inside a scope instead.
+synchronization handles (D7, 03 GLOBAL-6): even without count readers, the
+last release runs `T::drop` in whichever task drops last, `make_mut` calls
+`Clone` only when another clone exists, and `upgrade` observes other tasks'
+drops. Tide's `Arc` also omits `strong_count`, `weak_count`, `get_mut`,
+`try_unwrap` and `into_inner`. Authority-free and parallel code shares data
+by reference inside a scope instead.
 
 **Std's types**, including the `core` and `alloc` items ADMIT-1 admits, are
 walked like any other, with two exceptions, and a type the list above names
@@ -948,7 +954,7 @@ is structural, so an `Rc` inside a `Box` disqualifies a type
 | Use | Requires |
 | --- | --- |
 | `join`; `par_map`, `par_for`, `par_chunks_mut`, `par_sort` | `FnOnce + Pure + Send` closures; `Fn + Pure + Send + Sync` closures; both with `Pure + Sync` shared captures; elements `Pure + Sync` (`par_map`) or `Pure + Send` (the others) |
-| memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7) |
+| memoization and `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (D7, 03 AFREE-2) |
 | statics (computed at compile time) | `'static + Sync + Pure` |
 | `Shared` payloads; `with` closures | `Send + Pure`; `Pure` |
 

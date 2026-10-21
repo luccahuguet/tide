@@ -61,6 +61,11 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   sink buffers, and, under the evented runtime, frame stack. `main` runs as
   the main task.
 
+- **CAP-1. No ambient operations.** Tide's std has no free function or
+  constructor that does what a capability method does. The driver reports
+  a path to Rust's ambient one (`std::fs::read`, `Instant::now`,
+  `env::args`, `Command::new`) as `FX0501`, not as rustc's unresolved name.
+
 ## 1. The Standard Capability Set
 
 ### 1.1 Capability types
@@ -261,14 +266,16 @@ Notes:
 | `Arc<T>`, `sync::Weak<T>` | `Arc::new(v, tasks)`, `clone`, `make_mut`, `Arc::downgrade(&a, tasks)`, `upgrade` | none |
 | `std::sync::atomic::*` | `AtomicU64::new(v, tasks)` and the like; sequentially consistent `load`, `store`, `fetch_add`, `compare_exchange` | none |
 
-Every constructor of a synchronization handle takes `&Tasks` (D7; the
-argument position is provisional); cloning an existing handle needs nothing.
-`Scope` and `Task` come from `tasks.scope`. `Rc` and `Cell` stay
-capability-free because they never cross tasks.
+- **CAP-2.** Every constructor of a synchronization handle takes `&Tasks`
+  (D7; the argument position is provisional; `FX0505` without it); cloning
+  an existing handle needs nothing.
+- **CAP-3.** Weaker atomic orderings, `Mutex`, and `RwLock` live in
+  `std::sync::raw`, which requires the `unsafe` grant (`FX0520` without it,
+  ADMIT-1).
 
-Weaker atomic orderings, `Mutex`, and `RwLock` live in `std::sync::raw`,
-which requires the `unsafe` grant. To wait on several sources, send one enum
-through one channel; there is no `select`.
+`Scope` and `Task` come from `tasks.scope`. `Rc` and `Cell` stay
+capability-free because they never cross tasks. To wait on several sources,
+send one enum through one channel; there is no `select`.
 
 ### 1.3 `Root` and the four runtimes
 
@@ -315,10 +322,12 @@ N1). Test builds add the simulator behind one predictable branch.
 ### 2.1 `Root`
 
 - **ROOT-1.** `Root` may be named only as the parameter of the binary's
-  `main`, written `#[tide::main] fn main(root: Root)`. rustc rejects
-  parameters on a plain `main` (E0580); the attribute generates Rust's entry
-  point, which mints the `Root`. Every binary's `main` carries it, with or
-  without `root`; a `main` without it is `FX0512`, whose safe fix adds it.
+  `main`, written `#[tide::main] fn main(root: Root)`, and in the path
+  `Root::sim`, which ROOT-3 confines to test code; any other use is
+  `FX0503`. rustc rejects parameters on a plain `main` (E0580); the
+  attribute generates Rust's entry point, which mints the `Root`. Every
+  binary's `main` carries it, with or without `root`; a `main` without it
+  is `FX0512`, whose safe fix adds it.
 - **ROOT-2.** `root` cannot be passed, borrowed into a call, stored,
   returned, or captured (`FX0503`). Its fields can be moved or borrowed out
   one by one. Attenuation and wiring therefore happen in `main`, where review
@@ -335,27 +344,29 @@ N1). Test builds add the simulator behind one predictable branch.
   capability or handle (`Root`'s capability fields), an `Option` of one
   (`Child`'s pipe ends), sink configuration (`Root::log`), or test-only
   simulator controls (`SimRoot`'s `world` and `faults`), so reading one
-  reaches only authority the value already carries. `mem::zeroed`,
-  `transmute`, and raw-pointer reads in safe std require `T: Pure`. Unsafe
-  code can still forge a capability by writing raw memory, so the lockfile
-  marks every package with an `unsafe` or `ffi` grant `authority: declared,
-  unverified`.
+  reaches only authority the value already carries. Tide's std bounds the
+  type that `mem::zeroed`, `transmute`, and raw-pointer reads produce by
+  `Pure` (`FX0517`). Unsafe code can still forge a capability by writing
+  raw memory, so the lockfile marks every package with an `unsafe` or `ffi`
+  grant `authority: declared, unverified`.
 - **ROOT-5.** No code calls `main` or uses it as a value (`FX0506`), so a
   test cannot mint a real `Root` through it.
 
 ### 2.2 No mutable globals, no thread-locals
 
-- **GLOBAL-1.** A `static` must be `Sync + Pure` (`FX0502`), and, as in
-  Rust, `'static`. There is
-  no `static mut` in safe code.
+- **GLOBAL-1.** A `static` must be `Sync + Pure`, and, as in Rust,
+  `'static`. There is no `static mut` in safe code. A non-`Pure` static
+  and a `static mut` are `FX0502`; rustc reports a missing `Sync` (E0277).
 - **GLOBAL-2.** v0 has no lazy statics (D7). A static's initializer is
   evaluated at compile time by `const fn` (D6); a value that needs run-time
   initialization is built in `main` and passed down. Nothing runs on first
   access, so no initializer can print, panic, wait, or differ between tasks
-  or simulated nodes.
-- **GLOBAL-3.** Safe code has no thread-locals and no task-locals. The
-  runtime's per-task state (cancellation, deadline, sink buffers, frame
-  stack) is reachable only through the operations in this chapter.
+  or simulated nodes. `lazy_static!` is `FX0502`, and Rust's `LazyLock` and
+  `OnceLock` are `FX0520` (ADMIT-1).
+- **GLOBAL-3.** Safe code has no thread-locals and no task-locals
+  (`thread_local!` is `FX0502`). The runtime's per-task state
+  (cancellation, deadline, sink buffers, frame stack) is reachable only
+  through the operations in this chapter.
 - **GLOBAL-4.** Raw pointer addresses are observable only in packages
   granted `unsafe` (D15): raw pointer types are admitted only there
   (ADMIT-1), because their `PartialOrd`, `Ord`, `Hash`, and `Debug` impls
@@ -499,8 +510,8 @@ so the rules above also need an admission check (D7).
   else is `FX0520`, with a fix where std offers a replacement. Outside the
   list are at least:
   - safe hardware intrinsics such as `core::arch::x86_64::__cpuid`;
-  - raw pointer types without an `unsafe` grant, and every address observer
-    (GLOBAL-4);
+  - raw pointer types and `std::sync::raw` (CAP-3) without an `unsafe`
+    grant, and every address observer (GLOBAL-4);
   - `core` atomics, which are created without `&Tasks` (§1.2);
   - `OnceLock` and `LazyLock`, which a parallel region could initialize
     from either branch (`02-memory.md` §9). Tide's std does not export
@@ -652,15 +663,21 @@ into, fetched from the protected remote.
   v1).
 - **RUN-4. Holes.** RUN-1 does not hold through the following; any other
   route is a defect in RUN-1 to RUN-3.
-  1. **`unsafe` grants.** `unsafe` blocks and functions, Rust 2024's unsafe
-     attributes (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
+  1. **UNSAFE-1. `unsafe` grants.** `unsafe` blocks and functions,
+     `unsafe impl` of any trait (`Send` and `Sync`, `02-memory.md` §8.1, or
+     a user's `unsafe trait`), Rust 2024's unsafe attributes
+     (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
      `#[unsafe(link_section)]`), and `#[trusted_pure]` need the package's
      `unsafe` grant (`FX0901`), and so does `global_asm!` (`FX0520`,
-     ADMIT-1); all are trust holes. Unsafe code can forge a capability
-     (ROOT-4), read process memory, replace symbols the runtime calls, make
-     raw system calls, and write the result channel. The candidate's safe
-     code reaches the same through an unsound `unsafe` abstraction the base
-     already holds.
+     ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
+     grant, since only an impl asserts its contract. No grant admits
+     `unsafe impl Pure`, which overlaps std's blanket impl (E0119,
+     `FX0402`; `#[trusted_pure]` is the spelling), or `#[may_dangle]` (an
+     unstable feature: `02-memory.md` §6, ADMIT-2). Unsafe code can forge a
+     capability (ROOT-4), read process memory, replace symbols the runtime
+     calls, make raw system calls, and write the result channel. The
+     candidate's safe code reaches the same through an unsound `unsafe`
+     abstraction the base already holds.
   2. **`ffi` grants** (v1). Foreign code ignores capabilities (FFI-4), and a
      foreign effect with no simulator model (`FX0514`) acts on the host
      unless the sandbox refuses it.
@@ -775,16 +792,17 @@ any access.
 
 `Pure` is a marker trait the checker owns (D7). Tide's std declares it with a
 blanket impl, so rustc accepts every `Pure` bound and coherence never treats
-`Pure` as making two impls disjoint. The checker decides it structurally
-wherever a type meets a `Pure`-implying obligation or is coerced to a `Pure`
-trait object. A failure is reported under the code of the rule that needs
-`Pure` (`FX0502`, `FX0603`, `FX0606`, `FX0611`, `FX0612`), and otherwise,
-as at a user-written bound, a `Pure` supertrait's impl, or a coercion to a
-`Pure` trait object, as `FX0517`. A type the structural rule rejects that is
+`Pure` as making two impls disjoint (`02-memory.md` PURE-2). The checker
+decides it structurally wherever a type meets a `Pure`-implying obligation or
+is coerced to a `Pure` trait object (`02-memory.md` PURE-1). A failure is
+reported under the code of the rule that needs `Pure` (`FX0502`, `FX0518`,
+`FX0603`, `FX0606`, `FX0611`, `FX0612`), and otherwise, as at a
+user-written bound, a `Pure` supertrait's impl, or a coercion to a `Pure`
+trait object, as `FX0517`. A type the structural rule rejects that is
 authority-free in fact, such as a foreign handle, may be marked
-`#[trusted_pure(reason = "...")]` in a package granted `unsafe`, and each
-such mark is a trust hole. `Pure` is deep: it looks through every field,
-private ones included, and through `Box` and `Rc`, with std's two
+`#[trusted_pure(reason = "...")]` in a package granted `unsafe` (UNSAFE-1),
+and each such mark is a trust hole. `Pure` is deep: it looks through every
+field, private ones included, and through `Box` and `Rc`, with std's two
 exceptions (`02-memory.md` §9); recursive types take the
 greatest fixed point; `impl Trait` types are `Pure`, `Send`, or `Sync` only
 if their bounds name it, and `dyn` types are `Send` or `Sync` only if they
@@ -810,7 +828,7 @@ pointee's authority arrives through its arguments).
 
 **`Pure` trait objects.** `dyn Trait + Pure` is not Rust (E0225): only auto
 traits can be added to a trait object. A trait object that must be `Pure`
-uses a companion supertrait with a blanket impl:
+uses a companion supertrait with a blanket impl (`02-memory.md` DYN-2):
 
 ```rust
 pub trait PureValue: Value + Pure {}
@@ -841,10 +859,11 @@ are never authority-free; their wrappers may be (§5). An authority-free body
 also cannot create a synchronization handle, since that takes `&Tasks`
 (§1.2).
 
-`#[pure]` asserts authority-freedom for every instantiation the bounds
-allow; an edit that breaks it is `FX0511`. Every public function's interface
-records the property anyway, and `tide review` reports its loss as an API
-change, which answers the design's open question 4.
+- **AFREE-1.** `#[pure]` asserts authority-freedom for every instantiation
+  the bounds allow; an edit that breaks it is `FX0511`. Every public
+  function's interface records the property anyway, and `tide review`
+  reports its loss as an API change, which answers the design's open
+  question 4.
 
 ### 3.3 What authority-freedom guarantees
 
@@ -898,13 +917,19 @@ user code at timing-dependent points (GLOBAL-6).
 | Use | Requires |
 | --- | --- |
 | `join` closures; `par_*` closures | `FnOnce + Pure + Send`; `Fn + Pure + Send + Sync`; for both, shared captures `Pure + Sync` and mutable captures disjoint; `par_*` elements `Pure + Sync` when shared, `Pure + Send` when split or moved (PAR-4) |
-| compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters; a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
+| compiler memoization, `const fn` | authority-free, `Pure + Sync` parameters, no `&mut` parameters (AFREE-2); a `const fn` body evaluated at compile time is part of its consumers' cache keys (D12) |
 | `static` (computed at compile time, GLOBAL-2) | `Sync + Pure`, and `'static` as in Rust |
 | `Shared<T>` payloads | `T: Send + Pure` |
 | `Shared::with` closures | `Pure`, so nothing they reach holds authority (LOCK-4) |
 | contract clauses (v0) | as `04-contracts.md` CLAUSE-3: calls only to authority-free functions with `Pure + Sync` argument types that take `&mut` only to temporaries the clause creates |
 | `spec fn`, `#[spec]` functions (v1) | as `04-contracts.md` §1.5–§1.7: concrete parameter types `Pure`; type parameters of spec and proof fns need no bound |
 | foreign callbacks (v1) | authority-free (§5.3) |
+
+- **AFREE-2. `const fn`.** A `const fn`'s parameter types are `Pure + Sync`,
+  and none is `&mut` (`FX0518`), although rustc accepts both. A type
+  parameter, including one in `Self`'s type, needs the bound at the
+  definition (§3.2, D4). Memoization rejects nothing: the compiler memoizes
+  only calls that meet the same conditions.
 
 ## 4. Declared and Exercised Authority
 

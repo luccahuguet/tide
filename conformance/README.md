@@ -19,8 +19,9 @@ absolute path. The runner type- and borrow-checks each case with rustc
 twice, as in the E1 trial: as a 2024-edition library (a binary when a line
 starts with `fn main`, so entry-point errors such as E0580 appear) and as a
 test crate (`--test`, so test code is checked too). Both builds use the stub
-Tide std in `rustc/`, injected as `std`, and the case's rustc errors are the
-union of the two. It needs stable rustc and cargo 1.96 and the crates in
+Tide std in `rustc/`, injected as `std`, and pass `-Zallow-features=`, as the
+admission driver does (ADMIT-2); the case's rustc errors are the union of the
+two. It needs stable rustc and cargo 1.96 and the crates in
 `rustc/std/Cargo.lock`, offline. It prints one line per case:
 
 - `PASS`: rustc's errors match the case's rustc marks, and the case has no
@@ -29,7 +30,7 @@ union of the two. It needs stable rustc and cargo 1.96 and the crates in
   the Tide checker can produce.
 - `FAIL`: rustc's errors differ from the marks (rustc's output follows,
   indented), or the case is malformed (no rule line, an ID not in
-  `rules.md`, a malformed mark).
+  `rules.md`, a malformed mark, an unknown `//@` line).
 
 It exits 0 when no case fails, 1 when one does, and 2 on a setup error (the
 stub std does not build, or `rules.md` lists no IDs).
@@ -60,18 +61,22 @@ pub fn nest(tasks: &Tasks) {
 
 - The first line, `//@ rules: ID, ID`, names the rules the case exercises.
   Every ID must be in `rules.md`.
+- Optional lines after it set what the manifest and build would:
+  `//@ grants: unsafe` gives the case's package the `unsafe` grant (03
+  RUN-4), which it otherwise lacks, and `//@ profile: release` checks it in
+  the release profile instead of debug. Only the checker acts on them, and
+  the runner rejects any other `//@` line.
 - A comment says what the case shows.
 - Each line that must get an error ends with `//~` and its codes: `E####`
   for a rustc error, `error` for a rustc error without a code (such as
   "lifetime may not live long enough"), and `FX####` for the checker; a line
-  both report on carries both. A case with no marks must be accepted.
+  both report on carries both. Where the driver reports a code in place of
+  rustc's (an ambient call or a path that is not admitted), the rustc mark
+  records what plain rustc says. A case with no marks must be accepted.
 - rustc's errors must equal the rustc marks as a set of (line, code) pairs.
   An error on an unmarked line, an uncoded error where no `error` mark is,
   or an error in another file fails the case. A case whose only marks are
   `FX` must pass rustc. Warnings are ignored.
-- A case has no manifest, so its package holds no grants: an `unsafe impl`
-  in a case is `FX0901`, and a case accepted under a grant waits for
-  manifests.
 
 The shape follows rustc's own UI tests (`//@` directives, `//~` marks) and
 the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
@@ -84,9 +89,10 @@ every `Pure` verdict is the checker's (an `FX` mark). Its bodies are
 decided at run time, in the simulator, or in the sandbox are outside it
 (`rules.md` lists them). `rustc/std` is copied from
 `trials/e1-dialect/rustc/std`, whose copy stays frozen as the trial's record,
-and uses the trial's `macros` crate as is. Its contract macros are the D18
-spike's (`spikes/d18/macros`), so a contract case's rustc marks record that
-lowering's errors, and the case's comment says where they differ from the
+and uses the trial's `macros` crate as is; `rustc/macros` adds `#[pure]` and
+`#[trusted_pure]`, which leave their item unchanged. The trial's contract macros are
+the D18 spike's (`spikes/d18/macros`), so a contract case's rustc marks record
+that lowering's errors, and the case's comment says where they differ from the
 design's (04 §1.8, CLAUSE-7, lists the spike's known gaps).
 Add an item to the stub when a case needs it, with the signature the design
 gives, and mark `GUESS` on a signature no design document fixes. If the stub
@@ -99,10 +105,11 @@ number counted from 1 within the prefix, as 03 already does (`ROOT-1`,
 `LOCK-4`). Each prefix belongs to one chapter, which defines each of its rules
 with a bold `**PREFIX-N.**` lead, optionally followed by a title, at the start
 of the rule's bullet, list item, or sentence. An ID is never renumbered or
-reused: a removed rule's ID stays retired, and a new rule takes the next
-number. A rule another chapter restates keeps its owner's ID, and the
-restatement cites it. In `rules.md`'s first column a chapter's own ID goes
-bare (`MOVE-1`), and `= ID` marks a row that restates another chapter's rule.
+reused: a removed rule's ID stays retired, noted where the rule stood, and
+a new rule takes the next number. A rule another chapter restates keeps its
+owner's ID, and the restatement cites it. In `rules.md`'s first column a
+chapter's own ID goes bare (`MOVE-1`), and `= ID` marks a row that restates
+another chapter's rule.
 
 Some rules in 02, 03, and 04 have no ID yet (`none yet` in `rules.md`). The
 bead that writes their cases assigns them from these prefixes, defining each

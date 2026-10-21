@@ -59,8 +59,9 @@ error in release builds, `FX0507`); and the log sink (6.5) `error!`,
 (10.1) and `hole!` (13), not imported.
 
 Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
-`debug_assert!(a == b)`), `concat!`, `thread_local!`, `lazy_static!`, and
-crate macros; `include_str!`, `env!`, and `option_env!` are `FX0520` (6.9);
+`debug_assert!(a == b)`), `concat!`, and crate macros; `include_str!`,
+`env!`, `option_env!`, and ungranted `global_asm!` are `FX0520` (6.9),
+`thread_local!` and `lazy_static!` `FX0502`;
 `macro_rules!` and procedural macros are `FX0101`. Write a generic function
 or trait instead; for test tables, loop over a `const` array; for generated
 code or embedded data, run a generator program and commit its `.rs` output.
@@ -95,8 +96,8 @@ error or a string.
 
 ### 2.3 `const fn`, attributes, `cfg`
 
-- `const fn` as Rust, but authority-free (6.6), deterministic, and
-  fuel-limited, with no `&mut` parameters.
+- `const fn` as Rust, but deterministic and fuel-limited, with
+  `Pure + Sync` parameters (6.6), none `&mut` (`FX0518`).
 - Kept Rust attributes: `#[derive]`, `#[test]`, `#[should_panic]`, `#[cfg]`,
   `#[allow]`/`#[warn]`/`#[deny]`, `#[inline]`, `#[must_use]`, `#[repr]`,
   `#[non_exhaustive]`, `#[deprecated]`, `#[doc]`. `#[cfg]` accepts `test`,
@@ -428,10 +429,10 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 ### 6.4 No globals; deterministic hashing
 
 Safe code has no mutable globals or thread-locals (`static mut`, a
-`static` holding atomics, `Mutex`, or `Cell`, `thread_local!`,
-`lazy_static!`: `FX0502`). A `static` must be `'static + Sync + Pure`, its
-value computed at compile time by `const fn`. Build a value that needs
-run-time work in `main` and pass it down.
+`static` holding atomics or `Mutex`, `thread_local!`, `lazy_static!`:
+`FX0502`). A `static` must be `'static + Sync + Pure`, its value computed
+at compile time by `const fn`. Build a value that needs run-time work in
+`main` and pass it down.
 
 `HashMap::new()` uses a fixed hash key, so iteration order is deterministic
 (but unspecified). For untrusted keys use
@@ -473,8 +474,8 @@ pointers; a `dyn Trait` whose trait lacks a `Pure` supertrait; an unbounded
 type parameter. **Everything else is `Pure` exactly when its parts are**,
 including references, collections, `Arena`, `Box`, structs, enums,
 closures, and `Rc`, `Cell`, and `RefCell`, which are not `Sync`, so their
-state never leaves one task. `Arc` is not `Pure` (D7): share by reference
-inside a scope.
+state never leaves one task. Share by reference inside a scope, not by
+`Arc`.
 
 `dyn Trait + Pure` is not Rust (E0225). Declare a companion trait with a
 blanket impl and use its object, which upcasts to `&dyn Value`:
@@ -950,8 +951,8 @@ needs human approval (11), except adding one where there was none.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl Send`/`Sync`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
-| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason (`unsafe impl Pure` conflicts with std's blanket impl) | `unsafe` grant |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
 | Raw pointers | `*const T`, `*mut T`, `p as usize`, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
 

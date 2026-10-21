@@ -58,7 +58,7 @@ not cite is a best mapping that a case must confirm.
 | DROP-1 | §6, 02:530 | "Rule DC": Drop check: every origin in `dropck(T)` must be live where `T` drops | rustc | E0597 / E0713 |
 | DROP-2 | §6, 02:555 | Users cannot write a drop-check exemption (`#[may_dangle]`) | rustc (unstable feature, under ADMIT-2) | E0658 / E0725 |
 | SEND-1 | §8.1, 02:606 (table 02:610) | `Send`/`Sync` are derived structurally per the table | rustc | E0277 |
-| SEND-2 | §8.1, 02:623 | `unsafe impl Send`/`Sync` only in packages granted `unsafe`; an accepting case under a grant awaits manifests | checker | FX0901 (ref:953) |
+| = UNSAFE-1 | §8.1, 02:623 | `unsafe impl Send`/`Sync` only in packages granted `unsafe` | checker | FX0901 (ref:953) |
 | SEND-3 | §8.1, 02:626 | Task boundaries need `Send` (by value) or `Sync` (by reference) | rustc | E0277 |
 | SCOPE-1 | §8.2, 02:682 | Child captures and results outlive `σ`; the parent cannot mutate, move, or free a lent place before the scope ends | rustc | E0373 / E0499 / E0505 / E0506 / E0597 |
 | SCOPE-2 | §8.2, 02:690 | Neither a `Scope` nor a `Task` escapes the scope body through `T` | rustc | higher-ranked lifetime error (uncoded) |
@@ -69,43 +69,43 @@ not cite is a best mapping that a case must confirm.
 | = LOCK-4 | §8.4, 02:747 | The `with` closure is `Pure` | checker | FX0603 |
 | none yet | §8.5, 02:764 (restates 03 §8.1) | `join`: `FnOnce + Pure + Send`; `par_map`/`par_for`: `Fn + Pure + Send + Sync`; shared captures `Pure + Sync`; `&mut` captures disjoint | both | FX0610, FX0611; E0277 / E0499 |
 | = PAR-4 | §8.5, 02:775 | Elements: `Pure`, plus `Sync` when shared and `Send` when split or moved | both | FX0612; E0277 |
-| none yet | §9, 02:789 (not-Pure list 02:815) | `Pure` is decided structurally and deeply (fields, `Box`/`Rc`, greatest fixed point, opaque and `dyn` by stated bounds, type parameters by bound) | checker | FX0517, or the needing rule's code |
-| none yet | §9, 02:793 | `#[trusted_pure]` only in a package granted `unsafe` | checker | FX0901 (03:609) |
-| none yet | §9, 02:807 | A missing auto or marker trait never makes two impls disjoint | both | FX0402 (ref:307); rustc agrees for `Pure` via the blanket impl |
+| PURE-1 | §9, 02:789 (not-Pure list 02:815) | `Pure` is decided structurally and deeply (fields, `Box`/`Rc`, greatest fixed point, opaque and `dyn` by stated bounds, type parameters by bound) | checker | FX0517, or the needing rule's code |
+| = UNSAFE-1 | §9, 02:793 | `#[trusted_pure]` only in a package granted `unsafe` | checker | FX0901 (03:609) |
+| PURE-2 | §9, 02:807 | A missing auto or marker trait never makes two impls disjoint | both | FX0402 (ref:307); E0119 (rustc agrees, for `Pure` via the blanket impl) |
 | = ADMIT-1 | §9, 02:857 | `OnceLock` and `LazyLock` are not admitted | checker | FX0520 |
 | = GLOBAL-6 | §9, 02:870 | `Arc` omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, and `into_inner` | rustc | E0599 |
 | = ADMIT-1 | §9, 02:886 | `io::Error::new`/`other` conversions must reach one of alloc's four `From` impls (no user `From`/`Into`, no reflexive impl) | checker | FX0517 (02:889) |
-| none yet | §9, 02:893 | Generic code that wraps those constructors bounds its parameter by `Error + Send + Sync + Pure + 'static`, checked at the definition | checker | FX0517 |
+| = ADMIT-1 | §9, 02:893 | Generic code that wraps those constructors bounds its parameter by `Error + Send + Sync + Pure + 'static`, checked at the definition | checker | FX0517 |
 | = ADMIT-1 | §9, 02:898 | `Waker` is not admitted | checker | FX0520 |
-| none yet | §9 table, 02:927 | `const fn` and memoization: authority-free, `Pure + Sync` parameters, no `&mut` parameters | checker | no FX code |
+| = AFREE-2 | §9 table, 02:927 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters | checker | FX0518 |
 
 ## 03-authority-concurrency.md
 
 | ID | Section (file:line of the definition) | Rule, one line | Decided by | FX code(s) / rustc |
 | --- | --- | --- | --- | --- |
-| none yet | §0, 03:41 | World and nondeterminism operations exist only as capability methods; ambient std calls are rejected | both | FX0501 (ref:549); rustc unresolved path |
-| none yet | §1.2, 03:215 | Every synchronization-handle constructor takes `&Tasks` | both | FX0505 (ref:725); E0061 |
-| none yet | §1.2, 03:220 | `std::sync::raw` (`Mutex`, `RwLock`, weaker orderings) needs the `unsafe` grant | checker | no FX code (ref:955 also gives none) |
-| ROOT-1 | §2.1, 03:268 | `Root` may be named only as the parameter of `#[tide::main] fn main`; every binary's `main` carries the attribute | both | FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |
+| CAP-1 | §0, 03:41 | World and nondeterminism operations exist only as capability methods; ambient std calls are rejected | both | FX0501 (ref:549); rustc E0425 / E0599 (unresolved) |
+| CAP-2 | §1.2, 03:215 | Every synchronization-handle constructor takes `&Tasks` | both | FX0505 (ref:725); E0061 |
+| CAP-3 | §1.2, 03:220 | `std::sync::raw` (`Mutex`, `RwLock`, weaker orderings) needs the `unsafe` grant | checker | FX0520 (via ADMIT-1) |
+| ROOT-1 | §2.1, 03:268 | `Root` may be named only as the parameter of `#[tide::main] fn main` and in the path `Root::sim`; every binary's `main` carries the attribute | both | FX0503 for naming `Root` elsewhere; FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |
 | ROOT-2 | §2.1, 03:273 | `root` cannot be passed, borrowed into a call, stored, returned, or captured | checker | FX0503 |
 | ROOT-3 | §2.1, 03:277 | `Root::sim`, `SimRoot`, `NodeRoot`, and `std::sim` compile only in test code | checker | FX0504 |
-| ROOT-4 | §2.1, 03:283 | Capabilities and handles cannot be built from data (private field, no `Default`/`Decode`); `mem::zeroed`, `transmute`, and raw reads in safe std need `T: Pure` | both | E0451 / E0277; `Pure` part FX0517; no own code |
+| ROOT-4 | §2.1, 03:283 | Capabilities and handles cannot be built from data (private field, no `Default`/`Decode`); Tide's std bounds what `mem::zeroed`, `transmute`, and raw reads produce by `Pure` | both | E0423 / E0599; `Pure` part FX0517; no own code |
 | ROOT-5 | §2.1, 03:294 | No code calls `main` or uses it as a value | checker | FX0506 |
 | GLOBAL-1 | §2.2, 03:299 | A `static` must be `Sync + Pure + 'static`; no `static mut` in safe code | both | FX0502; E0277 for `Sync` |
-| GLOBAL-2 | §2.2, 03:302 | No lazy statics: a static's initializer is evaluated at compile time by `const fn` | both | rustc E0015; `LazyLock`/`OnceLock` FX0520; `lazy_static!` FX0502 (ref:433) or FX0103 (ref:62) |
-| GLOBAL-3 | §2.2, 03:307 | Safe code has no thread-locals or task-locals | checker | `thread_local!` FX0502 (ref:432, comp:38) or FX0103 (ref:62) |
+| GLOBAL-2 | §2.2, 03:302 | No lazy statics: a static's initializer is evaluated at compile time by `const fn` | both | rustc E0015; `LazyLock`/`OnceLock` FX0520; `lazy_static!` FX0502 |
+| GLOBAL-3 | §2.2, 03:307 | Safe code has no thread-locals or task-locals | checker | `thread_local!` FX0502 |
 | GLOBAL-4 | §2.2, 03:310 | Raw pointer types, pointer-to-integer casts, `addr`, and `{:p}` only under the `unsafe` grant | checker | FX0520 (via ADMIT-1; ref:956) |
 | GLOBAL-6 | §2.2, 03:320 | `Arc` and `sync::Weak` are not `Pure`, take `&Tasks` to create, and lack count observers | both | `Pure` part: needing rule's code or FX0517; FX0505; E0599 / E0061 |
 | SINK-8 | §2.4, 03:424 | `dbg!` is an error in release and CI profiles; `print!` in a library and printing in a `with` closure are lints | checker | FX0507 (error); FX0508, FX0607 (lints) |
 | SINK-10 | §2.4, 03:435 | `Secret<T>` has no `Debug`/`Display`, so formatting one is a type error | rustc | E0277 |
 | ADMIT-1 | §2.5, 03:446 | Only listed `core`/`alloc` items and std inherent methods are admitted (paths, methods, operators, derefs, selected impls, macro expansions) | checker | FX0520; FX0517 for `io::Error` conversions (03:464) |
 | ADMIT-2 | §2.5, 03:484 | The driver passes rustc no user flags and passes `-Zallow-features=`, so user code cannot enable unstable features | rustc (driver-configured) | E0725 |
-| none yet | §2.6, 03:606 (inside RUN-4 hole 1) | `unsafe` blocks and fns, unsafe attributes, and `#[trusted_pure]` need the `unsafe` grant; so does `global_asm!` | checker | FX0901; `global_asm!` FX0520 |
-| none yet | §3.1, 03:727 | `Pure` is decided structurally at each `Pure`-implying obligation and each coercion to a `Pure` trait object | checker | FX0517, or FX0502 / FX0603 / FX0606 / FX0611 / FX0612 |
-| none yet | §3.1, 03:735 | `#[trusted_pure]` on a type only in a package granted `unsafe` | checker | FX0901 (03:609) |
-| none yet | §3.1, 03:762 | A `Pure` trait object goes through a companion supertrait, checked at each coercion | both | E0225; FX0517 |
-| none yet | §3.2, 03:795 | `#[pure]` asserts authority-freedom for every instantiation the bounds allow | checker | FX0511 |
-| none yet | §3.5 table, 03:852 | `const fn` and memoization: authority-free, `Pure + Sync` parameters, no `&mut` | checker | no FX code |
+| UNSAFE-1 | §2.6, 03:606 (RUN-4 hole 1) | `unsafe` blocks and fns, `unsafe impl`, unsafe attributes, and `#[trusted_pure]` need the `unsafe` grant; so does `global_asm!`; no grant admits `unsafe impl Pure` | both | FX0901; `global_asm!` FX0520; `unsafe impl Pure` E0119 / FX0402 |
+| = PURE-1 | §3.1, 03:727 | `Pure` is decided structurally at each `Pure`-implying obligation and each coercion to a `Pure` trait object | checker | FX0517, or FX0502 / FX0518 / FX0603 / FX0606 / FX0611 / FX0612 |
+| = UNSAFE-1 | §3.1, 03:735 | `#[trusted_pure]` on a type only in a package granted `unsafe` | checker | FX0901 (03:609) |
+| = DYN-2 | §3.1, 03:762 | A `Pure` trait object goes through a companion supertrait, checked at each coercion (E0225 for `dyn Trait + Pure` is 02 §5.1's) | checker | FX0517 |
+| AFREE-1 | §3.2, 03:795 | `#[pure]` asserts authority-freedom for every instantiation the bounds allow | checker | FX0511 |
+| AFREE-2 | §3.5 table, 03:852 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters (rustc accepts both); type parameters bounded at the definition | checker | FX0518 |
 | none yet | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
 | none yet | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker (lint) | FX0608 |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
@@ -148,6 +148,7 @@ one-file case cannot hold; their cases wait for the admission driver.
 - SINK-5 (03:412): runtime loss and backpressure.
 - SINK-6 (03:420): simulator trace.
 - SINK-7 (03:422): output elision under memoization.
+- Memoization (03:852, 02:927): rejects nothing; the compiler memoizes only calls that meet AFREE-2's conditions.
 - SINK-9 (03:430): v1, plus lockfile tooling.
 - GLOBAL-5 (03:317): `HashMap` key behaviour in the library at runtime.
 - RUN-1 (03:498): sandbox guarantee.

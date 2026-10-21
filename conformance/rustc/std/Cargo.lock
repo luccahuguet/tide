@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "conformance_macros"
+version = "0.0.0"
+
+[[package]]
 name = "oracle_macros"
 version = "0.0.0"
 dependencies = [
@@ -53,6 +57,7 @@ dependencies = [
 name = "tide_std_stub"
 version = "0.0.0"
 dependencies = [
+ "conformance_macros",
  "oracle_macros",
  "tide_macros",
 ]

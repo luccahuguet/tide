@@ -46,6 +46,8 @@ check() { # check <file>
   [[ -n "$rules" ]] || { fail "no '//@ rules:' first line"; return; }
   bad="$(grep -vxF -f <(printf '%s\n' "${IDS[@]}") <<<"$rules" | tr '\n' ' ')"
   [[ -z "$bad" ]] || { fail "rule IDs not in rules.md: $bad"; return; }
+  bad="$(awk 'NR > 1 && /^\/\/@/ && !/^\/\/@ (grants: unsafe|profile: release)$/ { printf "%d ", NR }' "$file")"
+  [[ -z "$bad" ]] || { fail "unknown '//@' lines: $bad"; return; }
   # Marks: `//~ CODE ...` ends a line; a code is E####, `error` (uncoded), or FX####.
   marks="$(awk '{ i = index($0, "//~"); if (!i) next
       n = split(substr($0, i + 3), c, " "); if (!n) print "bad " NR ":(empty)"
@@ -58,8 +60,10 @@ check() { # check <file>
   fx="$(sed -n 's/^fx [0-9]*://p' <<<"$marks" | sort -u | tr '\n' ' ')"
   kind=lib
   grep -qw '^fn main' "$file" && kind=bin
+  # -Zallow-features= as the admission driver passes it (ADMIT-2); stable rustc
+  # takes a -Z flag only under RUSTC_BOOTSTRAP.
   for mode in "--crate-type=$kind" --test; do
-    log+="$(rustc --edition 2024 --extern "std=$RLIB" -L "dependency=$DEPS" "$mode" \
+    log+="$(RUSTC_BOOTSTRAP=1 rustc -Zallow-features= --edition 2024 --extern "std=$RLIB" -L "dependency=$DEPS" "$mode" \
         --crate-name "$(basename "$file" .rs | tr -c 'a-zA-Z0-9_\n' _)" --emit metadata \
         --out-dir "$OUT" --error-format=short "$file" 2>&1)"$'\n' || code=1
   done

@@ -1007,10 +1007,10 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   rejects with E0521, and snapshot choices that need the checker's `Pure`
   decision) are implementation work. Its `tide-admit` reports every failed
   `Pure` obligation as `FX0510`; the design reports one under the code of
-  the rule that needs `Pure` (`FX0502`, `FX0603`, `FX0606`, `FX0611`,
-  `FX0612`), and otherwise as `FX0517` (03 §3.1). A broken `#[pure]` is
-  `FX0511`, and `FX0510` is the least-authority lint (03 §4.2). Its float
-  fixture still rejects `sqrt`, which D3 admits.
+  the rule that needs `Pure` (`FX0502`, `FX0518`, `FX0603`, `FX0606`,
+  `FX0611`, `FX0612`), and otherwise as `FX0517` (03 §3.1). A broken
+  `#[pure]` is `FX0511`, and `FX0510` is the least-authority lint (03 §4.2).
+  Its float fixture still rejects `sqrt`, which D3 admits.
 - **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;
     `.rs` files.

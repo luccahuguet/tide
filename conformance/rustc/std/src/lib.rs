@@ -46,12 +46,13 @@ pub mod prelude {
             unimplemented, unreachable, vec, write, writeln,
         };
         // Tide additions (reference 12.3).
-        pub use crate::Root;
         pub use crate::marker::Pure;
+        pub use crate::{Root, Secret};
         pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
         pub use crate::tide;
         pub use oracle_macros::{Error, sim_test, test};
         pub use std::error::Error;
+        pub use conformance_macros::{pure, trusted_pure};
         pub use tide_macros::{ensures, invariant, invariants, requires};
     }
 }
@@ -315,6 +316,41 @@ pub mod sync {
     }
     impl std::error::Error for LockError {}
 
+    /// Rust's `Arc` without `strong_count`, `weak_count`, `get_mut`,
+    /// `try_unwrap`, and `into_inner`; creation takes `&Tasks` (03 §1.2, GLOBAL-6).
+    pub struct Arc<T: ?Sized> {
+        _p: PhantomData<std::sync::Arc<T>>,
+    }
+    impl<T> Arc<T> {
+        pub fn new(v: T, tasks: &Tasks) -> Arc<T> { unimplemented!() }
+        pub fn downgrade(this: &Arc<T>, tasks: &Tasks) -> Weak<T> { unimplemented!() }
+    }
+    impl<T: Clone> Arc<T> {
+        pub fn make_mut(this: &mut Arc<T>) -> &mut T { unimplemented!() }
+    }
+    impl<T: ?Sized> Clone for Arc<T> {
+        fn clone(&self) -> Self { unimplemented!() }
+    }
+    impl<T: ?Sized> std::ops::Deref for Arc<T> {
+        type Target = T;
+        fn deref(&self) -> &T { unimplemented!() }
+    }
+
+    pub struct Weak<T: ?Sized> {
+        _p: PhantomData<std::sync::Weak<T>>,
+    }
+    impl<T> Weak<T> {
+        pub fn upgrade(&self) -> Option<Arc<T>> { unimplemented!() }
+    }
+
+    /// Needs the `unsafe` grant (03 §1.2). GUESS: no document gives their API;
+    /// only the names are fixed.
+    pub mod raw {
+        use std::marker::PhantomData;
+        pub struct Mutex<T: ?Sized>(PhantomData<std::sync::Mutex<T>>);
+        pub struct RwLock<T: ?Sized>(PhantomData<std::sync::RwLock<T>>);
+    }
+
     /// Rust's `std::sync::mpsc`, except that creation takes `&Tasks` (reference 7.3).
     pub mod mpsc {
         use crate::task::Tasks;
@@ -522,8 +558,10 @@ pub mod sim {
 }
 
 /// Every capability a program starts with (reference 6.2). The `log` field
-/// (sink configuration) is left out: no document fixes its type.
+/// (sink configuration) is left out: no document fixes its type. The private
+/// field keeps user code from building one (03 §1.3, ROOT-4).
 pub struct Root {
+    _private: (),
     pub fs: fs::Fs,
     pub net: net::Net,
     pub clock: time::Clock,
@@ -535,6 +573,14 @@ pub struct Root {
 }
 impl Root {
     pub fn sim(seed: u64) -> sim::SimRoot { unimplemented!() }
+}
+
+/// Reference 6.5 and 03 SINK-10: neither `Debug` nor `Display`.
+pub struct Secret<T>(T);
+impl<T> Secret<T> {
+    /// GUESS: no document gives the constructor.
+    pub fn new(v: T) -> Secret<T> { unimplemented!() }
+    pub fn expose(&self) -> &T { unimplemented!() }
 }
 
 /// Used by `#[tide::main]`'s expansion.
