@@ -1103,11 +1103,24 @@ the deadline to the operations rather than set it on the scope (companion
 a wait that only limited scopes have.
 
 A task that holds a slot and waits for one, such as a child that spawns
-into its own scope or opens a nested scope from the same `Tasks`, can
-deadlock the count once every slot is held that way. Cancelling the
-scopes of the tasks waiting in `spawn`, by a deadline or `cancel()`, breaks
-it unless they wait under `shield` (TASK-6). Otherwise the simulator
-reports a global deadlock once no task can run (§9.3).
+into its own scope or opens a nested scope from a `Tasks` that shares its
+count, can deadlock the count once every slot is held that way. Cancelling
+the scopes of the tasks waiting in `spawn`, by a deadline or `cancel()`,
+breaks it unless they wait under `shield` (TASK-6). Otherwise the
+simulator reports a global deadlock once no task can run (§9.3).
+
+A clone of a limited `Tasks` shares its counts, as it shares its
+authority. `limit` on a limited `Tasks` adds a count and keeps the old
+one: a child spawned through the result takes a slot in each count at
+once, so the outer bound still holds and no spawn holds one count while it
+waits for another. Everything but `spawn` works on `limit(0)`, so
+`limit(n.min(len))` on empty input is fine, but a `spawn` under a zero
+count panics, as `chunks(0)` does, since it could only wait until
+cancelled. It panics in a cancelled scope and under `shield` too, so the
+misuse shows on every run.
+
+`spawn_isolated` takes no slot: its caller, which may hold one, waits for
+the isolated task, so no more children run at once.
 
 ### 6.2 Failure, cancellation, and deadlines
 
@@ -1132,16 +1145,30 @@ reports a global deadlock once no task can run (§9.3).
      `E::from(TaskError::DeadlineExceeded)` (TASK-4);
   3. otherwise it returns the body's result, `Ok` or `Err`.
 
-  An `Err` that a child returns after observing a cancellation caused by
-  the body's `Err` or a sibling's failure is a **cancellation echo**, not a
+  An `Err` that a child returns after observing a cancellation caused by the
+  body's `Err` or a sibling's failure is a **cancellation echo**, not a
   failure (D8). The runtime keeps one bit per child, set when a checkpoint
-  in the child, or in a scope nested in it, returns a cancellation error
-  that the body's `Err` or a sibling's failure caused; it never inspects
-  `E`. A child that fails without observing such a cancellation is an
-  independent failure and counts under rule 2, ahead of the body's `Err`.
-  A channel disconnect alone sets no bit, so an `Err` returned after one
-  by a child that has observed no such cancellation is an independent
-  failure (§6.4).
+  in the child, in a task it waits for with `spawn_isolated` (directly or
+  through further isolated calls), or in a scope nested in either returns a
+  cancellation error that the body's `Err` or a sibling's failure caused; it
+  never inspects `E`. A scope's cancellation has one cause, the first event
+  that cancelled it: its body's `Err` or panic, a child's failure or panic,
+  its own deadline, `cancel()`, or an enclosing scope's cancellation. An
+  enclosing deadline at the same instant as the scope's own comes first. A
+  checkpoint in a nested scope sets the bit only for a cancellation that
+  reached the nested scope from this one; a cause inside the nested scope,
+  such as a failure among its own children, is that scope's to report, and
+  it reaches this scope as the child's own result. A `join` that returns
+  `Err` sets the bit exactly where a checkpoint at the same point and moment
+  would if no `shield` were in force there. Ignoring `shield` only lets that
+  checkpoint see the enclosing scopes' cancellations; every scope keeps its
+  actual first cause, so a nested scope that its own cause cancelled first
+  still marks nothing. A child that calls `x.join()?` directly after a
+  sibling's failure cancelled this scope is an echo too. A child that fails
+  with no bit set is an independent failure and counts under rule 2, ahead
+  of the body's `Err`. A channel disconnect alone sets no bit, so an `Err`
+  returned after one by a child whose bit is clear is an independent failure
+  (§6.4).
   So when the body's `Err` cancels the scope and the children only echo
   it, rule 3 reports the body's error; when the body fails through
   `x.join()?` because `x` failed, rule 2 reports `x`'s error (JOIN-2).
@@ -1231,8 +1258,8 @@ and `e.into_inner()`. A bare `Err(RecvError)` still compiles, as a binding
 that catches every error.
 
 A disconnect is not a cancellation and alone sets no echo bit (TASK-2): a
-child that returns `Err` because its peer dropped the other end, and has
-not already observed such a cancellation (TASK-2), fails independently.
+child that returns `Err` because its peer dropped the other end, and
+whose bit is clear, fails independently.
 A pipeline stage therefore returns `Ok` on a disconnect, so it cannot
 outrank the failure that dropped its peer.
 
