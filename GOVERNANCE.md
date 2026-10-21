@@ -43,8 +43,9 @@ Primary rule:
 
 Current operating model:
 
-* the Opus review passes come first: converge for code, tests, or scripts; review rounds for docs-only design work. When they come clean, one Codex supervisor pass (`gpt-6.1-sol`, always `xhigh` effort) reviews the converged diff
-* if the supervisor pass leads to any change, run one narrow Opus confirmation round, then a narrow supervisor re-check of those fixes; text-only fixes restart this loop at most twice
+* the first review round runs two read-only reviews in parallel on one frozen candidate, the working tree at its recorded diff SHA-256: an Opus review (for code, tests, or scripts, a converge round that reports instead of fixing; for docs-only design work, a review round) and one Codex supervisor pass (`gpt-6.1-sol`, always `xhigh` effort). Nothing edits the tree until both reports are in; then the author fixes what both found. The two reviews take consecutive round numbers, Opus first
+* Opus confirmation rounds follow until one comes clean; later converge rounds fix as usual. Then a narrow supervisor re-check reviews the changes made since the frozen candidate, unless there are none. If the re-check leads to any change, run one narrow Opus confirmation round and another narrow re-check; text-only fixes restart this loop at most twice. The supervisor pass and its re-check replace converge's own Codex round
+* a finding blocks or restarts a round when its fix would change a tier the change edits or an earlier one; most changes edit the v0 core. A finding whose fix would change only text in a tier later than every tier the change edits (for a v0 change, v1 or Later in `design/01-design.md`'s tier table) is recorded as a comment on bead `fx-djp` and is not fixed in the change under review
 * planning-only changes (bead filings) skip the supervisor pass
 * human maintainer remains final merge authority; overrides should be rare and recorded
 

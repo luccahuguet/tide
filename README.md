@@ -165,8 +165,10 @@ Cited evidence behind the decisions, in [research/](research/):
   pinned protocol profile plus `.agent-protocols.local.md`.
 - [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
   set architecture, write specifications, and review; every change to
-  `main` needs a Codex supervisor verdict after its Opus reviews come
-  clean.
+  `main` except a planning-only one gets a Codex supervisor pass beside
+  its first Opus review and a narrow Codex re-check of any fixes once the
+  Opus reviews come clean, and only findings in the tiers a change edits, or earlier
+  ones, block it.
 - [BR_WORKFLOW.md](BR_WORKFLOW.md): how `br` tracks work and which `.beads/`
   files are committed.
 - Open work lives in beads (`.beads/issues.jsonl`), managed with `br`.
