@@ -554,10 +554,17 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
   and writes suspend and are checkpoints.
 - **`Stdio`** has `piped()`, `inherit()`, and `null()`, which take no
   capability, and `From` a `File` or a pipe end, so
-  `.stdin(a.stdout.take().unwrap())` pipes child `a` into the next. It
-  has no other conversion: no `From<io::Stdout>`, since `stdout()` is a
-  sink, not a file descriptor (6.5), and no `From<OwnedFd>`. A `Stdio`
-  can hold a handle, so it is not `Pure`.
+  `.stdin(a.stdout.take().unwrap())` pipes child `a` into the next. As in
+  Rust, `.stdout(io::stderr())` sends a child's output to your standard
+  error; used as a `Stdio`, `io::stdout()` and `io::stderr()` name the
+  process's descriptors, as `inherit()` does, even when `root.log` sends the
+  sinks to a file. There is no `From<OwnedFd>`. A `Stdio` can hold a handle,
+  so it is not `Pure`.
+- **Output order.** Starting a child whose stdout or stderr is the process's
+  own (inherited, or `io::stdout()` or `io::stderr()`) first writes out
+  every earlier `println!`, `eprintln!`, `dbg!`, and log record (a log
+  record may instead be dropped under overload), so the child's output
+  follows them, as in Rust (03 SINK-4).
 - **Signals.** `proc.signals(&[Signal]) -> io::Result<Signals>` subscribes
   to the listed signals; `Signals::recv` suspends until one arrives.
 - **Paths.** `Command`, `Child`, the pipe ends, `Stdio`, `Signal`, and

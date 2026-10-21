@@ -167,13 +167,15 @@ Notes:
   their reads and writes suspend.
 - **`Stdio`.** `Stdio` has `piped()`, `inherit()`, `null()`, and `From` for
   `File` and the three pipe ends; the last three pipe one child into
-  another. It has no other conversion. Rust's `From<io::Stdout>` and
-  `From<io::Stderr>` are gone, since those are sink handles (§2.4), not file
-  descriptors. `From<OwnedFd>`, `From<io::PipeReader>`, and
-  `From<io::PipeWriter>` are gone too, so every conversion into a `Stdio`
-  starts from a handle. A `Stdio` does nothing until a `Command` uses it, so
-  making one takes no capability, but it can hold a handle and is therefore
-  not `Pure`.
+  another. It also keeps Rust's `From<io::Stdout>` and `From<io::Stderr>`,
+  which name the process's own descriptors 1 and 2, as `inherit()` does,
+  whatever destination `root.log` gives the sinks: `.stdout(io::stderr())`
+  sends a child's output to the parent's standard error, ordered after
+  earlier records (SINK-4). It has no other conversion: `From<OwnedFd>`,
+  `From<io::PipeReader>`, and `From<io::PipeWriter>` are gone, so every
+  other conversion into a `Stdio` starts from a handle. A `Stdio` does
+  nothing until a `Command` uses it, so making one takes no capability, but
+  it can hold a handle and is therefore not `Pure`.
 - **Receivers.** The methods of `Fs`, `Net`, `Clock`, `Rand`, `Env`,
   `Stdin`, `Proc`, `Tasks`, and `Accel` take `&self`. Resource handles keep
   Rust's receivers where Rust has the method: `Command`'s builder methods,
@@ -390,18 +392,31 @@ determinism claim here holds modulo exhaustion of memory, stack, or
   is unobservable. A panic in an argument or formatting impl propagates like
   any other panic; sinks are not a catch point (D5).
 - **SINK-4. Order.** Within a task, records appear in program order. Across
-  tasks, real runtimes interleave them in emission order and the simulator in
-  scheduler order. Inside `join`, `par_map`, and `par_for`, each branch
+  tasks, real runtimes interleave them in emission order and the simulator
+  in scheduler order. Inside `join`, `par_map`, and `par_for`, each branch
   writes to its own buffer, and the buffers are appended in branch order at
   the join, so output matches the sequential program (§8.4). The buffers of
-  branches after the first panicking one are discarded (PAR-2).
-- **SINK-5. Loss and backpressure.** `out` and `err` are lossless: when the
-  process-wide buffer passes its high-water mark, the emitting OS thread
-  blocks until the writer thread drains it. That is backpressure, not
-  suspension. If stdout is a closed pipe, the process exits quietly with
-  status 141, matching the default `SIGPIPE` behavior that `cmd | head`
-  relies on. `log` and `trace` drop records under overload and report the
-  count as a `log` record.
+  branches after the first panicking one are discarded (PAR-2). A child
+  process whose stdout or stderr is the process's own (`Stdio::inherit()`,
+  the default for `spawn` and `status`, or `io::stdout()` and
+  `io::stderr()`, §1.1) writes to the descriptors directly, past the writer
+  thread. So when a `Command`'s `spawn`, `status`, or `output` starts such a
+  child, it first waits until the writer has written every sink record
+  emitted before the call, or dropped it where SINK-5 allows:
+  `println!("building"); cmd.status()?` prints in that order, as in Rust. A
+  branch's records count as emitted when the outermost join appends them to
+  its task's output. The wait is backpressure (SINK-5), not suspension. The
+  simulator needs none, since records enter its trace when emitted (SINK-6).
+  A parallel branch cannot start a child, since its closure is `Pure`
+  (§8.1).
+- **SINK-5. Loss and backpressure.** `out` and `err` are never dropped under
+  load: when the process-wide buffer passes its high-water mark, the
+  emitting OS thread blocks until the writer thread drains it. That is
+  backpressure, not suspension. If stdout is a closed pipe, the process
+  exits quietly with status 141, matching the default `SIGPIPE` behavior
+  that `cmd | head` relies on. Any other record that cannot be written to
+  its destination is discarded. `log` and `trace` drop records under
+  overload and report the count as a `log` record.
 - **SINK-6. Under simulation.** Every record enters the event trace with
   node, task, and virtual time; tests read them with `sim.records()`.
 - **SINK-7. Elision.** Output from authority-free code may appear zero or
