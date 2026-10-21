@@ -181,22 +181,22 @@ Notes:
   Rust's receivers where Rust has the method: `Command`'s builder methods,
   `output`, `status`, `spawn`, and `Child::wait` take `&mut self`. The one
   exception is `Child::wait_with_output`, which takes `&mut self`, not
-  Rust's `self`: it is a checkpoint, and TASK-3 requires a consuming
-  operation to return what it consumed inside its cancellation error, which
-  an `io::Error` cannot hold. A cancelled call leaves the `Child` with the
-  caller, to `kill` and `wait` under `shield`; as in Rust, the call has
-  already closed `stdin` and taken `stdout` and `stderr`, so those fields
-  are `None` and output read so far is lost. A port that binds the child
-  without `mut` gets rustc's E0596 and its fix. Of the methods Rust lacks,
-  `File::sync`, `read_owned`, `write_owned`, and `Signals::recv` take
-  `&self`, and `File::close` takes `self`. `close` is shielded: it always
-  closes the descriptor and returns the close's own result, even in a
+  Rust's `self`: it is a checkpoint, and a cancelled call that consumed a
+  running `Child` would drop it where the caller could not `kill` and `wait`
+  it; an `io::Error` cannot carry it back. A cancelled call leaves the
+  `Child` with the caller, to `kill` and `wait` under `shield`; as in Rust,
+  the call has already closed `stdin` and taken `stdout` and `stderr`, so
+  those fields are `None` and output read so far is lost. A port that binds
+  the child without `mut` gets rustc's E0596 and its fix. Of the methods
+  Rust lacks, `File::sync`, `read_owned`, `write_owned`, and `Signals::recv`
+  take `&self`, and `File::close` takes `self`. `close` is shielded: it
+  always closes the descriptor and returns the close's own result, even in a
   cancelled scope, because reporting that result is its only purpose beyond
   `drop`. Returning a cancellation error instead would lose the result.
-  Returning the `File` inside one, as TASK-3 asks of consuming checkpoints,
-  would need an error type other than `io::Error` and leave the caller a
-  retry that, cancellation being level-triggered, fails again unless
-  shielded. Like `drop`, it cannot be interrupted (TASK-5).
+  Returning the `File` inside one, as `send` returns its payload, would need
+  an error type other than `io::Error` and leave the caller a retry that,
+  cancellation being level-triggered, fails again unless shielded. Like
+  `drop`, it cannot be interrupted (TASK-5).
 - **`fault_point(name) -> bool`** returns `false` under every real runtime and
   folds to a constant; under the simulator it is a seed-driven fault trigger
   (§9.4).
@@ -1176,12 +1176,36 @@ the isolated task, so no more children run at once.
   echoes, and panics the rule does not report go to one `debug!` record.
 - **TASK-3. Level-triggered.** Once a scope is cancelled, every checkpoint
   inside it, in any task, returns its cancellation error immediately, and
-  keeps doing so. Checkpoints that consume a value return it inside the
-  error (`SendError::Cancelled(v)`); `File::close` consumes its `File` but
-  is shielded, not a checkpoint (§1.1). A limited `spawn` reports
-  cancellation by starting nothing and drops its closure (§6.1). An
-  in-flight kernel operation is cancelled before the error returns. A
-  cancelled write may already have reached the peer.
+  keeps doing so. A checkpoint that hands a value over, a channel payload or
+  an owned buffer (`send`, `read_owned`, `write_owned`), returns it inside
+  the error (`SendError::Cancelled(v)`). Arguments it only reads, such as
+  `fs.write`'s `impl AsRef<[u8]>` data, a path, an address, or a Bend call's
+  arguments, which are copied across (§10), are dropped with the call; a
+  caller that needs one again passes a reference or a clone. Returning every
+  such argument would need a generic error type for each operation.
+  `File::close` consumes its `File` but is shielded, not a checkpoint
+  (§1.1). A limited `spawn` reports cancellation by starting nothing and
+  drops its closure (§6.1).
+
+  A system call in flight when the scope is cancelled is cancelled before
+  the error returns if the kernel can cancel it, as with socket and pipe
+  waits and sleeps; one that completes before the cancel takes effect
+  returns its own result. A system call the kernel cannot cancel once
+  running, such as a file-system call on a regular file or directory (reads,
+  writes, `fsync`, opens, renames, removals, metadata queries, and directory
+  reads), runs to its end and returns its own result, and the task observes
+  the cancellation at its next checkpoint, so a rename or write that
+  finished reports success. A host-name lookup, a library call that cannot
+  be cancelled and has no effect, is abandoned instead and returns the
+  cancellation error; it keeps running on its own copy of the name, and its
+  result is discarded. A foreign call, such as an in-process Bend kernel, is
+  not abandoned (TASK-5, §10).
+
+  An operation made of several system calls checks before each one it
+  starts, except a close, and can stop partway: a cancelled `fs.write` can
+  leave its target truncated, and `remove_dir_all` part of its tree (§1.1).
+  The simulator follows the same rules (§9.3). A cancelled socket or pipe
+  write may already have reached the peer.
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
@@ -1198,11 +1222,12 @@ the isolated task, so no more children run at once.
   cancellation is observed.
 - **TASK-5. What cancellation cannot interrupt.** Authority-free
   computation, `Shared::with` acquisition and closures, foreign calls,
-  joins, and `File::close` (§1.1), which can block on a network file system
-  even inside a shielded scope with a deadline.
-  Deadlines are therefore soft. The evented runtime logs a `warn!` record
-  for a task that runs more than 100 ms (configurable) without reaching a
-  checkpoint; the simulator reports the same condition by step count.
+  joins, a running system call the kernel cannot cancel (TASK-3), and
+  `File::close` (§1.1). The last two can block on a network file system even
+  inside a shielded scope with a deadline. Deadlines are therefore soft. The
+  evented runtime logs a `warn!` record for a task that runs more than 100
+  ms (configurable) without reaching a checkpoint; the simulator reports the
+  same condition by step count.
 - **TASK-6. Shielding.** Operations inside `tasks.shield(|| ..)` ignore the
   cancellation of enclosing scopes; bounded cleanup is a shielded scope with
   its own deadline. `Drop` in std does no I/O beyond closing descriptors; a
@@ -1526,7 +1551,9 @@ default and `tide sim --test` runs more.
 
 - Monotonic time starts at zero, wall time at 2000-01-01T00:00:00Z.
   Computation takes no virtual time; capability operations take modeled
-  latencies drawn from the seed. Without faults, each network packet takes
+  latencies drawn from the seed, which cancellation cuts short only where
+  TASK-3 lets it: a file-system call's latency runs out first. Simulated
+  standard input behaves as a pipe. Without faults, each network packet takes
   1–10 ms, and a `Net::get` to a simulated peer is one round trip, two
   packet delays (2–20 ms), plus the reply's `after(d)`; connection setup and
   name resolution are inside that round trip. An address with no peer gives
@@ -1695,10 +1722,16 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   mismatch. Defs that are IO-typed or depend on foreign or `@unsafe` defs are
   rejected. An unsupported host gets one diagnostic, or the `reference`.
 - **`Accel`.** Calls require `&Accel`, which only `root.accel` provides. In
-  process mode the supervisor runs at most `budget` kernel servers; in-process
-  mode serializes calls, because Bend's runtime is process-global. The budget
-  is subtracted from the `join`/`par_*` pool. A call is a checkpoint; cancelling it
-  abandons the request and restarts the server.
+  process mode the supervisor runs at most `budget` kernel servers;
+  in-process mode serializes calls, because Bend's runtime is
+  process-global. The budget is subtracted from the `join`/`par_*` pool. A
+  call is a checkpoint. In process mode, cancelling it abandons the request,
+  restarts the server, and returns `BendFault::Cancelled`, unless the reply
+  has already arrived (TASK-3). In-process mode cannot stop a running
+  kernel, which is a foreign call (TASK-5): it finishes and returns its own
+  result, and the task observes the cancellation at its next checkpoint; a
+  call still waiting for the serialized runtime returns
+  `BendFault::Cancelled`.
 - **Process protocol.** The kernel server listens on loopback TCP, since Bend
   has no stdin. A request is `FXB1 <def> <schema-hash> <len>` followed by
   the arguments in a generated S-expression grammar; the reply is
@@ -1712,12 +1745,14 @@ pub fn life_steps(accel: &Accel, board: BendArray<u32>, n: u32) -> Result<BendAr
   arithmetic wraps; Tide's checks stop at the boundary.
 - **Failures.** `BendFault` is `Crashed { code, stderr_tail }`,
   `FailStop(n)`, `Limit(what)` (from pre-validation of Bend's known limits),
-  `Protocol` (version or schema mismatch), or `Unavailable`. A kernel that
-  returns Bend's `Result` is declared `-> Result<Result<T, E>, BendFault>`.
+  `Protocol` (version or schema mismatch), `Unavailable`, or `Cancelled`,
+  whose `is_cancelled()` is true (§1.1). A kernel that returns Bend's
+  `Result` is declared `-> Result<Result<T, E>, BendFault>`.
 - **Simulation.** Kernel results are pure, so under the simulator the call
   runs the `reference` implementation if one is declared, and otherwise the
   real kernel outside virtual time, recording the result's hash. Latency is
-  modeled, and `accel_crash` exercises the failure paths.
+  modeled, cancellation follows the declared mode, and `accel_crash`
+  exercises the failure paths.
 - **Imported claims.** `#[bend_law(file, law)]` attaches to the `ensures`
   directly above it, which keeps that clause one expression (04 §1.2 rule 1).
   The claim is accepted only if Tide can render the clause as a Bend law

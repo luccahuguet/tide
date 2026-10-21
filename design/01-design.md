@@ -518,7 +518,7 @@ to pass `Root` everywhere, `reviews/round1-agent-usability.md` B3–B4).
   cancelled scope return `Err(Cancelled)`. A scope deadline cancels the
   children but fails the scope only if a child returns the cancellation as its
   error, so a scope can collect partial results; suspended work unwinds and runs
-  destructors; operations that consume a value return it inside the error.
+  destructors; operations that hand a value over return it inside the error.
 - **Shared mutable state** is message passing over channels, or `Shared<T>`
   cells with `T: Send + Pure`, accessed only through `Shared::with(&a, |x|
   ...)` and `Shared::with2(&a, &b, |x, y| ...)`. `with2` acquires both cells
