@@ -987,7 +987,8 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   same pinned nightly that builds the code is the authoritative admission
   gate and the oracle; it checks rustc's own resolution, so no separate
   equivalence argument is needed. It passes `-Zallow-features=`, so user code
-  cannot enable unstable features. (B) Tide's own incremental front end
+  cannot enable unstable features, and `-Zpolonius=no`, so borrows get NLL's
+  verdicts (02 ORIGIN-6). (B) Tide's own incremental front end
   serves D12's edit loop and is tested against A; where they disagree, A
   decides.
 - **The driver owns every rustc invocation.** It adds no user-controlled

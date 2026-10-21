@@ -33,19 +33,32 @@ and the speed figures are targets, not measurements.*
 
 ## Status
 
-Tide is in the design phase; there is no compiler for this design. The
-decision record is `design/01-design.md` (draft 3.7). Syntax is provisional
-until the E1 learnability experiment meets its thresholds (D0). D18 makes
-Tide a checked dialect of Rust, compiled by a pinned rustc against Tide's
-std; its feasibility spike (`spikes/d18/`) passed, and draft 3.7 applies
-its changes to the other decisions.
+Tide is in the design phase. The decision record is `design/01-design.md`
+(draft 3.7). Syntax is provisional until the E1 learnability experiment
+meets its thresholds (D0). D18 makes Tide a checked dialect of Rust,
+compiled by a pinned rustc against Tide's std; its feasibility spike
+(`spikes/d18/`) passed, and draft 3.7 applies its changes to the other
+decisions.
 
-The repository holds no production code yet. `spikes/d18/` holds the
-throwaway feasibility spike for D18, and the early Rust scaffold from the
-first design, which does not implement Tide, is kept in
-`archive/v0-design/scaffold/`. [conformance/](conformance/README.md) holds
-the conformance corpus: cases with expected verdicts per rule ID, checked
-against rustc by `conformance/run.sh`.
+The v0 checker has started, and its first piece is production code:
+`crates/tide-admit`, the admission driver of D18's architecture A. It is a
+rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`) and
+passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2); the `Pure`
+check and the driver's ownership of every rustc flag are not built yet. The
+root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
+pins, with the `rustc-dev` component:
+
+```
+cargo test --workspace   # the driver's tests
+conformance/run.sh       # the conformance corpus, through stable rustc and the driver
+```
+
+[conformance/](conformance/README.md) holds the conformance corpus: cases
+with expected verdicts per rule ID. Stable rustc checks their rustc marks,
+and the driver checks their marks for the codes it decides. `spikes/d18/`
+holds the throwaway feasibility spike for D18, and the early Rust scaffold
+from the first design, which does not implement Tide, is kept in
+`archive/v0-design/scaffold/`.
 
 ## Reading Guide
 

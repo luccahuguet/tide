@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/tide-admit"]
+# Prototypes, oracles, and records keep their own manifests and toolchains.
+exclude = ["archive", "conformance", "spikes", "trials"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+publish = false

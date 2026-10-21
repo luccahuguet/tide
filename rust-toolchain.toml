@@ -1,0 +1,6 @@
+# The pinned nightly that both builds Tide code and runs the admission driver (D18): rustc
+# 1.99.0-nightly 771916f90 (commit date 2026-08-08). The driver links rustc's crates, so it needs
+# rustc-dev. The allowlist in crates/tide-admit is reviewed whenever this pin moves (ADMIT-1).
+[toolchain]
+channel = "nightly-2026-08-09"
+components = ["rustc-dev", "rust-src"]

@@ -602,6 +602,11 @@ impl<T> Secret<T> {
     pub fn expose(&self) -> &T { unimplemented!() }
 }
 
+/// 03 GLOBAL-4: identity by reference; core's `ptr::eq` takes raw pointers.
+pub mod ptr {
+    pub fn eq<T: ?Sized>(a: &T, b: &T) -> bool { unimplemented!() }
+}
+
 /// Used by `#[tide::main]`'s expansion.
 #[doc(hidden)]
 pub mod __rt {

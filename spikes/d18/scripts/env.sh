@@ -1,5 +1,7 @@
 # Sourced by the spike scripts. Builds the facade once and defines `tide_rustc`.
 set -euo pipefail
+# Stable rustc and cargo, whatever toolchain the working directory pins.
+export RUSTUP_TOOLCHAIN=stable
 D18="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$D18/examples/target"
 FACADE_TARGET="$D18/facade/target"

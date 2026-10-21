@@ -371,9 +371,11 @@ N1). Test builds add the simulator behind one predictable branch.
   granted `unsafe` (D15): raw pointer types are admitted only there
   (ADMIT-1), because their `PartialOrd`, `Ord`, `Hash`, and `Debug` impls
   observe addresses, and so are pointer-to-integer casts, `addr`, and
-  `{:p}`. `Hash` on a
-  reference hashes the referent. `ptr::eq` and `Shared::same` compare
-  identity without exposing it.
+  `{:p}`. A function pointer's code address is one too: its casts to
+  integers, ordering, `Hash`, and `Debug` need the grant, and `==` does
+  not. `Hash` on a reference hashes the referent. `Shared::same` and
+  `std::ptr::eq` compare identity without exposing it; Tide's `ptr::eq`
+  takes `&T` where core's takes raw pointers, so it needs no grant.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
   deterministic though unspecified. Maps keyed by untrusted input take a key
   from `Rand`: `HashMap::with_hasher(RandomState::from_rand(&rand))`.
@@ -544,8 +546,10 @@ so the rules above also need an admission check (D7).
 - **ADMIT-2. The driver owns rustc** (D18). It passes rustc no
   user-controlled `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C`
   flags, and passes `-Zallow-features=` so user code cannot enable unstable
-  features. A build that skips the checker, such as Cargo with Rust's own
-  std, is not a Tide build and carries none of this chapter's guarantees.
+  features, and `-Zpolonius=no`, since the pinned nightly otherwise checks
+  borrows with Polonius and v0 has NLL's verdicts (`02-memory.md` ORIGIN-6).
+  A build that skips the checker, such as Cargo with Rust's own std, is not
+  a Tide build and carries none of this chapter's guarantees.
 
 ### 2.6 Running an unreviewed branch
 

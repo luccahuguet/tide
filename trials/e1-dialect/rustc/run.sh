@@ -8,6 +8,8 @@
 #
 # Usage: trials/e1-dialect/rustc/run.sh [program ...]   (default: all)
 set -uo pipefail
+# Stable rustc and cargo, whatever toolchain the working directory pins.
+export RUSTUP_TOOLCHAIN=stable
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROGRAMS="$HERE/../programs"
 TARGET="$HERE/target"

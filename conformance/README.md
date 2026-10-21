@@ -15,30 +15,41 @@ conformance/run.sh --trace      # each rule in rules.md and the cases that name 
 ```
 
 A case is named by its path under `cases/` (`authority/lock_accept`) or by an
-absolute path. The runner type- and borrow-checks each case with rustc
+absolute path. The runner type- and borrow-checks each case with stable rustc
 twice, as in the E1 trial: as a 2024-edition library (a binary when a line
 starts with `fn main`, so entry-point errors such as E0580 appear) and as a
 test crate (`--test`, so test code is checked too). Both builds use the stub
 Tide std in `rustc/`, injected as `std`, and pass `-Zallow-features=`, as the
 admission driver does (ADMIT-2); the case's rustc errors are the union of the
-two. It needs stable rustc and cargo 1.96 and the crates in
-`rustc/std/Cargo.lock`, offline. It prints one line per case:
+two. It then checks the case the same two ways with the admission driver,
+`crates/tide-admit`, against the stub std built by the pinned nightly, passing
+`--tide-grant=unsafe` for `//@ grants: unsafe`. The driver's `FX` codes are
+the ones `tide-admit --tide-print-codes` lists, such as `FX0520`; its errors in
+those codes are the union of the two runs. It needs stable rustc and cargo
+1.96, the nightly that the root `rust-toolchain.toml` pins with `rustc-dev`,
+and the crates in `rustc/std/Cargo.lock`, offline. It prints one line per
+case:
 
-- `PASS`: rustc's errors match the case's rustc marks, and the case has no
-  `FX` marks.
-- `AWAITS CHECKER`: rustc's errors match, and `FX` marks remain, which only
-  the Tide checker can produce.
-- `FAIL`: rustc's errors differ from the marks (rustc's output follows,
-  indented), or the case is malformed (no rule line, an ID not in
-  `rules.md`, a malformed mark, an unknown `//@` line).
+- `PASS`: rustc's errors match the case's rustc marks, the driver's errors
+  match its marks in the driver's codes, and the case has no other `FX`
+  marks.
+- `AWAITS CHECKER`: both match, and `FX` marks in other codes remain, which
+  only later slices of the checker produce; the line lists those codes.
+- `FAIL`: rustc's errors differ from the rustc marks (rustc's output
+  follows, indented); the driver's errors in its codes differ from those
+  marks, or the driver accepts a case that rustc or those marks reject, or
+  rejects one that neither does, or it crashes (exits with a status other
+  than 0 or 1, or panics; the driver's output follows); or the case
+  is malformed (no rule line, an ID not in `rules.md`, a malformed mark, an
+  unknown `//@` line).
 
 It exits 0 when no case fails, 1 when one does, and 2 on a setup error (the
-stub std does not build, or `rules.md` lists no IDs).
+stub std or the driver does not build, or `rules.md` lists no IDs).
 
-Until the Tide checker exists, only the rustc marks are enforced: a wrong
-`FX` code still awaits the checker, and a missing one can let a case pass.
-The `FX` marks are the design's expected verdicts, which the checker's first
-slice will be run against.
+Only the driver's codes are enforced: in any other code, a wrong `FX` mark
+still awaits the checker, and a missing one can let a case pass. The `FX`
+marks are the design's expected verdicts, which each slice of the checker is
+run against.
 
 ## Case format
 
