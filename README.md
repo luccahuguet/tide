@@ -197,6 +197,12 @@ Cited evidence behind the decisions, in [research/](research/):
   runs the `correct` skill in a session of its own and logs the beads it
   filed and its cost; those beads stay uncommitted in `.beads/`.
   `scripts/autorun-test.sh` tests it offline with a stub agent.
+- `scripts/handoff-guard.sh` is a Claude Code Stop hook for attended
+  sessions: under 350k tokens of context, with a pickable bead ready, it
+  blocks a stop that proposes a handoff or asks whether to go on, once.
+  It runs once the owner adds its Stop entry to `.claude/settings.json`,
+  which agents may not edit. `scripts/handoff-guard-test.sh` tests it
+  offline.
 
 ## History
 
