@@ -633,9 +633,9 @@ pub struct Panicked { pub message: String }          // (provisional)
   inherits the caller's cancellation.
 - **Bounded concurrency.** `let tasks = root.tasks.limit(4);` then spawn one
   child per item: scopes from that `Tasks` run at most 4 children at once,
-  and `spawn` waits for a free slot (not a checkpoint). A child whose
-  `spawn` waited past its scope's cancellation still starts, and sees the
-  cancellation at its first checkpoint (provisional).
+  and `spawn` waits for a free slot, a checkpoint: in a cancelled scope
+  it starts nothing and the child counts as cancelled. A child spawning
+  under its own limit can deadlock it.
 - **A scope passed down** (`fn serve<'s>(bg: Scope<'s, '_, E>, ..)`)
   outlives the function's locals, so its children must own their data
   (`move` owned values) or borrow what the signature ties to the scope

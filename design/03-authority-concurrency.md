@@ -82,7 +82,7 @@ shielded. Every capability error type has a cancellation variant whose
 | `Env` | `args()`, `var(k)`, `vars()`, `current_dir()` | `only(["HOME", ..])`, `args_only()` | none |
 | `Stdin` | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal` | none | all reads |
 | `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn() -> io::Result<Child>`), `signals(&[Signal]) -> io::Result<Signals>`, `exit(code)` | `only(["git", ..])` | `output`, `status`, `Child::wait` and `wait_with_output`, pipe-end reads and writes, `Signals::recv` |
-| `Tasks` | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point`; creating synchronization handles (§1.2) | `limit(n)` (live children) | `checkpoint`, `yield_now`, `scope` exit and `spawn_isolated` (shielded) |
+| `Tasks` | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point`; creating synchronization handles (§1.2) | `limit(n)` (live children, §6.1) | `checkpoint`, `yield_now`, `scope` exit and `spawn_isolated` (shielded) |
 | `Accel` (later) | generated Bend kernel calls (§10) | `budget(threads)`, `no_gpu()` | kernel calls |
 
 Notes:
@@ -207,7 +207,7 @@ Notes:
 | --- | --- | --- |
 | `Shared<T>`, `T: Send + Pure` | `Shared::new(v, tasks)`, `clone()` (same cell), `Shared::same(&a, &b)`, `reset(v)`, `with`, `with2`, `with_all` (§6.5) | acquisition, not a checkpoint |
 | `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `send` on a full `sync_channel`, `recv`, `recv_deadline`; all checkpoints |
-| `Scope<'s, 'env, E>` | `spawn`, `set_deadline(t)`, `cancel()` | none |
+| `Scope<'s, 'env, E>` | `spawn`, `set_deadline(t)`, `cancel()` | `spawn` under `Tasks::limit`, a checkpoint (§6.1) |
 | `Task<'s, U, E>` | `join` | yes, shielded (§6.3) |
 | `Arc<T>`, `sync::Weak<T>` | `Arc::new(v, tasks)`, `clone`, `make_mut`, `Arc::downgrade(&a, tasks)`, `upgrade` | none |
 | `std::sync::atomic::*` | `AtomicU64::new(v, tasks)` and the like; sequentially consistent `load`, `store`, `fetch_add`, `compare_exchange` | none |
@@ -1073,6 +1073,42 @@ that own their data or borrow what the signature ties to it. A child's panic pro
 no code after `scope` sees a place a panicking child was mutating; when
 `scope` returns, its loans have ended (D5, `02-memory.md` §8.3).
 
+Under `tasks.limit(n)`, all scopes from that `Tasks` share one count: at
+most `n` of their children are live at once, and `spawn` waits for a free
+slot. A limited `spawn` is a checkpoint. `spawn` keeps
+`std::thread::scope`'s shape and returns a `Task`, not a `Result`, so it
+reports cancellation through the child: when the calling task is in a
+cancelled scope, a limited `spawn` returns at once and starts nothing, even
+if a slot is free, and drops `f` unrun: cleanup written in `f` never runs,
+so a cleanup spawn belongs under `shield`. It sets the caller's echo bit
+when any checkpoint would (TASK-2). The child's `join` returns
+`Err(TaskError::Cancelled.into())`. If the scope spawned into is
+itself cancelled, the child counts as one whose first checkpoint returned
+the cancellation and which returned `E::from(TaskError::Cancelled)`, so
+TASK-2 and TASK-4 decide the outcome unchanged: it is an echo when the
+body's `Err` or a sibling's failure caused the cancellation, and counts as
+cancelled by the deadline when the scope's own deadline did. If it is not,
+as when a task in a cancelled nested scope spawns into an enclosing scope
+passed down to it, the child counts as an echo and that scope is
+unaffected.
+
+The wait observes cancellation because the count is shared: the slots may
+be held by children of other scopes, which the caller's cancellation does
+not reach, so a wait that ignored it could outlast the scope's deadline
+without bound. Starting the child over the limit instead would break the
+attenuation. The cost is that a child that never starts cannot turn the
+cancellation into a value; to give every item an outcome by a time, pass
+the deadline to the operations rather than set it on the scope (companion
+15.2). Returning a `Result` from `spawn` would put a `?` on every spawn for
+a wait that only limited scopes have.
+
+A task that holds a slot and waits for one, such as a child that spawns
+into its own scope or opens a nested scope from the same `Tasks`, can
+deadlock the count once every slot is held that way. Cancelling the
+scopes of the tasks waiting in `spawn`, by a deadline or `cancel()`, breaks
+it unless they wait under `shield` (TASK-6). Otherwise the simulator
+reports a global deadlock once no task can run (§9.3).
+
 ### 6.2 Failure, cancellation, and deadlines
 
 - **TASK-1. Failure and panics.** A child or the body fails when it returns
@@ -1115,9 +1151,10 @@ no code after `scope` sees a place a panicking child was mutating; when
   inside it, in any task, returns its cancellation error immediately, and
   keeps doing so. Checkpoints that consume a value return it inside the
   error (`SendError::Cancelled(v)`); `File::close` consumes its `File` but
-  is shielded, not a checkpoint (§1.1). An in-flight kernel operation is
-  cancelled before the error returns. A cancelled write may already have
-  reached the peer.
+  is shielded, not a checkpoint (§1.1). A limited `spawn` reports
+  cancellation by starting nothing and drops its closure (§6.1). An
+  in-flight kernel operation is cancelled before the error returns. A
+  cancelled write may already have reached the peer.
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
@@ -1777,7 +1814,9 @@ pub enum FetchError {
 }
 
 /// Every per-URL failure, the deadline's cancellation included, is a value,
-/// so the call returns partial results; a panic still propagates.
+/// so the call returns partial results; a panic still propagates. `tasks`
+/// must be unlimited: under `limit`, a child not started by the deadline
+/// never starts and fails the scope (§6.1).
 pub fn fetch_all(tasks: &Tasks, net: &Net, clock: &Clock, urls: &[Url], budget: Duration)
     -> Result<Vec<Result<Vec<u8>, NetError>>, FetchError>
 {
@@ -1804,11 +1843,12 @@ fn slow_host_hits_the_deadline() {
 }
 ```
 
-Children borrow `urls` and `net` from the caller. At five virtual seconds
-the scope deadline fires (TASK-4) and the slow child's `get` returns
-`NetError::Cancelled`, which the child returns inside `Ok`. No child returns
-an error, so the deadline does not fail the scope: both joins return and
-`scope` returns the partial results, one per URL (D8).
+Children borrow `urls` and `net` from the caller, and `sim.tasks` is
+unlimited. At five virtual seconds the scope deadline fires (TASK-4) and
+the slow child's `get` returns `NetError::Cancelled`, which the child
+returns inside `Ok`. No child returns an error, so the deadline does not
+fail the scope: both joins return and `scope` returns the partial results,
+one per URL (D8).
 
 ### 12.3 A replicated key-value node under a partition
 

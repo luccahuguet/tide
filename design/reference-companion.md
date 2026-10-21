@@ -11,7 +11,7 @@ Sections 14–16 tabulate or illustrate rules the core states; 17–20 and
 Appendix A hold what the core only points to. It is outside the core's
 25,000-token budget (D14).
 
-Core count: 24,999 tokens on 2026-10-21, measured by
+Core count: 24,995 tokens on 2026-10-21, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -192,13 +192,12 @@ use std::time::{Clock, Duration, Instant};
 #[derive(Debug, PartialEq)]
 pub enum Outcome { Fetched(usize), Failed(String), TimedOut }
 
-/// At most 4 requests in flight; every URL gets an outcome by the deadline.
+/// At most 4 requests in flight; no request runs past the deadline.
 pub fn fetch_all(tasks: &Tasks, net: &Net, clock: &Clock, urls: &[Url], budget: Duration)
     -> Result<Vec<Outcome>, TaskError>
 {
     let deadline = clock.now() + budget;
     tasks.limit(4).scope(|s| {
-        s.set_deadline(deadline);                       // cancels stragglers; not a failure
         let handles: Vec<_> = urls.iter()
             .map(|url| s.spawn(move || Ok(fetch_one(net, url, deadline))))
             .collect();
@@ -210,7 +209,6 @@ fn fetch_one(net: &Net, url: &Url, deadline: Instant) -> Outcome {
     match net.get(url, deadline) {
         Ok(body) => Outcome::Fetched(body.len()),
         Err(NetError::Timeout) => Outcome::TimedOut,
-        Err(e) if e.is_cancelled() => Outcome::TimedOut,
         Err(e) => Outcome::Failed(e.to_string()),
     }
 }
@@ -241,8 +239,11 @@ mod tests {
 }
 ```
 
-The children turn every error, including the deadline's cancellation, into
-an `Outcome`, so the scope returns `Ok` with one outcome per URL (7.2).
+Each child passes the deadline to `net.get`, which returns `Timeout` once
+it passes, even for a child that starts late, so every child turns its
+error into an `Outcome` and the scope returns `Ok` with one outcome per
+URL. A scope deadline would lose outcomes: once it cancels the scope, a
+limited `spawn` starts nothing (7.1).
 
 ### 15.3 Contracts and a generic search
 
