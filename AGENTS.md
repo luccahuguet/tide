@@ -264,12 +264,18 @@ learnability trials (`design/01-design.md` D0).
 
 ### Decisions
 
-The owner sets scope, priorities, and direction (AP-SCOPE-001); technical
-design decisions are the agent's. Do not ask the owner a technical question,
-including a bead's "owner decision" or "stop and ask" on a design choice.
-When in doubt, take a web research pass, then decide, record the decision
-and its reasons on the bead and in its owning design document, and report
-it.
+The owner sets scope, priorities, and direction (AP-SCOPE-001): what a
+change delivers. How to deliver a chosen outcome is the agent's to decide:
+technical design decisions, budgets and thresholds, how to apply review and
+governance rules, and which leftovers and in-scope fixes a pending change
+includes; this grants no write that a canonical protocol withholds.
+Loosening a check that a bead's Acceptance or GOVERNANCE.md requires stays
+the owner's call (see Autonomous runs). For a technical choice, do not ask
+the owner, offer a menu of options, or end with an offer such as "want me
+to…?", even when a bead says "owner decision" or "stop and ask". When a
+technical choice is unclear, take a web research pass, then decide, record
+the decision and its reasons on the bead and in its owning document, and
+report it.
 
 ### Autonomous runs
 
