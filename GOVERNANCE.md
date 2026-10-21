@@ -43,7 +43,7 @@ Primary rule:
 
 Current operating model:
 
-* the first review round runs two read-only reviews in parallel on one frozen candidate, the working tree at its recorded diff SHA-256: an Opus review (for code, tests, or scripts, a converge round that reports instead of fixing; for docs-only design work, a review round) and one Codex supervisor pass (`gpt-6.1-sol`, always `xhigh` effort). Nothing edits the tree until both reports are in; then the author fixes what both found. The two reviews take consecutive round numbers, Opus first
+* the first review round runs two read-only reviews in parallel on one frozen candidate, the working tree at its recorded diff SHA-256: an Opus review (for code, tests, or scripts, a converge round that reports instead of fixing; for docs-only design work, a review round) and one Codex supervisor pass (`gpt-6.1-sol`, always `xhigh` effort). Nothing edits the tree until both reports are in; then the author fixes what both found. The two reviews share a round number
 * Opus confirmation rounds follow until one comes clean; later converge rounds fix as usual. Then a narrow supervisor re-check reviews the changes made since the frozen candidate, unless there are none. If the re-check leads to any change, run one narrow Opus confirmation round and another narrow re-check; text-only fixes restart this loop at most twice. The supervisor pass and its re-check replace converge's own Codex round
 * a finding blocks or restarts a round when its fix would change a tier the change edits or an earlier one; most changes edit the v0 core. A finding whose fix would change only text in a tier later than every tier the change edits (for a v0 change, v1 or Later in `design/01-design.md`'s tier table) is recorded as a comment on bead `fx-djp` and is not fixed in the change under review
 * planning-only changes (bead filings) skip the supervisor pass
@@ -71,7 +71,7 @@ The review gives the verdict, its confidence, blocking findings, non-blocking im
 
 Escalate, by adding a second independent review, when the PR changes core semantics or safety invariants, the supervisor has low confidence, or the maintainer disagrees with the review.
 
-Record each pass in the PR discussion, or for a direct commit in `reviews/` as `round<N>-codex.md`: model, effort level, verdict, blocking findings, and any override.
+Record each pass in the PR discussion, or for a direct commit in `reviews/`, one file per review, named by bead, round within that bead, and reviewer: `<bead>-r<N>-opus.md` or `<bead>-r<N>-codex.md` (for example `fx-gcs.2-r1-codex.md`; a change without a bead uses a short kebab-case slug not yet used in `reviews/`). Each bead or slug starts at round 1; every later review takes the next unused round number within that bead, continuing across commits and handoffs, except that each change's parallel first-round pair shares one number. A Codex file records model, effort level, verdict, blocking findings, and any override. Per-bead names let parallel sessions record reviews without colliding; the `round<N>-*.md` files are the earlier, global numbering and stay as history.
 
 Give the supervisor this section as its brief.
 

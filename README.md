@@ -112,8 +112,10 @@ Cited evidence behind the decisions, in [research/](research/):
 ### Reviews and Trials
 
 - [reviews/](reviews/): adversarial reviews, one file per reviewer and
-  round. Round 1 (agent usability, performance, soundness, strategy,
-  verification, and a second-model review) examined draft 1;
+  round, named `<bead>-r<N>-opus.md` or `<bead>-r<N>-codex.md`; the
+  `round<N>-*.md` files are the earlier, global numbering. Round 1
+  (agent usability, performance, soundness, strategy, verification, and a
+  second-model review) examined draft 1;
   `round1-resolution.md` audits draft 2 against it. Round 2 (consistency,
   simplicity, and a second-model review) examined draft 2.1 and led to the
   tier split. Rounds 3–7 (consistency and second-model reviews) checked
