@@ -29,7 +29,7 @@ Rerun it after any change to the core and update this line.
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
 | `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
 | `debug_assert_eq!` | `debug_assert!(a == b)` | `FX0103` |
-| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)`; `fs.exists(path)` | `FX0520` |
+| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)`; `fs.exists(path)?` | `FX0520` |
 | `x as u8` (lossy), `n as f64` (`usize`) | `u8::try_from(x)?`, `x.truncate()`, `f64::round_from(n)` | `FX0301` |
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
@@ -555,6 +555,16 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
   still has a private field, so no struct literal can make one (03 ROOT-4).
 - **Pipe ends** carry `Proc`'s authority and are not `Pure`; their reads
   and writes suspend and are checkpoints.
+- **Cancellation.** A cancelled `output()` or `status()` whose child has
+  started tries to kill the child (as `Child::kill` does, so not the
+  processes it started), closes its ends of the child's pipes, waits for
+  it to exit even if the kill failed, and returns
+  `io::ErrorKind::Cancelled`; output read so far is lost. A failed
+  kill, such as `EPERM` for a setuid child, is logged as a `warn!` record,
+  and the call waits for the child to exit by itself. No deadline cuts that
+  wait short (03 TASK-5). To let a child outlive a cancellation, `spawn` it
+  and keep the `Child`: as in Rust, dropping a `Child` does not kill it
+  (03 §1.1).
 - **`Stdio`** has `piped()`, `inherit()`, and `null()`, which take no
   capability, and `From` a `File` or a pipe end, so
   `.stdin(a.stdout.take().unwrap())` pipes child `a` into the next. As in

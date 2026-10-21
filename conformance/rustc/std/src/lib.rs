@@ -123,7 +123,7 @@ pub mod fs {
         pub fn metadata(&self, p: impl AsRef<Path>) -> io::Result<Metadata> { unimplemented!() }
         pub fn rename(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> { unimplemented!() }
         pub fn sync_dir(&self, p: impl AsRef<Path>) -> io::Result<()> { unimplemented!() }
-        pub fn exists(&self, p: impl AsRef<Path>) -> bool { unimplemented!() }
+        pub fn exists(&self, p: impl AsRef<Path>) -> io::Result<bool> { unimplemented!() }
         pub fn dir(&self, p: impl AsRef<Path>, mode: Mode) -> io::Result<Fs> { unimplemented!() }
         pub fn read_only(&self) -> Fs { unimplemented!() }
     }

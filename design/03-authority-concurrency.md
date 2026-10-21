@@ -92,6 +92,14 @@ Notes:
   `root.fs` is rooted at `/`. A `Mode::Read` `Fs` returns `PermissionDenied`
   on writes. Read versus write is not a type distinction; exercised authority
   (§4) classifies each method as `fs.read` or `fs.write`.
+- **`exists`.** `fs.exists(p) -> io::Result<bool>` is Rust's
+  `std::fs::exists`: `Ok(false)` when the lookup finds no file at `p`
+  (`NotFound`, a broken symlink included), and `Err` for any other failure,
+  a path that leaves the `Fs` and cancellation included. Like the other
+  main `Fs` operations it is a checkpoint, so a `bool` result, as Rust's
+  `Path::exists` returns, would have no room for the cancellation error
+  (TASK-3), and turning that error into `false` would report a file that is
+  there as missing.
 - **Append and durability** (D7, D15). `fs.open_with(p,
   OpenOptions::new().append(true).create(true))` opens for append;
   `OpenOptions` is Rust's builder without its ambient `open`. Writes are
@@ -141,10 +149,27 @@ Notes:
   later identical request can escape. `Cancelled` is not transient,
   because cancellation is level-triggered (TASK-3) and a retry fails the
   same way. `Denied`, `Dns`, and `Io` are not transient either.
-- **Owned buffers.** The kernel only ever owns runtime buffers.
-  `read(&mut buf)` copies out of one; `read_owned(buf)` and `write_owned(buf)`
-  move a `Vec<u8>` in and return it, inside the error on failure. Cancellation
-  never leaves the kernel writing into unwound Tide memory.
+- **Owned buffers.** The kernel only ever owns runtime buffers. `read(&mut
+  buf)` copies out of one; `read_owned(buf: Vec<u8>)` and `write_owned(buf:
+  Vec<u8>)` move the buffer in and return `Result<Vec<u8>, io::BufError>`,
+  with the buffer inside the error on failure. Cancellation never leaves the
+  kernel writing into unwound Tide memory. `read_owned` appends what one
+  read returns, at most `buf`'s spare capacity. It appends nothing at the
+  end of input and, as `read` into an empty slice does, when `buf` has no
+  spare capacity, so a caller passes a buffer with room, such as
+  `Vec::with_capacity(n)`; only then does an empty append mean the end of
+  input. `write_owned` writes all of `buf`, as `write_all` does, and
+  returns it unchanged. An `io::Error` cannot hold the buffer, so the
+  error is `std::io::BufError`, which holds an `io::Error` and the buffer as
+  it was passed: a failed read appended nothing, and a failed write returns
+  every byte, sent or not. It has the methods of Rust's
+  `io::IntoInnerError`, the std error that already returns a value beside an
+  `io::Error`: `error()`, `into_error()`, `into_inner() -> Vec<u8>`, and
+  `into_parts()`, plus `kind()`, `is_cancelled()`, and `written()`, the
+  number of leading bytes of `buf` the kernel accepted before the failure (0
+  for a read; TASK-3). It is `Send + Sync + Pure`, implements `Debug`,
+  `Display`, and `Error`, and, as `IntoInnerError` does, `From<BufError> for
+  io::Error`, so `?` into an `io::Result` drops the buffer.
 - **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
   value. Authority is spent at seeding; drawing from a `Pcg64` is
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
@@ -197,6 +222,30 @@ Notes:
   an error type other than `io::Error` and leave the caller a retry that,
   cancellation being level-triggered, fails again unless shielded. Like
   `drop`, it cannot be interrupted (TASK-5).
+- **Cancelled `output` and `status`.** Each starts a `Child` the caller
+  never sees, so unlike `wait_with_output` it cannot leave one with the
+  caller. Once its child has started, a cancelled `output` or `status` tries
+  to kill it, as `Child::kill` does, closes its own ends of the child's
+  pipes, so a surviving child that writes to them fails (`SIGPIPE` or
+  `EPIPE`) rather than blocking on a full pipe, then waits for it to exit,
+  shielded, whether or not the kill succeeded, and only then returns its
+  `io::ErrorKind::Cancelled` error; output read so far is lost. A call
+  cancelled before the spawn starts nothing, and one whose wait completes
+  before the cancel takes effect returns its own result (TASK-3). As with
+  `Child::kill`, processes the child started are not signalled. Leaving the
+  child running, as tokio does without `kill_on_drop`, would let a process
+  the call started outlive its scope with no handle left to stop or reap
+  it; waiting for it to finish would let a hung child hold the scope past
+  any deadline. A caller that wants a child to outlive a cancellation uses
+  `spawn` and keeps the `Child`, which, as in Rust, nothing kills on drop.
+  The kill can fail: the kernel refuses to signal a setuid child that has
+  changed its real and saved user IDs (`EPERM`). The call then logs the
+  kill's error in a `warn!` record, waits for the child to exit by itself,
+  and returns `Cancelled` as usual; returning the kill's error at once
+  would drop the only handle to the child and leave it unreaped. The wait
+  cannot be interrupted (TASK-5): a child stuck in an uninterruptible
+  system call, as on a network file system, delays it, and a child the
+  kill could not stop holds it until it exits.
 - **`fault_point(name) -> bool`** returns `false` under every real runtime and
   folds to a constant; under the simulator it is a seed-driven fault trigger
   (§9.4).
@@ -1178,14 +1227,14 @@ the isolated task, so no more children run at once.
   inside it, in any task, returns its cancellation error immediately, and
   keeps doing so. A checkpoint that hands a value over, a channel payload or
   an owned buffer (`send`, `read_owned`, `write_owned`), returns it inside
-  the error (`SendError::Cancelled(v)`). Arguments it only reads, such as
-  `fs.write`'s `impl AsRef<[u8]>` data, a path, an address, or a Bend call's
-  arguments, which are copied across (§10), are dropped with the call; a
-  caller that needs one again passes a reference or a clone. Returning every
-  such argument would need a generic error type for each operation.
-  `File::close` consumes its `File` but is shielded, not a checkpoint
-  (§1.1). A limited `spawn` reports cancellation by starting nothing and
-  drops its closure (§6.1).
+  the error (`SendError::Cancelled(v)`, `io::BufError`, §1.1). Arguments it
+  only reads, such as `fs.write`'s `impl AsRef<[u8]>` data, a path, an
+  address, or a Bend call's arguments, which are copied across (§10), are
+  dropped with the call; a caller that needs one again passes a reference or
+  a clone. Returning every such argument would need a generic error type for
+  each operation. `File::close` consumes its `File` but is shielded, not a
+  checkpoint (§1.1). A limited `spawn` reports cancellation by starting
+  nothing and drops its closure (§6.1).
 
   A system call in flight when the scope is cancelled is cancelled before
   the error returns if the kernel can cancel it, as with socket and pipe
@@ -1204,8 +1253,24 @@ the isolated task, so no more children run at once.
   An operation made of several system calls checks before each one it
   starts, except a close, and can stop partway: a cancelled `fs.write` can
   leave its target truncated, and `remove_dir_all` part of its tree (§1.1).
-  The simulator follows the same rules (§9.3). A cancelled socket or pipe
-  write may already have reached the peer.
+
+  A single `write` to a socket or pipe returns a cancellation error only if
+  the kernel accepted no byte of it; one that accepted any bytes returns
+  `Ok(n)`, as in Rust. A backend can meet this, for example, by waiting for
+  the descriptor to accept data and then making a non-blocking write,
+  waiting again if it would block, so a cancel either ends a wait or finds
+  the write done. Writes made of several system calls, such as `write_all`
+  and `write_owned`, can stop after the kernel has accepted part of the
+  data, which may already have reached the peer. `write_owned` reports how
+  much in `BufError::written()` (§1.1); `write_all` keeps Rust's
+  `io::Result<()>` and, as in Rust for every error, loses the count. When
+  code must finish or frame a stream under `shield` after a cancellation,
+  the writes that the cancellation may cut short use `write` or
+  `write_owned`, so the cleanup knows where the stream stands; after a
+  failed `write_all` the stream's position is unknown, and the usual
+  course, which level-triggered cancellation favours anyway, is to drop it.
+
+  The simulator follows every rule of TASK-3 (§9.3).
 - **TASK-4. Deadlines.** `set_deadline(t)` lowers the scope's deadline to
   `t`; a nested scope's effective deadline is the minimum over its
   ancestors. When it passes, the scope, its body, and its children are
@@ -1222,18 +1287,23 @@ the isolated task, so no more children run at once.
   cancellation is observed.
 - **TASK-5. What cancellation cannot interrupt.** Authority-free
   computation, `Shared::with` acquisition and closures, foreign calls,
-  joins, a running system call the kernel cannot cancel (TASK-3), and
-  `File::close` (§1.1). The last two can block on a network file system even
-  inside a shielded scope with a deadline. Deadlines are therefore soft. The
-  evented runtime logs a `warn!` record for a task that runs more than 100
-  ms (configurable) without reaching a checkpoint; the simulator reports the
-  same condition by step count.
+  joins, a running system call the kernel cannot cancel (TASK-3), the wait
+  for the child of a cancelled `output` or `status`, and `File::close`
+  (§1.1). The last three can block even inside a shielded scope with a
+  deadline: on a network file system, or, for a child the kill could not
+  stop, until the child exits (§1.1). Deadlines are therefore soft, a
+  cleanup scope's (TASK-6) included: a deadline cancels at the next
+  checkpoint and cannot cut short any of these, so code must not rely on
+  one to bound them. The evented runtime logs a `warn!` record for a task
+  that runs more than 100 ms (configurable) without reaching a checkpoint;
+  the simulator reports the same condition by step count.
 - **TASK-6. Shielding.** Operations inside `tasks.shield(|| ..)` ignore the
   cancellation of enclosing scopes; bounded cleanup is a shielded scope with
-  its own deadline. `Drop` in std does no I/O beyond closing descriptors; a
-  buffered writer dropped unflushed logs a `warn!`. `File::close` is itself
-  shielded (§1.1); other cleanup that needs I/O, such as a final write or
-  `sync`, runs under `shield`.
+  its own deadline, which bounds only work that reaches a checkpoint
+  (TASK-5). `Drop` in std does no I/O beyond closing descriptors; a buffered
+  writer dropped unflushed logs a `warn!`. `File::close` is itself shielded
+  (§1.1); other cleanup that needs I/O, such as a final write or `sync`,
+  runs under `shield`.
 
 ### 6.3 Joins
 
@@ -1973,7 +2043,7 @@ mod tests {
         let client = sim.node("client").start(|r| write_keys(&r.net, "primary:7000", 50));
         let acked = sim.run_until(&client).unwrap();      // keys answered with Ack
         for key in &acked {
-            assert!(backup.fs().exists(key), "acked {key} missing on backup");
+            assert!(backup.fs().exists(key).unwrap(), "acked {key} missing on backup");
         }
     }
 }

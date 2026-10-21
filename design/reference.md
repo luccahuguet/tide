@@ -381,14 +381,13 @@ fn main(root: Root) -> Result<(), AppError> {
 ```rust
 impl Fs {                                         // every method takes &self; p: impl AsRef<Path>
     // read, read_to_string, write (not durable), create_dir_all, read_dir, metadata,
-    // rename, remove_file, remove_dir, remove_dir_all: as std::fs (a DirEntry,
-    // like a File, carries the Fs's authority)
+    // exists, rename, remove_file, remove_dir, remove_dir_all: as std::fs (a
+    // DirEntry, like a File, carries the Fs's authority)
     fn write_synced(&self, p, data: impl AsRef<[u8]>) -> io::Result<()>;   // durable when it returns
     fn open(&self, p) -> io::Result<File>;                          // read only
     fn create(&self, p) -> io::Result<File>;                        // write; create or truncate
     fn open_with(&self, p, opts: &OpenOptions) -> io::Result<File>; // append, create_new, read+write
     fn sync_dir(&self, p) -> io::Result<()>;                        // make p's entries durable
-    fn exists(&self, p) -> bool;
     fn dir(&self, p, mode: Mode) -> io::Result<Fs>;    // Mode::Read | Mode::ReadWrite; fails if p is not a directory
     fn read_only(&self) -> Fs;
 }
@@ -602,9 +601,9 @@ pub struct Panicked { pub message: String }          // (provisional)
 
 - **Structure.** Tasks are spawned into scopes and cannot outlive them;
   `thread::spawn` and `tokio::spawn` are `FX0602`. `scope` returns only
-  after every child has finished; scope exit and `join` wait, are not
-  checkpoints, and cannot be cancelled. Children may borrow anything that
-  outlives the `scope` call, capabilities and `Shared` handles included.
+  after every child has finished; scope exit and `join` wait, never
+  cancelled (7.2). Children may borrow anything that outlives the `scope`
+  call, capabilities and `Shared` handles included.
 - **Failure.** A child or the body fails when it returns `Err`. The first
   failure cancels the scope (body, children, nested scopes). Once every
   child has finished, `scope` re-raises the panic of the earliest-spawned
@@ -664,7 +663,8 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
   and `tasks.checkpoint()`, and channel errors whose `is_cancelled()` is
   true. Every capability operation that may suspend is a checkpoint;
   authority-free code, `Shared::with*`, joins, scope exit, and `File::close`
-  are not, and are never interrupted. Work unwinds through ordinary `Err`
+  are not, and, like an uncancellable system call, are never interrupted,
+  so deadlines are soft. Work unwinds through ordinary `Err`
   returns; operations that hand a value over return it inside the error
   (`SendError::Cancelled(v)`).
 - **Operation deadlines.** `net.get(url, deadline)` returns
