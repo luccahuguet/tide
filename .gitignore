@@ -24,3 +24,5 @@ target
 .bv/
 # br doctor per-run artifacts
 .doctor/
+# scripts/autorun.sh run log, session output, and lock
+.autorun/

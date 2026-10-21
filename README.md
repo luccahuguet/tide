@@ -176,6 +176,11 @@ Cited evidence behind the decisions, in [research/](research/):
 - [BR_WORKFLOW.md](BR_WORKFLOW.md): how `br` tracks work and which `.beads/`
   files are committed.
 - Open work lives in beads (`.beads/issues.jsonl`), managed with `br`.
+- `scripts/autorun.sh` runs fresh headless sessions back to back: it
+  continues a handed-off bead, else works the top ready one, judges each
+  outcome from `br` and `git`, logs it to `.autorun/log`, stops on no work,
+  repeated handoffs, repeated failures, or its caps, and never pushes.
+  `scripts/autorun-test.sh` tests it offline with a stub agent.
 
 ## History
 
