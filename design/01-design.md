@@ -142,7 +142,8 @@ The design is a hypothesis. Before syntax freezes, the project runs:
   the resulting trust diffs are.
 - **Conformance oracle**: every normative rule in the chapters carries an ID
   (`TASK-2`, `PAR-1`, ...), and each ID is traced to conformance tests that
-  any implementation must pass, in the style of Rue. E1 reruns on every
+  any implementation must pass, in the style of Rue. The corpus, its case
+  format, and the ID scheme are in `conformance/README.md`. E1 reruns on every
   release with a fresh held-out task set.
 - **Mechanized soundness**: before 1.0, the origin calculus (D2) and the
   determinism of authority-free code (D7) are proved in Lean, with agent

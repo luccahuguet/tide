@@ -1,0 +1,15 @@
+[package]
+name = "tide_std_stub"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Conformance rustc oracle: Tide std signatures with unimplemented bodies, injected as std (throwaway)"
+
+[dependencies]
+# Contract lowering and #[tide::main] from the D18 spike.
+tide_macros = { path = "../../../spikes/d18/macros" }
+# The E1 trial's #[test] and #[sim_test] shims and derive(Error), used as is.
+oracle_macros = { path = "../../../trials/e1-dialect/rustc/macros" }
+
+# Its own workspace, so no parent manifest is consulted.
+[workspace]

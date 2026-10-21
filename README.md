@@ -43,7 +43,9 @@ its changes to the other decisions.
 The repository holds no production code yet. `spikes/d18/` holds the
 throwaway feasibility spike for D18, and the early Rust scaffold from the
 first design, which does not implement Tide, is kept in
-`archive/v0-design/scaffold/`.
+`archive/v0-design/scaffold/`. [conformance/](conformance/README.md) holds
+the conformance corpus: cases with expected verdicts per rule ID, checked
+against rustc by `conformance/run.sh`.
 
 ## Reading Guide
 

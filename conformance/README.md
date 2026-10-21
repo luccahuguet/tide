@@ -1,0 +1,130 @@
+# Tide conformance corpus
+
+D0's conformance oracle (`design/01-design.md`): every v0-core normative
+rule that the checker or rustc decides carries an ID, and each ID is traced to
+cases with expected verdicts that any implementation must reproduce. Because
+every Tide program is a Rust 2024 crate (D18), a case also records rustc's
+verdict, so the corpus compares the two checkers (`design/02-memory.md` §11).
+[`rules.md`](rules.md) lists the rules and their IDs.
+
+## Running
+
+```
+conformance/run.sh [case ...]   # check cases (default: all of cases/)
+conformance/run.sh --trace      # each rule in rules.md and the cases that name it
+```
+
+A case is named by its path under `cases/` (`authority/lock_accept`) or by an
+absolute path. The runner type- and borrow-checks each case with rustc
+twice, as in the E1 trial: as a 2024-edition library (a binary when a line
+starts with `fn main`, so entry-point errors such as E0580 appear) and as a
+test crate (`--test`, so test code is checked too). Both builds use the stub
+Tide std in `rustc/`, injected as `std`, and the case's rustc errors are the
+union of the two. It needs stable rustc and cargo 1.96 and the crates in
+`rustc/std/Cargo.lock`, offline. It prints one line per case:
+
+- `PASS`: rustc's errors match the case's rustc marks, and the case has no
+  `FX` marks.
+- `AWAITS CHECKER`: rustc's errors match, and `FX` marks remain, which only
+  the Tide checker can produce.
+- `FAIL`: rustc's errors differ from the marks (rustc's output follows,
+  indented), or the case is malformed (no rule line, an ID not in
+  `rules.md`, a malformed mark).
+
+It exits 0 when no case fails, 1 when one does, and 2 on a setup error (the
+stub std does not build, or `rules.md` lists no IDs).
+
+Until the Tide checker exists, only the rustc marks are enforced: a wrong
+`FX` code still awaits the checker, and a missing one can let a case pass.
+The `FX` marks are the design's expected verdicts, which the checker's first
+slice will be run against.
+
+## Case format
+
+One `.rs` file per case, under `cases/<area>/`: `memory` (02), `authority`
+(03 §0–§5 and §6.5: capabilities, admission, `Pure`, `Shared::with`),
+`tasks` (the rest of 03 §6–§8: tasks, channels, parallelism), and
+`contracts` (04).
+
+```rust
+//@ rules: LOCK-1
+// A `Shared` handle as a payload is `Send` but not `Pure`: only the checker rejects it.
+use std::sync::Shared;
+use std::task::Tasks;
+
+pub fn nest(tasks: &Tasks) {
+    let inner = Shared::new(0u64, tasks);
+    let _outer = Shared::new(inner, tasks); //~ FX0606
+}
+```
+
+- The first line, `//@ rules: ID, ID`, names the rules the case exercises.
+  Every ID must be in `rules.md`.
+- A comment says what the case shows.
+- Each line that must get an error ends with `//~` and its codes: `E####`
+  for a rustc error, `error` for a rustc error without a code (such as
+  "lifetime may not live long enough"), and `FX####` for the checker; a line
+  both report on carries both. A case with no marks must be accepted.
+- rustc's errors must equal the rustc marks as a set of (line, code) pairs.
+  An error on an unmarked line, an uncoded error where no `error` mark is,
+  or an error in another file fails the case. A case whose only marks are
+  `FX` must pass rustc. Warnings are ignored.
+
+The shape follows rustc's own UI tests (`//@` directives, `//~` marks) and
+the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
+one verdict in a header: a per-line mark fails a case rejected on the wrong
+line or for an incidental reason, which a single verdict would let pass.
+
+The stub's `Pure` is a blanket impl, so rustc accepts every `Pure` bound and
+every `Pure` verdict is the checker's (an `FX` mark). Its bodies are
+`unimplemented!()`, so the corpus decides compile-time verdicts only; rules
+decided at run time, in the simulator, or in the sandbox are outside it
+(`rules.md` lists them). `rustc/std` is copied from
+`trials/e1-dialect/rustc/std`, whose copy stays frozen as the trial's record,
+and uses the trial's `macros` crate as is.
+Add an item to the stub when a case needs it, with the signature the design
+gives, and mark `GUESS` on a signature no design document fixes. If the stub
+cannot express a verdict a rule needs, record the gap on the case's bead.
+
+## Rule IDs
+
+A rule ID is `PREFIX-N`: an uppercase prefix naming a group of rules and a
+number counted from 1 within the prefix, as 03 already does (`ROOT-1`,
+`LOCK-4`). Each prefix belongs to one chapter, which defines each of
+its rules with a bold `**PREFIX-N.**` lead, optionally followed by a title,
+at the start of the rule's bullet or list item. An ID is never renumbered or
+reused: a removed rule's ID stays retired, and a new rule takes the next
+number. A rule another chapter restates keeps its owner's ID, and the
+restatement cites it.
+
+Most rules in 02 and 04, and a few in 03, have no ID yet (`none yet` in
+`rules.md`). The bead that writes their cases assigns them from these
+prefixes, defining each ID in its section:
+
+| Prefix | Section | Rules |
+| --- | --- | --- |
+| `MOVE` | 02 §1.2 | moves and copies |
+| `LOAN` | 02 §1.4 | loans and conflicting accesses |
+| `ORIGIN` | 02 §2.1, §2.2, §2.7, §2.8 | origin flow, well-formedness, bodies |
+| `LIFE` | 02 §2.3, §2.5 | lifetime syntax and elision |
+| `BORROW` | 02 §3 | borrowing types |
+| `VAR` | 02 §4 | variance and subtyping |
+| `DYN` | 02 §5.1 | trait objects |
+| `OPAQUE` | 02 §5.2 | `impl Trait` |
+| `CLOSURE` | 02 §5.3, §5.4 | closures and higher-ranked origins |
+| `DROP` | 02 §6 | drop check |
+| `SEND` | 02 §8.1 | `Send`, `Sync`, task isolation |
+| `SCOPE` | 02 §8.2 | scopes |
+| `SHARED` | 02 §8.4 | `Shared::with` payload references |
+| `PURE` | 02 §9 | `Pure` (03 §3.1 cites it) |
+| `CAP` | 03 §0–§1 | capability methods and handle constructors |
+| `UNSAFE` | 03 §2.6 | what the `unsafe` grant gates (RUN-4's hole 1) |
+| `AFREE` | 03 §3.2, §3.5 | `#[pure]`, `const fn`, memoization |
+| `CHAN` | 03 §6.4 | channels |
+| `PAR` | 03 §8.1 | `join` and parallel closures (`PAR-5` on) |
+| `FORM` | 04 §1.2 | clause grammar |
+
+`PURE` goes to 02 §9 because 02 is the definition the checker implements
+(`README.md`); 03 §3.1 then cites it rather than restating it. 02 §8.5
+restates 03 §8.1's `join` and parallel-closure rules, so they take `PAR`
+IDs and 02 cites them.
