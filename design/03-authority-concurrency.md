@@ -796,7 +796,7 @@ blanket impl, so rustc accepts every `Pure` bound and coherence never treats
 decides it structurally wherever a type meets a `Pure`-implying obligation or
 is coerced to a `Pure` trait object (`02-memory.md` PURE-1). A failure is
 reported under the code of the rule that needs `Pure` (`FX0502`, `FX0518`,
-`FX0603`, `FX0606`, `FX0611`, `FX0612`), and otherwise, as at a
+`FX0603`, `FX0606`, `FX0610`, `FX0611`, `FX0612`), and otherwise, as at a
 user-written bound, a `Pure` supertrait's impl, or a coercion to a `Pure`
 trait object, as `FX0517`. A type the structural rule rejects that is
 authority-free in fact, such as a foreign handle, may be marked
@@ -1350,8 +1350,9 @@ Channels follow Rust's `std::sync::mpsc`, except that creating one takes
 `&Tasks` (§1.2): `channel(tasks)` is unbounded and `sync_channel(n, tasks)`
 bounded; `Sender` is `Clone`; a `Receiver` is iterable. `send` on a full
 `sync_channel`, `recv`, and `recv_deadline(t)` are checkpoints;
-`recv_deadline` returns `Timeout` at `t`. Payloads must be `Send`. An
-unbounded `channel` in a library is lint `FX0608`.
+`recv_deadline` returns `Timeout` at `t`. Payloads must be `Send`
+(`02-memory.md` SEND-3). An unbounded `channel` in a library is lint
+`FX0608`.
 
 Rust's `RecvError` is a unit struct and `SendError(T)` gives no reason, so
 neither can say that a checkpoint failed because of cancellation (TASK-3).
@@ -1436,14 +1437,14 @@ in `std::sync::raw`.
 ### 6.6 `Send`, `Sync`, and task isolation
 
 `Send` and `Sync` are derived structurally as in Rust (`02-memory.md` §8.1).
-They are checked at task boundaries only: spawn captures, child results and
-errors, channel payloads, `Shared` payloads, and parallel branches. A value
-that never crosses a boundary need not be `Send`, even when the evented
-runtime (v1) migrates its task between OS threads. That is sound because
-safe code reaches no thread-local state (GLOBAL-3), the scheduler's hand-off
-orders the task's accesses, `ThreadBound` values pin (§5.4), and no foreign
-frame is live across a suspension point (FFI-6). Parallel branches run
-simultaneously and so require `Send`.
+They are checked at task boundaries only (SEND-3): spawn captures, child
+results and errors, channel payloads, `Shared` payloads, and parallel
+branches. A value that never crosses a boundary need not be `Send`, even
+when the evented runtime (v1) migrates its task between OS threads. That is
+sound because safe code reaches no thread-local state (GLOBAL-3), the
+scheduler's hand-off orders the task's accesses, `ThreadBound` values pin
+(§5.4), and no foreign frame is live across a suspension point (FFI-6).
+Parallel branches run simultaneously and so require `Send`.
 
 ## 7. Compiling Suspending Functions
 
@@ -1517,15 +1518,22 @@ blocking pool while the task's frame waits (FFI-5).
 offer `par_map`, `par_for`, `par_chunks_mut`, `par_sort` (a stable merge sort
 whose splits and merges depend only on the input length, D9), and, in
 v1, `par_reduce` (§8.3). Draft 2's `par { }` block is removed (D9).
-`join`'s closures are `FnOnce + Pure + Send`, each called once. The slice
-methods call one closure from several branches at once, so it must be
-`Fn + Pure + Send + Sync` (D9), and so must `par_sort`'s comparator: `Sync`
-rules out a moved-in `Cell` or `RefCell` that two branches could mutate
-(`FX0610`). Every closure may capture shared data only if it is
-`Pure + Sync` (`FX0611`), and may hold disjoint `&mut` splits. Branches
-may borrow the enclosing frame, because `join` returns only after both
-finish. A branch is not a task: it has no checkpoints and cannot be
+Branches may borrow the enclosing frame, because `join` returns only after
+both finish. A branch is not a task: it has no checkpoints and cannot be
 cancelled.
+
+- **PAR-5. `join` closures.** `join`'s closures are
+  `FnOnce + Pure + Send`, each called once. A closure that is not `Pure`
+  or not `Send` is `FX0610`.
+- **PAR-6. Shared closures.** The slice methods call one closure from
+  several branches at once, so it must be `Fn + Pure + Send + Sync` (D9),
+  and so must `par_sort`'s comparator: `Sync` rules out a moved-in `Cell`
+  or `RefCell` that two branches could mutate. A closure that misses any
+  of the four is `FX0610`.
+- **PAR-7. Captures.** Every closure may capture shared data, a `&T`
+  borrowed or moved in, only if `T` is `Pure + Sync` (`FX0611`, reported
+  in place of PAR-5's and PAR-6's `FX0610`), and may hold `&mut` captures
+  only as disjoint splits, which the borrow checker verifies.
 
 - **PAR-4. Element types.** The slice methods require elements that are
   `Pure`, plus `Sync` when branches share them and `Send` when branches

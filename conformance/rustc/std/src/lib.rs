@@ -434,17 +434,36 @@ pub mod arena {
 pub mod par {
     use crate::marker::Pure;
 
+    /// 03 §8.1 (PAR-5). GUESS: the result types' `Send` bounds; 03 gives only
+    /// the closures' bounds.
+    pub fn join<A, B, RA: Send, RB: Send>(a: A, b: B) -> (RA, RB)
+    where
+        A: FnOnce() -> RA + Pure + Send,
+        B: FnOnce() -> RB + Pure + Send,
+    {
+        unimplemented!()
+    }
+
     /// Reference 8 makes these inherent slice methods; a stub std cannot add
     /// inherent methods to `[T]`, so a prelude trait stands in.
     pub trait ParSlice<T> {
         fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>
         where
             T: Pure + Sync;
+        fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)
+        where
+            T: Pure + Send;
     }
     impl<T> ParSlice<T> for [T] {
         fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>
         where
             T: Pure + Sync,
+        {
+            unimplemented!()
+        }
+        fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)
+        where
+            T: Pure + Send,
         {
             unimplemented!()
         }

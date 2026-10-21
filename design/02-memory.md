@@ -788,12 +788,13 @@ it.
 
 ### 8.5 `join`, `par_map`, `par_for`
 
-`join(f, g)` takes two `FnOnce + Pure + Send` closures, each called once.
-`par_map` and `par_for` call one closure from several branches at once, so
-it is shared and must be `Fn + Pure + Send + Sync` (D9): without `Sync`, a
-`move` closure owning a `Cell` would let two branches race on it. Their
-shared captures must be `Pure + Sync`; mutable captures must be disjoint
-`&mut` borrows, which the borrow checker verifies as usual. The branches may
+`join(f, g)` takes two `FnOnce + Pure + Send` closures, each called once
+(`03-authority-concurrency.md` PAR-5). `par_map` and `par_for` call one
+closure from several branches at once, so it is shared and must be
+`Fn + Pure + Send + Sync` (D9, PAR-6): without `Sync`, a `move` closure
+owning a `Cell` would let two branches race on it. Their shared captures
+must be `Pure + Sync`; mutable captures must be disjoint `&mut` borrows,
+which the borrow checker verifies as usual (PAR-7). The branches may
 borrow the enclosing frame, because `join` returns only after both finish. In
 Rust this is the shape of `rayon::join`. `Pure + Sync` is stricter than
 `Sync`; that serves determinism, not memory safety. Draft 2's `par { }`

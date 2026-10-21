@@ -70,9 +70,13 @@ pub fn nest(tasks: &Tasks) {
 - Each line that must get an error ends with `//~` and its codes: `E####`
   for a rustc error, `error` for a rustc error without a code (such as
   "lifetime may not live long enough"), and `FX####` for the checker; a line
-  both report on carries both. Where the driver reports a code in place of
-  rustc's (an ambient call or a path that is not admitted), the rustc mark
-  records what plain rustc says. A case with no marks must be accepted.
+  both report on carries both. A `Send`, `Sync`, or `Fn` failure carries an
+  `FX` code only where the design gives that code for it (PAR-5 to PAR-7
+  do; `rules.md` writes "E0277 for `Send`" where a rule's code covers only
+  its `Pure` part), and otherwise the rustc mark alone. Where the driver
+  reports a code in place of rustc's (an ambient call or a path that is not
+  admitted), the rustc mark records what plain rustc says. A case with no
+  marks must be accepted.
 - rustc's errors must equal the rustc marks as a set of (line, code) pairs.
   An error on an unmarked line, an uncoded error where no `error` mark is,
   or an error in another file fails the case. A case whose only marks are
@@ -134,7 +138,6 @@ ID in its section:
 | `CAP` | 03 §0–§1 | capability methods and handle constructors |
 | `UNSAFE` | 03 §2.6 | what the `unsafe` grant gates (RUN-4's hole 1) |
 | `AFREE` | 03 §3.2, §3.5 | `#[pure]`, `const fn`, memoization |
-| `CHAN` | 03 §6.4 | channels |
 | `PAR` | 03 §8.1 | `join` and parallel closures (`PAR-5` on) |
 | `FORM` | 04 §1.2 | clause grammar |
 

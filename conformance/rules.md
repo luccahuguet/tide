@@ -67,8 +67,10 @@ not cite is a best mapping that a case must confirm.
 | = LOCK-1 | §8.4, 02:738 | `Shared<T>` needs `T: Send + Pure`; creating one takes `&Tasks` | both | FX0606; FX0505 (ref:725); E0277 / E0061 |
 | SHARED-1 | §8.4, 02:743 | `with`/`with2` payload references are higher-ranked, so nothing carrying `σ` escapes | rustc | higher-ranked lifetime error (uncoded) / E0521 |
 | = LOCK-4 | §8.4, 02:747 | The `with` closure is `Pure` | checker | FX0603 |
-| none yet | §8.5, 02:764 (restates 03 §8.1) | `join`: `FnOnce + Pure + Send`; `par_map`/`par_for`: `Fn + Pure + Send + Sync`; shared captures `Pure + Sync`; `&mut` captures disjoint | both | FX0610, FX0611; E0277 / E0499 |
-| = PAR-4 | §8.5, 02:775 | Elements: `Pure`, plus `Sync` when shared and `Send` when split or moved | both | FX0612; E0277 |
+| = PAR-5 | §8.5, 02:764 | `join` closures are `FnOnce + Pure + Send` | both | FX0610; E0277 |
+| = PAR-6 | §8.5, 02:765 | `par_map`/`par_for` closures are `Fn + Pure + Send + Sync` | both | FX0610; E0277 / E0507 |
+| = PAR-7 | §8.5, 02:768 | Shared captures `Pure + Sync`; `&mut` captures disjoint | both | FX0611; E0277 / E0524 |
+| = PAR-4 | §8.5, 02:775 | Elements: `Pure`, plus `Sync` when shared and `Send` when split or moved | both | FX0612; E0277 for `Send`/`Sync` |
 | PURE-1 | §9, 02:789 (not-Pure list 02:815) | `Pure` is decided structurally and deeply (fields, `Box`/`Rc`, greatest fixed point, opaque and `dyn` by stated bounds, type parameters by bound) | checker | FX0517, or the needing rule's code |
 | = UNSAFE-1 | §9, 02:793 | `#[trusted_pure]` only in a package granted `unsafe` | checker | FX0901 (03:609) |
 | PURE-2 | §9, 02:807 | A missing auto or marker trait never makes two impls disjoint | both | FX0402 (ref:307); E0119 (rustc agrees, for `Pure` via the blanket impl) |
@@ -101,21 +103,20 @@ not cite is a best mapping that a case must confirm.
 | ADMIT-1 | §2.5, 03:446 | Only listed `core`/`alloc` items and std inherent methods are admitted (paths, methods, operators, derefs, selected impls, macro expansions) | checker | FX0520; FX0517 for `io::Error` conversions (03:464) |
 | ADMIT-2 | §2.5, 03:484 | The driver passes rustc no user flags and passes `-Zallow-features=`, so user code cannot enable unstable features | rustc (driver-configured) | E0725 |
 | UNSAFE-1 | §2.6, 03:606 (RUN-4 hole 1) | `unsafe` blocks and fns, `unsafe impl`, unsafe attributes, and `#[trusted_pure]` need the `unsafe` grant; so does `global_asm!`; no grant admits `unsafe impl Pure` | both | FX0901; `global_asm!` FX0520; `unsafe impl Pure` E0119 / FX0402 |
-| = PURE-1 | §3.1, 03:727 | `Pure` is decided structurally at each `Pure`-implying obligation and each coercion to a `Pure` trait object | checker | FX0517, or FX0502 / FX0518 / FX0603 / FX0606 / FX0611 / FX0612 |
+| = PURE-1 | §3.1, 03:727 | `Pure` is decided structurally at each `Pure`-implying obligation and each coercion to a `Pure` trait object | checker | FX0517, or FX0502 / FX0518 / FX0603 / FX0606 / FX0610 / FX0611 / FX0612 |
 | = UNSAFE-1 | §3.1, 03:735 | `#[trusted_pure]` on a type only in a package granted `unsafe` | checker | FX0901 (03:609) |
 | = DYN-2 | §3.1, 03:762 | A `Pure` trait object goes through a companion supertrait, checked at each coercion (E0225 for `dyn Trait + Pure` is 02 §5.1's) | checker | FX0517 |
 | AFREE-1 | §3.2, 03:795 | `#[pure]` asserts authority-freedom for every instantiation the bounds allow | checker | FX0511 |
 | AFREE-2 | §3.5 table, 03:852 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters (rustc accepts both); type parameters bounded at the definition | checker | FX0518 |
-| none yet | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
-| none yet | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker (lint) | FX0608 |
+| = SEND-3 | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
 | LOCK-4 | §6.5, 03:1317 | `f` must be `Pure`; printing inside it is a lint | checker | FX0603; FX0607 (lint) |
 | LOCK-5 | §6.5, 03:1323 | `with`/`with2`/`with_all` return `Result<R, LockError>` | rustc | type errors (ignoring the result is FX0702, ref:803) |
-| none yet | §6.6, 03:1343 | `Send`/`Sync` are checked at task boundaries only | rustc | E0277 |
-| none yet | §8.1, 03:1425 | `join` closures are `FnOnce + Pure + Send` | both | E0277; ref:785 places `join` under FX0610 |
-| none yet | §8.1, 03:1426 | `par_*` closures and `par_sort`'s comparator are `Fn + Pure + Send + Sync` | both | FX0610 (03:1429); E0277 |
-| none yet | §8.1, 03:1429 | Parallel closures capture shared data only if `Pure + Sync`; `&mut` captures must be disjoint | both | FX0611 (03:1430); E0499 |
-| PAR-4 | §8.1, 03:1435 | `par_map` needs `T: Pure + Sync`; `par_for`, `par_chunks_mut`, and `par_sort` need `T: Pure + Send` | both | FX0612; E0277 |
+| = SEND-3 | §6.6, 03:1343 | `Send`/`Sync` are checked at task boundaries only | rustc | E0277 |
+| PAR-5 | §8.1, 03:1425 | `join` closures are `FnOnce + Pure + Send` | both | FX0610 (also ref:785); E0277 |
+| PAR-6 | §8.1, 03:1426 | `par_*` closures and `par_sort`'s comparator are `Fn + Pure + Send + Sync` | both | FX0610 (03:1429); E0277 / E0507 |
+| PAR-7 | §8.1, 03:1429 | Parallel closures capture shared data (a `&T`, borrowed or moved in) only if `T: Pure + Sync`, reported in place of PAR-5's and PAR-6's code; `&mut` captures must be disjoint | both | FX0611 (03:1430); E0277 / E0524 |
+| PAR-4 | §8.1, 03:1435 | `par_map` needs `T: Pure + Sync`; `par_for`, `par_chunks_mut`, and `par_sort` need `T: Pure + Send` | both | FX0612; E0277 for `Send`/`Sync` |
 | PAR-3 | §8.2, 03:1465 | Allowlist part: float sign/bit observers and math methods are outside the allowlist | checker | FX0520 (via ADMIT-1) |
 
 ## 04-contracts.md
@@ -165,6 +166,7 @@ one-file case cannot hold; their cases wait for the admission driver.
 - TASK-6 (03:1231): runtime shielding.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
+- Unbounded `channel` in a library (03:1259): lint FX0608, a warning, which a case cannot mark (marks record errors).
 - LOCK-2 (03:1309): runtime `Aliased` check.
 - LOCK-3 (03:1312): runtime acquisition order.
 - LOCK-6 (03:1325): runtime poisoning.
