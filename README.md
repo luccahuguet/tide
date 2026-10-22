@@ -46,8 +46,11 @@ rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
 decides `Pure` structurally under the codes of the rules that need it (D18:
 statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
 requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), and
-passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2); the driver's
-ownership of every rustc flag is not built yet. The
+passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). It constructs
+every compiler invocation, clears the compiler environment, snapshots candidate
+Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
+(`FX0101`), and package build scripts (`FX0915`), and caches successful metadata
+checks by source and trusted-input content. The
 root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
 pins, with the `rustc-dev` component:
 
@@ -55,6 +58,38 @@ pins, with the `rustc-dev` component:
 cargo test --workspace   # the driver's tests
 conformance/run.sh       # the conformance corpus, through stable rustc and the driver
 ```
+
+The trusted build caller invokes the driver directly, for example:
+
+```
+target/debug/tide-admit --crate-type=lib --out-dir /tmp/tide-output path/to/package/src/lib.rs
+```
+
+The interface accepts one `.rs` entry, `--edition 2024`, `--crate-type lib|bin`,
+`--crate-name NAME`, `--test`, `--emit metadata`, `--error-format short`,
+`--out-dir DIR`, and `--tide-grant=unsafe` (value options also accept `=VALUE`).
+Raw rustc flags and response files are rejected. The source directory is the
+entry's parent; when it is named `src`, its parent is the package directory.
+The package path must not traverse directory symlinks, and a resolved source
+directory must stay beneath that package.
+Output and `.tide-cache` state must be outside that package. Only canonical
+`.rs` descendants of the source directory are served to rustc; committed
+symlinks cannot grant access outside it. Each loaded source is checked before
+expansion, and the expanded crate after it, which catches attributes and macro
+definitions written in macro arguments. The cache records source bytes and
+directory membership, driver and pinned compiler identity, grants, normalized
+arguments, and trusted artifacts; failed checks never become cache hits.
+
+`--tide-std PATH` and repeatable `--tide-dep-dir DIR` select trusted toolchain
+artifacts outside the candidate package. These are operator inputs, like
+grants; candidate source, Cargo configuration, toolchain files, and inherited
+environment never set them. Without `--tide-std`, Rust's pinned std is used
+for driver development tests. The conformance runner explicitly injects a
+Tide std stub; a production Tide std is not implemented. The installed pinned
+toolchain is trusted and treated as immutable. This slice provides loader and
+invocation isolation, with no OS sandbox or protection against concurrent
+filesystem mutation; assembler, linker, runtime, and test-process isolation
+remain later work.
 
 [conformance/](conformance/README.md) holds the conformance corpus: cases
 with expected verdicts per rule ID. Stable rustc checks their rustc marks,

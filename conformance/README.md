@@ -47,6 +47,17 @@ case:
 It exits 0 when no case fails, 1 when one does, and 2 on a setup error (the
 stub std or the driver does not build, or `rules.md` lists no IDs).
 
+The runner is the trusted operator: it supplies the nightly stub with
+`--tide-std` and its artifact directories with `--tide-dep-dir`. The driver
+rejects raw `--extern`, `-L`, `--cfg`, `--sysroot`, `-C`, `-Z`, and response
+files, constructs its own metadata invocation, and runs the compiler with an
+empty environment. Candidate Cargo and toolchain files do not configure it.
+Its source snapshot is the case's source directory; output and successful
+content-addressed cache entries live outside it, under `target/conformance`.
+This remains a compile-time stub oracle, without a production Tide std or an
+OS build/test sandbox. Live outside-file and environment canaries belong to
+the driver's integration tests, since the stable oracle would read them.
+
 Only the driver's codes are enforced: in any other code, a wrong `FX` mark
 still awaits the checker, and a missing one can let a case pass. The `FX`
 marks are the design's expected verdicts, which each slice of the checker is

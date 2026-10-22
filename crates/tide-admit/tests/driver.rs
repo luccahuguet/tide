@@ -8,8 +8,9 @@ use std::process::Command;
 /// Checks `source` as a library with the driver; returns its exit code and short-format stderr.
 fn admit(name: &str, source: &str, flags: &[&str]) -> (i32, String) {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("lib.rs");
+    let package = dir.join("package");
+    std::fs::create_dir_all(&package).unwrap();
+    let file = package.join("lib.rs");
     std::fs::write(&file, source).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
         .args(flags)
@@ -29,7 +30,7 @@ fn admit(name: &str, source: &str, flags: &[&str]) -> (i32, String) {
         .unwrap();
     let stderr = String::from_utf8(out.stderr)
         .unwrap()
-        .replace(&format!("{}/", dir.display()), "");
+        .replace(&format!("{}/", package.display()), "");
     (out.status.code().unwrap(), stderr)
 }
 
@@ -53,9 +54,9 @@ mod sub;
 ";
     // The same use on the same line of another file is reported there too.
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("reject");
-    std::fs::create_dir_all(&dir).unwrap();
     let sub = "\n\npub fn f() -> u64 { core::sync::atomic::AtomicU64::new(0).into_inner() }\n";
-    std::fs::write(dir.join("sub.rs"), sub).unwrap();
+    std::fs::create_dir_all(dir.join("package")).unwrap();
+    std::fs::write(dir.join("package/sub.rs"), sub).unwrap();
     let (code, stderr) = admit("reject", source, &[]);
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
@@ -104,9 +105,9 @@ pub fn address(x: &u8) -> usize {
     let (code, stderr) = admit("granted", source, &["--tide-grant=unsafe"]);
     assert_eq!((code, stderr.as_str()), (0, ""));
 
-    // The driver passes `-Zallow-features=` after any flag a caller passes (ADMIT-2).
+    // Source feature gates stay closed independently of CLI rejection (ADMIT-2).
     let gated = "#![feature(core_intrinsics)]\npub fn f() {}\n";
-    let (code, stderr) = admit("feature", gated, &["-Zallow-features=core_intrinsics"]);
+    let (code, stderr) = admit("feature", gated, &[]);
     assert_eq!(code, 1, "{stderr}");
     assert!(stderr.contains("lib.rs:1:12: error[E0725]"), "{stderr}");
 }

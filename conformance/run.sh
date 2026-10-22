@@ -8,8 +8,9 @@
 #        conformance/run.sh --trace      list the cases of each rule in rules.md
 # Exit: 0 when every case is PASS or AWAITS CHECKER, 1 on any FAIL, 2 on setup errors.
 set -uo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"
+# Physical paths: the driver rejects a package path that traverses a directory symlink.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$HERE/.." && pwd -P)"
 CASES="$HERE/cases"
 TARGET="$HERE/target"
 OUT="$TARGET/conformance"
@@ -51,7 +52,7 @@ json="$(pinned cargo build --quiet --offline --manifest-path "$HERE/rustc/std/Ca
     --target-dir "$TARGET/admit" --message-format=json)" || exit 2
 ADMIT_RLIB="$TARGET/admit/debug/libtide_std_stub.rlib"
 ADMIT_DEPS=()
-while IFS= read -r dir; do ADMIT_DEPS+=(-L "dependency=$dir"); done < <(
+while IFS= read -r dir; do ADMIT_DEPS+=(--tide-dep-dir "$dir"); done < <(
   grep -o '"filenames":\[[^]]*\]' <<<"$json" | grep -o '"[^"]*\.\(rlib\|so\|dylib\)"' | tr -d '"' \
     | while IFS= read -r lib; do printf '%s\n' "${lib%/*}"; done | sort -u)
 
@@ -111,7 +112,7 @@ check() { # check <file>
   # Exit 1 is a rejection; any other failure, or a panic, is the driver's crash.
   for mode in "--crate-type=$kind" --test; do
     c=0
-    dlog+="$("$DRIVER" "${grant[@]}" --edition 2024 --extern "std=$ADMIT_RLIB" "${ADMIT_DEPS[@]}" "$mode" \
+    dlog+="$("$DRIVER" "${grant[@]}" --edition 2024 --tide-std "$ADMIT_RLIB" "${ADMIT_DEPS[@]}" "$mode" \
         --crate-name "$(basename "$file" .rs | tr -c 'a-zA-Z0-9_\n' _)" --emit metadata \
         --out-dir "$OUT/admit" --error-format=short "$file" 2>&1)"$'\n' || c=$?
     (( c > dcode )) && dcode=$c

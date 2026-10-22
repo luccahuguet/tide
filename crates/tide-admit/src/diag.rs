@@ -8,6 +8,8 @@ use rustc_span::{BytePos, Span};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Code {
+    /// User macro definitions (D6).
+    Fx0101,
     /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
     Fx0502,
     /// A `#[pure]` function whose parameter types are not all `Pure` (AFREE-1).
@@ -33,11 +35,16 @@ pub enum Code {
     /// Unsafe code, an unsafe attribute, or `#[trusted_pure]` without the `unsafe` grant
     /// (UNSAFE-1).
     Fx0901,
+    /// File-loading attributes (RUN-2).
+    Fx0911,
+    /// Package build scripts (D13).
+    Fx0915,
 }
 
 impl Code {
     /// Every code this driver decides, so a caller can tell its verdicts from ones it awaits.
     pub const ALL: &[Code] = &[
+        Code::Fx0101,
         Code::Fx0502,
         Code::Fx0511,
         Code::Fx0517,
@@ -49,10 +56,13 @@ impl Code {
         Code::Fx0611,
         Code::Fx0612,
         Code::Fx0901,
+        Code::Fx0911,
+        Code::Fx0915,
     ];
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Code::Fx0101 => "FX0101",
             Code::Fx0502 => "FX0502",
             Code::Fx0511 => "FX0511",
             Code::Fx0517 => "FX0517",
@@ -64,6 +74,8 @@ impl Code {
             Code::Fx0611 => "FX0611",
             Code::Fx0612 => "FX0612",
             Code::Fx0901 => "FX0901",
+            Code::Fx0911 => "FX0911",
+            Code::Fx0915 => "FX0915",
         }
     }
 }
