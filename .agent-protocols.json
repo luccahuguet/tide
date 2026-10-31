@@ -2,7 +2,7 @@
   "schema": 1,
   "source": {
     "repository": "https://github.com/Yazelix/starcompass",
-    "commit": "e7c3a25a230c1cc1e074f4f6c1530997b2bf8b91"
+    "commit": "ea6da7755ab1a1ec5807b728aaf17eba1b0fbd89"
   },
   "profiles": [
     "regular"
@@ -10,8 +10,8 @@
   "protocols": [
     {
       "id": "AP-SCOPE-001",
-      "version": 5,
-      "sha256": "f68b0606986b0ac083a0c7949e1b2ab5d34150e0f906ddae226b9d5429ee115a"
+      "version": 6,
+      "sha256": "2972d9576f247864ca734982b95743b533b455f1b95d30c5127872e845cb7f28"
     },
     {
       "id": "AP-CONTRACT-001",
@@ -50,13 +50,18 @@
     },
     {
       "id": "AP-PLAN-001",
-      "version": 12,
-      "sha256": "5ee8deccb4b3c61ddd4a52b8ed6f69ebd30e24b65ace867871a89c75ef02a984"
+      "version": 13,
+      "sha256": "8e681ed8e09fcb4943063f8e81e95dc8dc6ce261018b030ac886e345faa2d7a8"
     },
     {
       "id": "AP-SESSION-001",
-      "version": 4,
-      "sha256": "51c15e878070caaf372721c2eb083354f5f63492f5c4e694cf31aaefcefa53a7"
+      "version": 5,
+      "sha256": "a651730e4124193bf1ae02939862a25084a6c6ba9acc557f4c053df53747084d"
+    },
+    {
+      "id": "AP-COORDINATOR-001",
+      "version": 1,
+      "sha256": "bd80e64f9b50e617a37531c5e48e0bc2672397edbd2f75c1e511d588954432c7"
     },
     {
       "id": "AP-EXCEPTION-001",
