@@ -379,8 +379,10 @@ fn t() -> Result<(), fn()> {
 
 /// A minimal Tide std, built with the pinned rustc: Rust's std with `Pure`, which rustc meets
 /// for every type and the driver decides, and a `Clock`, which is never `Pure`.
-fn tide_std() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("tide-std");
+fn tide_std(name: &str) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(name)
+        .join("tide-std");
     std::fs::create_dir_all(&dir).unwrap();
     let source = dir.join("lib.rs");
     std::fs::write(
@@ -425,7 +427,7 @@ pub mod time {
 /// provided method that needs `Self: Pure`, which no one calls, is not a use.
 #[test]
 fn the_backstop_decides_pure_where_clauses_at_their_uses() {
-    let std = tide_std();
+    let std = tide_std("backstop-pure");
     let source = "\
 use std::time::Clock;
 pub struct Guard<T>(pub T);
@@ -496,4 +498,21 @@ impl Show for Clock {
         ],
         "{stderr}"
     );
+}
+
+/// A static whose value points at an upstream function that rustc links rather than
+/// instantiates has no uses to look for: the backstop must not ask for that function's MIR,
+/// which a linked function lacks (fx-kw8.4 round 2).
+#[test]
+fn the_backstop_skips_upstream_functions_a_static_points_at() {
+    let std = tide_std("backstop-static");
+    let std = std.to_str().unwrap();
+    let source = "pub static LOWER: fn(&str) -> String = str::to_lowercase;\n";
+    for flags in [
+        &["--tide-std", std][..],
+        &["--tide-std", std, "--tide-test-backstop"],
+    ] {
+        let (code, stderr) = admit("backstop-static", source, flags);
+        assert_eq!((code, stderr.as_str()), (0, ""));
+    }
 }
