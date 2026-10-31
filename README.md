@@ -46,7 +46,9 @@ rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
 decides `Pure` structurally under the codes of the rules that need it (D18:
 statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
 requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), and
-passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). It constructs
+passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). After rustc's
+analysis, a backstop checks the crate's instances that can run for denied
+impls and `Pure` where-clauses, whatever route reached them (ADMIT-1). It constructs
 every compiler invocation, clears the compiler environment, snapshots candidate
 Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
 (`FX0101`), and package build scripts (`FX0915`), and caches successful metadata
@@ -68,6 +70,8 @@ target/debug/tide-admit --crate-type=lib --out-dir /tmp/tide-output path/to/pack
 The interface accepts one `.rs` entry, `--edition 2024`, `--crate-type lib|bin`,
 `--crate-name NAME`, `--test`, `--emit metadata`, `--error-format short`,
 `--out-dir DIR`, and `--tide-grant=unsafe` (value options also accept `=VALUE`).
+`--tide-test-backstop`, for the driver's tests, skips the obligation steps of
+the checks before analysis, so the backstop alone decides those routes.
 Raw rustc flags and response files are rejected. The source directory is the
 entry's parent; when it is named `src`, its parent is the package directory.
 The package path must not traverse directory symlinks, and a resolved source

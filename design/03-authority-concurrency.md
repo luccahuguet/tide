@@ -559,12 +559,25 @@ so the rules above also need an admission check (D7).
   - the internal runtime entry points of Tide's std.
 
   The allowlist is versioned with the rustc pin and reviewed whenever the
-  pin moves.
+  pin moves. A backstop runs after rustc's analysis, when neither rustc nor
+  the checker found an error, over the instances that can run: those that
+  the items a build of the crate exports, its statics, and its entry point
+  reach through the uses rustc records. An instance of a non-local impl that a
+  rule denies, or that needs an `unsafe` grant the package lacks, is
+  `FX0520`, and where an item outside `core`, `alloc`, and Rust's std is
+  used, the `Pure` part of its where-clauses at the instance's arguments is
+  decided as at a use. It
+  catches routes to an impl that the checks of resolved uses miss. Since it
+  runs after type checking, a check also reports post-monomorphization
+  errors, such as a `const` that fails for one instance of a generic.
 - **ADMIT-2. The driver owns rustc** (D18). It passes rustc no
   user-controlled `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C`
   flags, and passes `-Zallow-features=` so user code cannot enable unstable
   features, and `-Zpolonius=no`, since the pinned nightly otherwise checks
   borrows with Polonius and v0 has NLL's verdicts (`02-memory.md` ORIGIN-6).
+  It also passes `-Zshare-generics=no`, so the crate instantiates upstream
+  generics itself, except `#[inline(never)]` ones an upstream crate already
+  instantiated, and the backstop sees them (ADMIT-1).
   A build that skips the checker, such as Cargo with Rust's own std, is not
   a Tide build and carries none of this chapter's guarantees.
 

@@ -118,6 +118,10 @@ impl Diagnostics {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.found.is_empty()
+    }
+
     /// Emits the diagnostics in source order, one per code at each start position: the one with
     /// the narrowest span, which names the item written there (`AtomicU64` in
     /// `AtomicU64::new(0)`, not the call's type).

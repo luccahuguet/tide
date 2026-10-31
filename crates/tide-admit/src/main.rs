@@ -6,7 +6,8 @@
 //! the admission allowlist (ADMIT-1), reporting each rejection as `FX0520` at the use's span.
 //! It also decides `Pure` (`pure.rs`) and the rules on items that need it or the `unsafe` grant,
 //! each under its own FX code (D18). It checks after name resolution and before rustc's
-//! analysis, so a crate with rustc errors still gets its verdicts.
+//! analysis, so a crate with rustc errors still gets its verdicts, and after the analysis, when
+//! nothing failed, checks the instances that can run (`walk/mono.rs`).
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line
@@ -14,6 +15,7 @@
 
 extern crate rustc_abi;
 extern crate rustc_ast;
+extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_hir;

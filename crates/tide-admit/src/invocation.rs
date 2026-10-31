@@ -22,21 +22,33 @@ use rustc_span::{
 };
 
 use crate::diag::{Code, Diagnostics};
-use crate::walk::{Grants, check_crate};
+use crate::walk::{Grants, check_crate, check_mono_items};
 
 struct Admission {
     grants: Grants,
     sources: Sources,
+    backstop_only: bool,
 }
 
 impl Callbacks for Admission {
     fn config(&mut self, config: &mut Config) {
         config.file_loader = Some(Box::new(self.sources.clone()));
+        // The backstop's roots: a metadata check exports nothing, which leaves a library's mono
+        // items without roots, so rustc gets the items a build exports.
+        config.override_queries = Some(|_, providers| {
+            providers.queries.reachable_non_generics =
+                |tcx, _| rustc_codegen_ssa::back::symbol_export::reachable_non_generics_helper(tcx);
+        });
     }
     fn after_expansion<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         // Before `check_crate` lowers the crate, which takes the expanded AST.
         check_expanded(tcx);
-        check_crate(tcx, self.grants);
+        check_crate(tcx, self.grants, !self.backstop_only);
+        Compilation::Continue
+    }
+    fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        // rustc's analysis stops before this on any error, the walk's included.
+        check_mono_items(tcx, self.grants);
         Compilation::Continue
     }
 }
@@ -51,6 +63,9 @@ struct Invocation {
     kind: String,
     test: bool,
     grants: Grants,
+    /// `--tide-test-backstop`: the walk skips its obligation steps, so tests can show what the
+    /// backstop alone rejects.
+    backstop_only: bool,
     compile: Option<String>,
 }
 
@@ -66,9 +81,10 @@ impl Invocation {
             let (flag, inline) = arg
                 .split_once('=')
                 .map_or((arg.as_str(), None), |(a, b)| (a, Some(b)));
-            if matches!(flag, "--test" | "--tide-grant") {
+            if matches!(flag, "--test" | "--tide-grant" | "--tide-test-backstop") {
                 match (flag, inline) {
                     ("--test", None) => this.test = true,
+                    ("--tide-test-backstop", None) => this.backstop_only = true,
                     ("--tide-grant", Some("unsafe")) => this.grants.unsafe_ = true,
                     _ => return Err(format!("unsupported argument `{arg}`")),
                 }
@@ -142,6 +158,9 @@ impl Invocation {
             "--error-format=short".into(),
             "-Zallow-features=".into(),
             "-Zpolonius=no".into(),
+            // The backstop's mono items: the crate makes its own instances of upstream generics
+            // instead of linking an upstream crate's.
+            "-Zshare-generics=no".into(),
             "--sysroot".into(),
             env!("TIDE_SYSROOT").into(),
             "--out-dir".into(),
@@ -622,6 +641,11 @@ pub fn run() -> Result<ExitCode, String> {
         b"unsafe grant",
         &[u8::from(invocation.grants.unsafe_)],
     );
+    record(
+        &mut key,
+        b"backstop only",
+        &[u8::from(invocation.backstop_only)],
+    );
     let sources = Sources::snapshot(&source_root, &mut key)
         .map_err(|_| "cannot snapshot candidate sources")?;
     if !sources.files.contains_key(&source) {
@@ -655,6 +679,7 @@ pub fn run() -> Result<ExitCode, String> {
         let mut admission = Admission {
             grants: invocation.grants,
             sources,
+            backstop_only: invocation.backstop_only,
         };
         return Ok(rustc_driver::catch_with_exit_code(|| {
             rustc_driver::run_compiler(&rustc_args, &mut admission)

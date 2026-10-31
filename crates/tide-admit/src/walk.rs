@@ -43,48 +43,21 @@ use crate::diag::{Code, Diagnostics};
 use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
+mod mono;
+pub use mono::check_mono_items;
+
 /// What the package's manifest grants it (03 RUN-4).
 #[derive(Clone, Copy, Default)]
 pub struct Grants {
     pub unsafe_: bool,
 }
 
-/// Checks the local crate and emits its diagnostics.
-pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants) {
+/// Checks the local crate and emits its diagnostics. Without `obligations`, a switch for the
+/// backstop's tests, the walk skips its obligation steps (`obligation`, `pure_obligation`).
+pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, obligations: bool) {
     let crates = Crates::new(tcx);
-    // Without Tide's std (the driver's own tests run against Rust's) there is no `Pure`.
-    let pure = crates.tide_std().and_then(|krate| {
-        let pure_trait = tcx
-            .traits(krate)
-            .iter()
-            .copied()
-            .find(|&d| crates.key(tcx, d) == "tide_std::marker::Pure")?;
-        let trusted = tcx
-            .hir_crate_items(())
-            .definitions()
-            .filter(|&d| {
-                matches!(
-                    tcx.def_kind(d),
-                    DefKind::Struct | DefKind::Enum | DefKind::Union
-                )
-            })
-            .filter(|&d| std_attr_made(tcx, &crates, d, "trusted_pure"))
-            .map(LocalDefId::to_def_id)
-            .collect();
-        Some(Pure::new(tcx, &crates, pure_trait, trusted))
-    });
-    let mut walk = Walk {
-        tcx,
-        crates: &crates,
-        grants,
-        pure,
-        diags: Diagnostics::default(),
-        typeck: None,
-        owner: None,
-        seen_obligations: FxHashSet::default(),
-        seen_pure: FxHashSet::default(),
-        item_env: None,
-    };
+    let mut walk = Walk::new(tcx, &crates, grants);
+    walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.entry_point();
     walk.check_expansions();
@@ -92,6 +65,7 @@ pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants) {
 }
 
 /// Why a use is not admitted.
+#[derive(Clone)]
 struct Rejection {
     key: String,
     help: Option<&'static str>,
@@ -122,8 +96,49 @@ struct Walk<'a, 'tcx> {
     /// and rule, at its first use.
     seen_pure: FxHashSet<(ty::TraitRef<'tcx>, Option<LocalDefId>, Need)>,
     /// The `Pure` decision's environment in place of the owner's, while `impl_item_clauses`
-    /// decides a trait impl item's where-clauses.
+    /// decides a trait impl item's where-clauses, or the backstop an instance's.
     item_env: Option<TypingEnv<'tcx>>,
+    /// Whether the obligation steps run (`check_crate`).
+    obligations: bool,
+}
+
+impl<'a, 'tcx> Walk<'a, 'tcx> {
+    fn new(tcx: TyCtxt<'tcx>, crates: &'a Crates, grants: Grants) -> Self {
+        // Without Tide's std (the driver's own tests run against Rust's) there is no `Pure`.
+        let pure = crates.tide_std().and_then(|krate| {
+            let pure_trait = tcx
+                .traits(krate)
+                .iter()
+                .copied()
+                .find(|&d| crates.key(tcx, d) == "tide_std::marker::Pure")?;
+            let trusted = tcx
+                .hir_crate_items(())
+                .definitions()
+                .filter(|&d| {
+                    matches!(
+                        tcx.def_kind(d),
+                        DefKind::Struct | DefKind::Enum | DefKind::Union
+                    )
+                })
+                .filter(|&d| std_attr_made(tcx, crates, d, "trusted_pure"))
+                .map(LocalDefId::to_def_id)
+                .collect();
+            Some(Pure::new(tcx, crates, pure_trait, trusted))
+        });
+        Walk {
+            tcx,
+            crates,
+            grants,
+            pure,
+            diags: Diagnostics::default(),
+            typeck: None,
+            owner: None,
+            seen_obligations: FxHashSet::default(),
+            seen_pure: FxHashSet::default(),
+            item_env: None,
+            obligations: true,
+        }
+    }
 }
 
 /// Whether the attribute macro `name` that Tide's std exports (`pure`, `trusted_pure`) was
@@ -207,38 +222,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// An impl is admitted when a rule allows its key, or else when it comes from Tide's std or
     /// both the trait and the self type's head are admitted.
     fn admit_impl(&self, impl_def_id: DefId, used_as: ty::TraitRef<'tcx>) -> Result<(), Rejection> {
-        let tcx = self.tcx;
         let role = self.crates.role(impl_def_id.krate);
         if role == Role::Local {
             return Ok(());
         }
-        let generic = tcx
-            .impl_trait_ref(impl_def_id)
-            .instantiate_identity()
-            .skip_normalization();
-        // core's impls for every function pointer (`impl<F: FnPtr> Hash for F`) are keyed
-        // `for fn()`, so the rules can tell them from other blanket impls.
-        let fn_ptr = tcx.lang_items().fn_ptr_trait();
-        let for_fn_ptrs = tcx
-            .clauses_of(impl_def_id)
-            .instantiate_identity(tcx)
-            .clauses
-            .into_iter()
-            .any(|c| {
-                c.skip_normalization()
-                    .as_trait_clause()
-                    .is_some_and(|tp| Some(tp.def_id()) == fn_ptr)
-            });
-        let key =
-            with_no_visible_paths!(with_no_trimmed_paths!(with_resolve_crate_name!(format!(
-                "impl {} for {}",
-                generic.print_only_trait_path(),
-                if for_fn_ptrs {
-                    "fn()".to_string()
-                } else {
-                    generic.self_ty().to_string()
-                }
-            ))));
+        let key = impl_key(self.tcx, impl_def_id);
         if let Some(rule) = policy::lookup(&key) {
             return self.decide(key, Some(rule), false);
         }
@@ -585,7 +573,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// through its `Termination` impl.
     fn pure_obligation(&mut self, tr: ty::TraitRef<'tcx>, need: Need, span: Span, depth: usize) {
         let tcx = self.tcx;
-        let Some(pure) = &self.pure else { return };
+        let Some(pure) = self.pure.as_ref().filter(|_| self.obligations) else {
+            return;
+        };
         if tr.references_error() || tr.has_non_region_infer() || tr.has_escaping_bound_vars() {
             return;
         }
@@ -666,11 +656,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 _ => break,
             };
         }
-        if let ty::Closure(def, _) = *callee.kind()
+        if let ty::Closure(def, args) = *callee.kind()
             && let Some(local) = def.as_local()
         {
             for cap in tcx.closure_captures(local) {
-                let place = tcx.erase_and_anonymize_regions(cap.place.ty());
+                // The capture's type at the closure's args, which the backstop gives concretely.
+                let place = ty::EarlyBinder::bind(tcx, cap.place.ty())
+                    .instantiate(tcx, args.as_closure().parent_args())
+                    .skip_normalization();
+                let place = tcx.erase_and_anonymize_regions(place);
                 let data = match cap.info.capture_kind {
                     ty::UpvarCapture::ByRef(ty::BorrowKind::Immutable) => place,
                     ty::UpvarCapture::ByValue | ty::UpvarCapture::ByUse => match *place.kind() {
@@ -1143,6 +1137,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// object candidate, or by an auto trait's builtin impl.
     fn obligation(&mut self, tr: ty::TraitRef<'tcx>, span: Span, depth: usize) {
         let tcx = self.tcx;
+        if !self.obligations {
+            return;
+        }
         if depth > MAX_OBLIGATION_DEPTH {
             let key = with_no_visible_paths!(with_no_trimmed_paths!(with_resolve_crate_name!(
                 format!("{}: {}", tr.self_ty(), tr.print_only_trait_path())
@@ -1386,6 +1383,36 @@ fn local_drop_impl<'tcx>(
     }
     let impl_args: Option<Vec<_>> = impl_args.into_iter().collect();
     Some((impl_def_id, tcx.mk_args(&impl_args?)))
+}
+
+/// A trait impl's allowlist key, `impl <Trait> for <SelfTy>`. core's impls for every function
+/// pointer (`impl<F: FnPtr> Hash for F`) are keyed `for fn()`, so the rules can tell them from
+/// other blanket impls.
+fn impl_key(tcx: TyCtxt<'_>, impl_def_id: DefId) -> String {
+    let generic = tcx
+        .impl_trait_ref(impl_def_id)
+        .instantiate_identity()
+        .skip_normalization();
+    let fn_ptr = tcx.lang_items().fn_ptr_trait();
+    let for_fn_ptrs = tcx
+        .clauses_of(impl_def_id)
+        .instantiate_identity(tcx)
+        .clauses
+        .into_iter()
+        .any(|c| {
+            c.skip_normalization()
+                .as_trait_clause()
+                .is_some_and(|tp| Some(tp.def_id()) == fn_ptr)
+        });
+    with_no_visible_paths!(with_no_trimmed_paths!(with_resolve_crate_name!(format!(
+        "impl {} for {}",
+        generic.print_only_trait_path(),
+        if for_fn_ptrs {
+            "fn()".to_string()
+        } else {
+            generic.self_ty().to_string()
+        }
+    ))))
 }
 
 fn raw_pointer_key(m: hir::Mutability) -> &'static str {
