@@ -2,85 +2,59 @@
 //!
 //! Copied from trials/e1-dialect/rustc/std, whose copy stays frozen as the
 //! trial's record; cases extend this one. Injected as `std` (`--extern
-//! std=`), as spikes/d18 does. It defines only the items and methods the
-//! trial's programs and the cases use, with every field, variant,
-//! derive, and `Error` impl the reference gives them (other impls as needed),
-//! with the signatures `design/reference.md` and 02/03 give, and re-exports
-//! Rust's items where the reference keeps their API. Every body is
-//! `unimplemented!()`, so it decides type and borrow verdicts only, except
-//! `with_hasher`, which builds the value so that a `static` evaluates. Lines
-//! marked `GUESS` fix a signature no design document fixes.
+//! std=`), as spikes/d18 does. It is a compile-time fixture: Tide's std
+//! (`crates/tide-std`) owns runtime behavior, and this crate includes its
+//! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
+//! runtime entry, and Rust's re-exports) and declares the capability types
+//! with its `capability!`, so those have one definition and the same paths in
+//! both. Beyond them it defines only the items and methods the trial's
+//! programs and the cases use, with every field, variant, derive, and `Error`
+//! impl the reference gives them (other impls as needed), with the signatures
+//! `design/reference.md` and 02/03 give, and re-exports Rust's items where the
+//! reference keeps their API. Each of its own bodies is `unimplemented!()`, so
+//! it decides type and borrow verdicts only, except `with_hasher`, which builds
+//! the value so that a `static` evaluates. Lines marked `GUESS` fix a signature
+//! no design document fixes.
 
 #![allow(unused_variables, dead_code)]
 
-pub use std::{
-    any, array, borrow, boxed, cell, char, clone, cmp, convert, default, error, f32, f64, fmt, hash,
-    iter, mem, num, ops, option, path, rc, result, slice, str, string, vec,
-};
-pub use std::{
-    assert_eq, assert_ne, dbg, debug_assert, eprint, eprintln, format, matches, print, println, todo, unimplemented,
-    unreachable, write, writeln,
-};
-
-#[macro_export]
-macro_rules! panic {
-    ($($t:tt)*) => { ::core::panic!($($t)*) };
-}
+// Tide's std's crate-root items: `Root`, `Pure`, `tide::main`, the sinks and `panic!`, the
+// runtime entry, Rust's re-exports, and the `capability!` and `declare_prelude!` macros.
+include!("../../../../crates/tide-std/src/root.rs");
 
 // The log sink (reference 6.5): arguments are evaluated and formatted.
 #[macro_export]
 macro_rules! __log { ($($t:tt)*) => {{ let _ = ::core::format_args!($($t)*); }} }
 
-pub mod prelude {
-    pub mod rust_2024 {
-        // A subset of Rust's 2024 prelude, as in spikes/d18/facade, without the
-        // builtin `test` (replaced below).
-        pub use std::prelude::rust_2024::{
-            AsMut, AsRef, Box, Clone, Copy, Debug, Default, DoubleEndedIterator, Drop, Eq, Err, ExactSizeIterator,
-            Extend, Fn, FnMut, FnOnce, From, FromIterator, Hash, Into, IntoIterator, Iterator, None, Ok, Option, Ord,
-            PartialEq, PartialOrd, Result, Send, Sized, Some, String, Sync, ToOwned, ToString, TryFrom, TryInto,
-            Unpin, Vec, assert, cfg, derive, drop, format_args, stringify,
-        };
-        pub use crate::{__log as error, __log as info};
-        pub use crate::{
-            assert_eq, assert_ne, dbg, debug_assert, eprint, eprintln, format, matches, panic, print, println, todo,
-            unimplemented, unreachable, vec, write, writeln,
-        };
-        // Tide additions (reference 12.3).
-        pub use crate::marker::Pure;
-        pub use crate::{Root, Secret};
-        pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
-        pub use crate::tide;
-        pub use oracle_macros::{Error, sim_test, test};
-        pub use std::error::Error;
-        pub use conformance_macros::{pure, trusted_pure};
-        pub use tide_macros::{ensures, invariant, invariants, requires};
-    }
+// The dbg sink (reference 6.5): as Rust's `dbg!`, it formats each argument with `Debug` and
+// returns it.
+#[macro_export]
+macro_rules! dbg {
+    () => { () };
+    ($val:expr $(,)?) => { match $val { tmp => { let _ = ::core::format_args!("{:#?}", &tmp); tmp } } };
+    ($($val:expr),+ $(,)?) => { ($($crate::dbg!($val)),+,) };
 }
 
-pub mod tide {
-    pub use tide_macros::main;
-}
-
-pub mod marker {
-    pub use std::marker::*;
-    /// The checker decides `Pure`; the blanket impl lets rustc accept every bound (reference 6.6).
-    pub unsafe trait Pure {}
-    unsafe impl<T: ?Sized> Pure for T {}
+crate::declare_prelude! {
+    pub use crate::{__log as error, __log as info};
+    pub use crate::dbg;
+    pub use crate::Secret;
+    pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
+    pub use oracle_macros::{Error, sim_test, test};
+    pub use conformance_macros::{pure, trusted_pure};
+    pub use spike_macros::{ensures, invariant, invariants, requires};
 }
 
 pub mod process {
     pub use std::process::{ExitCode, Termination};
-    #[derive(Clone)]
-    pub struct Proc(());
+    crate::capability!(Proc);
 }
 
 pub mod io {
     pub use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 
+    crate::capability!(Stdin);
     /// Reference 6.1: `io::Stdin`'s methods with `&self` receivers.
-    #[derive(Clone)]
-    pub struct Stdin(());
     impl Stdin {
         pub fn read_line(&self, buf: &mut String) -> Result<usize> { unimplemented!() }
     }
@@ -90,16 +64,14 @@ pub mod env {
     /// GUESS: `args()` "as std::env's", so Rust's `Args`, an iterator of `String`.
     pub use std::env::Args;
     pub use std::env::VarError;
-    #[derive(Clone)]
-    pub struct Env(());
+    crate::capability!(Env);
     impl Env {
         pub fn args(&self) -> Args { unimplemented!() }
     }
 }
 
 pub mod rand {
-    #[derive(Clone)]
-    pub struct Rand(());
+    crate::capability!(Rand);
 }
 
 /// Rust's collections, except that `HashMap` and `HashSet` are Tide std's own types (03
@@ -370,8 +342,7 @@ pub mod fs {
         ReadWrite,
     }
 
-    #[derive(Clone)]
-    pub struct Fs(());
+    crate::capability!(Fs);
 
     impl Fs {
         pub fn read(&self, p: impl AsRef<Path>) -> io::Result<Vec<u8>> { unimplemented!() }
@@ -392,8 +363,7 @@ pub mod time {
     use crate::task::Cancelled;
     pub use std::time::Duration;
 
-    #[derive(Clone)]
-    pub struct Clock(());
+    crate::capability!(Clock);
     impl Clock {
         pub fn now(&self) -> Instant { unimplemented!() }
         pub fn sleep_until(&self, t: Instant) -> Result<(), Cancelled> { unimplemented!() }
@@ -415,8 +385,7 @@ pub mod time {
 pub mod net {
     use crate::time::Instant;
 
-    #[derive(Clone)]
-    pub struct Net(());
+    crate::capability!(Net);
     impl Net {
         pub fn get(&self, url: &Url, deadline: Instant) -> Result<Vec<u8>, NetError> { unimplemented!() }
         /// Simulation only (reference 6.8).
@@ -458,8 +427,7 @@ pub mod net {
 pub mod task {
     use std::marker::PhantomData;
 
-    #[derive(Clone)]
-    pub struct Tasks(());
+    crate::capability!(Tasks);
 
     /// 02 §8.2 and 03 §6.1.
     impl Tasks {
@@ -857,20 +825,7 @@ pub mod sim {
     }
 }
 
-/// Every capability a program starts with (reference 6.2). The `log` field
-/// (sink configuration) is left out: no document fixes its type. The private
-/// field keeps user code from building one (03 §1.3, ROOT-4).
-pub struct Root {
-    _private: (),
-    pub fs: fs::Fs,
-    pub net: net::Net,
-    pub clock: time::Clock,
-    pub rand: rand::Rand,
-    pub env: env::Env,
-    pub stdin: io::Stdin,
-    pub proc: process::Proc,
-    pub tasks: task::Tasks,
-}
+/// Test code only (ROOT-3).
 impl Root {
     pub fn sim(seed: u64) -> sim::SimRoot { unimplemented!() }
 }
@@ -886,10 +841,4 @@ impl<T> Secret<T> {
 /// 03 GLOBAL-4: identity by reference; core's `ptr::eq` takes raw pointers.
 pub mod ptr {
     pub fn eq<T: ?Sized>(a: &T, b: &T) -> bool { unimplemented!() }
-}
-
-/// Used by `#[tide::main]`'s expansion.
-#[doc(hidden)]
-pub mod __rt {
-    pub fn root() -> crate::Root { unimplemented!() }
 }

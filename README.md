@@ -59,7 +59,7 @@ root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
 pins, with the `rustc-dev` component:
 
 ```
-cargo test --workspace   # the driver's tests
+cargo test --workspace   # the driver's and Tide's std's tests
 conformance/run.sh       # the conformance corpus, through stable rustc and the driver
 ```
 
@@ -92,12 +92,16 @@ artifacts outside the candidate package. These are operator inputs, like
 grants; candidate source, Cargo configuration, toolchain files, and inherited
 environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
-has no `#[tide::main]`. The conformance runner explicitly injects a
-Tide std stub; a production Tide std is not implemented. The installed pinned
-toolchain is trusted and treated as immutable. This slice provides loader and
-invocation isolation, with no OS sandbox or protection against concurrent
-filesystem mutation; assembler, linker, runtime, and test-process isolation
-remain later work.
+has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
+`crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
+as identities without operations, `Pure`, and the `out` and `err` sinks
+(`print!`, `println!`, `eprint!`, `eprintln!`); its crate docs list what it
+does not provide yet. The conformance runner injects a stub std, a
+compile-time fixture that shares Tide's std's definitions of those items. The
+installed pinned toolchain is trusted and treated as immutable. This slice
+provides loader and invocation isolation, with no OS sandbox or protection
+against concurrent filesystem mutation; assembler, linker, runtime, and
+test-process isolation remain later work.
 
 [conformance/](conformance/README.md) holds the conformance corpus: cases
 with expected verdicts per rule ID. Stable rustc checks their rustc marks,

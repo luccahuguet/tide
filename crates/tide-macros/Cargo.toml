@@ -1,0 +1,9 @@
+[package]
+name = "tide-macros"
+version = "0.0.0"
+description = "Tide's toolchain macros: #[tide::main] (03 ROOT-1) and the sink macros (03 §2.4)"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+proc-macro = true

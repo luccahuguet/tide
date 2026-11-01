@@ -3,11 +3,13 @@ name = "tide_std_stub"
 version = "0.0.0"
 edition = "2024"
 publish = false
-description = "Conformance rustc oracle: Tide std signatures with unimplemented bodies, injected as std (throwaway)"
+description = "Conformance rustc oracle: a compile-time fixture of Tide std, injected as std (throwaway)"
 
 [dependencies]
-# Contract lowering and #[tide::main] from the D18 spike.
-tide_macros = { path = "../../../spikes/d18/macros" }
+# Tide's std's macros, which the included crate-root items re-export.
+tide-macros = { path = "../../../crates/tide-macros" }
+# Contract lowering from the D18 spike.
+spike_macros = { package = "tide_macros", path = "../../../spikes/d18/macros" }
 # The E1 trial's #[test] and #[sim_test] shims and derive(Error), used as is.
 oracle_macros = { path = "../../../trials/e1-dialect/rustc/macros" }
 # #[pure] and #[trusted_pure], which neither of the above defines.

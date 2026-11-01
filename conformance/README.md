@@ -55,8 +55,8 @@ environment holding only `RUSTC_ICE=0`, so a crash writes no report file.
 Candidate Cargo and toolchain files do not configure it.
 Its source snapshot is the case's source directory; output and successful
 content-addressed cache entries live outside it, under `target/conformance`.
-This remains a compile-time stub oracle, without a production Tide std or an
-OS build/test sandbox. Live outside-file and environment canaries belong to
+This remains a compile-time stub oracle, without an OS build/test sandbox:
+the stub never runs. Live outside-file and environment canaries belong to
 the driver's integration tests, since the stable oracle would read them.
 
 Only the driver's codes are enforced: in any other code, a wrong `FX` mark
@@ -111,20 +111,32 @@ the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
 one verdict in a header: a per-line mark fails a case rejected on the wrong
 line or for an incidental reason, which a single verdict would let pass.
 
-The stub's `Pure` is a blanket impl, so rustc accepts every `Pure` bound and
-every `Pure` verdict is the checker's (an `FX` mark). Its bodies are
-`unimplemented!()`, so the corpus decides compile-time verdicts only; rules
-decided at run time, in the simulator, or in the sandbox are outside it
-(`rules.md` lists them). `rustc/std` is copied from
-`trials/e1-dialect/rustc/std`, whose copy stays frozen as the trial's record,
-and uses the trial's `macros` crate as is; `rustc/macros` adds `#[pure]` and
-`#[trusted_pure]`, which leave their item unchanged. The trial's contract macros are
-the D18 spike's (`spikes/d18/macros`), so a contract case's rustc marks record
-that lowering's errors, and the case's comment says where they differ from the
-design's (04 §1.8, CLAUSE-7, lists the spike's known gaps).
-Add an item to the stub when a case needs it, with the signature the design
-gives, and mark `GUESS` on a signature no design document fixes. If the stub
-cannot express a verdict a rule needs, record the gap on the case's bead.
+The stub is a compile-time fixture of Tide's std (`crates/tide-std`), which
+owns runtime behavior. It includes Tide's std's crate-root items
+(`crates/tide-std/src/root.rs`: `Root`, `Pure`, `tide::main`, the sinks and
+`panic!`, the runtime entry, and Rust's re-exports) and declares the
+capability types with that file's `capability!`, so every item Tide's std
+exposes has one definition, at the same path, in both; the admission driver's
+rules (`policy.rs`, `pure.rs`) key them alike. A case that uses only those
+items is checked against Tide's std's own definitions. Every other item is the
+stub's own, a signature for an item Tide's std does not provide yet. `Pure` is
+a blanket impl, so rustc accepts every `Pure` bound and every `Pure` verdict
+is the checker's (an `FX` mark). The stub's own bodies are `unimplemented!()`,
+so the corpus decides compile-time verdicts only; rules decided at run time,
+in the simulator, or in the sandbox are outside it (`rules.md` lists them).
+`rustc/std` is copied from `trials/e1-dialect/rustc/std`, whose copy stays
+frozen as the trial's record, and uses the trial's `macros` crate as is, and
+Tide's std's macros (`crates/tide-macros`); `rustc/macros` adds `#[pure]` and
+`#[trusted_pure]`, which leave their item unchanged. The trial's contract
+macros are the D18 spike's (`spikes/d18/macros`), so a contract case's rustc
+marks record that lowering's errors, and the case's comment says where they
+differ from the design's (04 §1.8, CLAUSE-7, lists the spike's known gaps).
+Add an item to the stub when a case needs it and Tide's std does not provide
+it, with the signature the design gives, and mark `GUESS` on a signature no
+design document fixes. When Tide's std comes to provide one of the stub's
+items, the stub includes Tide's std's definition, as it includes `root.rs`,
+and drops its own. If the stub cannot express a verdict a rule needs, record
+the gap on the case's bead.
 
 ## Rule IDs
 

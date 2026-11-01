@@ -6,10 +6,12 @@
 //! (`core::f64::<impl f64>::sin`, not a re-export's path), an impl's
 //! `impl <Trait> for <SelfTy>` (`impl <Trait> for fn()` when it is selected for a function
 //! pointer), or one of the pseudo-items `*const T`, `*mut T`, and `fn() as integer`. Items of
-//! Tide's std print under `tide_std::`. `*` in a pattern matches any run of characters, `::`
-//! included, except a leading `*`, which is literal: `*mut T` matches only the pseudo-item, not
-//! `impl core::fmt::Debug for &mut T`. The first rule whose pattern matches decides; `walk.rs`
-//! decides keys no rule matches.
+//! Tide's std print under `tide_std::`, whichever crate is injected as `std`: `crates/tide-std`
+//! for a program, or the conformance corpus's fixture std (`conformance/rustc/std`), which
+//! includes Tide's std's crate-root items and capability types, so both key them alike. `*` in
+//! a pattern matches any run of characters, `::` included, except a leading `*`, which is
+//! literal: `*mut T` matches only the pseudo-item, not `impl core::fmt::Debug for &mut T`. The
+//! first rule whose pattern matches decides; `walk.rs` decides keys no rule matches.
 
 /// What a rule decides for the keys it matches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,10 +209,6 @@ pub const RULES: &[Rule] = &[
         OS_ERROR,
     ),
     allow("std::io::error::<impl core::io::error::Error>::from_raw_os_error"),
-    // The expansions of Rust's `print!`, `eprintln!`, and `dbg!`, which the stub std re-exports
-    // in place of Tide's sinks (D7); revisit when Tide's std has its own.
-    allow("std::io::stdio::_print"),
-    allow("std::io::stdio::_eprint"),
     // What `main` may return (reference 6.2); `ExitCode::from(u8)` is a `From` impl.
     allow("std::process::ExitCode::SUCCESS"),
     allow("std::process::ExitCode::FAILURE"),

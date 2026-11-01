@@ -1,15 +1,17 @@
 //! Crate identity (ADMIT-1 keys the allowlist on it, not on crate names): which crate in the
-//! graph is `core`, `alloc`, Rust's std, and Tide's std, and what Tide's std exports.
+//! graph is `core`, `alloc`, Rust's std, and Tide's std, what Tide's std exports, and which
+//! expansion generated the binary's entry point.
 
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::ItemKind;
 use rustc_hir::def::{DefKind, Res};
-use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc_hir::def_id::{CRATE_DEF_ID, CrateNum, DefId, LOCAL_CRATE};
 use rustc_middle::ty::TyCtxt;
 use rustc_middle::ty::print::{
     with_no_trimmed_paths, with_no_visible_paths, with_resolve_crate_name,
 };
-use rustc_span::hygiene::AstPass;
+use rustc_session::config::CrateType;
+use rustc_span::hygiene::{AstPass, ExpnId};
 use rustc_span::{ExpnKind, sym};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +38,8 @@ pub struct Crates {
     rust_std: Option<CrateNum>,
     /// Items of other crates that Tide's std re-exports publicly.
     exports: FxHashSet<DefId>,
+    /// The expansion that generated the crate-root `fn main` of an executable crate.
+    entry: Option<ExpnId>,
 }
 
 impl Crates {
@@ -47,6 +51,7 @@ impl Crates {
             alloc: lang.owned_box().map(|d| d.krate),
             rust_std: lang.start_fn().map(|d| d.krate),
             exports: FxHashSet::default(),
+            entry: entry_expansion(tcx),
         };
         // Built without Tide's std, the injected std is Rust's, and the allowlist checks it; an
         // `--extern std=` naming `core` or `alloc` does not make them Tide's std either.
@@ -96,6 +101,13 @@ impl Crates {
         self.exports.contains(&def_id)
     }
 
+    /// Whether `expn` generated the crate-root `fn main` of an executable crate, the one place
+    /// where `#[tide::main]`'s expansion is the binary's entry point (ROOT-1): applied to any
+    /// other `fn main`, it would mint a `Root` that some code can call.
+    pub fn is_entry(&self, expn: ExpnId) -> bool {
+        self.entry == Some(expn)
+    }
+
     /// Whether `def_id` is an item of `core`, `alloc`, Rust's std, or Tide's std.
     pub fn is_std(&self, def_id: DefId) -> bool {
         matches!(
@@ -138,6 +150,23 @@ fn injected_std(tcx: TyCtxt<'_>) -> Option<CrateNum> {
             }
             _ => None,
         }
+    })
+}
+
+/// The expansion that generated the crate-root `fn main`, if the crate is executable (a binary,
+/// or a test harness) and an expansion generated it.
+fn entry_expansion(tcx: TyCtxt<'_>) -> Option<ExpnId> {
+    if !tcx.crate_types().contains(&CrateType::Executable) {
+        return None;
+    }
+    tcx.hir_free_items().find_map(|id| {
+        let def_id = id.owner_id.def_id;
+        let span = tcx.def_span(def_id);
+        (tcx.def_kind(def_id) == DefKind::Fn
+            && tcx.item_name(def_id) == sym::main
+            && tcx.opt_local_parent(def_id) == Some(CRATE_DEF_ID)
+            && span.from_expansion())
+        .then(|| span.ctxt().outer_expn())
     })
 }
 

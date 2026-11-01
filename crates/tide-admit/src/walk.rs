@@ -282,15 +282,19 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// Whether `span` is in code the toolchain generates: the harness's `main` under `--test`,
     /// the descriptors of `core`'s `#[test]`, which use the sysroot's `test` crate, and the
-    /// entry point that Tide's std's `#[tide::main]` generates, which starts the runtime.
+    /// entry point that Tide's std's `#[tide::main]` generates as the binary's crate-root
+    /// `main`, which starts the runtime.
     fn generated_by_toolchain(&self, mut span: Span) -> bool {
         while span.from_expansion() {
-            let data = span.ctxt().outer_expn_data();
+            let expn = span.ctxt().outer_expn();
+            let data = expn.expn_data();
             let toolchain_attr = matches!(data.kind, ExpnKind::Macro(MacroKind::Attr, _))
                 && data.macro_def_id.is_some_and(|d| {
                     let name = self.tcx.item_name(d);
                     (self.crates.role(d.krate) == Role::Core && name == sym::test)
-                        || (self.crates.exported(d) && name == sym::main)
+                        || (self.crates.exported(d)
+                            && name == sym::main
+                            && self.crates.is_entry(expn))
                 });
             if toolchain_attr || matches!(data.kind, ExpnKind::AstPass(_)) {
                 return true;

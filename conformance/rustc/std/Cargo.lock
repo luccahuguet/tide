@@ -45,6 +45,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "tide-macros"
+version = "0.0.0"
+
+[[package]]
 name = "tide_macros"
 version = "0.0.0"
 dependencies = [
@@ -59,6 +63,7 @@ version = "0.0.0"
 dependencies = [
  "conformance_macros",
  "oracle_macros",
+ "tide-macros",
  "tide_macros",
 ]
 

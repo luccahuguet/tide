@@ -5,3 +5,14 @@ version = 4
 [[package]]
 name = "tide-admit"
 version = "0.0.0"
+
+[[package]]
+name = "tide-macros"
+version = "0.0.0"
+
+[[package]]
+name = "tide_std"
+version = "0.0.0"
+dependencies = [
+ "tide-macros",
+]
