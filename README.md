@@ -232,7 +232,8 @@ Cited evidence behind the decisions, in [research/](research/):
   pinned protocol profiles plus `.agent-protocols.local.md`.
 - [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
   set architecture, write specifications, and review; every change to
-  `main` except a planning-only one gets a Codex supervisor pass beside
+  `main` except a generated Starcompass import update (no review) or a
+  planning-only one (no Codex pass) gets a Codex supervisor pass beside
   its first Opus review and a narrow Codex re-check of any fixes once the
   Opus reviews come clean, and only findings in the tiers a change edits, or earlier
   ones, block it.
