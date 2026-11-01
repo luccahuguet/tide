@@ -380,6 +380,52 @@ fn cache_keys_cover_sources_membership_grants_and_trusted_inputs_and_skip_failur
     assert_eq!(entries(&dir), 8);
 }
 
+/// rustc's crash hook writes a report (`rustc-ice-*.txt`) to the current directory, which may be
+/// the candidate's tree (RUN-2). A crash under the driver writes none, and a cached success does
+/// not hide it; nor does a panic before compilation, such as a failed write of the codes.
+#[test]
+fn crashes_write_no_report_files() {
+    let dir = package("ice", "pub fn f() {}\n");
+    let package = dir.join("package");
+    let out = driver(&dir).current_dir(&package).output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let out = driver(&dir)
+        .arg("--tide-test-ice")
+        .current_dir(&package)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = stderr(&out);
+    assert!(err.contains("the compiler unexpectedly panicked"), "{err}");
+    assert!(err.contains("a seeded compiler crash"), "{err}");
+    let full = std::fs::File::create("/dev/full").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
+        .arg("--tide-print-codes")
+        .env_remove("RUSTC_ICE")
+        .stdout(full)
+        .current_dir(&package)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let mut files = Vec::new();
+    let mut dirs = vec![dir.clone()];
+    while let Some(d) = dirs.pop() {
+        for entry in std::fs::read_dir(d).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if !path.starts_with(dir.join("out/.tide-cache")) {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    assert_eq!(
+        files,
+        [dir.join("out/liblib.rmeta"), package.join("src/lib.rs")]
+    );
+}
+
 fn stderr(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }

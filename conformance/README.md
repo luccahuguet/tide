@@ -51,7 +51,8 @@ The runner is the trusted operator: it supplies the nightly stub with
 `--tide-std` and its artifact directories with `--tide-dep-dir`. The driver
 rejects raw `--extern`, `-L`, `--cfg`, `--sysroot`, `-C`, `-Z`, and response
 files, constructs its own metadata invocation, and runs the compiler with an
-empty environment. Candidate Cargo and toolchain files do not configure it.
+environment holding only `RUSTC_ICE=0`, so a crash writes no report file.
+Candidate Cargo and toolchain files do not configure it.
 Its source snapshot is the case's source directory; output and successful
 content-addressed cache entries live outside it, under `target/conformance`.
 This remains a compile-time stub oracle, without a production Tide std or an

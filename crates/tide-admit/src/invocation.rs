@@ -1,6 +1,7 @@
 //! Fixed operator interface, source snapshot, successful metadata cache (RUN-2), and the rustc
 //! callbacks that run the admission checks.
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -32,6 +33,7 @@ struct Admission {
     tide_std: bool,
     sources: Sources,
     backstop_only: bool,
+    test_ice: bool,
 }
 
 impl Callbacks for Admission {
@@ -45,6 +47,7 @@ impl Callbacks for Admission {
         });
     }
     fn after_expansion<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        assert!(!self.test_ice, "`--tide-test-ice`: a seeded compiler crash");
         // Before `check_crate` lowers the crate, which takes the expanded AST.
         check_expanded(tcx, self.tide_std);
         check_crate(tcx, self.grants, self.tide_std, !self.backstop_only);
@@ -70,6 +73,9 @@ struct Invocation {
     /// `--tide-test-backstop`: the walk skips its obligation steps, so tests can show what the
     /// backstop alone rejects.
     backstop_only: bool,
+    /// `--tide-test-ice`: the compiler crashes after expansion, so tests can show that a crash
+    /// writes no report.
+    test_ice: bool,
     compile: Option<String>,
 }
 
@@ -85,10 +91,14 @@ impl Invocation {
             let (flag, inline) = arg
                 .split_once('=')
                 .map_or((arg.as_str(), None), |(a, b)| (a, Some(b)));
-            if matches!(flag, "--test" | "--tide-grant" | "--tide-test-backstop") {
+            if matches!(
+                flag,
+                "--test" | "--tide-grant" | "--tide-test-backstop" | "--tide-test-ice"
+            ) {
                 match (flag, inline) {
                     ("--test", None) => this.test = true,
                     ("--tide-test-backstop", None) => this.backstop_only = true,
+                    ("--tide-test-ice", None) => this.test_ice = true,
                     ("--tide-grant", Some("unsafe")) => this.grants.unsafe_ = true,
                     _ => return Err(format!("unsupported argument `{arg}`")),
                 }
@@ -546,6 +556,12 @@ fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     check.diags.emit(tcx);
 }
 
+/// The clean process's whole environment: rustc's crash hook otherwise writes a report to the
+/// current directory, which may be in the candidate's tree (RUN-2); the message still goes to
+/// stderr.
+const ICE_VAR: &str = "RUSTC_ICE";
+const ICE_OFF: &str = "0";
+
 pub fn run() -> Result<ExitCode, String> {
     let args: Vec<String> = std::env::args_os()
         .skip(1)
@@ -563,15 +579,18 @@ pub fn run() -> Result<ExitCode, String> {
     let mut invocation = Invocation::parse(&args)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // Even direct invocation of the internal compiler mode gets a clean process.
-    if std::env::vars_os().next().is_some() {
+    if std::env::vars_os().ne([(OsString::from(ICE_VAR), OsString::from(ICE_OFF))]) {
         let status = Command::new(exe)
             .args(&args)
             .env_clear()
+            .env(ICE_VAR, ICE_OFF)
             .stdin(Stdio::null())
             .status()
             .map_err(|e| e.to_string())?;
         return Ok(ExitCode::from(status.code().unwrap_or(2) as u8));
     }
+    // Only now, so no earlier panic gets a hook that writes reports.
+    rustc_driver::install_ice_hook("the tide-admit driver (crates/tide-admit)", |_| ());
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     // Lexical, so a `..` cannot hide the package root from the checks below.
     let mut source = PathBuf::new();
@@ -662,6 +681,7 @@ pub fn run() -> Result<ExitCode, String> {
         b"backstop only",
         &[u8::from(invocation.backstop_only)],
     );
+    record(&mut key, b"test ice", &[u8::from(invocation.test_ice)]);
     let sources = Sources::snapshot(&source_root, &mut key)
         .map_err(|_| "cannot snapshot candidate sources")?;
     if !sources.files.contains_key(&source) {
@@ -697,6 +717,7 @@ pub fn run() -> Result<ExitCode, String> {
             sources,
             tide_std: invocation.std.is_some(),
             backstop_only: invocation.backstop_only,
+            test_ice: invocation.test_ice,
         };
         return Ok(rustc_driver::catch_with_exit_code(|| {
             rustc_driver::run_compiler(&rustc_args, &mut admission)
@@ -709,6 +730,7 @@ pub fn run() -> Result<ExitCode, String> {
             .args(&args)
             .arg(format!("--tide-compile={stage}"))
             .env_clear()
+            .env(ICE_VAR, ICE_OFF)
             .stdin(Stdio::null())
             .output()
             .map_err(|e| e.to_string())?;

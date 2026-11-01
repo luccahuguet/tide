@@ -39,7 +39,6 @@ mod walk;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    rustc_driver::install_ice_hook("the tide-admit driver (crates/tide-admit)", |_| ());
     match invocation::run() {
         Ok(code) => code,
         Err(error) => {
