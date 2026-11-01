@@ -228,8 +228,8 @@ Cited evidence behind the decisions, in [research/](research/):
 
 ## Project Process
 
-- [AGENTS.md](AGENTS.md): rules for agents working here, generated from a
-  pinned protocol profile plus `.agent-protocols.local.md`.
+- [AGENTS.md](AGENTS.md): rules for agents working here, generated from
+  pinned protocol profiles plus `.agent-protocols.local.md`.
 - [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
   set architecture, write specifications, and review; every change to
   `main` except a planning-only one gets a Codex supervisor pass beside
