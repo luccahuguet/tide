@@ -45,7 +45,8 @@ The v0 checker has started, and its first piece is production code:
 rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
 decides `Pure` structurally under the codes of the rules that need it (D18:
 statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
-requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), and
+requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), requires
+`#[tide::main]` on a binary's `main` (ROOT-1, `FX0512`), and
 passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). After rustc's
 analysis, a backstop checks the crate's instances that can run for denied
 impls and `Pure` where-clauses, whatever route reached them (ADMIT-1). It constructs
@@ -88,7 +89,8 @@ arguments, and trusted artifacts; failed checks never become cache hits.
 artifacts outside the candidate package. These are operator inputs, like
 grants; candidate source, Cargo configuration, toolchain files, and inherited
 environment never set them. Without `--tide-std`, Rust's pinned std is used
-for driver development tests. The conformance runner explicitly injects a
+for driver development tests, and `FX0512` is not checked, since Rust's std
+has no `#[tide::main]`. The conformance runner explicitly injects a
 Tide std stub; a production Tide std is not implemented. The installed pinned
 toolchain is trusted and treated as immutable. This slice provides loader and
 invocation isolation, with no OS sandbox or protection against concurrent

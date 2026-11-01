@@ -52,14 +52,16 @@ pub struct Grants {
     pub unsafe_: bool,
 }
 
-/// Checks the local crate and emits its diagnostics. Without `obligations`, a switch for the
-/// backstop's tests, the walk skips its obligation steps (`obligation`, `pure_obligation`).
-pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, obligations: bool) {
+/// Checks the local crate and emits its diagnostics. With `tide_std`, the operator supplied Tide's
+/// std, so a binary's `main` needs its `#[tide::main]` (ROOT-1). Without `obligations`, a switch
+/// for the backstop's tests, the walk skips its obligation steps (`obligation`,
+/// `pure_obligation`).
+pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, tide_std: bool, obligations: bool) {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants);
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
-    walk.entry_point();
+    walk.entry_point(tide_std);
     walk.check_expansions();
     walk.diags.emit(tcx);
 }
@@ -1177,20 +1179,33 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
     }
 
-    /// rustc's entry point reports what a user's `main` returns through its `Termination` impl,
-    /// which no expression shows: `fn main() -> Result<(), fn()>` formats the error. A `main`
-    /// the toolchain generates returns a type it fixes (`()` for the test harness).
-    fn entry_point(&mut self) {
+    /// With `require_attr`, a binary's `main` must be the one `#[tide::main]` generates, which
+    /// starts the runtime (ROOT-1), so an imported `main` never is; `check_expanded` rejects
+    /// `#![no_main]`. rustc's entry point reports what a user's `main` returns through its
+    /// `Termination` impl, which no expression shows: `fn main() -> Result<(), fn()>` formats the
+    /// error. A `main` the toolchain generates returns a type it fixes (`()` for the test harness).
+    fn entry_point(&mut self, require_attr: bool) {
         let tcx = self.tcx;
-        let (Some((main, _)), Some(termination)) =
-            (tcx.entry_fn(()), tcx.lang_items().termination())
-        else {
+        let Some((main, _)) = tcx.entry_fn(()) else {
             return;
         };
-        let Some(local) = main.as_local() else { return };
         if self.generated_by_toolchain(tcx.def_span(main)) {
             return;
         }
+        if require_attr {
+            let span = match tcx.resolutions(()).main_def {
+                Some(def) if def.is_import => def.span,
+                _ => tcx.def_span(main),
+            };
+            let message = "`main` does not carry `#[tide::main]`, which starts the runtime".into();
+            let help = Some("write `#[tide::main] fn main` in the crate root");
+            self.diags
+                .report(tcx, span.source_callsite(), Code::Fx0512, message, help);
+        }
+        let Some(local) = main.as_local() else { return };
+        let Some(termination) = tcx.lang_items().termination() else {
+            return;
+        };
         let sig = tcx.fn_sig(main).instantiate_identity().skip_normalization();
         let ret = tcx.instantiate_bound_regions_with_erased(sig.output());
         let outer = self.owner.replace(local);

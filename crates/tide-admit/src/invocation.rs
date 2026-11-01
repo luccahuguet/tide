@@ -14,6 +14,7 @@ use rustc_ast::visit::{self, Visitor};
 use rustc_driver::{Callbacks, Compilation};
 use rustc_interface::interface::{Compiler, Config};
 use rustc_middle::ty::TyCtxt;
+use rustc_session::config::CrateType;
 use rustc_session::parse::ParseSess;
 use rustc_span::fatal_error::FatalError;
 use rustc_span::source_map::{FileLoader, get_source_map};
@@ -26,6 +27,9 @@ use crate::walk::{Grants, check_crate, check_mono_items};
 
 struct Admission {
     grants: Grants,
+    /// Whether the operator supplied Tide's std (`--tide-std`), whose `#[tide::main]` every
+    /// binary's entry point needs (ROOT-1); the driver's own tests on Rust's std have none.
+    tide_std: bool,
     sources: Sources,
     backstop_only: bool,
 }
@@ -42,8 +46,8 @@ impl Callbacks for Admission {
     }
     fn after_expansion<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         // Before `check_crate` lowers the crate, which takes the expanded AST.
-        check_expanded(tcx);
-        check_crate(tcx, self.grants, !self.backstop_only);
+        check_expanded(tcx, self.tide_std);
+        check_crate(tcx, self.grants, self.tide_std, !self.backstop_only);
         Compilation::Continue
     }
     fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
@@ -484,10 +488,11 @@ impl<'ast> Visitor<'ast> for Guard<'_> {
     }
 }
 
-/// Rejects user macro definitions (FX0101), and the file-loading attributes that only expansion
-/// shows (FX0911), such as ones built from a macro's tokens. `Guard` rejects the written
-/// attributes before rustc reads their files; the file loader confines what the rest read.
-fn check_expanded(tcx: TyCtxt<'_>) {
+/// Rejects user macro definitions (FX0101), `#![no_main]` on a binary (FX0512), and the
+/// file-loading attributes that only expansion shows (FX0911), such as ones built from a macro's
+/// tokens. `Guard` rejects the written attributes before rustc reads their files; the file loader
+/// confines what the rest read.
+fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     struct Expanded<'tcx> {
         tcx: TyCtxt<'tcx>,
         diags: Diagnostics,
@@ -526,7 +531,18 @@ fn check_expanded(tcx: TyCtxt<'_>) {
         tcx,
         diags: Diagnostics::default(),
     };
-    check.visit_crate(&tcx.resolver_for_lowering().1.borrow());
+    let krate = tcx.resolver_for_lowering().1.borrow();
+    check.visit_crate(&krate);
+    // ROOT-1: every binary starts at the `main` that `#[tide::main]` generates. rustc reads
+    // `no_main` only at the crate root; elsewhere it is inert.
+    if tide_std && tcx.crate_types().contains(&CrateType::Executable) {
+        for attr in krate.attrs.iter().filter(|a| a.has_name(sym::no_main)) {
+            let message = "`#![no_main]` leaves the binary without `#[tide::main]`'s entry point";
+            check
+                .diags
+                .report(tcx, attr.span, Code::Fx0512, message.into(), None);
+        }
+    }
     check.diags.emit(tcx);
 }
 
@@ -679,6 +695,7 @@ pub fn run() -> Result<ExitCode, String> {
         let mut admission = Admission {
             grants: invocation.grants,
             sources,
+            tide_std: invocation.std.is_some(),
             backstop_only: invocation.backstop_only,
         };
         return Ok(rustc_driver::catch_with_exit_code(|| {

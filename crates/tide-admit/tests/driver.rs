@@ -377,6 +377,22 @@ fn t() -> Result<(), fn()> {
     );
 }
 
+/// An imported `main` is never the one `#[tide::main]` generates (ROOT-1), even from another
+/// crate, whose entry points the walk does not otherwise check.
+#[test]
+fn an_imported_main_is_unmarked() {
+    let std = tide_std("imported-main");
+    let (code, stderr) = admit(
+        "imported-main",
+        "use std::process::abort as main;\n",
+        &["--crate-type=bin", "--tide-std", std.to_str().unwrap()],
+    );
+    assert_eq!(code, 1, "{stderr}");
+    let unmarked = "lib.rs:1:5: error: FX0512: `main` does not carry `#[tide::main]`, which \
+                    starts the runtime";
+    assert!(fx_lines(&stderr).contains(&unmarked), "{stderr}");
+}
+
 /// A minimal Tide std, built with the pinned rustc: Rust's std with `Pure`, which rustc meets
 /// for every type and the driver decides, and a `Clock`, which is never `Pure`.
 fn tide_std(name: &str) -> PathBuf {

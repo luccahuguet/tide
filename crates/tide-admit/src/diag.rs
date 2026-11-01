@@ -14,6 +14,8 @@ pub enum Code {
     Fx0502,
     /// A `#[pure]` function whose parameter types are not all `Pure` (AFREE-1).
     Fx0511,
+    /// A binary's `main` without `#[tide::main]` (ROOT-1).
+    Fx0512,
     /// A failed `Pure` obligation that no rule with a code of its own needs (PURE-1), or an
     /// `io::Error` payload that does not reach one of alloc's four conversions (ADMIT-1).
     Fx0517,
@@ -47,6 +49,7 @@ impl Code {
         Code::Fx0101,
         Code::Fx0502,
         Code::Fx0511,
+        Code::Fx0512,
         Code::Fx0517,
         Code::Fx0518,
         Code::Fx0520,
@@ -65,6 +68,7 @@ impl Code {
             Code::Fx0101 => "FX0101",
             Code::Fx0502 => "FX0502",
             Code::Fx0511 => "FX0511",
+            Code::Fx0512 => "FX0512",
             Code::Fx0517 => "FX0517",
             Code::Fx0518 => "FX0518",
             Code::Fx0520 => "FX0520",
