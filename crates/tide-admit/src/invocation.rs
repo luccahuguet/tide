@@ -509,10 +509,10 @@ impl<'ast> Visitor<'ast> for Guard<'_> {
     }
 }
 
-/// Rejects user macro definitions (FX0101), `#![no_main]` on a binary (FX0512), and the
-/// file-loading attributes that only expansion shows (FX0911), such as ones built from a macro's
-/// tokens. `Guard` rejects the written attributes before rustc reads their files; the file loader
-/// confines what the rest read.
+/// Rejects user macro definitions (FX0101), `#![no_std]` (FX0520), `#![no_main]` on a binary
+/// (FX0512), and the file-loading attributes that only expansion shows (FX0911), such as ones
+/// built from a macro's tokens. `Guard` rejects the written attributes before rustc reads their
+/// files; the file loader confines what the rest read.
 fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     struct Expanded<'tcx> {
         tcx: TyCtxt<'tcx>,
@@ -554,6 +554,18 @@ fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     };
     let krate = tcx.resolver_for_lowering().1.borrow();
     check.visit_crate(&krate);
+    // ADMIT-1: the std rustc injects is Tide's, whose identity the rules key on
+    // (`Crates::tide_std`). Under `#![no_std]` rustc injects `core`, so no crate is Tide's std and
+    // the `Pure` rules are off, and an `extern crate std` loads it only as an ordinary crate.
+    // `#![no_core]` is an unstable feature (ADMIT-2).
+    if tide_std {
+        for attr in krate.attrs.iter().filter(|a| a.has_name(sym::no_std)) {
+            let message = "`#![no_std]` is not admitted: Tide's std is every crate's std";
+            check
+                .diags
+                .report(tcx, attr.span, Code::Fx0520, message.into(), None);
+        }
+    }
     // ROOT-1: every binary starts at the `main` that `#[tide::main]` generates. rustc reads
     // `no_main` only at the crate root; elsewhere it is inert.
     if tide_std && tcx.crate_types().contains(&CrateType::Executable) {

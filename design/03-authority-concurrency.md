@@ -557,7 +557,11 @@ so the rules above also need an admission check (D7).
   - `global_asm!`, which places machine code without an `unsafe` block,
     and `asm!`, in a package without an `unsafe` grant; under the grant
     they are `unsafe` holes (RUN-4);
-  - the internal runtime entry points of Tide's std.
+  - the internal runtime entry points of Tide's std;
+  - `#![no_std]`: every crate's std is Tide's, which rustc injects and the
+    rules key on. Under `#![no_std]` rustc injects `core`, so the `Pure`
+    rules would be off, and an `extern crate std` would load Tide's std only
+    as an ordinary crate.
 
   The allowlist is versioned with the rustc pin and reviewed whenever the
   pin moves. A backstop runs after rustc's analysis, when neither rustc nor

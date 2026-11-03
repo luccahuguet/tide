@@ -641,14 +641,16 @@ fn private(_: Net) {}
     assert_eq!(code, 1);
     assert!(!file.exists());
 
-    // Without Tide's std as its `std`, no authority can be decided: the check fails.
+    // `#![no_std]` is not admitted, even with no `extern crate std` (FX0520), and the failed
+    // check leaves no artifact; an inactive `cfg_attr` of it is no `#![no_std]`.
     let (code, stderr) = admit("artifact", "#![no_std]\npub fn f() {}\n", &flags);
     assert_eq!(code, 1, "{stderr}");
-    assert!(
-        stderr.contains("cannot write the trust artifact"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("FX0520: `#![no_std]`"), "{stderr}");
     assert!(!file.exists());
+    let inactive = "#![cfg_attr(any(), no_std)]\npub fn f() {}\n";
+    let (code, stderr) = admit("artifact", inactive, &flags);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(file.exists());
 }
 
 /// Each hole is held by the innermost item it is written in, a nested `fn`'s by that `fn`, and

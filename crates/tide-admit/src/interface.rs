@@ -1,9 +1,9 @@
 //! The package interface's trust artifact (D11; 03 §4.1): each exported item's declared
 //! authority, with the access path that carries each kind, and the crate's trust holes. It is
 //! written beside the metadata of every crate admitted against Tide's std, as
-//! `<crate>.interface.json`; a crate whose `std` is neither Tide's nor Rust's, as under
-//! `#![no_std]`, fails the check instead. v0 reports declared authority only: no exercised
-//! authority, effects, contracts, or proof status.
+//! `<crate>.interface.json`; a crate whose `std` is neither Tide's nor Rust's fails the check
+//! instead. v0 reports declared authority only: no exercised authority, effects, contracts, or
+//! proof status.
 //!
 //! Declared authority comes from types alone. A function's is what each parameter's type
 //! reaches, `self` included, under the parameter's name (`#<n>` for one a pattern binds); a
@@ -63,7 +63,8 @@ type Authority = BTreeMap<String, BTreeSet<String>>;
 /// Writes the artifact into `out`, except for a crate built on Rust's std, which has no
 /// capabilities: an operator that passes Rust's std as `--tide-std`, as the driver's cache tests
 /// do. It fails when Tide's std, which alone defines them, is not the crate's `std` otherwise, as
-/// under `#![no_std]`, since no authority can then be decided.
+/// when the operator's `--tide-std` is `core` or `alloc`, since no authority can then be decided;
+/// the check rejects `#![no_std]` before this runs.
 pub fn write(tcx: TyCtxt<'_>, holes: &Holes, out: &Path) -> std::io::Result<()> {
     let crates = Crates::new(tcx);
     let Some(pure) = crate_pure(tcx, &crates) else {
