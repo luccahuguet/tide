@@ -24,10 +24,14 @@ use rustc_span::{
 };
 
 use crate::diag::{Code, Diagnostics};
-use crate::walk::{Grants, check_crate, check_mono_items};
+use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
 struct Admission {
     grants: Grants,
+    /// The staging directory, which gets the trust artifact (`interface.rs`).
+    out: PathBuf,
+    /// The walk's trust holes, for the trust artifact.
+    holes: Holes,
     /// Whether the operator supplied Tide's std (`--tide-std`), whose `#[tide::main]` every
     /// binary's entry point needs (ROOT-1); the driver's own tests on Rust's std have none.
     tide_std: bool,
@@ -50,12 +54,19 @@ impl Callbacks for Admission {
         assert!(!self.test_ice, "`--tide-test-ice`: a seeded compiler crash");
         // Before `check_crate` lowers the crate, which takes the expanded AST.
         check_expanded(tcx, self.tide_std);
-        check_crate(tcx, self.grants, self.tide_std, !self.backstop_only);
+        self.holes = check_crate(tcx, self.grants, self.tide_std, !self.backstop_only);
         Compilation::Continue
     }
     fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         // rustc's analysis stops before this on any error, the walk's included.
-        check_mono_items(tcx, self.grants);
+        check_mono_items(tcx, self.grants, &mut self.holes);
+        if self.tide_std
+            && tcx.dcx().has_errors().is_none()
+            && let Err(e) = crate::interface::write(tcx, &self.holes, &self.out)
+        {
+            tcx.dcx()
+                .fatal(format!("cannot write the trust artifact: {e}"));
+        }
         Compilation::Continue
     }
 }
@@ -619,6 +630,19 @@ pub fn run() -> Result<ExitCode, String> {
         return Err("package path must not traverse a directory symlink".into());
     }
     let package = package_root.as_path();
+    invocation.out = destination(&invocation.out).map_err(|e| e.to_string())?;
+    if invocation.out.starts_with(package) {
+        return Err("output and cache must be outside the candidate package".into());
+    }
+    // A check that fails from here on, whatever stops it, leaves no trust artifact of an earlier
+    // one behind.
+    let artifact = invocation
+        .out
+        .join(format!("{}.interface.json", invocation.name));
+    match fs::remove_file(artifact) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.to_string()),
+        _ => (),
+    }
     let source_root =
         fs::canonicalize(source_dir).map_err(|_| "cannot resolve source directory")?;
     if !source_root.starts_with(package) {
@@ -635,10 +659,6 @@ pub fn run() -> Result<ExitCode, String> {
             Code::Fx0915.as_str()
         );
         return Ok(ExitCode::FAILURE);
-    }
-    invocation.out = destination(&invocation.out).map_err(|e| e.to_string())?;
-    if invocation.out.starts_with(package) {
-        return Err("output and cache must be outside the candidate package".into());
     }
     fs::create_dir_all(&invocation.out).map_err(|e| e.to_string())?;
     if let Some(std) = &mut invocation.std {
@@ -714,6 +734,8 @@ pub fn run() -> Result<ExitCode, String> {
         let rustc_args = invocation.rustc_args(&out);
         let mut admission = Admission {
             grants: invocation.grants,
+            out: out.clone(),
+            holes: Holes::new(),
             sources,
             tide_std: invocation.std.is_some(),
             backstop_only: invocation.backstop_only,
@@ -757,7 +779,10 @@ pub fn run() -> Result<ExitCode, String> {
     }
     for file in fs::read_dir(&entry).map_err(|e| e.to_string())? {
         let file = file.map_err(|e| e.to_string())?.path();
-        if file.extension().is_some_and(|ext| ext == "rmeta") {
+        if file
+            .extension()
+            .is_some_and(|ext| ext == "rmeta" || ext == "json")
+        {
             let dest = invocation.out.join(file.file_name().unwrap());
             let tmp = invocation
                 .out

@@ -21,13 +21,14 @@ use rustc_middle::ty::print::with_forced_trimmed_paths;
 use rustc_middle::ty::{GenericArgsRef, InstanceKind, TyCtxt, TypingEnv};
 use rustc_span::{DUMMY_SP, Span};
 
-use super::{Grants, Role, Walk, impl_key, policy};
+use super::{Admitted, Grants, Holes, Role, Walk, impl_key, policy};
 use crate::crates::Crates;
 
 type Users<'tcx> = FxHashMap<MonoItem<'tcx>, Vec<(MonoItem<'tcx>, Span)>>;
 
-/// Checks the crate's mono items and emits its diagnostics.
-pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants) {
+/// Checks the crate's mono items, emits its diagnostics, and adds the trust holes it finds to the
+/// walk's `holes`: the impls the `unsafe` grant admits, held by the local items that use them.
+pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants, holes: &mut Holes) {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants);
     walk.item_env = Some(TypingEnv::fully_monomorphized());
@@ -37,6 +38,7 @@ pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants) {
         .iter()
         .flat_map(|cgu| cgu.items().keys().copied())
         .collect();
+    let mut generic = Vec::new();
     let mut users = Users::default();
     for &item in &items {
         for (used, span) in uses(tcx, item) {
@@ -53,14 +55,29 @@ pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants) {
             && let Some(impl_def_id) = tcx.trait_impl_of_assoc(def_id)
         {
             let key = impl_key(tcx, impl_def_id);
-            if let Err(rejection) = walk.decide(key.clone(), policy::lookup(&key), true) {
-                let note = with_forced_trimmed_paths!(format!(" (it runs as `{instance}`)"));
+            let verdict = walk.decide(key.clone(), policy::lookup(&key), true);
+            if !matches!(verdict, Ok(Admitted::Free)) {
                 let mut sites = local_uses(tcx, &users, item);
                 if sites.is_empty() {
                     sites.push((CRATE_DEF_ID, tcx.def_span(CRATE_DEF_ID)));
                 }
-                for (_, span) in sites {
-                    walk.reject(span, rejection.clone(), &note);
+                let note = with_forced_trimmed_paths!(format!(" (it runs as `{instance}`)"));
+                for (owner, span) in sites {
+                    match &verdict {
+                        Err(rejection) => walk.reject(span, rejection.clone(), &note),
+                        // The walk may hold a generic user's impl at the item whose types
+                        // chose it, so a generic user's holes are decided after the others.
+                        Ok(admitted) if is_generic(tcx, owner) => {
+                            let held = std::mem::take(&mut walk.holes);
+                            walk.owner = Some(owner);
+                            walk.admitted(span, admitted.clone());
+                            generic.push((owner, std::mem::replace(&mut walk.holes, held)));
+                        }
+                        Ok(admitted) => {
+                            walk.owner = Some(owner);
+                            walk.admitted(span, admitted.clone());
+                        }
+                    }
                 }
             }
         }
@@ -83,7 +100,95 @@ pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants) {
             }
         }
     }
+    // The walk and the backstop can find the same use; each counts it once.
+    for (hole, n) in walk.take_holes() {
+        let count = holes.entry(hole).or_default();
+        *count = (*count).max(n);
+    }
+    // A generic user holds an impl unless an item that instantiates it, which may have chosen
+    // the impl, holds it already; one reached through std's internals is the generic user's.
+    let mut kept = Holes::new();
+    let mut by_root: FxHashMap<LocalDefId, Vec<MonoItem<'_>>> = FxHashMap::default();
+    if !generic.is_empty() {
+        for &item in &items {
+            if let Some(def) = local_def(item) {
+                by_root.entry(root(tcx, def)).or_default().push(item);
+            }
+        }
+    }
+    let mut paths: FxHashMap<LocalDefId, FxHashSet<String>> = FxHashMap::default();
+    for (owner, found) in generic {
+        let path = paths.entry(root(tcx, owner)).or_insert_with(|| {
+            instantiators(tcx, &users, &by_root, owner)
+                .into_iter()
+                .map(|def| crates.key(tcx, def.to_def_id()))
+                .collect()
+        });
+        walk.holes = found;
+        for (hole, n) in walk.take_holes() {
+            if !holes
+                .keys()
+                .any(|(key, _, what)| *what == hole.2 && path.contains(key))
+            {
+                let count = kept.entry(hole).or_default();
+                *count = (*count).max(n);
+            }
+        }
+    }
+    for (hole, n) in kept {
+        let count = holes.entry(hole).or_default();
+        *count = (*count).max(n);
+    }
     walk.diags.emit(tcx);
+}
+
+/// Whether `def`'s instances depend on type arguments, a closure's on its function's. The crate
+/// root, which holds what no local item reaches, has none.
+fn is_generic(tcx: TyCtxt<'_>, def: LocalDefId) -> bool {
+    def != CRATE_DEF_ID
+        && tcx
+            .generics_of(root(tcx, def))
+            .requires_monomorphization(tcx)
+}
+
+/// The item whose body `def` is, or whose closure it is: a function, `const`, or `static`.
+fn root(tcx: TyCtxt<'_>, def: LocalDefId) -> LocalDefId {
+    tcx.typeck_root_def_id(def.to_def_id()).expect_local()
+}
+
+/// The local item that `item` is or belongs to, if any.
+fn local_def(item: MonoItem<'_>) -> Option<LocalDefId> {
+    match item {
+        MonoItem::Fn(instance) => instance.def_id().as_local(),
+        MonoItem::Static(def_id) => def_id.as_local(),
+        MonoItem::GlobalAsm(id) => Some(id.owner_id.def_id),
+    }
+}
+
+/// The item holding `owner` and the local items that run its instances, through generic ones
+/// up to the first non-generic one on each path: those whose types can choose what a generic
+/// `owner` uses. Each is a `root`, not a closure.
+fn instantiators<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    users: &Users<'tcx>,
+    by_root: &FxHashMap<LocalDefId, Vec<MonoItem<'tcx>>>,
+    owner: LocalDefId,
+) -> FxHashSet<LocalDefId> {
+    let mut found = FxHashSet::default();
+    let mut queue = vec![root(tcx, owner)];
+    while let Some(next) = queue.pop() {
+        if !found.insert(next) || !is_generic(tcx, next) {
+            continue;
+        }
+        for &item in by_root.get(&next).into_iter().flatten() {
+            queue.extend(
+                local_uses(tcx, users, item)
+                    .into_iter()
+                    .map(|(def, _)| root(tcx, def)),
+            );
+        }
+    }
+    found
 }
 
 /// Decides the `Pure` part of what a use of `def_id` at `args` needs: its where-clauses, and its
@@ -162,11 +267,6 @@ fn local_uses<'tcx>(
     users: &Users<'tcx>,
     item: MonoItem<'tcx>,
 ) -> Vec<(LocalDefId, Span)> {
-    let local = |item: MonoItem<'_>| match item {
-        MonoItem::Fn(instance) => instance.def_id().as_local(),
-        MonoItem::Static(def_id) => def_id.as_local(),
-        MonoItem::GlobalAsm(id) => Some(id.owner_id.def_id),
-    };
     let main = tcx.entry_fn(()).and_then(|(main, _)| main.as_local());
     let start = tcx.lang_items().start_fn();
     let mut found = Vec::new();
@@ -179,7 +279,7 @@ fn local_uses<'tcx>(
             found.push((main, tcx.def_span(main)));
         }
         for &(user, span) in users.get(&next).into_iter().flatten() {
-            match local(user) {
+            match local_def(user) {
                 Some(def) => {
                     let span = span.source_callsite();
                     let span = if span.is_dummy() || tcx.sess.source_map().is_imported(span) {

@@ -54,7 +54,15 @@ every compiler invocation, clears the compiler environment (keeping only
 `RUSTC_ICE=0`, so a compiler crash writes no report file), snapshots candidate
 Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
 (`FX0101`), and package build scripts (`FX0915`), and caches successful metadata
-checks by source and trusted-input content. The
+checks by source and trusted-input content. A crate it admits against Tide's
+std also gets a trust artifact beside its metadata, `<crate>.interface.json`
+(D11, 03 §4.1): each exported item's declared authority, with the access path
+that carries each kind (`app.db.net: net`, or `opaque(..)` where a type hides
+it), and the crate's trust holes, every site the `unsafe` grant admits. It
+reports no exercised authority, effects, or proof status. A crate whose `std`
+is neither Tide's nor Rust's, as under `#![no_std]`, fails the check; one
+built on Rust's std has no capabilities and gets no artifact; and a failed
+check leaves no artifact. The
 root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
 pins, with the `rustc-dev` component:
 

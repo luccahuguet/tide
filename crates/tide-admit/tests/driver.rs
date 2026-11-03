@@ -419,6 +419,12 @@ pub mod marker {
 pub mod time {
     pub struct Clock(());
 }
+pub mod net {
+    pub struct Net(());
+}
+pub mod sync {
+    pub struct Arc<T>(T);
+}
 ",
     )
     .unwrap();
@@ -531,4 +537,187 @@ fn the_backstop_skips_upstream_functions_a_static_points_at() {
         let (code, stderr) = admit("backstop-static", source, flags);
         assert_eq!((code, stderr.as_str()), (0, ""));
     }
+}
+
+/// The trust artifact (D11; 03 §4.1) lists each exported item's declared authority with its
+/// access paths, none for a `Pure` signature, through handles, aliases, re-exports, and nested
+/// instances of one type, a type and a function of one path apart, through finite recursion,
+/// with polymorphic recursion `opaque`; a body edit under the grant adds its holes and no
+/// authority;
+/// a failed check, whatever stops it, leaves no artifact behind; and a crate whose `std` is not
+/// Tide's fails.
+#[test]
+fn the_trust_artifact_lists_declared_authority_and_holes() {
+    let std = tide_std("artifact");
+    let std = std.to_str().unwrap();
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("artifact");
+    let file = dir.join("lib.interface.json");
+    let artifact = || std::fs::read_to_string(&file).unwrap();
+    let source = "\
+use std::net::Net;
+use std::sync::Arc;
+use std::time::Clock;
+pub struct Db {
+    net: Net,
+}
+pub struct App {
+    pub db: Db,
+    clock: Clock,
+}
+pub fn handle(app: &App, req: &str) -> usize {
+    req.len()
+}
+pub fn len(s: &str) -> usize {
+    s.len()
+}
+pub fn shared(_: Arc<Net>) {}
+pub type Handle = Net;
+pub use std::net::Net as Cap;
+pub struct Poly<T> {
+    pub a: T,
+    pub b: Option<Box<Poly<(T, T)>>>,
+}
+pub struct W<T>(pub T);
+pub fn nested(_: W<W<Net>>) {}
+pub struct Node<T> {
+    pub val: T,
+    pub child: Option<Box<Node<Arc<Net>>>>,
+}
+pub fn node(_: Node<Net>) {}
+pub struct Config {
+    pub net: Net,
+}
+#[allow(non_snake_case)]
+pub fn Config(_: Clock) {}
+fn private(_: Net) {}
+";
+    let (code, stderr) = admit("artifact", source, &["--tide-std", std]);
+    assert_eq!(code, 0, "{stderr}");
+    let items = r##"{
+  "format": "tide-interface/1",
+  "crate": "lib",
+  "items": [
+    {"item": "lib::App", "kind": "struct", "authority": {"clock": ["clock"], "db.net": ["net"]}},
+    {"item": "lib::Cap", "kind": "re-exported struct", "authority": {"": ["net"]}},
+    {"item": "lib::Config", "kind": "function", "authority": {"#0": ["clock"]}},
+    {"item": "lib::Config", "kind": "struct", "authority": {"net": ["net"]}},
+    {"item": "lib::Db", "kind": "struct", "authority": {"net": ["net"]}},
+    {"item": "lib::Handle", "kind": "type alias", "authority": {"": ["net"]}},
+    {"item": "lib::Node", "kind": "struct", "authority": {"child.val": ["net", "sync"], "val": ["opaque(T)"]}},
+    {"item": "lib::Poly", "kind": "struct", "authority": {"a": ["opaque(T)"], "b.a.0": ["opaque(T)"], "b.a.1": ["opaque(T)"], "b.b": ["opaque(Poly<((T, T), (T, T))>)"]}},
+    {"item": "lib::W", "kind": "struct", "authority": {"0": ["opaque(T)"]}},
+    {"item": "lib::handle", "kind": "function", "authority": {"app.clock": ["clock"], "app.db.net": ["net"]}},
+    {"item": "lib::len", "kind": "function", "authority": {}},
+    {"item": "lib::nested", "kind": "function", "authority": {"#0.0.0": ["net"]}},
+    {"item": "lib::node", "kind": "function", "authority": {"#0.child.val": ["net", "sync"], "#0.val": ["net"]}},
+    {"item": "lib::shared", "kind": "function", "authority": {"#0": ["net", "sync"]}}
+  ],
+  "holes": ["##;
+    assert_eq!(artifact(), format!("{items}\n  ]\n}}\n"));
+
+    let granted = source.replace(
+        "s.len()",
+        "unsafe { s.as_bytes().as_ptr().read() as usize }",
+    );
+    let flags = ["--tide-std", std, "--tide-grant=unsafe"];
+    let (code, stderr) = admit("artifact", &granted, &flags);
+    assert_eq!(code, 0, "{stderr}");
+    let holes = r#"
+    {"item": "lib::len", "kind": "function", "hole": "an `unsafe` block", "count": 1},
+    {"item": "lib::len", "kind": "function", "hole": "uses `*const T`", "count": 1},
+    {"item": "lib::len", "kind": "function", "hole": "uses `core::ptr::const_ptr::<impl *const T>::read`", "count": 1}"#;
+    assert_eq!(artifact(), format!("{items}{holes}\n  ]\n}}\n"));
+
+    let (code, _) = admit("artifact", &granted, &["--tide-std", std]);
+    assert_eq!(code, 1);
+    assert!(!file.exists());
+    let (code, stderr) = admit("artifact", &granted, &flags);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(file.exists());
+    let build = dir.join("package/build.rs");
+    std::fs::write(&build, "fn main() {}\n").unwrap();
+    let (code, _) = admit("artifact", &granted, &flags);
+    std::fs::remove_file(&build).unwrap();
+    assert_eq!(code, 1);
+    assert!(!file.exists());
+
+    // Without Tide's std as its `std`, no authority can be decided: the check fails.
+    let (code, stderr) = admit("artifact", "#![no_std]\npub fn f() {}\n", &flags);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        stderr.contains("cannot write the trust artifact"),
+        "{stderr}"
+    );
+    assert!(!file.exists());
+}
+
+/// Each hole is held by the innermost item it is written in, a nested `fn`'s by that `fn`, and
+/// a granted macro's or impl's by the item that uses it, once per item: a generic function that
+/// formats its `T` holds none, the caller whose `fn()` chose the impl does, and a generic
+/// function holds the impls its own `fn()` reaches through std's internals, whatever other
+/// items hold; an instance no local item runs, as a `global_asm!` operand's, is the crate's.
+#[test]
+fn trust_holes_are_held_by_the_item_that_writes_them() {
+    let std = tide_std("holders");
+    let source = "\
+pub fn a() -> bool {
+    let x = 1u8;
+    core::ptr::addr_of!(x).is_null() || core::ptr::addr_of!(x).is_null()
+}
+pub fn b() -> bool {
+    let x = 1u8;
+    core::ptr::addr_of!(x).is_null()
+}
+pub fn show(f: fn()) -> String {
+    format!(\"{f:?}\")
+}
+pub fn outer() {
+    unsafe fn inner() {}
+    unsafe { inner() }
+}
+pub fn debug<T: core::fmt::Debug>(t: T) -> String {
+    format!(\"{t:?}\")
+}
+pub fn shown() -> String {
+    debug(shown as fn() -> String)
+}
+pub fn sort<T>(_: T, mut v: Vec<fn()>) -> Vec<fn()> {
+    v.sort();
+    v
+}
+pub fn sorted() -> Vec<fn()> {
+    sort(0, Vec::new())
+}
+pub fn lt(a: fn(), b: fn()) -> bool {
+    a < b
+}
+core::arch::global_asm!(\".quad {}\", sym <fn(u8) as core::cmp::PartialOrd>::lt);
+";
+    let flags = ["--tide-std", std.to_str().unwrap(), "--tide-grant=unsafe"];
+    let (code, stderr) = admit("holders", source, &flags);
+    assert_eq!(code, 0, "{stderr}");
+    let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("holders/lib.interface.json");
+    let artifact = std::fs::read_to_string(file).unwrap();
+    let holes = &artifact[artifact.find("\"holes\"").unwrap()..];
+    let expected = r#""holes": [
+    {"item": "lib", "kind": "module", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "uses `*const T`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "uses `core::ptr::addr_of`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "uses `core::ptr::const_ptr::<impl *const T>::is_null`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "uses `*const T`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "uses `core::ptr::addr_of`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "uses `core::ptr::const_ptr::<impl *const T>::is_null`", "count": 1},
+    {"item": "lib::lt", "kind": "function", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1},
+    {"item": "lib::outer", "kind": "function", "hole": "an `unsafe` block", "count": 1},
+    {"item": "lib::outer::inner", "kind": "function", "hole": "an `unsafe fn`", "count": 1},
+    {"item": "lib::show", "kind": "function", "hole": "uses `impl core::fmt::Debug for fn()`", "count": 1},
+    {"item": "lib::shown", "kind": "function", "hole": "uses `impl core::fmt::Debug for fn()`", "count": 1},
+    {"item": "lib::sort", "kind": "function", "hole": "uses `impl core::cmp::Ord for fn()`", "count": 1},
+    {"item": "lib::sort", "kind": "function", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1},
+    {"item": "lib::{global_asm#0}", "kind": "global assembly block", "hole": "uses `core::arch::global_asm`", "count": 1},
+    {"item": "lib::{global_asm#0}", "kind": "global assembly block", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1}
+  ]
+}
+"#;
+    assert_eq!(holes, expected);
 }

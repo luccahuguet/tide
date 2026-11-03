@@ -13,6 +13,8 @@
 //! and the rules on items: `static`s (GLOBAL-1 to 3), `const fn` (AFREE-2), `#[pure]`
 //! (AFREE-1), and what needs the `unsafe` grant (UNSAFE-1).
 
+use std::collections::BTreeMap;
+
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::attrs::AttributeKind;
 use rustc_hir::def::{CtorOf, DefKind, Res};
@@ -52,18 +54,38 @@ pub struct Grants {
     pub unsafe_: bool,
 }
 
-/// Checks the local crate and emits its diagnostics. With `tide_std`, the operator supplied Tide's
-/// std, so a binary's `main` needs its `#[tide::main]` (ROOT-1). Without `obligations`, a switch
-/// for the backstop's tests, the walk skips its obligation steps (`obligation`,
-/// `pure_obligation`).
-pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, tide_std: bool, obligations: bool) {
+/// The crate's trust holes (D11): each site the `unsafe` grant admits, as (the key of the item
+/// that holds it, that item's kind, what the hole is) and how many distinct sites there are. A
+/// use of an item the grant admits counts once per holding item, however often it recurs.
+pub type Holes = BTreeMap<(String, String, String), usize>;
+
+/// Checks the local crate, emits its diagnostics, and returns its trust holes. With `tide_std`,
+/// the operator supplied Tide's std, so a binary's `main` needs its `#[tide::main]` (ROOT-1).
+/// Without `obligations`, a switch for the backstop's tests, the walk skips its obligation steps
+/// (`obligation`, `pure_obligation`).
+pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, tide_std: bool, obligations: bool) -> Holes {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants);
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.entry_point(tide_std);
     walk.check_expansions();
+    for def in tcx.hir_crate_items(()).definitions() {
+        if std_attr_made(tcx, &crates, def, "trusted_pure") {
+            walk.holes
+                .insert((def, "`#[trusted_pure]`".into(), Some(tcx.def_span(def))));
+        }
+    }
+    let holes = walk.take_holes();
     walk.diags.emit(tcx);
+    holes
+}
+
+/// How an admitted use is admitted: freely, or by the `unsafe` grant, under this key.
+#[derive(Clone)]
+enum Admitted {
+    Free,
+    Granted(String),
 }
 
 /// Why a use is not admitted.
@@ -102,36 +124,19 @@ struct Walk<'a, 'tcx> {
     item_env: Option<TypingEnv<'tcx>>,
     /// Whether the obligation steps run (`check_crate`).
     obligations: bool,
+    /// The item being visited, which holds the trust holes found outside bodies.
+    item: Option<LocalDefId>,
+    /// Trust holes: (holding item, what, the site's span, or none for a use counted once).
+    holes: FxHashSet<(LocalDefId, String, Option<Span>)>,
 }
 
 impl<'a, 'tcx> Walk<'a, 'tcx> {
     fn new(tcx: TyCtxt<'tcx>, crates: &'a Crates, grants: Grants) -> Self {
-        // Without Tide's std (the driver's own tests run against Rust's) there is no `Pure`.
-        let pure = crates.tide_std().and_then(|krate| {
-            let pure_trait = tcx
-                .traits(krate)
-                .iter()
-                .copied()
-                .find(|&d| crates.key(tcx, d) == "tide_std::marker::Pure")?;
-            let trusted = tcx
-                .hir_crate_items(())
-                .definitions()
-                .filter(|&d| {
-                    matches!(
-                        tcx.def_kind(d),
-                        DefKind::Struct | DefKind::Enum | DefKind::Union
-                    )
-                })
-                .filter(|&d| std_attr_made(tcx, crates, d, "trusted_pure"))
-                .map(LocalDefId::to_def_id)
-                .collect();
-            Some(Pure::new(tcx, crates, pure_trait, trusted))
-        });
         Walk {
             tcx,
             crates,
             grants,
-            pure,
+            pure: crate_pure(tcx, crates),
             diags: Diagnostics::default(),
             typeck: None,
             owner: None,
@@ -139,8 +144,34 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             seen_pure: FxHashSet::default(),
             item_env: None,
             obligations: true,
+            item: None,
+            holes: FxHashSet::default(),
         }
     }
+}
+
+/// The crate's `Pure` decision, or none without Tide's std (the driver's own tests run against
+/// Rust's).
+pub fn crate_pure<'a, 'tcx>(tcx: TyCtxt<'tcx>, crates: &'a Crates) -> Option<Pure<'a, 'tcx>> {
+    let krate = crates.tide_std()?;
+    let pure_trait = tcx
+        .traits(krate)
+        .iter()
+        .copied()
+        .find(|&d| crates.key(tcx, d) == "tide_std::marker::Pure")?;
+    let trusted = tcx
+        .hir_crate_items(())
+        .definitions()
+        .filter(|&d| {
+            matches!(
+                tcx.def_kind(d),
+                DefKind::Struct | DefKind::Enum | DefKind::Union
+            )
+        })
+        .filter(|&d| std_attr_made(tcx, crates, d, "trusted_pure"))
+        .map(LocalDefId::to_def_id)
+        .collect();
+    Some(Pure::new(tcx, crates, pure_trait, trusted))
 }
 
 /// Whether the attribute macro `name` that Tide's std exports (`pure`, `trusted_pure`) was
@@ -190,11 +221,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         key: String,
         rule: Option<&'static Rule>,
         unlisted_admitted: bool,
-    ) -> Result<(), Rejection> {
+    ) -> Result<Admitted, Rejection> {
         match rule.map(|r| r.verdict) {
-            Some(Verdict::Allow) => Ok(()),
-            Some(Verdict::Unsafe) if self.grants.unsafe_ => Ok(()),
-            None if unlisted_admitted => Ok(()),
+            Some(Verdict::Allow) => Ok(Admitted::Free),
+            Some(Verdict::Unsafe) if self.grants.unsafe_ => Ok(Admitted::Granted(key)),
+            None if unlisted_admitted => Ok(Admitted::Free),
             _ => Err(Rejection {
                 key,
                 help: rule.and_then(|r| r.help),
@@ -205,14 +236,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// Items of the local crate are admitted, as is whatever Tide's std re-exports and the
     /// items of the traits it re-exports; Tide's std's own items unless a rule says otherwise;
     /// `core`, `alloc`, and Rust's std only where a rule allows; any other crate's items never.
-    fn admit_def(&self, def_id: DefId) -> Result<(), Rejection> {
+    fn admit_def(&self, def_id: DefId) -> Result<Admitted, Rejection> {
         let role = self.crates.role(def_id.krate);
         let exported = |d| self.crates.exported(d);
         if role == Role::Local
             || exported(def_id)
             || self.tcx.trait_of_assoc(def_id).is_some_and(exported)
         {
-            return Ok(());
+            return Ok(Admitted::Free);
         }
         let key = self.key(def_id);
         match role {
@@ -223,10 +254,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// An impl is admitted when a rule allows its key, or else when it comes from Tide's std or
     /// both the trait and the self type's head are admitted.
-    fn admit_impl(&self, impl_def_id: DefId, used_as: ty::TraitRef<'tcx>) -> Result<(), Rejection> {
+    fn admit_impl(
+        &self,
+        impl_def_id: DefId,
+        used_as: ty::TraitRef<'tcx>,
+    ) -> Result<Admitted, Rejection> {
         let role = self.crates.role(impl_def_id.krate);
         if role == Role::Local {
-            return Ok(());
+            return Ok(Admitted::Free);
         }
         let key = impl_key(self.tcx, impl_def_id);
         if let Some(rule) = policy::lookup(&key) {
@@ -236,16 +271,16 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             ty::Adt(def, _) => self.admit_def(def.did()),
             ty::Foreign(def) => self.admit_def(def),
             ty::RawPtr(_, m) => self.admit_pseudo(raw_pointer_key(m)),
-            _ => Ok(()),
+            _ => Ok(Admitted::Free),
         };
         if role == Role::TideStd || (self.admit_def(used_as.def_id).is_ok() && head.is_ok()) {
-            Ok(())
+            Ok(Admitted::Free)
         } else {
             Err(Rejection { key, help: None })
         }
     }
 
-    fn admit_pseudo(&self, key: &str) -> Result<(), Rejection> {
+    fn admit_pseudo(&self, key: &str) -> Result<Admitted, Rejection> {
         self.decide(key.to_string(), policy::lookup(key), false)
     }
 
@@ -319,12 +354,79 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             .report(self.tcx, span, Code::Fx0520, message, rejection.help);
     }
 
-    fn check(&mut self, span: Span, verdict: Result<(), Rejection>) {
-        if let Err(r) = verdict {
-            if !self.generated_by_toolchain(span) {
-                self.reject(span, r, "");
-            }
+    fn check(&mut self, span: Span, verdict: Result<Admitted, Rejection>) {
+        if self.generated_by_toolchain(span) {
+            return;
         }
+        match verdict {
+            Err(r) => self.reject(span, r, ""),
+            Ok(admitted) => self.admitted(span, admitted),
+        }
+    }
+
+    /// Records a use the `unsafe` grant admitted as a trust hole, once per holding item.
+    fn admitted(&mut self, span: Span, admitted: Admitted) {
+        if let Admitted::Granted(key) = admitted {
+            self.hole(span, format!("uses `{key}`"), false);
+        }
+    }
+
+    /// Records a trust hole at `span`: one per `site` when `site` is true, else once per holding
+    /// item, the innermost of the body and the item being visited, with a closure's held by its
+    /// function.
+    fn hole(&mut self, span: Span, what: String, site: bool) {
+        let tcx = self.tcx;
+        let inner = match (self.owner, self.item) {
+            (Some(body), Some(item))
+                if tcx.is_descendant_of(item.to_def_id(), body.to_def_id()) =>
+            {
+                Some(item)
+            }
+            (body, item) => body.or(item),
+        };
+        // After the walk, as for a macro's use: the definition it is written in.
+        let inner = inner.or_else(|| self.holder_at(span));
+        let holder = inner.map_or(rustc_hir::def_id::CRATE_DEF_ID, |d| {
+            tcx.typeck_root_def_id(d.to_def_id()).expect_local()
+        });
+        let span = site.then(|| span.source_callsite());
+        self.holes.insert((holder, what, span));
+    }
+
+    /// UNSAFE-1: what needs the `unsafe` grant is a trust hole with it and `FX0901` without it.
+    fn granted(&mut self, span: Span, what: &str) {
+        if written_by_other_crate(span) || self.generated_by_toolchain(span) {
+            return;
+        }
+        if self.grants.unsafe_ {
+            self.hole(span, what.into(), true);
+        } else {
+            self.report(span, Code::Fx0901, format!("{what} {GRANT}"));
+        }
+    }
+
+    /// The trust holes found so far, by holding item's key and what each is (`Holes`).
+    fn take_holes(&mut self) -> Holes {
+        let mut holes = Holes::new();
+        for (def, what, _) in std::mem::take(&mut self.holes) {
+            let key = self.crates.key(self.tcx, def.to_def_id());
+            let kind = self.tcx.def_descr(def.to_def_id()).to_string();
+            *holes.entry((key, kind, what)).or_default() += 1;
+        }
+        holes
+    }
+
+    /// The innermost local definition whose source contains `span`.
+    fn holder_at(&self, span: Span) -> Option<LocalDefId> {
+        let tcx = self.tcx;
+        let span = span.source_callsite();
+        tcx.hir_crate_items(())
+            .definitions()
+            .filter(|&d| tcx.source_span(d).contains(span))
+            .min_by_key(|&d| {
+                let s = tcx.source_span(d);
+                s.hi() - s.lo()
+            })
     }
 
     /// Reports `code` at the outermost call site of `span`, unless the toolchain generated it.
@@ -936,8 +1038,8 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     fn fn_item(&mut self, def: LocalDefId, header: &hir::FnHeader, decl: &'tcx hir::FnDecl<'tcx>) {
         let tcx = self.tcx;
         let span = tcx.def_span(def);
-        if header.is_unsafe() && !self.grants.unsafe_ && !written_by_other_crate(span) {
-            self.flag(span, Code::Fx0901, format!("an `unsafe fn` {GRANT}"));
+        if header.is_unsafe() {
+            self.granted(span, "an `unsafe fn`");
         }
         let sig = tcx.fn_sig(def).instantiate_identity().skip_normalization();
         let sig = tcx.instantiate_bound_regions_with_erased(sig);
@@ -1014,9 +1116,6 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// UNSAFE-1: Rust 2024's unsafe attributes need the grant.
     fn unsafe_attrs(&mut self, id: HirId, item_span: Span) {
-        if self.grants.unsafe_ {
-            return;
-        }
         for attr in self.tcx.hir_attrs(id) {
             let span = match attr {
                 hir::Attribute::Parsed(
@@ -1026,7 +1125,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 hir::Attribute::Parsed(AttributeKind::LinkSection { .. }) => item_span,
                 _ => continue,
             };
-            self.flag(span, Code::Fx0901, format!("an unsafe attribute {GRANT}"));
+            self.granted(span, "an unsafe attribute");
         }
     }
 
@@ -1170,8 +1269,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 // Checked under the toolchain's expansions too, since the user's types choose
                 // the impl: `fn main() -> Result<(), fn()>` makes `#[tide::main]`'s
                 // `Termination::report` select `fn(): Debug`.
-                if let Err(r) = self.admit_impl(impl_def_id, tr) {
-                    self.reject(span, r, "");
+                match self.admit_impl(impl_def_id, tr) {
+                    Err(r) => self.reject(span, r, ""),
+                    Ok(admitted) => self.admitted(span, admitted),
                 }
                 where_clauses(tcx, impl_def_id, impl_args)
             }
@@ -1534,6 +1634,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
+        // The item holds the trust holes found outside its bodies.
+        let outer = self.item.replace(item.owner_id.def_id);
         let def = item.owner_id.def_id;
         match item.kind {
             hir::ItemKind::Impl(hir::Impl {
@@ -1541,12 +1643,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
                 ..
             }) => {
                 self.trait_impl(def);
-                if header.safety.is_unsafe()
-                    && !self.grants.unsafe_
-                    && !written_by_other_crate(item.span)
-                {
-                    let span = self.tcx.def_span(def);
-                    self.flag(span, Code::Fx0901, format!("an `unsafe impl` {GRANT}"));
+                if header.safety.is_unsafe() && !written_by_other_crate(item.span) {
+                    self.granted(self.tcx.def_span(def), "an `unsafe impl`");
                 }
             }
             hir::ItemKind::Static(mutability, ..) => self.static_item(def, mutability),
@@ -1570,34 +1668,45 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             }
         }
         self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_item(self, item)
+        intravisit::walk_item(self, item);
+        self.item = outer;
     }
 
     fn visit_impl_item(&mut self, item: &'tcx hir::ImplItem<'tcx>) {
+        // The item holds the trust holes found outside its bodies.
+        let outer = self.item.replace(item.owner_id.def_id);
         if let hir::ImplItemKind::Type(hir_ty) = item.kind {
             let def = item.owner_id.def_id;
             let ty = self.tcx.type_of(def).instantiate_identity();
             self.declared(def, ty.skip_normalization(), hir_ty.span);
         }
         self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_impl_item(self, item)
+        intravisit::walk_impl_item(self, item);
+        self.item = outer;
     }
 
     fn visit_trait_item(&mut self, item: &'tcx hir::TraitItem<'tcx>) {
+        // The item holds the trust holes found outside its bodies.
+        let outer = self.item.replace(item.owner_id.def_id);
         // A method with a body is checked from `visit_fn`.
         if let hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(_)) = &item.kind {
             self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
         }
         self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_trait_item(self, item)
+        intravisit::walk_trait_item(self, item);
+        self.item = outer;
     }
 
     fn visit_foreign_item(&mut self, item: &'tcx hir::ForeignItem<'tcx>) {
+        // The item holds the trust holes found outside its bodies.
+        let outer = self.item.replace(item.owner_id.def_id);
+        self.hole(item.span, "a foreign item".into(), true);
         if let hir::ForeignItemKind::Fn(sig, ..) = &item.kind {
             self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
         }
         self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_foreign_item(self, item)
+        intravisit::walk_foreign_item(self, item);
+        self.item = outer;
     }
 
     fn visit_fn(
@@ -1616,15 +1725,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
 
     /// UNSAFE-1: an `unsafe` block needs the grant.
     fn visit_block(&mut self, block: &'tcx hir::Block<'tcx>) {
-        if let hir::BlockCheckMode::UnsafeBlock(hir::UnsafeSource::UserProvided) = block.rules
-            && !self.grants.unsafe_
-            && !written_by_other_crate(block.span)
-        {
-            self.flag(
-                block.span,
-                Code::Fx0901,
-                format!("an `unsafe` block {GRANT}"),
-            );
+        if let hir::BlockCheckMode::UnsafeBlock(hir::UnsafeSource::UserProvided) = block.rules {
+            self.granted(block.span, "an `unsafe` block");
         }
         intravisit::walk_block(self, block)
     }

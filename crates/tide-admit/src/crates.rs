@@ -36,6 +36,8 @@ pub struct Crates {
     core: Option<CrateNum>,
     alloc: Option<CrateNum>,
     rust_std: Option<CrateNum>,
+    /// Whether the injected std is Rust's, which has no capabilities.
+    rust_std_injected: bool,
     /// Items of other crates that Tide's std re-exports publicly.
     exports: FxHashSet<DefId>,
     /// The expansion that generated the crate-root `fn main` of an executable crate.
@@ -50,11 +52,13 @@ impl Crates {
             core: lang.sized_trait().map(|d| d.krate),
             alloc: lang.owned_box().map(|d| d.krate),
             rust_std: lang.start_fn().map(|d| d.krate),
+            rust_std_injected: false,
             exports: FxHashSet::default(),
             entry: entry_expansion(tcx),
         };
         // Built without Tide's std, the injected std is Rust's, and the allowlist checks it; an
         // `--extern std=` naming `core` or `alloc` does not make them Tide's std either.
+        crates.rust_std_injected = crates.rust_std.is_some() && crates.tide_std == crates.rust_std;
         if [crates.rust_std, crates.core, crates.alloc].contains(&crates.tide_std) {
             crates.tide_std = None;
         }
@@ -85,6 +89,11 @@ impl Crates {
         } else {
             Role::Other
         }
+    }
+
+    /// Whether the injected std is Rust's, which has no capabilities.
+    pub fn rust_std_injected(&self) -> bool {
+        self.rust_std_injected
     }
 
     pub fn tide_std(&self) -> Option<CrateNum> {

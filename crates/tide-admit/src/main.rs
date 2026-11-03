@@ -7,7 +7,8 @@
 //! It also decides `Pure` (`pure.rs`) and the rules on items that need it or the `unsafe` grant,
 //! each under its own FX code (D18). It checks after name resolution and before rustc's
 //! analysis, so a crate with rustc errors still gets its verdicts, and after the analysis, when
-//! nothing failed, checks the instances that can run (`walk/mono.rs`).
+//! nothing failed, checks the instances that can run (`walk/mono.rs`) and writes the crate's
+//! trust artifact (`interface.rs`).
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line
@@ -31,6 +32,7 @@ extern crate rustc_trait_selection;
 
 mod crates;
 mod diag;
+mod interface;
 mod invocation;
 mod policy;
 mod pure;

@@ -39,72 +39,98 @@ use crate::crates::Crates;
 use crate::diag::Code;
 use crate::policy::matches;
 
+/// What a std type that is never `Pure` carries, which declared authority reports (03 §4.1).
+#[derive(Clone, Copy)]
+pub enum Carries {
+    /// These authority kinds (03 §0).
+    Kinds(&'static [&'static str]),
+    /// What its fields carry: `Root` and the simulated roots.
+    Fields,
+    /// Authority it does not show, as an erased payload or a raw pointer hides it.
+    Hidden,
+}
+
+const FS: Carries = Carries::Kinds(&["fs.read", "fs.write"]);
+const FS_READ: Carries = Carries::Kinds(&["fs.read"]);
+const NET: Carries = Carries::Kinds(&["net"]);
+const PROC: Carries = Carries::Kinds(&["proc"]);
+const SYNC: Carries = Carries::Kinds(&["sync"]);
+const HIDDEN: Carries = Carries::Hidden;
+
 /// std's types that are not `Pure` whatever their type arguments (02 §9's table), by
-/// `Crates::key` patterns (`policy.rs`'s glob). It is versioned with Tide's std, as the
-/// allowlist is with the rustc pin.
-const NOT_PURE: &[&str] = &[
+/// `Crates::key` patterns (`policy.rs`'s glob), with what each carries. It is versioned with
+/// Tide's std, as the allowlist is with the rustc pin.
+const NOT_PURE: &[(&str, Carries)] = &[
     // Capabilities and their simulated roots (03 §9.2, §9.5).
-    "tide_std::Root",
-    "tide_std::fs::Fs",
-    "tide_std::net::Net",
-    "tide_std::time::Clock",
-    "tide_std::rand::Rand",
-    "tide_std::env::Env",
-    "tide_std::io::Stdin",
-    "tide_std::process::Proc",
-    "tide_std::task::Tasks",
-    "tide_std::accel::Accel",
-    "tide_std::sim::SimRoot",
-    "tide_std::sim::NodeRoot",
+    ("tide_std::Root", Carries::Fields),
+    ("tide_std::fs::Fs", FS),
+    ("tide_std::net::Net", NET),
+    ("tide_std::time::Clock", Carries::Kinds(&["clock"])),
+    ("tide_std::rand::Rand", Carries::Kinds(&["rand"])),
+    ("tide_std::env::Env", Carries::Kinds(&["env"])),
+    ("tide_std::io::Stdin", Carries::Kinds(&["stdin"])),
+    ("tide_std::process::Proc", PROC),
+    ("tide_std::task::Tasks", Carries::Kinds(&["tasks"])),
+    ("tide_std::accel::Accel", Carries::Kinds(&["accel"])),
+    ("tide_std::sim::SimRoot", Carries::Fields),
+    ("tide_std::sim::NodeRoot", Carries::Fields),
     // Resource handles, the simulator's handles, and what can hold one.
-    "tide_std::fs::File",
-    "tide_std::fs::ReadDir",
-    "tide_std::fs::DirEntry",
-    "tide_std::net::TcpStream",
-    "tide_std::net::TcpListener",
-    "tide_std::net::UdpSocket",
-    "tide_std::process::Command",
-    "tide_std::process::Child",
-    "tide_std::process::ChildStdin",
-    "tide_std::process::ChildStdout",
-    "tide_std::process::ChildStderr",
-    "tide_std::process::Stdio",
-    "tide_std::process::Signals",
-    "tide_std::io::Lines",
-    "tide_std::log::LogConfig",
-    "tide_std::sim::World",
-    "tide_std::sim::Faults",
-    "tide_std::sim::SimNode",
-    "tide_std::sim::NodeTask",
+    ("tide_std::fs::File", FS),
+    ("tide_std::fs::ReadDir", FS_READ),
+    ("tide_std::fs::DirEntry", FS_READ),
+    ("tide_std::net::TcpStream", NET),
+    ("tide_std::net::TcpListener", NET),
+    ("tide_std::net::UdpSocket", NET),
+    ("tide_std::process::Command", PROC),
+    ("tide_std::process::Child", PROC),
+    ("tide_std::process::ChildStdin", PROC),
+    ("tide_std::process::ChildStdout", PROC),
+    ("tide_std::process::ChildStderr", PROC),
+    ("tide_std::process::Stdio", PROC),
+    ("tide_std::process::Signals", PROC),
+    ("tide_std::io::Lines", HIDDEN),
+    ("tide_std::log::LogConfig", HIDDEN),
+    ("tide_std::sim::World", HIDDEN),
+    ("tide_std::sim::Faults", HIDDEN),
+    ("tide_std::sim::SimNode", HIDDEN),
+    ("tide_std::sim::NodeTask", HIDDEN),
     // Synchronization handles (03 §1.2, GLOBAL-6), Rust's included.
-    "tide_std::sync::Shared",
-    "tide_std::sync::Arc",
-    "tide_std::sync::Weak",
-    "tide_std::sync::atomic::*",
-    "tide_std::sync::raw::*",
-    "tide_std::sync::mpsc::Sender",
-    "tide_std::sync::mpsc::SyncSender",
-    "tide_std::sync::mpsc::Receiver",
-    "tide_std::sync::mpsc::Iter",
-    "tide_std::sync::mpsc::IntoIter",
-    "tide_std::sync::mpsc::TryIter",
-    "tide_std::task::Scope",
-    "tide_std::task::Task",
-    "alloc::sync::*",
-    "core::sync::atomic::Atomic*",
-    "std::sync::*",
+    ("tide_std::sync::Shared", SYNC),
+    ("tide_std::sync::Arc", SYNC),
+    ("tide_std::sync::Weak", SYNC),
+    ("tide_std::sync::atomic::*", SYNC),
+    ("tide_std::sync::raw::*", SYNC),
+    ("tide_std::sync::mpsc::Sender", SYNC),
+    ("tide_std::sync::mpsc::SyncSender", SYNC),
+    ("tide_std::sync::mpsc::Receiver", SYNC),
+    ("tide_std::sync::mpsc::Iter", SYNC),
+    ("tide_std::sync::mpsc::IntoIter", SYNC),
+    ("tide_std::sync::mpsc::TryIter", SYNC),
+    ("tide_std::task::Scope", SYNC),
+    ("tide_std::task::Task", SYNC),
+    ("alloc::sync::*", SYNC),
+    ("core::sync::atomic::Atomic*", SYNC),
+    ("std::sync::*", SYNC),
     // Foreign handles.
-    "core::ptr::non_null::NonNull",
+    ("core::ptr::non_null::NonNull", HIDDEN),
     // Erased payloads that follow the `dyn` rule (02 §9), and the std types that hold one with
     // no type argument to show it: `debug_struct` and the other builders hold the `Formatter`,
     // `fmt::rt::Argument` a `NonNull` to an erased value, and `PanicMessage` an `Arguments`.
-    "core::fmt::Arguments",
-    "core::fmt::Formatter",
-    "core::fmt::builders::Debug*",
-    "core::fmt::rt::*",
-    "core::panic::panic_info::*",
-    "std::panic::PanicHookInfo",
+    ("core::fmt::Arguments", HIDDEN),
+    ("core::fmt::Formatter", HIDDEN),
+    ("core::fmt::builders::Debug*", HIDDEN),
+    ("core::fmt::rt::*", HIDDEN),
+    ("core::panic::panic_info::*", HIDDEN),
+    ("std::panic::PanicHookInfo", HIDDEN),
 ];
+
+/// What the std type keyed `key` carries, if it is never `Pure`.
+pub fn carries(key: &str) -> Option<Carries> {
+    NOT_PURE
+        .iter()
+        .find(|(pattern, _)| matches(pattern, key))
+        .map(|&(_, carries)| carries)
+}
 
 /// The std functions that make a `T` from raw bytes or a raw pointer, by `Crates::key` pattern,
 /// with the index of that `T` among a use's type arguments. ROOT-4 bounds it by `Pure` under the
@@ -244,6 +270,11 @@ enum Why {
 }
 
 impl<'tcx> NotPure<'tcx> {
+    /// Whether the type nests too deep to decide, rather than reaching what is not `Pure`.
+    pub fn too_deep(&self) -> bool {
+        matches!(self.why, Why::TooDeep)
+    }
+
     /// "`ty` is not `Pure`: ..." for a failure found in `ty`.
     pub fn message(&self, ty: Ty<'tcx>) -> String {
         let show = |t: Ty<'tcx>| with_forced_trimmed_paths!(t.to_string());
@@ -382,8 +413,7 @@ impl<'a, 'tcx> Pure<'a, 'tcx> {
                 args.types().try_for_each(walk)
             }
             ty::Adt(def, args) if self.crates.is_std(def.did()) => {
-                let key = self.crates.key(tcx, def.did());
-                if NOT_PURE.iter().any(|p| matches(p, &key)) {
+                if carries(&self.crates.key(tcx, def.did())).is_some() {
                     return not(Why::Named);
                 }
                 args.types().try_for_each(walk)
@@ -398,8 +428,13 @@ impl<'a, 'tcx> Pure<'a, 'tcx> {
         }
     }
 
+    /// Whether `def` is a crate's type marked `#[trusted_pure]`.
+    pub fn is_trusted(&self, def: DefId) -> bool {
+        self.trusted.contains(&def)
+    }
+
     /// The type of `field` of an ADT at `args`, normalized where it can be.
-    fn field_ty(
+    pub fn field_ty(
         &self,
         env: TypingEnv<'tcx>,
         field: &ty::FieldDef,
