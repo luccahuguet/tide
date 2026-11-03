@@ -43,6 +43,9 @@ use crate::crates::Crates;
 use crate::pure::{self, Carries, Pure};
 use crate::walk::{Holes, crate_pure};
 
+mod diff;
+pub use diff::diff;
+
 /// The artifact's format, which a reader checks before it reads the rest.
 const FORMAT: &str = "tide-interface/1";
 

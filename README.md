@@ -62,9 +62,13 @@ it), and the crate's trust holes, every site the `unsafe` grant admits. It
 reports no exercised authority, effects, or proof status. A crate whose `std`
 is neither Tide's nor Rust's, as under `#![no_std]`, fails the check; one
 built on Rust's std has no capabilities and gets no artifact; and a failed
-check leaves no artifact. The
-root Cargo workspace builds it with the nightly that `rust-toolchain.toml`
-pins, with the `rustc-dev` component:
+check leaves no artifact. `tide-admit --tide-diff BASE HEAD` compares two
+artifacts: the items added, removed, or whose declared authority widened or
+narrowed, with the paths that changed, and the holes added, removed, or
+recounted; it prints nothing when neither changed. It is a partial precursor
+to `tide review`'s trust diff (03 §4.3): no exercised authority, effects, or
+proof status. The root Cargo workspace builds the driver with the nightly
+that `rust-toolchain.toml` pins, with the `rustc-dev` component:
 
 ```
 cargo test --workspace   # the driver's and Tide's std's tests

@@ -12,6 +12,8 @@
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line
+//!        tide-admit --tide-diff BASE HEAD  what changed between two trust artifacts
+//!                                          (`interface/diff.rs`)
 #![feature(rustc_private)]
 
 extern crate rustc_abi;

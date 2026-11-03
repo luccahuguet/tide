@@ -587,6 +587,15 @@ pub fn run() -> Result<ExitCode, String> {
         }
         return Ok(ExitCode::SUCCESS);
     }
+    if let [flag, base, head] = args.as_slice()
+        && flag == "--tide-diff"
+    {
+        print!(
+            "{}",
+            crate::interface::diff(Path::new(base), Path::new(head))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
     let mut invocation = Invocation::parse(&args)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // Even direct invocation of the internal compiler mode gets a clean process.

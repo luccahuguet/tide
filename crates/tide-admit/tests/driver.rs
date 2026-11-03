@@ -721,3 +721,87 @@ core::arch::global_asm!(\".quad {}\", sym <fn(u8) as core::cmp::PartialOrd>::lt)
 "#;
     assert_eq!(holes, expected);
 }
+
+/// `--tide-diff` compares two trust artifacts: a `Net` a public item can now reach is listed with
+/// its item and path, a new `unsafe` block as a new hole, and a body-only edit that changes no
+/// authority or holes gives an empty report.
+#[test]
+fn the_trust_diff_reports_authority_and_hole_changes() {
+    let std = tide_std("trust-diff");
+    let std = std.to_str().unwrap();
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("trust-diff");
+    let snapshot = |name: &str, source: &str| {
+        let (code, stderr) = admit(
+            "trust-diff",
+            source,
+            &["--tide-std", std, "--tide-grant=unsafe"],
+        );
+        assert_eq!(code, 0, "{stderr}");
+        let copy = dir.join(name);
+        std::fs::copy(dir.join("lib.interface.json"), &copy).unwrap();
+        copy
+    };
+    let diff = |base: &PathBuf, head: &PathBuf| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
+            .arg("--tide-diff")
+            .args([base, head])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let source = "\
+use std::time::Clock;
+pub struct Db {
+    pub clock: Clock,
+}
+pub struct App {
+    pub db: Db,
+}
+pub fn handle(app: &App, req: &str) -> usize {
+    req.len()
+}
+";
+    let base = snapshot("base.json", source);
+    let body = snapshot(
+        "body.json",
+        &source.replace("req.len()", "req.len() + req.trim().len()"),
+    );
+    assert_eq!(diff(&base, &body), "");
+
+    let head = snapshot(
+        "head.json",
+        &source
+            .replace(
+                "    pub clock: Clock,\n",
+                "    pub clock: Clock,\n    net: std::net::Net,\n",
+            )
+            .replace("req.len()", "unsafe { req.as_ptr().read() as usize }"),
+    );
+    let expected = "\
+declared authority (no exercised authority, effects, or proof status)
+  ~ lib::App (struct) widened
+      + db.net: net
+  ~ lib::Db (struct) widened
+      + net: net
+  ~ lib::handle (function) widened
+      + app.db.net: net
+trust holes
+  + lib::handle (function): an `unsafe` block (1)
+  + lib::handle (function): uses `*const T` (1)
+  + lib::handle (function): uses `core::ptr::const_ptr::<impl *const T>::read` (1)
+";
+    assert_eq!(diff(&base, &head), expected);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
+        .args(["--tide-diff", "missing.json"])
+        .arg(&base)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+}
