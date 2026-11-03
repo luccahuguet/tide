@@ -389,11 +389,11 @@ N1). Test builds add the simulator behind one predictable branch.
 - **GLOBAL-4.** Raw pointer addresses are observable only in packages
   granted `unsafe` (D15): raw pointer types are admitted only there
   (ADMIT-1), casts to them included, because their `PartialOrd`, `Ord`,
-  `Hash`, and `Debug` impls observe addresses, and so are
-  pointer-to-integer casts, `addr`, and `{:p}`. A function pointer's code address is one too: its casts to
-  integers, ordering, `Hash`, and `Debug` need the grant, and `==` does
-  not. `Hash` on a reference hashes the referent. `Shared::same` and
-  `std::ptr::eq` compare identity without exposing it; Tide's `ptr::eq`
+  `Hash`, and `Debug` impls observe addresses, and so are pointer-to-integer
+  casts, `addr`, and `{:p}`. A function pointer's code address is one too:
+  its casts to integers, ordering, `Hash`, and `Debug` need the grant, and
+  `==` does not. `Hash` on a reference hashes the referent. `Shared::same`
+  and `std::ptr::eq` compare identity without exposing it; Tide's `ptr::eq`
   takes `&T` where core's takes raw pointers, so it needs no grant.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
   deterministic though unspecified. Maps keyed by untrusted input take a key
@@ -842,7 +842,7 @@ fields only: a generic marked type is `Pure` exactly when its type
 arguments are, as a std type is (`02-memory.md` §9), since its author can
 vouch for what they wrote but not for every type a caller passes, and
 failing closed keeps the trust hole as wide as what the reviewer approved.
-The structural rule, deep through every field, is `02-memory.md` PURE-1;
+The rule is deep, through every field, private ones included;
 `dyn` types are `Pure` only through a companion supertrait (below), and
 `02-memory.md` §9 has the full table.
 

@@ -11,7 +11,7 @@ Sections 14–16 tabulate or illustrate rules the core states; 17–20 and
 Appendix A hold what the core only points to. It is outside the core's
 25,000-token budget (D14).
 
-Core count: 24,998 tokens on 2026-11-03, measured by
+Core count: 24,995 tokens on 2026-11-03, measured by
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -75,6 +75,7 @@ Rerun it after any change to the core and update this line.
 | `file.sync_all()` after `File::create` | `file.sync()`, plus `fs.sync_dir(parent)` |
 | `std::env::args()` / `env::var(k)` | `env.args()` / `env.var(k)` |
 | `Instant::now()` / `SystemTime::now()` | `clock.now()` / `clock.system_time()` |
+| `t.elapsed()` | `clock.now().duration_since(t)`; for `SystemTime`, `clock.system_time().duration_since(t)` |
 | `std::thread::sleep(d)` | `clock.sleep(d)?` |
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
 | `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once |

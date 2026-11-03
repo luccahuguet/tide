@@ -22,7 +22,7 @@ stable code and, usually, a machine-applicable fix. What you hit first: no
 ambient I/O (capabilities passed down from `main`, 6), no `async` (scopes,
 7), three lifetime forms gone (3.2), overflow traps in every build and
 lossless-only `as` (4), `Shared<T>` instead of `Arc<Mutex<T>>` (7.4), and
-only allowlisted library items (6.9). Std import paths are in 12.3.
+only allowlisted library items (6.9).
 
 ## 1. What is unchanged
 
@@ -56,15 +56,16 @@ a lint in libraries); `format!`, `write!`, `writeln!`, `vec!`, `matches!`;
 error in release builds, `FX0507`); and the log sink (6.5) `error!`,
 `warn!`, `info!`, `debug!`, `trace!`, with no `use` (`log::info!` and
 `tracing::info!` are also accepted; provisional). Tide adds `invariant!`
-(10.1) and `hole!` (13), not imported.
+(10.1) and `hole!` (13), not imported. Under the `unsafe` grant (11),
+`asm!` and `global_asm!` are admitted (`FX0520` without it).
 
 Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
 `debug_assert!(a == b)`), `concat!`, and crate macros; `include_str!`,
-`env!`, `option_env!`, and ungranted `asm!` and `global_asm!` are `FX0520` (6.9),
-`thread_local!` and `lazy_static!` `FX0502`;
-`macro_rules!` and procedural macros are `FX0101`. Write a generic function
-or trait instead; for test tables, loop over a `const` array; for generated
-code or embedded data, run a generator program and commit its `.rs` output.
+`env!`, and `option_env!` are `FX0520` (6.9), `thread_local!` and
+`lazy_static!` `FX0502`; `macro_rules!` and procedural macros are
+`FX0101`. Write a generic function or trait instead; for test tables, loop
+over a `const` array; for generated code or embedded data, run a generator
+program and commit its `.rs` output.
 
 ### 2.2 Derives
 
@@ -370,10 +371,11 @@ fn main(root: Root) -> Result<(), AppError> {
   `ExitCode`, as in Rust: `Err(e)` prints `Error: {e:?}` and exits with 1
   (to print `Display` and the `source()` chain, return `ExitCode` and log
   the error yourself). A panic exits with 101.
-- `Root` can be named only in `main`'s signature and as `Root::sim`.
-  `root` cannot be passed, borrowed into a call, stored, returned, or
-  captured (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). No code may call `main`
-  (`FX0506`), so tests call functions that take capabilities.
+- `Root` can be named only in `main`'s signature and as `Root::sim`. `root`
+  cannot be passed, borrowed into a call, stored, returned, or captured
+  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). No code
+  may call `main` (`FX0506`), so tests call functions that take
+  capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
   (`FX0504`, 6.8).
 
@@ -456,7 +458,8 @@ capability, never suspend, and keep a function authority-free, so
   sequential order.
 - `main` configures sinks through `root.log` (levels, text or JSON,
   `root.log.to_file(file)`). Defaults: `println!` to stdout; `eprintln!` and
-  `info!` and above to stderr; `dbg!` to stderr in debug builds (2.1). `println!` in a library is a lint (`FX0508`).
+  `info!` and above to stderr; `dbg!` to stderr in debug builds (2.1).
+  `println!` in a library is a lint (`FX0508`).
 - `Secret<T>` implements neither `Debug` nor `Display`; read it with
   `expose()`.
 
@@ -1046,9 +1049,8 @@ only = ["crate::net::*"]         # no other module may declare Net
   holes; an upgrade that widens either fails until a human approves. A
   dependency name that does not exist is rejected, never guessed.
 - No `build.rs`, install hooks, or code that runs at fetch or build time
-  (`FX0915`); run generators explicitly (`tide run --bin gen`) and commit
-  their output. Tide's driver runs rustc itself, not Cargo; `RUSTFLAGS` and
-  unstable features do not apply.
+  (`FX0915`; generators: 2.1). Tide's driver runs rustc itself, not Cargo;
+  `RUSTFLAGS` and unstable features do not apply.
 
 ## 13. Toolchain loop
 

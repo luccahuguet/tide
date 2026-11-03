@@ -383,7 +383,7 @@ pub mod time {
         fn add(self, d: Duration) -> Instant { unimplemented!() }
     }
 
-    /// A distinct type with no `now()` and no `elapsed()` (03 CAP-1).
+    /// A distinct type with no `now()` or `elapsed()` (03 CAP-1).
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SystemTime(Duration);
 }
