@@ -12,6 +12,8 @@ pub enum Code {
     Fx0101,
     /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
     Fx0502,
+    /// A call of, or other reference to, the binary's `main` (ROOT-5).
+    Fx0506,
     /// A `#[pure]` function whose parameter types are not all `Pure` (AFREE-1).
     Fx0511,
     /// A binary's `main` without `#[tide::main]` (ROOT-1).
@@ -48,6 +50,7 @@ impl Code {
     pub const ALL: &[Code] = &[
         Code::Fx0101,
         Code::Fx0502,
+        Code::Fx0506,
         Code::Fx0511,
         Code::Fx0512,
         Code::Fx0517,
@@ -67,6 +70,7 @@ impl Code {
         match self {
             Code::Fx0101 => "FX0101",
             Code::Fx0502 => "FX0502",
+            Code::Fx0506 => "FX0506",
             Code::Fx0511 => "FX0511",
             Code::Fx0512 => "FX0512",
             Code::Fx0517 => "FX0517",

@@ -1,0 +1,58 @@
+# Tide review, fx-kw8.14 round 2 (Opus): confirmation round
+
+Candidate: base 5661fa8, fixes 2dd08da..7a904a7 (`git diff 2dd08da 7a904a7` touches four files: `conformance/cases/authority/root_main_called_library.rs`, the new `conformance/cases/authority/root_main_test.rs`, `crates/tide-admit/src/crates.rs`, `crates/tide-admit/src/walk.rs`)
+
+Model: claude-opus-5-5 · Date: 2026-11-03
+
+## Verdict
+
+**Clean.** Each fix resolves its finding, and no fix adds a defect. Dropping the exemption does not flag any reference that the toolchain's entry wiring or test harness makes for ordinary code. The accepted concern C1 still holds.
+
+One fix does change behaviour beyond its finding: dropping the exemption also reports a crate-root test that is itself named `main` (C2 below). The error is on the safe side, and I recommend accepting it as C1 was accepted. No fix crosses a trust boundary: the only behaviour change removes an exemption, so FX0506 can only fire in more places, never fewer.
+
+### Per finding
+
+- **Codex blocking 1: resolved.**
+  - `main_named` (`walk.rs:1325-1336`) now reports any path whose `Res` is the recorded `main`, whatever its span.
+  - In Codex's input, core's `#[test]` descriptor calls `main()`, which `#[tide::main]` turned into the runtime entry. That call is now FX0506 at the `test` attribute (`span.source_callsite()`).
+  - `root_main_test.rs` builds as a bin (`^fn main` matches at line 6). The runner takes the union of bin mode and `--test` and requires an exact match. So the case passes only if `--test` reports FX0506 at line 4. With the exemption restored, the core-`test` span would be suppressed and the case would FAIL, which agrees with the author's claim.
+  - The new doc comment on `main_named` gives the reason: the entry wiring never names `main`, but a `#[test]` on it would call it.
+- **Opus N1: resolved.** The case comment (`root_main_called_library.rs:2-4`) now says the driver trusts the expansion under `--test`, not that it is the entry point. The message (`walk.rs:1327-1328`) says "call or name", which covers the import mark at `root_main_called.rs:4`.
+- **Opus N2: resolved.** The module doc (`walk.rs:13-15`) names ROOT-5.
+- **Opus N3: resolved.**
+  - `crate_main` returns `Option<DefId>`, using `.map(|def_id| def_id.to_def_id())` (`crates.rs:195`).
+  - `is_main` is `self.main == Some(def_id)` (`crates.rs:130`). This cannot match `None == None`, and a foreign `DefId` never equals a local one.
+  - The `LocalDefId` import is gone. `entry`'s `tcx.def_span(d)` takes a `DefId` unchanged.
+- **Opus C1 (accepted without change): still holds.** A library's plain crate-root `pub fn main` helper is FX0506 only under `--test`. The error is on the safe side, renaming the helper avoids it, and ROOT-5's wording covers it.
+
+### Does dropping the exemption flag toolchain wiring for ordinary code? No.
+
+- **`#[tide::main]` output** (`crates/tide-macros/src/lib.rs:36-47`): it renames the user's fn to `__tide_main` and nests it. The generated body names only `__tide_main` and `::std::__rt::enter`, never `main`.
+- **The harness `main`** (pinned rustc `rustc_builtin_macros/src/test_harness.rs`, `mk_main` and `mk_tests_slice`): it names only `test::test_main_static` and the test descriptor consts. `crate_main` still excludes it through the `AstPass::TestHarness` check.
+- **`EntryPointCleaner`**: it only edits attributes (`#[rustc_main]` and `#[allow(dead_code)]`) and adds no paths.
+- **Rust's real entry wiring** (`lang_start`): it is wired below HIR, so `visit_path` never sees it.
+- **Descriptors of ordinary `#[test]` fns**: they name only their own fn. A `#[test] fn main` inside a module resolves to that module-level fn. `is_main` compares exact `DefId`s, so it does not match.
+- **Corpus evidence:** these cases pass under `--test`, and the runner requires an exact match:
+  - `root_main_called.rs`: a binary with `#[tide::main]` and an ordinary `#[test]`, with FX0506 only on the user-written lines.
+  - `pure_routes.rs`: a binary with `#[test]`.
+  - `root_main_nested.rs`: a local `main()` call that is correctly not reported.
+
+  So the recorded 193 PASS also shows there are no false positives from the harness or the expansion.
+- **The exemption stays everywhere else.** `generated_by_toolchain` still serves its other callers (`walk.rs:359`, `399`, `435`, `1297`), so nothing is orphaned and the other admission checks are unchanged.
+
+## Findings
+
+**C2 (concern, not text-only, non-blocking; I recommend no change).** This is new behaviour from dropping the exemption, and it belongs to the same class as C1.
+
+- **Where:** `crates/tide-admit/src/walk.rs:1325-1336` together with `crates/tide-admit/src/crates.rs:180-196`.
+- **The case:** a crate built with `--test` that has a crate-root test fn named `main` and no `#[tide::main]`, for example a library's `#[test] fn main() {}`, or a future integration-test crate.
+  - In that build `crate_main` picks this test fn.
+  - The descriptor generated by core's `#[test]` names it.
+  - It is now FX0506 at the `#[test]` attribute. Before the fix the exemption hid it.
+- **Why it hardly matters:** calling this fn mints nothing, so the message's "which starts the runtime and mints its `Root`" is inaccurate there.
+- **Why accept it:** as with C1, the error is on the safe side, renaming the test avoids it, ROOT-5's wording covers it literally, and narrowing `crate_main` to real entry points would add a mode split for a case almost nobody writes.
+- **Fix if wanted:** none in this change. If the owner wants it on record, mention it next to C1 in a comment on fx-kw8.9, which will build library and integration tests.
+
+No other findings.
+
+Checks: read-only inspection only. I ran `br show --no-db fx-kw8.14`, `git diff 2dd08da 7a904a7`, read the tide-admit, tide-macros and conformance sources and `conformance/run.sh`, and read the pinned nightly-2026-08-09 rustc `test_harness.rs`. Nothing was built or rerun; I relied on the recorded checks on 7a904a7.

@@ -10,8 +10,9 @@
 //! declarations name (fields, signatures, impl headers, associated types) and that a use's
 //! generic args name, those of a trait impl item's own where-clauses, and those of an opaque
 //! type's bounds, decided by `pure.rs`; the reads of raw memory that ROOT-4 bounds by `Pure`;
-//! and the rules on items: `static`s (GLOBAL-1 to 3), `const fn` (AFREE-2), `#[pure]`
-//! (AFREE-1), and what needs the `unsafe` grant (UNSAFE-1).
+//! the rules on items: `static`s (GLOBAL-1 to 3), `const fn` (AFREE-2), `#[pure]` (AFREE-1),
+//! and what needs the `unsafe` grant (UNSAFE-1); and the paths that name the binary's `main`
+//! (ROOT-5).
 
 use std::collections::BTreeMap;
 
@@ -1318,6 +1319,24 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         self.owner = outer;
     }
 
+    /// ROOT-5: no code names the binary's `main`, to call it, take it as a value, or import it,
+    /// so nothing but the entry point mints a real `Root`. The toolchain's expansions count: the
+    /// entry wiring never names `main`, but a `#[test]` on it would call it from a test.
+    fn main_named(&mut self, def_id: DefId, span: Span) {
+        if self.crates.is_main(def_id) {
+            let message = "no code may call or name `main`, which starts the runtime and mints its \
+                           `Root`";
+            let help = Some("tests call the functions that take capabilities, with `Root::sim`");
+            self.diags.report(
+                self.tcx,
+                span.source_callsite(),
+                Code::Fx0506,
+                message.into(),
+                help,
+            );
+        }
+    }
+
     /// Every macro expansion in the crate, by the macro's definition, including expansions whose
     /// output lands in attributes (`#[doc = include_str!(..)]`).
     fn check_expansions(&mut self) {
@@ -1743,6 +1762,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         match path.res {
             Res::Def(_, def_id) => {
                 self.use_def(def_id, path.span);
+                self.main_named(def_id, path.span);
                 // Typeck records no args for the lang-item calls that `?` and `for` desugar to
                 // (`FromResidual::from_residual`, `IntoIterator::into_iter`); their type has them.
                 let tcx = self.tcx;

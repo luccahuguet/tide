@@ -46,8 +46,9 @@ rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
 decides `Pure` structurally under the codes of the rules that need it (D18:
 statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
 requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), requires
-`#[tide::main]` on a binary's `main` (ROOT-1, `FX0512`), and
-passes rustc `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). After rustc's
+`#[tide::main]` on a binary's `main` (ROOT-1, `FX0512`), rejects code that
+calls or names `main` (ROOT-5, `FX0506`), and passes rustc
+`-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). After rustc's
 analysis, a backstop checks the crate's instances that can run for denied
 impls and `Pure` where-clauses, whatever route reached them (ADMIT-1). It constructs
 every compiler invocation, clears the compiler environment (keeping only
