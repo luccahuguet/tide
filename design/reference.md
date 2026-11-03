@@ -7,7 +7,7 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 until the E1 gate (D0). `reference-companion.md`, loaded on demand, holds
 Rust-habit tables, example programs, readings where the documents
 disagree, and the sections cited here as "companion N".
-Budget: under 25,000 tokens (D14); the companion records the count.
+Budget: under 25,000 tokens (D14).
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -60,7 +60,7 @@ error in release builds, `FX0507`); and the log sink (6.5) `error!`,
 
 Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
 `debug_assert!(a == b)`), `concat!`, and crate macros; `include_str!`,
-`env!`, `option_env!`, and ungranted `global_asm!` are `FX0520` (6.9),
+`env!`, `option_env!`, and ungranted `asm!` and `global_asm!` are `FX0520` (6.9),
 `thread_local!` and `lazy_static!` `FX0502`;
 `macro_rules!` and procedural macros are `FX0101`. Write a generic function
 or trait instead; for test tables, loop over a `const` array; for generated
@@ -370,9 +370,9 @@ fn main(root: Root) -> Result<(), AppError> {
   `ExitCode`, as in Rust: `Err(e)` prints `Error: {e:?}` and exits with 1
   (to print `Display` and the `source()` chain, return `ExitCode` and log
   the error yourself). A panic exits with 101.
-- `Root` can be named only in `main`'s signature. `root` cannot be passed,
-  borrowed into a call, stored, returned, or captured (`FX0503`); move or
-  borrow its fields (`root.fs`, `&root.clock`). No code may call `main`
+- `Root` can be named only in `main`'s signature and as `Root::sim`.
+  `root` cannot be passed, borrowed into a call, stored, returned, or
+  captured (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). No code may call `main`
   (`FX0506`), so tests call functions that take capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
   (`FX0504`, 6.8).
@@ -456,8 +456,7 @@ capability, never suspend, and keep a function authority-free, so
   sequential order.
 - `main` configures sinks through `root.log` (levels, text or JSON,
   `root.log.to_file(file)`). Defaults: `println!` to stdout; `eprintln!` and
-  `info!` and above to stderr; `dbg!` to stderr in debug builds (an error
-  in release, `FX0507`). `println!` in a library is a lint (`FX0508`).
+  `info!` and above to stderr; `dbg!` to stderr in debug builds (2.1). `println!` in a library is a lint (`FX0508`).
 - `Secret<T>` implements neither `Debug` nor `Display`; read it with
   `expose()`.
 
@@ -545,7 +544,7 @@ wait, and read virtual time.
 ### 6.9 Ambient Rust calls and the admission allowlist
 
 Ambient std calls (`std::fs::read`, `File::open`, `env::args`,
-`Instant::now`, `thread::sleep`, `rx.recv_timeout(d)` (use
+`Instant::now`, `t.elapsed()`, `thread::sleep`, `rx.recv_timeout(d)` (use
 `recv_deadline`), `thread_rng`, `io::stdin()`, `Command::new`,
 `process::exit`, ...) are `FX0501`; the fix uses a capability in scope or
 proposes adding the parameter (companion 14.2).
@@ -555,8 +554,7 @@ everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
 raw pointer types and address observers (`addr()`, `{:p}`) without the
 `unsafe` grant; `core::sync::atomic`; `OnceLock`, `LazyLock`; float
 observers and math methods (4.3); I/O methods on re-exported std types
-(`Path::exists`, `metadata`; use `fs`); `io::Error::last_os_error`; and
-`include_str!`, `env!`, `option_env!`.
+(`Path::exists`, `metadata`; use `fs`); and `io::Error::last_os_error`.
 
 ### 6.10 Patterns
 
@@ -952,9 +950,9 @@ needs human approval (11), except adding one where there was none.
 | Hole | Spelling | Rule |
 | --- | --- | --- |
 | Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
-| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant |
-| `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant |
-| Raw pointers | `*const T`, `*mut T`, `p as usize`, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
+| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
+| `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant (`FX0520` without it) |
+| Raw pointers | `*const T`, `*mut T`, casts to or from them, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
 authority (12.4), contracts, trust holes, and grants. Changes that need a human

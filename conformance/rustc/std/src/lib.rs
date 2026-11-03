@@ -367,19 +367,25 @@ pub mod time {
     impl Clock {
         pub fn now(&self) -> Instant { unimplemented!() }
         pub fn sleep_until(&self, t: Instant) -> Result<(), Cancelled> { unimplemented!() }
+        pub fn system_time(&self) -> SystemTime { unimplemented!() }
     }
 
-    /// A distinct type with no `now()`; otherwise Rust's `Instant` API.
-    /// GUESS: which of Rust's methods the allowlist admits (`checked_add` here).
+    /// A distinct type with no `now()` or `elapsed()` (03 CAP-1); otherwise Rust's `Instant` API.
+    /// GUESS: which of Rust's methods the allowlist admits (`checked_add`, `duration_since` here).
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Instant(Duration);
     impl Instant {
         pub fn checked_add(&self, d: Duration) -> Option<Instant> { unimplemented!() }
+        pub fn duration_since(&self, earlier: Instant) -> Duration { unimplemented!() }
     }
     impl std::ops::Add<Duration> for Instant {
         type Output = Instant;
         fn add(self, d: Duration) -> Instant { unimplemented!() }
     }
+
+    /// A distinct type with no `now()` and no `elapsed()` (03 CAP-1).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct SystemTime(Duration);
 }
 
 pub mod net {

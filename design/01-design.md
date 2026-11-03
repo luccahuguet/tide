@@ -427,8 +427,8 @@ serialization as the default (5–7x slower in prior art).
   atomics not created through `Tasks`; float observers and math methods
   (D3); I/O methods on re-exported std types (`Path::exists`, `metadata`);
   `io::Error::last_os_error`; compile-time reads of files and the build
-  environment (`include_str!`, `env!`, `option_env!`); and `global_asm!`
-  without an `unsafe` grant. The allowlist is reviewed with every rustc
+  environment (`include_str!`, `env!`, `option_env!`); and `asm!` and
+  `global_asm!` without an `unsafe` grant. The allowlist is reviewed with every rustc
   pin.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model

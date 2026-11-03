@@ -66,7 +66,8 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   driver reports a path to Rust's ambient one (`std::fs::read`,
   `Instant::now`, `env::args`, `Command::new`), or a call of a timed wait
   such as `Receiver::recv_timeout`, which reads time without a `Clock`, as
-  `FX0501`, not as rustc's unresolved name; `recv_deadline(t)` takes an
+  `FX0501`, not as rustc's unresolved name, and so are `Instant::elapsed` and
+  `SystemTime::elapsed`, which read the clock too; `recv_deadline(t)` takes an
   `Instant` from a `Clock` (§1.2).
 
 ## 1. The Standard Capability Set
@@ -387,9 +388,9 @@ N1). Test builds add the simulator behind one predictable branch.
   through the operations in this chapter.
 - **GLOBAL-4.** Raw pointer addresses are observable only in packages
   granted `unsafe` (D15): raw pointer types are admitted only there
-  (ADMIT-1), because their `PartialOrd`, `Ord`, `Hash`, and `Debug` impls
-  observe addresses, and so are pointer-to-integer casts, `addr`, and
-  `{:p}`. A function pointer's code address is one too: its casts to
+  (ADMIT-1), casts to them included, because their `PartialOrd`, `Ord`,
+  `Hash`, and `Debug` impls observe addresses, and so are
+  pointer-to-integer casts, `addr`, and `{:p}`. A function pointer's code address is one too: its casts to
   integers, ordering, `Hash`, and `Debug` need the grant, and `==` does
   not. `Hash` on a reference hashes the referent. `Shared::same` and
   `std::ptr::eq` compare identity without exposing it; Tide's `ptr::eq`
@@ -554,8 +555,8 @@ so the rules above also need an admission check (D7).
   - compile-time reads of files and the build environment (`include_str!`,
     `env!`, `option_env!`), inside attributes too;
   - `global_asm!`, which places machine code without an `unsafe` block,
-    in a package without an `unsafe` grant; under the grant it is an
-    `unsafe` hole (RUN-4);
+    and `asm!`, in a package without an `unsafe` grant; under the grant
+    they are `unsafe` holes (RUN-4);
   - the internal runtime entry points of Tide's std.
 
   The allowlist is versioned with the rustc pin and reviewed whenever the
@@ -703,7 +704,7 @@ into, fetched from the protected remote.
      `02-memory.md` §8.1, or a user's `unsafe trait`), Rust 2024's unsafe
      attributes (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
      `#[unsafe(link_section)]`), and `#[trusted_pure]` need the package's
-     `unsafe` grant (`FX0901`), and so does `global_asm!` (`FX0520`,
+     `unsafe` grant (`FX0901`), and so do `asm!` and `global_asm!` (`FX0520`,
      ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
      grant, since only an impl asserts its contract. No grant admits
      `unsafe impl Pure`, which overlaps std's blanket impl (E0119,
@@ -817,7 +818,7 @@ any access.
 | RUN-1 | A test and `tide sim <bin>` exercise every capability of a simulated root: each call appears in the simulator's trace, and no host canary sees an access. `tide sim --replay` of a manifest naming a canary path opens no host path. |
 | RUN-2 | `include_str!`, `include_bytes!`, `include!`, `#[path]`, and `#[debugger_visualizer]` naming a canary file: each is rejected, an access trace of the build shows no open of the canary, and its bytes appear in no diagnostic, artifact, or cache entry. A committed symbolic link from a source directory to a canary reads as missing, and the canary is never opened; one committed at `target/sim/` is replaced, and the harness writes nothing through it. `env!` and `option_env!` of a canary variable set in the caller's environment: rejected, and the value appears nowhere. A `rust-toolchain.toml`, a `.cargo/config.toml` naming a canary `rustc-wrapper` and `linker`, and `RUSTFLAGS` and `RUSTC_WRAPPER` in the caller's environment: none takes effect. On a host with `sandbox: full`, under an `unsafe` grant, `global_asm!` and `asm!` with `.include` and `.incbin` naming a canary, written directly and built by an assembler macro: the build opens nothing outside its allowed set, and the canary's bytes appear in no diagnostic, artifact, or cache entry. A `build.rs`: `FX0915`, and it never runs. A manifest or lockfile naming a source outside the repository and the operator's registries: rejected. |
 | RUN-3 | Under an `unsafe` grant, a test and a static constructor (`#[unsafe(link_section = ".init_array")]`) each try to open a canary file, connect to a canary listener, run a canary program, set up io_uring, create a link, FIFO, or socket file in the output directory, change a canary file's permissions, owner, extended attributes, or times, read the user keyring, open a message queue or System V shared memory, read a canary's extended attributes or a link outside the run, fork a process, trace or signal the harness, read a canary variable from the caller's environment, and crash, on a host that pipes core dumps to a collector, with the harness started under a soft core-size limit of zero, and again after the test tries to lower its own soft limit to zero: each fails or writes nothing outside the run, the result says `sandbox: full`, and no canary sees an access. Run on a pseudo-terminal, a test that tries to inject input into the terminal receives none, since the child has no controlling terminal and its streams are pipes. On a Linux kernel without Landlock, `tide review` and the result say `sandbox: partial`, naming Landlock. |
-| RUN-4 | Each unsafe attribute without an `unsafe` grant is `FX0901`, and `global_asm!` is `FX0520`; under the grant, each appears in the trust diff as a hole. |
+| RUN-4 | Each unsafe attribute without an `unsafe` grant is `FX0901`, and `asm!` and `global_asm!` are `FX0520`; under the grant, each appears in the trust diff as a hole. |
 | RUN-5 | `run: not covered`, naming the reason, for each of: a new or widened grant; a new `unsafe` block; an edit to a safe function in a package with an `unsafe` grant, in a descendant module of the one holding the `unsafe` block too; an edit to an ungranted in-tree package that a granted package depends on; a new version, source, or content hash in the lockfile for a granted dependency or for a package it depends on; a new dependency without grants whose own manifest grants `unsafe` to one of its dependencies; a changed lockfile entry of an imported Rust crate; an edited Bend kernel source; a new imported Rust crate or `build = true`; a new Bend dependency. `run: covered` for a candidate that edits only packages that hold no grant and that no granted package depends on. An access trace of `tide review` shows no process started from the candidate's build except behavior-diff children, and none of those for a candidate not covered or on a host without `sandbox: full`. `tide test --snapshot` with a hash from another tree starts no test. |
 | RUN-6 | A test that prints a pass record to stdout does not pass. A child that exits with status 0 inside a started test fails that test and the run, and the tests it never started run in a fresh child. Control characters and bidirectional overrides in a test's output, in a diagnostic's file name, and in a `tide review` line reach a pseudo-terminal and a log escaped. A test name and a replay manifest path written by the child with shell metacharacters never appear in a printed command; the printed replay command names only the declared test, the seed, and the harness's path. |
 
@@ -841,14 +842,8 @@ fields only: a generic marked type is `Pure` exactly when its type
 arguments are, as a std type is (`02-memory.md` §9), since its author can
 vouch for what they wrote but not for every type a caller passes, and
 failing closed keeps the trust hole as wide as what the reviewer approved.
-`Pure` is deep: it looks through every field, private ones included, and
-through `Box` and `Rc`, with std's two exceptions (`02-memory.md` §9);
-recursive types take the greatest fixed point; `impl Trait` types are
-`Pure`, `Send`, or `Sync` only if their bounds name it, and `dyn` types are
-`Send` or `Sync` only if they name it and `Pure` only through a companion
-supertrait (below); `Owned` follows origins (`02-memory.md` §3.7); a type
-parameter, or a projection on one that does not normalize, has one only if
-bounded by it.
+The structural rule, deep through every field, is `02-memory.md` PURE-1;
+`dyn` types are `Pure` only through a companion supertrait (below), and
 `02-memory.md` §9 has the full table.
 
 **`Pure`** means that no authority is reachable. Not `Pure`:
