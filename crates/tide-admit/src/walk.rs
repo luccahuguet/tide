@@ -1032,14 +1032,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
     }
 
-    /// A function, with a body or not: `unsafe fn` needs the grant (UNSAFE-1); a `const fn`
-    /// takes `Pure + Sync` parameters and none holds a `&mut` (AFREE-2); a `#[pure]` function's
-    /// parameter types are `Pure` (AFREE-1), for every instantiation its bounds allow, so a type
-    /// parameter needs the bound, and a foreign function is never authority-free (03 §3.2).
+    /// A function, with a body or not: `unsafe fn` needs the grant (UNSAFE-1; a foreign one, as a
+    /// foreign item); a `const fn` takes `Pure + Sync` parameters and none holds a `&mut`
+    /// (AFREE-2); a `#[pure]` function's parameter types are `Pure` (AFREE-1), for every
+    /// instantiation its bounds allow, so a type parameter needs the bound, and a foreign function
+    /// is never authority-free (03 §3.2).
     fn fn_item(&mut self, def: LocalDefId, header: &hir::FnHeader, decl: &'tcx hir::FnDecl<'tcx>) {
         let tcx = self.tcx;
         let span = tcx.def_span(def);
-        if header.is_unsafe() {
+        if header.is_unsafe() && !tcx.is_foreign_item(def) {
             self.granted(span, "an `unsafe fn`");
         }
         let sig = tcx.fn_sig(def).instantiate_identity().skip_normalization();
@@ -1667,6 +1668,10 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
                 }
             }
             hir::ItemKind::Static(mutability, ..) => self.static_item(def, mutability),
+            // An empty block still links the native libraries its `#[link]` names (UNSAFE-1).
+            hir::ItemKind::ForeignMod { .. } => {
+                self.granted(self.tcx.def_span(def), "an `unsafe extern` block")
+            }
             hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
                 for field in self.tcx.adt_def(def).all_fields() {
                     let ty = self.tcx.type_of(field.did).instantiate_identity();
@@ -1719,7 +1724,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     fn visit_foreign_item(&mut self, item: &'tcx hir::ForeignItem<'tcx>) {
         // The item holds the trust holes found outside its bodies.
         let outer = self.item.replace(item.owner_id.def_id);
-        self.hole(item.span, "a foreign item".into(), true);
+        // A `safe` item reaches foreign code too, without an `unsafe` block.
+        self.granted(item.span, "a foreign item");
         if let hir::ForeignItemKind::Fn(sig, ..) = &item.kind {
             self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
         }

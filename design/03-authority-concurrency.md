@@ -699,13 +699,15 @@ into, fetched from the protected remote.
 - **RUN-4. Holes.** RUN-1 does not hold through the following; any other
   route is a defect in RUN-1 to RUN-3.
   1. **UNSAFE-1. `unsafe` grants.** `unsafe` blocks and functions (with a
-     body or not: a required trait method or a foreign function declared
-     `unsafe` too), `unsafe impl` of any trait (`Send` and `Sync`,
-     `02-memory.md` §8.1, or a user's `unsafe trait`), Rust 2024's unsafe
-     attributes (`#[unsafe(no_mangle)]`, `#[unsafe(export_name)]`,
-     `#[unsafe(link_section)]`), and `#[trusted_pure]` need the package's
-     `unsafe` grant (`FX0901`), and so do `asm!` and `global_asm!` (`FX0520`,
-     ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
+     body or not: a required trait method too), `unsafe extern` blocks,
+     which link the native libraries their `#[link]` names even when
+     empty, and every item in one (a `safe` one too, since callers reach
+     foreign code through it with no `unsafe` block), `unsafe impl` of any
+     trait (`Send` and `Sync`, `02-memory.md` §8.1, or a user's `unsafe
+     trait`), Rust 2024's unsafe attributes (`#[unsafe(no_mangle)]`,
+     `#[unsafe(export_name)]`, `#[unsafe(link_section)]`), and
+     `#[trusted_pure]` need the package's `unsafe` grant (`FX0901`), and so
+     do `asm!` and `global_asm!` (`FX0520`, ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
      grant, since only an impl asserts its contract. No grant admits
      `unsafe impl Pure`, which overlaps std's blanket impl (E0119,
      `FX0402`; `#[trusted_pure]` is the spelling), or `#[may_dangle]` (an

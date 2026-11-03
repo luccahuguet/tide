@@ -952,7 +952,7 @@ needs human approval (11), except adding one where there was none.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe impl`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant (`FX0520` without it) |
 | Raw pointers | `*const T`, `*mut T`, casts to or from them, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |

@@ -722,6 +722,56 @@ core::arch::global_asm!(\".quad {}\", sym <fn(u8) as core::cmp::PartialOrd>::lt)
     assert_eq!(holes, expected);
 }
 
+/// An `unsafe extern` block needs the `unsafe` grant, even an empty one, which still links the
+/// library its `#[link]` names, and so does each foreign item, once, a `safe` one too, since its
+/// callers reach foreign code with no `unsafe` block; under the grant each is a trust hole
+/// (UNSAFE-1).
+#[test]
+fn extern_blocks_and_their_items_need_the_unsafe_grant() {
+    let std = tide_std("foreign");
+    let std = std.to_str().unwrap();
+    let source = "\
+unsafe extern \"C\" {
+    pub safe fn abs(x: i32) -> i32;
+    fn probe();
+}
+pub fn magnitude(x: i32) -> i32 {
+    abs(x)
+}
+#[link(name = \"m\")]
+unsafe extern \"C\" {}
+";
+    let (code, stderr) = admit("foreign-ungranted", source, &["--tide-std", std]);
+    assert_eq!(code, 1, "{stderr}");
+    let block = "error: FX0901: an `unsafe extern` block needs the package's `unsafe` grant";
+    let item = "error: FX0901: a foreign item needs the package's `unsafe` grant";
+    assert_eq!(
+        fx_lines(&stderr),
+        [
+            format!("lib.rs:1:1: {block}"),
+            format!("lib.rs:2:5: {item}"),
+            format!("lib.rs:3:5: {item}"),
+            format!("lib.rs:9:1: {block}"),
+        ],
+        "{stderr}"
+    );
+
+    let flags = ["--tide-std", std, "--tide-grant=unsafe"];
+    let (code, stderr) = admit("foreign", source, &flags);
+    assert_eq!(code, 0, "{stderr}");
+    let file = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("foreign/lib.interface.json");
+    let artifact = std::fs::read_to_string(file).unwrap();
+    let holes = &artifact[artifact.find("\"holes\"").unwrap()..];
+    let expected = r#""holes": [
+    {"item": "lib", "kind": "foreign module", "hole": "an `unsafe extern` block", "count": 2},
+    {"item": "lib::abs", "kind": "function", "hole": "a foreign item", "count": 1},
+    {"item": "lib::probe", "kind": "function", "hole": "a foreign item", "count": 1}
+  ]
+}
+"#;
+    assert_eq!(holes, expected);
+}
+
 /// `--tide-diff` compares two trust artifacts: a `Net` a public item can now reach is listed with
 /// its item and path, a new `unsafe` block as a new hole, and a body-only edit that changes no
 /// authority or holes gives an empty report.

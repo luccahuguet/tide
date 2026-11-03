@@ -1,7 +1,8 @@
 //@ rules: UNSAFE-1
 //@ grants: unsafe
-// Under the `unsafe` grant, with a `// SAFETY:` comment on each block and `unsafe impl`;
-// `asm!` and `global_asm!` are admitted.
+// Under the `unsafe` grant, with a `// SAFETY:` comment on each `unsafe { .. }` block and
+// `unsafe impl`; `asm!`, `global_asm!`, and `unsafe extern` blocks, an empty one too, and their
+// items, `safe` ones included, are admitted.
 pub unsafe fn raw_len(p: &[u8]) -> usize {
     p.len()
 }
@@ -14,6 +15,14 @@ pub fn len(p: &[u8]) -> usize {
 #[unsafe(no_mangle)]
 pub fn tide_probe() -> u32 {
     7
+}
+
+unsafe extern "C" {
+    pub safe fn abs(x: i32) -> i32;
+}
+
+pub fn magnitude(x: i32) -> i32 {
+    abs(x)
 }
 
 pub unsafe trait Zeroable {}
@@ -32,3 +41,6 @@ pub fn barrier() {
 }
 
 core::arch::global_asm!("");
+
+#[link(name = "m")]
+unsafe extern "C" {}
