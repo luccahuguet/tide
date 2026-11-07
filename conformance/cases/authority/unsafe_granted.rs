@@ -1,8 +1,9 @@
 //@ rules: UNSAFE-1
 //@ grants: unsafe
 // Under the `unsafe` grant, with a `// SAFETY:` comment on each `unsafe { .. }` block and
-// `unsafe impl`; `asm!`, `global_asm!`, and `unsafe extern` blocks, an empty one too, and their
-// items, `safe` ones included, are admitted.
+// `unsafe impl`; `asm!`, `global_asm!`, a `#[unsafe(naked)]` function's `naked_asm!`, which
+// needs no `unsafe` block, and `unsafe extern` blocks, an empty one too, and their items, `safe`
+// ones included, are admitted.
 pub unsafe fn raw_len(p: &[u8]) -> usize {
     p.len()
 }
@@ -44,3 +45,9 @@ core::arch::global_asm!("");
 
 #[link(name = "m")]
 unsafe extern "C" {}
+
+// SAFETY: `ret` returns at once and touches no callee-saved register.
+#[unsafe(naked)]
+pub extern "C" fn noop() {
+    core::arch::naked_asm!("ret");
+}

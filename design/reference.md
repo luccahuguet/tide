@@ -48,7 +48,7 @@ the `assert!` family); a test may take parameters (10.2).
 
 ### 2.1 The fixed built-in `!` forms
 
-Users cannot define macros. Std supplies exactly these, as in Rust:
+Std supplies exactly these, as in Rust:
 `print!`, `println!`, `eprint!`, `eprintln!` (no capability needed, 6.5;
 a lint in libraries); `format!`, `write!`, `writeln!`, `vec!`, `matches!`;
 `assert!`, `assert_eq!`, `assert_ne!`, `debug_assert!`; `panic!`, `todo!`
@@ -56,16 +56,15 @@ a lint in libraries); `format!`, `write!`, `writeln!`, `vec!`, `matches!`;
 error in release builds, `FX0507`); and the log sink (6.5) `error!`,
 `warn!`, `info!`, `debug!`, `trace!`, with no `use` (`log::info!` and
 `tracing::info!` are also accepted; provisional). Tide adds `invariant!`
-(10.1) and `hole!` (13), not imported. Under the `unsafe` grant (11),
-`asm!` and `global_asm!` are admitted (`FX0520` without it).
+(10.1) and `hole!` (13), not imported. The `unsafe` grant (11) admits
+`asm!`, `global_asm!`, and `naked_asm!` (`FX0520` without it).
 
 Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
 `debug_assert!(a == b)`), `concat!`, and crate macros; `include_str!`,
 `env!`, and `option_env!` are `FX0520` (6.9), `thread_local!` and
 `lazy_static!` `FX0502`; `macro_rules!` and procedural macros are
-`FX0101`. Write a generic function or trait instead; for test tables, loop
-over a `const` array; for generated code or embedded data, run a generator
-program and commit its `.rs` output.
+`FX0101`: use a generic function or trait, loop over a `const` array
+(test tables), or commit a generator's `.rs` output.
 
 ### 2.2 Derives
 
@@ -952,7 +951,7 @@ needs human approval (11), except adding one where there was none.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | needs the package's `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant (`FX0520` without it) |
 | Raw pointers | `*const T`, `*mut T`, casts to or from them, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
