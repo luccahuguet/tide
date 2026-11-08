@@ -11,15 +11,17 @@
 //! - the capability types `Root` carries, as identities: `Fs`, `Net`, `Clock`, `Rand`, `Env`,
 //!   `Stdin`, `Proc`, and `Tasks`;
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
-//!   prelude's `Error` trait.
+//!   prelude's `Error` trait and parameterless Rust `#[test]`.
 //!
 //! Not provided yet: every capability operation and attenuation of reference 6.1 (tasks,
 //! files, network, time, randomness, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! `io`'s and `time`'s Rust items (`Read`, `Write`, `io::Error`, `Duration`, ...);
-//! collections, `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; `#[test]` and
+//! collections, `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; property tests and
 //! `#[sim_test]`; the contract attributes and the `Error`, `Encode`, and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
+//! Executable tests use rustc's ordinary harness, without simulated capabilities or process
+//! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
 //! `root.rs` holds the crate-root items, which the conformance fixture std includes too; each
 //! module below declares its capability type with `root.rs`'s `capability!`, as the fixture's
@@ -27,7 +29,9 @@
 
 include!("root.rs");
 
-crate::declare_prelude!();
+crate::declare_prelude! {
+    pub use core::prelude::v1::test;
+}
 
 pub mod fs {
     crate::capability!(

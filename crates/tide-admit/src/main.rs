@@ -1,6 +1,6 @@
 //! tide-admit: rustc with Tide's admission gate (D18, architecture A).
 //!
-//! It constructs rustc's arguments from a fixed metadata-check interface, always passes rustc
+//! It constructs rustc's arguments from a fixed check/build interface, always passes rustc
 //! `-Zallow-features=` so the crate cannot enable unstable features and `-Zpolonius=no` so
 //! borrows get NLL's verdicts (ADMIT-2, ORIGIN-6), and checks every use the crate makes against
 //! the admission allowlist (ADMIT-1), reporting each rejection as `FX0520` at the use's span.
@@ -9,6 +9,24 @@
 //! analysis, so a crate with rustc errors still gets its verdicts, and after the analysis, when
 //! nothing failed, checks the instances that can run (`walk/mono.rs`) and writes the crate's
 //! trust artifact (`interface.rs`).
+//! `--emit=link` continues that same checked compilation through LLVM and linking, for a binary
+//! (`--crate-type=bin`) or Rust test harness (`--test`). `--tide-profile=debug|release` selects
+//! optimization 0 or 3 (default debug); both force overflow checks on. Metadata remains the default.
+//! On the supported x86_64-unknown-linux-gnu host, linking uses `/usr/bin/cc` with
+//! `/usr/bin/ld` (GNU cc flavor, `-B/usr/bin`, bundled linker disabled). Cache keys include the
+//! output mode, profile, test configuration and cc/ld bytes;
+//! the installed C toolchain/start files/libraries, like the sysroot, must remain immutable.
+//! Unsafe-granted link builds are uncached: assembly/native inputs bypass the source snapshot.
+//! Only a successful compilation publishes `<out-dir>/<crate-name>` (or `<crate-name>-test`),
+//! beside its trust artifact. A linked build removes its previous executable before checking.
+//! The shared `<crate-name>.interface.json` belongs to the latest invocation; separate output
+//! directories retain bin/test/profile artifact pairs. The driver never runs an output.
+//!
+//! This is a partial build path for reviewed/trusted demo code only: the operator must review
+//! source, grants and dependencies before building/running, including granted assembly and native
+//! link inputs. There is no assembler/linker OS sandbox, simulated test Root, test-process
+//! isolation, snapshot execution gate, or RUN-5 coverage verdict. Raw Rust `#[test]` is a temporary
+//! executable-test path, not `tide test`/`tide sim` or the RUN-1 unreviewed-branch guarantee.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line

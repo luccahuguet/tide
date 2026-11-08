@@ -43,6 +43,35 @@ fn fx_lines(stderr: &str) -> Vec<&str> {
 }
 
 #[test]
+fn the_backstop_keeps_exported_library_roots_in_every_profile() {
+    for (name, source) in [
+        (
+            "backstop-exported-vtable",
+            "pub fn leaf(x: &fn()) -> &dyn PartialOrd<fn()> { x }\n",
+        ),
+        (
+            "backstop-exported-reify",
+            "pub fn sorter() -> fn(&mut [fn()]) { <[fn()]>::sort }\n",
+        ),
+    ] {
+        for profile in ["debug", "release"] {
+            let (code, stderr) = admit(
+                name,
+                source,
+                &["--tide-test-backstop", &format!("--tide-profile={profile}")],
+            );
+            assert_eq!(code, 1, "{name}/{profile}: {stderr}");
+            assert!(
+                fx_lines(&stderr)
+                    .iter()
+                    .any(|line| line.contains("FX0520:") && line.contains("for fn()`")),
+                "{name}/{profile}: {stderr}"
+            );
+        }
+    }
+}
+
+#[test]
 fn rejects_each_use_outside_the_allowlist_at_its_span() {
     let source = "\
 pub fn run(x: f64) -> f64 {

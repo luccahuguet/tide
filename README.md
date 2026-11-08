@@ -55,7 +55,7 @@ every compiler invocation, clears the compiler environment (keeping only
 `RUSTC_ICE=0`, so a compiler crash writes no report file), snapshots candidate
 Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
 (`FX0101`), `#![no_std]` (`FX0520`), and package build scripts (`FX0915`), and
-caches successful metadata checks by source and trusted-input content. A crate
+caches successful checks/builds by source and trusted-input content. A crate
 it admits against Tide's std also gets a trust artifact beside its metadata,
 `<crate>.interface.json` (D11, 03 §4.1): each exported item's declared
 authority, with the access path that carries each kind (`app.db.net: net`, or
@@ -83,8 +83,9 @@ target/debug/tide-admit --crate-type=lib --out-dir /tmp/tide-output path/to/pack
 ```
 
 The interface accepts one `.rs` entry, `--edition 2024`, `--crate-type lib|bin`,
-`--crate-name NAME`, `--test`, `--emit metadata`, `--error-format short`,
-`--out-dir DIR`, and `--tide-grant=unsafe` (value options also accept `=VALUE`).
+`--crate-name NAME`, `--test`, `--emit metadata|link`,
+`--tide-profile debug|release`, `--error-format short`, `--out-dir DIR`, and
+`--tide-grant=unsafe` (value options also accept `=VALUE`).
 `--tide-test-backstop`, for the driver's tests, skips the obligation steps of
 the checks before analysis, so the backstop alone decides those routes, and
 `--tide-test-ice` crashes the compiler after expansion.
@@ -98,7 +99,56 @@ symlinks cannot grant access outside it. Each loaded source is checked before
 expansion, and the expanded crate after it, which catches attributes and macro
 definitions written in macro arguments. The cache records source bytes and
 directory membership, driver and pinned compiler identity, grants, normalized
-arguments, and trusted artifacts; failed checks never become cache hits.
+arguments, and trusted artifacts; failed checks/builds never become cache hits.
+Metadata (the default), linked binaries, and linked test harnesses have distinct
+cache identities, as do debug and release profiles. Both profiles force
+`-C overflow-checks=on`; debug (the default) uses optimization 0 and debug
+assertions, release uses optimization 3 without debug assertions.
+Every profile, including test builds, passes `-Zinline-mir=no` and
+`-Zcross-crate-inline-threshold=never` so MIR inlining cannot hide instances
+and inferred cross-crate inlining cannot remove exported library roots from
+the backstop. Explicit `#[inline]` functions and generics are checked where
+instantiated; LLVM inlining still runs after the check.
+Unsafe-granted link builds always compile afresh and discard their staging
+directory after publication: assembly and native links can read inputs the source
+snapshot does not hash. Their metadata checks can still be cached.
+
+`--emit=link` requires `--crate-type=bin` or `--test`. On the supported
+`x86_64-unknown-linux-gnu` host it continues the same compilation past admission
+and the mono-item backstop, then invokes fixed `/usr/bin/cc` with `/usr/bin/ld`
+(GNU cc flavor, `-B/usr/bin`, bundled linker disabled). GCC also passes
+`-L/usr/bin` to the linker for `-B/usr/bin`. It writes
+`<out-dir>/<crate-name>`, or `<crate-name>-test` for `--test`, only on success;
+it removes that invocation's previous executable
+before checking, so a rejected rebuild leaves no stale executable at that path.
+The shared `<crate-name>.interface.json` describes the latest invocation. Use
+separate `--out-dir` values for profiles and bin/test modes to retain their
+artifact pairs. rustc's codegen and link temporaries stay in private cache staging;
+host tools may use their own temporary paths. The driver never executes either
+output. For reviewed demo code:
+
+```
+TIDE_MACROS_DIR="$(
+  cargo build --offline -p tide_std --message-format=json |
+    grep -o '"filenames":\[[^]]*\]' | grep -o '"[^"]*/libtide_macros[^"]*\.so"' |
+    tr -d '"' | while IFS= read -r lib; do dirname "$lib"; done
+)"
+target/debug/tide-admit --crate-type=bin --emit=link --crate-name=hello \
+  --tide-std target/debug/libtide_std.rlib --tide-dep-dir "$TIDE_MACROS_DIR" \
+  --out-dir target/demo path/to/demo/src/main.rs
+target/demo/hello
+target/debug/tide-admit --test --emit=link --crate-name=hello \
+  --tide-std target/debug/libtide_std.rlib --tide-dep-dir "$TIDE_MACROS_DIR" \
+  --out-dir target/demo-tests path/to/demo/src/lib.rs
+target/demo-tests/hello-test
+```
+
+`TIDE_MACROS_DIR` is the directory of `libtide_macros` in Cargo's
+`compiler-artifact` message's `filenames`, independent of Cargo's build layout.
+
+Execution is a separate trusted caller action. `--test` builds Rust's ordinary
+harness for parameterless `#[test]` functions, without property generation,
+simulated capabilities or Tide's structured test results; this is not `tide test`.
 
 `--tide-std PATH` and repeatable `--tide-dep-dir DIR` select trusted toolchain
 artifacts outside the candidate package. These are operator inputs, like
@@ -108,13 +158,23 @@ for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities without operations, `Pure`, and the `out` and `err` sinks
-(`print!`, `println!`, `eprint!`, `eprintln!`); its crate docs list what it
-does not provide yet. The conformance runner injects a stub std, a
-compile-time fixture that shares Tide's std's definitions of those items. The
-installed pinned toolchain is trusted and treated as immutable. This slice
-provides loader and invocation isolation, with no OS sandbox or protection
-against concurrent filesystem mutation; assembler, linker, runtime, and
-test-process isolation remain later work.
+(`print!`, `println!`, `eprint!`, `eprintln!`), and parameterless Rust `#[test]`;
+its crate docs list what it does not provide yet. The conformance runner injects
+a stub std, sharing those definitions except its oracle `#[test]` attribute,
+whose supported parameterless form has a shared conformance/production fixture. The
+installed pinned toolchain is trusted and treated as immutable, as are the host
+C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
+and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.
+This slice provides loader and invocation isolation, with no OS sandbox or protection against concurrent
+filesystem mutation. Granted assembly can read outside the loader (`.include`,
+`.incbin`); native link inputs can read host files, and the linker/toolchain can
+start host tools. Runtime and test-process isolation remain later work: a caller
+running an output gets no Landlock/seccomp policy, descriptor/environment/core-dump
+controls, simulated Root, or snapshot/coverage gate from this driver. Builds and
+runs are for reviewed/trusted demo code only: the operator must review source,
+grants and dependencies, including granted assembly/native inputs, and trust the
+toolchain and host. Admission is partial. This mode does **not** satisfy RUN-5 or
+provide RUN-1's unreviewed-branch guarantee.
 
 [conformance/](conformance/README.md) holds the conformance corpus: cases
 with expected verdicts per rule ID. Stable rustc checks their rustc marks,

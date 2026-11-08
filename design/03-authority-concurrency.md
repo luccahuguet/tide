@@ -594,7 +594,12 @@ so the rules above also need an admission check (D7).
   borrows with Polonius and v0 has NLL's verdicts (`02-memory.md` ORIGIN-6).
   It also passes `-Zshare-generics=no`, so the crate instantiates upstream
   generics itself, except `#[inline(never)]` ones an upstream crate already
-  instantiated, and the backstop sees them (ADMIT-1).
+  instantiated, and the backstop sees them (ADMIT-1). It passes
+  `-Zinline-mir=no` and `-Zcross-crate-inline-threshold=never` in every
+  profile, including test builds, so MIR inlining cannot hide those instances
+  and inferred cross-crate inlining cannot remove exported library roots.
+  Explicit `#[inline]` functions and generics are checked where instantiated;
+  LLVM inlining runs after the backstop.
   A build that skips the checker, such as Cargo with Rust's own std, is not
   a Tide build and carries none of this chapter's guarantees.
 

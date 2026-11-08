@@ -1,4 +1,4 @@
-//! Fixed operator interface, source snapshot, successful metadata cache (RUN-2), and the rustc
+//! Fixed operator interface, source snapshot, successful build cache (partial RUN-2), and the rustc
 //! callbacks that run the admission checks.
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -60,6 +60,8 @@ impl Callbacks for Admission {
     fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         // rustc's analysis stops before this on any error, the walk's included.
         check_mono_items(tcx, self.grants, &mut self.holes);
+        // In link mode too, no rejected instance may reach codegen or the linker.
+        tcx.dcx().abort_if_errors();
         if self.tide_std
             && tcx.dcx().has_errors().is_none()
             && let Err(e) = crate::interface::write(tcx, &self.holes, &self.out)
@@ -80,6 +82,8 @@ struct Invocation {
     name: String,
     kind: String,
     test: bool,
+    link: bool,
+    profile: String,
     grants: Grants,
     /// `--tide-test-backstop`: the walk skips its obligation steps, so tests can show what the
     /// backstop alone rejects.
@@ -95,6 +99,7 @@ impl Invocation {
         let mut this = Self {
             out: PathBuf::from("."),
             kind: "lib".into(),
+            profile: "debug".into(),
             ..Self::default()
         };
         let mut args = args.iter();
@@ -126,6 +131,7 @@ impl Invocation {
                     | "--tide-std"
                     | "--tide-dep-dir"
                     | "--tide-compile"
+                    | "--tide-profile"
             ) {
                 let value = inline
                     .or_else(|| args.next().map(String::as_str))
@@ -136,7 +142,10 @@ impl Invocation {
                 match flag {
                     "--edition" if value == "2024" => (),
                     "--crate-type" if matches!(value, "lib" | "bin") => this.kind = value.into(),
-                    "--emit" if value == "metadata" => (),
+                    "--emit" if matches!(value, "metadata" | "link") => this.link = value == "link",
+                    "--tide-profile" if matches!(value, "debug" | "release") => {
+                        this.profile = value.into()
+                    }
                     "--error-format" if value == "short" => (),
                     "--crate-name" => this.name = value.into(),
                     "--out-dir" => this.out = value.into(),
@@ -153,6 +162,12 @@ impl Invocation {
         }
         if this.source.extension().is_none_or(|ext| ext != "rs") {
             return Err("expected one .rs source file".into());
+        }
+        if this.link && this.kind != "bin" && !this.test {
+            return Err("link output requires `--crate-type=bin` or `--test`".into());
+        }
+        if this.link && !env!("TIDE_COMPILER_ID").contains("host: x86_64-unknown-linux-gnu;") {
+            return Err("link output currently requires an x86_64-unknown-linux-gnu host".into());
         }
         if this.name.is_empty() {
             this.name = this
@@ -179,19 +194,48 @@ impl Invocation {
             "--edition=2024".into(),
             format!("--crate-type={}", self.kind),
             format!("--crate-name={}", self.name),
-            "--emit=metadata".into(),
+            format!("--emit={}", if self.link { "link" } else { "metadata" }),
             "--error-format=short".into(),
             "-Zallow-features=".into(),
             "-Zpolonius=no".into(),
             // The backstop's mono items: the crate makes its own instances of upstream generics
             // instead of linking an upstream crate's.
             "-Zshare-generics=no".into(),
+            // MIR inlining would hide instances from the backstop before LLVM codegen.
+            "-Zinline-mir=no".into(),
+            // Inferred cross-crate inlining would remove exported library roots in release.
+            "-Zcross-crate-inline-threshold=never".into(),
+            "-Coverflow-checks=on".into(),
+            format!(
+                "-Copt-level={}",
+                if self.profile == "release" { 3 } else { 0 }
+            ),
+            format!(
+                "-Cdebug-assertions={}",
+                if self.profile == "release" {
+                    "off"
+                } else {
+                    "on"
+                }
+            ),
             "--sysroot".into(),
             env!("TIDE_SYSROOT").into(),
-            "--out-dir".into(),
-            out.display().to_string(),
             self.source.display().to_string(),
         ];
+        if self.link {
+            args.extend([
+                "-Clinker=/usr/bin/cc".into(),
+                "-Clinker-flavor=gnu-cc".into(),
+                "-Clink-self-contained=-linker".into(),
+                "-Clink-arg=-B/usr/bin".into(),
+                "-Zunstable-options".into(),
+                format!("-Ztemps-dir={}", out.display()),
+                "-o".into(),
+                out.join("executable").display().to_string(),
+            ]);
+        } else {
+            args.extend(["--out-dir".into(), out.display().to_string()]);
+        }
         if self.test {
             args.push("--test".into());
         }
@@ -202,6 +246,14 @@ impl Invocation {
             args.extend(["-L".into(), format!("dependency={}", dep.display())]);
         }
         args
+    }
+
+    fn executable(&self) -> PathBuf {
+        self.out.join(format!(
+            "{}{}",
+            self.name,
+            if self.test { "-test" } else { "" }
+        ))
     }
 }
 
@@ -655,8 +707,13 @@ pub fn run() -> Result<ExitCode, String> {
     if invocation.out.starts_with(package) {
         return Err("output and cache must be outside the candidate package".into());
     }
-    // A check that fails from here on, whatever stops it, leaves no trust artifact of an earlier
-    // one behind.
+    // A failed build leaves neither an earlier trust artifact nor its requested executable.
+    if invocation.link {
+        match fs::remove_file(invocation.executable()) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.to_string()),
+            _ => (),
+        }
+    }
     let artifact = invocation
         .out
         .join(format!("{}.interface.json", invocation.name));
@@ -705,6 +762,11 @@ pub fn run() -> Result<ExitCode, String> {
     );
     if let Some(std) = &invocation.std {
         fingerprint(std, &mut key).map_err(|e| e.to_string())?;
+    }
+    if invocation.link {
+        // Like the pinned sysroot, the host C toolchain and libraries are trusted and immutable.
+        fingerprint(Path::new("/usr/bin/cc"), &mut key).map_err(|e| e.to_string())?;
+        fingerprint(Path::new("/usr/bin/ld"), &mut key).map_err(|e| e.to_string())?;
     }
     for dep in &invocation.deps {
         fingerprint(dep, &mut key).map_err(|e| e.to_string())?;
@@ -766,8 +828,10 @@ pub fn run() -> Result<ExitCode, String> {
             rustc_driver::run_compiler(&rustc_args, &mut admission)
         }));
     }
-    let entry = cache.join(&key);
-    if !entry.is_dir() {
+    // Granted assembly and native links can read inputs the source snapshot cannot key.
+    let cacheable = !invocation.link || !invocation.grants.unsafe_;
+    let mut entry = cache.join(&key);
+    if !cacheable || !entry.is_dir() {
         let stage = format!("{key}.{}", std::process::id());
         let output = Command::new(exe)
             .args(&args)
@@ -790,24 +854,34 @@ pub fn run() -> Result<ExitCode, String> {
         }
         fs::write(staging.join("stdout"), &output.stdout).map_err(|e| e.to_string())?;
         fs::write(staging.join("stderr"), &output.stderr).map_err(|e| e.to_string())?;
-        match fs::rename(&staging, &entry) {
-            Ok(()) => (),
-            Err(_) if entry.is_dir() => {
-                let _ = fs::remove_dir_all(&staging);
+        if cacheable {
+            match fs::rename(&staging, &entry) {
+                Ok(()) => (),
+                Err(_) if entry.is_dir() => {
+                    let _ = fs::remove_dir_all(&staging);
+                }
+                Err(e) => return Err(e.to_string()),
             }
-            Err(e) => return Err(e.to_string()),
+        } else {
+            entry = staging;
         }
     }
     for file in fs::read_dir(&entry).map_err(|e| e.to_string())? {
         let file = file.map_err(|e| e.to_string())?.path();
-        if file
-            .extension()
-            .is_some_and(|ext| ext == "rmeta" || ext == "json")
+        let executable = invocation.link && file.file_name().is_some_and(|n| n == "executable");
+        if executable
+            || file
+                .extension()
+                .is_some_and(|ext| ext == "rmeta" || ext == "json")
         {
-            let dest = invocation.out.join(file.file_name().unwrap());
+            let dest = if executable {
+                invocation.executable()
+            } else {
+                invocation.out.join(file.file_name().unwrap())
+            };
             let tmp = invocation
                 .out
-                .join(format!(".metadata-{}", std::process::id()));
+                .join(format!(".artifact-{}", std::process::id()));
             fs::copy(&file, &tmp).map_err(|e| e.to_string())?;
             fs::rename(tmp, dest).map_err(|e| e.to_string())?;
         }
@@ -818,5 +892,8 @@ pub fn run() -> Result<ExitCode, String> {
     io::stderr()
         .write_all(&fs::read(entry.join("stderr")).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
+    if !cacheable {
+        fs::remove_dir_all(entry).map_err(|e| e.to_string())?;
+    }
     Ok(ExitCode::SUCCESS)
 }

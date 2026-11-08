@@ -115,11 +115,15 @@ The stub is a compile-time fixture of Tide's std (`crates/tide-std`), which
 owns runtime behavior. It includes Tide's std's crate-root items
 (`crates/tide-std/src/root.rs`: `Root`, `Pure`, `tide::main`, the sinks and
 `panic!`, the runtime entry, and Rust's re-exports) and declares the
-capability types with that file's `capability!`, so every item Tide's std
-exposes has one definition, at the same path, in both; the admission driver's
-rules (`policy.rs`, `pure.rs`) key them alike. A case that uses only those
-items is checked against Tide's std's own definitions. Every other item is the
-stub's own, a signature for an item Tide's std does not provide yet. `Pure` is
+capability types with that file's `capability!`, so those items share one
+definition at the same paths; the admission driver's rules (`policy.rs`,
+`pure.rs`) key them alike. Production's parameterless Rust `#[test]` and the
+stub's oracle attribute share a compile-time fixture,
+`authority/root_executable.rs`, also built and run against production std by
+the driver's `tests/build.rs`; property generation remains unavailable in
+production. A case that uses only the shared items is checked against Tide's
+std's own definitions. Every other item is the stub's own, a signature for an
+item Tide's std does not provide yet. `Pure` is
 a blanket impl, so rustc accepts every `Pure` bound and every `Pure` verdict
 is the checker's (an `FX` mark). The stub's own bodies are `unimplemented!()`,
 so the corpus decides compile-time verdicts only; rules decided at run time,
