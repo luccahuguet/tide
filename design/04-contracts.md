@@ -633,9 +633,13 @@ again at run time.
 
 ### 2.6 Release builds and check deletion
 
-Release builds erase clauses and ghost code. The manifest can keep checks
-with `release_checks = "none" | "pub_requires" | "checked"`; the default is
-`none`, as D10 says.
+Release builds erase clauses and ghost code by default: none of it runs or is
+compiled into the program. They still resolve and type-check each clause, as
+the body's names resolve (CLAUSE-2), so a release seal hash covers the same
+contract parts as a debug one (§11.1), and a clause cannot name an item the
+release configuration leaves out. The manifest can keep checks with
+`release_checks = "none" | "pub_requires" | "checked"`; the default is `none`,
+as D10 says.
 
 D3 lets a proof delete a runtime check only if every fact it relies on is
 proved in the same build or still checked at run time. A check for overflow,
@@ -1198,18 +1202,103 @@ and spec tests, and the use settings. Under `prove`, internal specs are proof
 scaffolding and need no approval.
 
 **What is hashed.** Each root spec has a *spec-closure hash* over the
-normalized clauses, the signature (types, lifetimes, field-borrow sets),
-and, transitively, everything its meaning depends on: the bodies of every
-function a clause calls, including the impls behind operators such as `==`
-(D11); spec fn bodies (opaque and closed ones included); the contracts of
-`#[spec]` functions; views, invariants, type definitions, trait laws and
-trait method contracts, constants, and the standard library's spec catalog
-version. Names resolve to the content hashes of D14, so a rename leaves the
-hash unchanged, while an edit to `spec fn is_sorted`, or to an ordinary
-`fn covers` that a `requires` calls, changes it. Proofs and `proof fn`
-bodies are excluded, and so is the body of the specified function unless a
-clause calls it. Review lists the called functions whose bodies changed
-beside the contract.
+normalized clauses, the signature (types, lifetimes, field-borrow sets), and,
+transitively, everything its meaning depends on: the bodies of every function
+a clause calls, including the impls behind operators such as `==` (D11); spec
+fn bodies (opaque and closed ones included); the contracts of `#[spec]`
+functions; views, invariants, type definitions, trait laws and trait method
+contracts, constants, and the standard library's spec catalog version. Hashes
+read definitions after `cfg` evaluation, with rustc's resolution and types,
+and leave out the names of the items they reference. A rename leaves the
+hash unchanged unless it reorders a residual tie below; an edit to `spec fn
+is_sorted`, or to an ordinary `fn covers` that a `requires` calls, changes it.
+Clauses enter normalized, never as the checks the contract macros generate
+from them. In v0 an item's stable ID (D14) is its path and kind, as the trust
+artifact keys a public item (03 §4.1), for private items, impl members by
+qualified path, and tests too; a package's is its name. An impl's path is its
+resolved qualified header: `<crate::S as crate::A>` for a trait impl, with
+trait arguments included. Generic headers include positional type, lifetime
+and const binders (const types included), and header predicates in canonical
+order, for example
+`for<type0><crate::S<type0> as crate::A> where type0:crate::Copy`, or
+`for<type0><type0 as crate::A> where type0:crate::Copy` for a blanket impl.
+These use resolved paths, not import spellings, binder names or content hashes.
+An inherent impl uses `<SELF>::{MEMBERS}`, with its declared members sorted by
+kind then name, such as `<crate::S>::{const N,fn get}`: several inherent
+blocks can share a self type, so `<SELF>` alone would not distinguish them.
+An inherent member's ID is its block's header without the member list, then
+its name, such as `<crate::S<u8>>::get`: E0592 makes it unique, and adding a
+sibling leaves it unchanged. The same binder and predicate rules apply. Empty inherent blocks with the same
+header share an ID; they remain distinct graph nodes and table slots. If their
+colours also tie, they are interchangeable, so their order changes neither
+encoding nor ID table. Impls have kind `impl` and take slots and inventory
+entries like other crate items. Renaming a header's trait or type changes the
+impl ID too. Renaming or moving a named item gives it a new ID. The
+driver has one owner of these IDs and hashes, and one clause normalizer built
+on it. Generic and local binders are positions. The names a definition gives
+its own parts, such as fields, variants, and the items of a trait or of an
+impl hashed in full, are hashed. A std item is its path under the toolchain
+version, a dependency's item its path under the locked content hash.
+
+**Deterministic order and ties.** First build the finite graph of the covered
+definition parts and resolved references. Each crate item is a distinct node,
+even when its definition equals another's. Impl sets enter only where the
+covered parts require them (SEAL-2); following an impl's self type reuses its
+node rather than starting a separate hash computation. Ordered parts, such as
+parameters and fields, keep their order. Order sets without source order by
+colour refinement (1-WL partition refinement) over this graph. Initial colours
+are lexicographic ranks of name-independent node contents, with the root
+marked. Each round ranks the distinct tuples of the previous colour and the
+multisets of incoming and outgoing (edge label, neighbour colour) pairs.
+Labels distinguish direction, syntactic role and ordered position; unordered
+membership has no position. Assign ranks in lexicographic order and stop when
+the partition no longer splits. Colours contain only the current ranks, not
+recursively expanded definitions. Refinement uses no crate-item IDs, source
+order or rustc numeric IDs, and takes at most as many rounds as graph nodes.
+
+Sort each unordered set by final colour, breaking remaining ties by the
+member's stable ID (including impl headers above), in the identity owner's
+canonical ID order.
+Then walk depth first from the hashed item: encode a node at its first visit
+and use that visit position for later references, including cycles. Hash the
+complete, length-delimited encoding and record one table of crate-item IDs
+at visit positions. Refinement only orders the walk; it never substitutes
+colours for definitions or merges nodes. Shared references stay shared and
+distinct nodes stay distinct, even when refinement cannot distinguish them.
+The refinement and sorting have polynomial cost, and the table has one slot
+per reached crate item. Moving declarations between files while keeping their
+IDs changes neither.
+A rename that reorders a residual tie can conservatively give FX0920: the
+encoding or positional ID comparison may change.
+
+For example, seal `S` whole:
+
+```rust
+struct S;
+trait A {}
+trait B {}
+trait C { type Out; }
+impl A for S {}
+impl B for S {}
+impl C for S { type Out = Box<dyn A>; }
+```
+
+The first two impls have equal isolated content, but `A` has the incoming
+reference from `C::Out` as well as its impl. Refinement separates `A` from
+`B`, then their impls. All six source orders give the same walk and one ID
+table; moving an impl or renaming referenced `A` does not reorder a tie here,
+although the rename changes `<S as A>` to `<S as Z>` as well as A's ID.
+The reference from `Out` still cites the same `A` visit position. Retargeting
+`Out` to existing `B` may give isomorphic content, but fails SEAL-2's ID
+comparison. Without the third impl, refinement leaves the first two tied:
+`<S as A>` and `<S as B>` settle the order, and the one table retains two
+distinct trait nodes. Renaming A to Z reverses that tie and gives FX0920.
+Renaming a self type can likewise reorder tied headers; this is the stated
+conservative exception to name independence, not a name-based refinement key.
+
+Proofs and `proof fn` bodies are excluded, and so is the body of the specified
+function unless a clause calls it. Review lists the called functions whose
+bodies changed beside the contract.
 
 **Classifying changes.** For a changed root spec, the solver checks
 refinement between the old and new closures, renamed apart:
@@ -1242,7 +1331,7 @@ An orchestrator, a person or a supervising agent, fixes an interface and
 hands its implementation to delegates. A seal makes that boundary
 mechanical: a delegate may change the bodies of sealed functions, and the
 checker rejects any other change to what was sealed (D11). It is v0 core,
-and needs no solver: every check is a hash comparison.
+and needs no solver: it compares content hashes and resolved-identity records.
 
 - **SEAL-1. The seal file.** `tide.seal`, next to `tide.toml`, lists the
   targets it was sealed for and entries by stable ID (D14), each with its
@@ -1255,23 +1344,97 @@ and needs no solver: every check is a hash comparison.
   <triple>` seals for a target besides the host, and `--remove` removes the
   named entries instead of adding them. Entries are written only by this
   command, from the current tree. An item that exists in no sealed
-  configuration, such as one under a `feature` cfg, which no v0 build sets
-  (no manifest key enables a feature, and D18 bars user `--cfg`), cannot be
-  sealed. `--target` adds that target's hashes to every entry; like adding
-  an entry, it is not gated, and a candidate's added targets are not in
-  force until the base has them (SEAL-4). Only the crate's own `tide.seal`
-  is checked, never a dependency's, which the lockfile's content hash
-  already pins. (File name and flags provisional.)
-- **SEAL-2. What an entry fixes.** A seal hash is computed per
-  configuration, after `cfg` evaluation. It resolves names to stable IDs and
-  content hashes as §11 does, and records what each path, method call,
-  operator, and associated-type projection in the hashed text resolves to,
-  so replacing or shadowing an item that a sealed one names, or a new impl,
-  trait, or import that changes which item a sealed call selects, changes
-  it, while renaming that item does not; the standard library is hashed by
-  toolchain version and a dependency by its locked content hash, so a
-  toolchain or lockfile change can change an entry. Doc comments and
-  formatting are not hashed.
+  configuration, such as one under a `feature` cfg, which no v0 build sets (no
+  manifest key enables a feature, and D18 bars user `--cfg`), cannot be
+  sealed. `--target` adds that target's hashes to every entry; like adding an
+  entry, it is not gated, and a candidate's added targets are not in force
+  until the base has them (SEAL-4). Only the crate's own `tide.seal` is
+  checked, never a dependency's, which the lockfile's content hash already
+  pins. (File name and flags provisional.) Until a `tide` CLI exists, the
+  admission driver (D18) is the writer, since only it has the resolution the
+  hashes need: a seal mode that takes the build's operator inputs and these
+  flags, hashes each configuration it seals, and writes the file atomically,
+  only when every one of them admits under the proposed seal. That seal keeps
+  the existing entries and their recorded hashes, less the entries explicitly
+  removed, plus new entries or entries whose kind is explicitly changed.
+  Re-adding an existing entry of the same kind keeps its records if its
+  SEAL-2 comparisons pass; otherwise the command fails. To refresh a record's
+  inventory or other stored values, remove the entry and add it again.
+  SEAL-4 gates any resulting record-hash change, even when content is unchanged.
+  Removed entries do not take part in admission. Adding a target adds its
+  hashes; it does not refresh any recorded hash of a kept entry. Before writing,
+  the driver also checks every retained target and configuration, so `--target`
+  cannot record a tree that violates a kept entry. The driver owns the format, provisional
+  JSON tagged with its version (`tide-seal/1`) as its trust artifact is: the
+  sealed targets, and per entry its stable ID and entry kind (interface,
+  whole, or manifest) with, per target and configuration, the content hash,
+  a content hash for each part SEAL-3 names, and the old values
+  the diagnostic compares: the signature's text for display, declared
+  authority, and each sealed manifest key's value; each clause's kind, hash,
+  and text; and the positional ID table and complete seal-time ID inventory
+  SEAL-2 compares. Each record keeps its own inventory snapshot for that
+  target and configuration, including unreferenced items. Adding another entry
+  or target does not replace a kept record's table or inventory; immutable
+  snapshots may be shared. The check reads only this format, conformance cases
+  take their seals from the writer, and `tide seal` will call the same owner.
+  The per-configuration seal-entry hash binds the complete stored record,
+  including the entry's ID, kind, and path, the target and configuration,
+  content hashes, the ID table, inventory snapshot contents, and diagnostic
+  values, using the format owner's canonical record encoding and excluding the
+  hash field itself. The reader validates that hash before using the record.
+  These are the hash sets SEAL-4 compares and approvals sign, so changing
+  auxiliary records cannot leave an entry's gated hashes unchanged. SEAL-4
+  repeats the content and ID comparisons and compares these record hashes.
+  Candidate admission compares content and IDs as SEAL-2 defines; it does not
+  regenerate the stored record from candidate source. An admitted source
+  rename therefore need not rewrite the seal.
+- **SEAL-2. What an entry fixes.** A content hash is computed per
+  configuration, after `cfg` evaluation. The entry records what each path,
+  method call, operator, and associated-type projection in the covered text
+  resolves to, with name-abstracted content and separate IDs (§11). The
+  content hash detects changed covered definitions and sharing; the ID
+  comparison below also rejects resolution changes that fail its rename test.
+  This detects shadowing while the old ID remains, and replacement by an item
+  present at seal time. The fixed inventory limits detection of later
+  replacements, as below. A referenced-item rename must pass that ID comparison
+  and preserve the content encoding, including residual-tie order (§11).
+  The standard library is hashed by toolchain version and a dependency by its
+  locked content hash, so a toolchain or lockfile change can change an entry.
+  Equal content hashes alone do not establish that names still select the same
+  items: identical nominal types can hash alike. For each content graph, the
+  seal records one table of crate-item IDs at walk positions (§11), and the
+  IDs of all crate items present when that record was sealed, reached or not,
+  after `cfg` for its target and configuration.
+  Compare the recorded and candidate tables position by position. The IDs must
+  match, except that a referenced item counts as renamed only if its old ID
+  resolves to no item in the candidate and its candidate ID is absent from
+  that record's complete seal-time inventory. An ID includes kind, so another
+  kind at the same spelling does not occupy it. The one pair of positional
+  tables must satisfy every comparison. The entry's own path stays fixed.
+  Doc comments and formatting are not hashed.
+
+  Thus changing `lookup(id: UserId)` to use an identical `OrderId` present
+  at seal time is a replacement even if `UserId` is deleted: `OrderId` is in
+  the complete inventory. If `OrderId` was added after that record was sealed,
+  deleting unsealed `UserId` and substituting identical
+  `OrderId` passes as a rename. The reader has only the fixed record and the
+  candidate; it cannot distinguish this from a fresh-destination rename.
+  An orchestrator that relies on the named item's identity seals it whole,
+  directly or among its defining module's public items (SEAL-6), fixing its
+  own path. Swapping `UserId` and `OrderId`
+  in two parameters also fails: their IDs differ at the corresponding
+  positions despite an unchanged set of IDs. An unsealed `pred` to fresh
+  `valid` rename passes unless it reorders a residual tie; unrelated additions
+  do not enter the covered graph.
+  Renaming `pred` to `valid` and reusing the old `pred` ID in the same
+  candidate is conservatively a replacement. The same base and candidate
+  sources can result from keeping `pred`, adding a copy as `valid`, redirecting
+  the clause, and editing the
+  now-unreached `pred`. Path/kind IDs and snapshots cannot distinguish these
+  histories; accepting both would admit replacement. The check preserves this
+  rejection rather than assuming a rename from equal content. The same
+  vacancy test rejects an identical fresh item shadowing a glob-imported
+  `pred` while the original `pred` still exists.
   - An *interface* entry, the default for a function or method, fixes its
     path, signature, contract use (§2.1), and contract, through §11's
     spec-closure hash, computed here for every sealed function, public or
@@ -1316,18 +1479,24 @@ and needs no solver: every check is a hash comparison.
   orchestrator writes it before sealing. Sealing a module fixes the items it
   has at seal time; a delegate may add items, except impls that apply to a
   type sealed whole.
-- **SEAL-3. The check.** The admission driver (D18) checks each crate
-  against its own `tide.seal` before rustc runs, in each configuration it
-  builds. An entry is checked in the configurations it has a hash for, so a
-  sealed `#[cfg(test)]` test does not fail the debug build. A sealed item
-  whose hash differs, or that is missing from one of those configurations,
-  is `FX0920`, and so is a build for a target the seal does not list, until
-  the orchestrator seals for it. `FX0920` is an error: the crate is not
-  admitted, so nothing behind it builds or runs. The diagnostic names the
-  parts that changed (path, signature, authority, contract, use, body,
-  definition, or manifest key) and, for a contract, the changed clauses with
-  §11's `weakened` label. There is no fix plan: the delegate restores the
-  item, or stops and reports to whoever sealed it.
+- **SEAL-3. The check.** The admission driver (D18) checks each crate against
+  its own `tide.seal` in each configuration it builds, after rustc's analysis,
+  whose resolution and types the hashes need, and before rustc writes any
+  artifact for the crate: until the check passes, nothing of the crate runs
+  but compile-time evaluation (03 RUN-1), and no metadata, trust artifact,
+  executable, or cache entry is written. A crate whose analysis fails is
+  rejected with no seal verdict. The driver snapshots `tide.seal` with the
+  sources, so its bytes are part of the cache key. An entry is checked in the
+  configurations it has a hash for, so a sealed `#[cfg(test)]` test does not
+  fail the debug build. A sealed item whose SEAL-2 comparison fails, or that
+  is missing from one of those configurations, is `FX0920`, and so is a build
+  for a target the seal does not list, until the orchestrator seals for it.
+  `FX0920` is an error: the crate is not admitted, so nothing behind it builds
+  or runs. The diagnostic names the parts that changed (path, signature,
+  authority, contract, use, body, definition, or manifest key) and, for a
+  contract, the changed clauses with §11's `weakened` label. There is no fix
+  plan: the delegate restores the item, or stops and reports to whoever sealed
+  it.
 - **SEAL-4. The seal in force, and unsealing.** A delegate can edit its own
   `tide.seal`, so `tide check` alone is advisory, as `pending_approval` is.
   `tide review <base>` and the CI gate of §11 check a candidate against the
@@ -1417,10 +1586,10 @@ $ tide seal crate::feed crate::feed::tests::times_out_when_network_drops --manif
 sealed 5 entries in tide.seal: fetch_feed, Entry, FetchError, the test, the manifest
 ```
 
-A delegate, told to add caching, gives `fetch_feed` a `cache: &Fs`
-parameter, passes one in the test, deletes the `ensures` that its cache
-can break, and adds `grants = ["unsafe"]` to the manifest. Its `tide check`
-fails before rustc runs:
+The build caller's grant ceiling includes `unsafe`. A delegate, told to add
+caching, gives `fetch_feed` a `cache: &Fs` parameter, passes one in the test,
+deletes the `ensures` that its cache can break, and adds `grants = ["unsafe"]`
+to the manifest. Its `tide check` fails before anything builds:
 
 ```text
 error[FX0920]: sealed item `feed::fetch_feed` changed
@@ -1428,7 +1597,7 @@ error[FX0920]: sealed item `feed::fetch_feed` changed
   authority  net -> net+fs  widened
   contract   - #[ensures(match &result { .. })]  weakened
 error[FX0920]: sealed item `feed::tests::times_out_when_network_drops` changed
-  body       call to `fetch_feed` changed
+  body       changed
 error[FX0920]: sealed manifest changed
   grants     + "unsafe"
   = these are fixed by tide.seal; restore them, or stop and report to whoever sealed them

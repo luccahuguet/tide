@@ -132,8 +132,8 @@ not cite is a best mapping that a case must confirm.
 | CLAUSE-3 | §1.8, 04:401 | Clauses call only authority-free fns with `Pure + Sync` arguments and `&mut` only to clause temporaries; generic code needs the bound at the definition | checker | FX0808 (defined in 04 §1.8) |
 | CLAUSE-4 | §1.8, 04:417 (also §1.2 rule 4, 04:189) | `old` snapshots are borrow-checked; non-`Copy` non-`Clone` `old` is an error; `old(e)` cannot name `result` or a bound variable; prophetic `&mut` param outside `old` is FX0803; mutated non-snapshot param in `ensures` is an error | both | FX0803 (04:439); FX0809 (defined in 04 §1.8) for the in-place parameter; the rest via the lowering's rustc errors (E0425, E0599, E0382, and E0500 in the D18 spike) |
 | CLAUSE-6 | §1.8, 04:466 | Name-resolution part: over an iterator other than `a..b`, a `for` loop's invariant cannot name the loop pattern's bindings | rustc (through the contract macros' lowering) | E0425: the head comes before `next`, so the bindings are out of scope |
-| SEAL-2 | §11.1, 04:1259 | What an interface, whole, or manifest seal entry fixes (the hash SEAL-3 compares) | checker (admission driver) | FX0920 via SEAL-3 |
-| SEAL-3 | §11.1, 04:1313 | Before rustc runs, the driver checks the crate against its own `tide.seal`; a changed or missing item, or an unlisted target, is an error and the crate is not admitted | checker (admission driver) | FX0920 |
+| SEAL-2 | §11.1, 04:1391 | What an interface, whole, or manifest seal entry fixes (content and identity, checked by SEAL-3) | checker (admission driver) | FX0920 via SEAL-3 |
+| SEAL-3 | §11.1, 04:1482 | After rustc's analysis and before any artifact is written, the driver checks the crate against its own `tide.seal`; a changed or missing item, or an unlisted target, is an error and the crate is not admitted | checker (admission driver) | FX0920 |
 
 SEAL-2 and SEAL-3 need a crate together with its `tide.seal`, which a
 one-file case cannot hold; their cases wait for the admission driver.
@@ -182,10 +182,10 @@ one-file case cannot hold; their cases wait for the admission driver.
 - CLAUSE-6 (04:460): runtime check schedule. Only its name-resolution part is a row above.
 - CLAUSE-7 (04:478): runtime violation outcome.
 - CLAUSE-8 (04:506): approval hash (review and CI tooling).
-- SEAL-1 (04:1241): `tide seal` command and file format (tooling).
-- SEAL-4 (04:1325): FX0921 from `tide review` and the CI gate, not from compilation.
-- SEAL-5 (04:1343): review output.
-- SEAL-6 (04:1347): informative limits.
+- SEAL-1 (04:1336): `tide seal` command and file format (tooling).
+- SEAL-4 (04:1500): FX0921 from `tide review` and the CI gate, not from compilation.
+- SEAL-5 (04:1518): review output.
+- SEAL-6 (04:1522): informative limits.
 - v1, excluded by tier: FFI-1 to FFI-7 (03:969-1015), RUST-1 to RUST-6 (03:1778-1812), LOCK-7 (03:1330), and 02 §7 field-borrow rules (02:561-600).
 - Non-rules: `SE-0414` (02:1335) matches the ID pattern but is a Swift proposal.
 

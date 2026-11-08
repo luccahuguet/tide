@@ -739,26 +739,26 @@ execution internally; it runs tasks on baton-passed threads.
   trusted. Hashes cover everything a spec's meaning depends on, including the
   bodies of `spec fn`s it calls.
 - **Sealed delegation boundaries** (v0). An orchestrator fixes an interface
-  and hands its implementation to delegates (bead `fx-1am`; research/13,
-  needs 2 and 3). `tide seal` writes `tide.seal`, a lock of stable IDs (D14)
-  and hashes: a function's signature, declared authority, contract use, and
+  and hands its implementation to delegates (bead `fx-1am`; research/13, needs
+  2 and 3). `tide seal` writes `tide.seal`, a lock of stable IDs (D14) and
+  hashes: a function's signature, declared authority, contract use, and
   spec-closure hash; whole items, such as tests, types, or `main`; and the
   manifest's grants, policies, and `[contracts]` table. The admission driver
-  (D18) rejects a crate whose sealed item differs from its entry, before
-  rustc runs; `tide review` and the CI gate check a candidate against the
-  base's seal, so a delegate that edits `tide.seal` gains nothing once its
-  work merges through them. Whoever writes the base changes its seal; on a
-  protected branch that takes an approval, the same records and keys as
+  (D18) rejects a crate whose sealed item differs from its entry before rustc
+  writes any artifact for it; `tide review` and the CI gate check a candidate
+  against the base's seal, so a delegate that edits `tide.seal` gains nothing
+  once its work merges through them. Whoever writes the base changes its seal;
+  on a protected branch that takes an approval, the same records and keys as
   above. Rules: `04-contracts.md` §11.1. Rejected: a `#[sealed]` attribute,
-  which cannot seal the manifest and spreads one delegation's boundary
-  across the source files delegates edit, where one lock file states it
-  whole; changes to sealed items gated by approval rather than rejected,
-  which lets a delegate's loop run on against a changed interface that
-  parallel delegates still assume; refinement-aware seals that admit a
-  stronger contract, which need v1's solver and buy little; a frozen count
-  of trust holes, a second gate on what the grants already bound and D11
-  already gates; and seals signed with orchestrator-agent keys, which would
-  add an approver class to the model above.
+  which cannot seal the manifest and spreads one delegation's boundary across
+  the source files delegates edit, where one lock file states it whole;
+  changes to sealed items gated by approval rather than rejected, which lets a
+  delegate's loop run on against a changed interface that parallel delegates
+  still assume; refinement-aware seals that admit a stronger contract, which
+  need v1's solver and buy little; a frozen count of trust holes, a second
+  gate on what the grants already bound and D11 already gates; and seals
+  signed with orchestrator-agent keys, which would add an approver class to
+  the model above.
 
 ### D12. Compilation and backends
 
@@ -891,11 +891,15 @@ lowering of Tide tasks); D18 reversed that.
   reference are separate and served on demand.
 - `tide fix` applies safe fixes and owns migrations between language
   versions.
-- Source text is canonical; the formatter is deterministic and has no
-  options. Its style is rustfmt's default style (four-space indentation,
-  100-column lines, opening braces on the same line), so formatting a
-  Rust-habit draft changes almost nothing. Definitions are content-hashed;
-  symbols have stable IDs.
+- Source text is canonical; the formatter is deterministic and has no options.
+  Its style is rustfmt's default style (four-space indentation, 100-column
+  lines, opening braces on the same line), so formatting a Rust-habit draft
+  changes almost nothing. Definitions are content-hashed; symbols have stable
+  IDs. In v0 an item's ID is its path and kind (04 §11), which serves every v0
+  consumer: a sealed item's path is fixed anyway, and content hashes abstract
+  referenced names except for 04 §11's residual-tie ordering. Rejected for v0:
+  IDs written into source, which every edit must keep and copying an item
+  duplicates, and which a delegate can move anyway.
 
 ### D15. Deterministic simulation as a first-class mode
 
@@ -979,30 +983,37 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   passes
   that std as `std` (`--extern std=`), so rustc's std injection loads it and
   the real std's paths cannot be named.
-- **Tide's checker gates every crate before rustc runs.** It owns the
-  subset, authority, `Pure`, contracts, FX diagnostics, and the trust diff.
-  It also enforces an **admission allowlist** over `core`, `alloc`, and std's
-  inherent methods, keyed on crate identity. That closes what the std swap
-  leaves open: safe hardware queries, raw pointer types and every address
-  observer, atomics created without `Tasks`, float methods, I/O methods on
-  re-exported std types such as `Path::exists`, and
+- **Tide's checker gates every crate before rustc writes any artifact for
+  it.** It owns the subset, authority, `Pure`, contracts, FX diagnostics, and
+  the trust diff. It also enforces an **admission allowlist** over `core`,
+  `alloc`, and std's inherent methods, keyed on crate identity. That closes
+  what the std swap leaves open: safe hardware queries, raw pointer types and
+  every address observer, atomics created without `Tasks`, float methods, I/O
+  methods on re-exported std types such as `Path::exists`, and
   `io::Error::last_os_error`.
 - **Checker architecture: A, then B.** (A) A `rustc_private` driver on the
-  same pinned nightly that builds the code is the authoritative admission
-  gate and the oracle; it checks rustc's own resolution, so no separate
-  equivalence argument is needed. It passes `-Zallow-features=`, so user code
-  cannot enable unstable features, and `-Zpolonius=no`, so borrows get NLL's
-  verdicts (02 ORIGIN-6). It checks resolved uses before rustc's analysis,
-  and after it a backstop checks the instances that can run (03 ADMIT-1).
-  (B) Tide's own incremental front end
-  serves D12's edit loop and is tested against A; where they disagree, A
-  decides.
+  same pinned nightly that builds the code is the authoritative admission gate
+  and the oracle; it checks rustc's own resolution, so no separate equivalence
+  argument is needed. It passes `-Zallow-features=`, so user code cannot
+  enable unstable features, and `-Zpolonius=no`, so borrows get NLL's verdicts
+  (02 ORIGIN-6). It checks resolved uses before rustc's analysis; after it, a
+  backstop checks the instances that can run (03 ADMIT-1), and the seal check
+  compares the crate with its `tide.seal` (04 SEAL-3). (B) Tide's own
+  incremental front end serves D12's edit loop and is tested against A; where
+  they disagree, A decides.
 - **The driver owns every rustc invocation.** It adds no user-controlled
   `--extern`, `-L`, `--sysroot`, `--cfg`, or semantic `-C` flags, runs no
   build scripts or proc macros for Tide crates except the toolchain's
   (imported Rust crates' build scripts run sandboxed, D13), and keeps its own
-  content-addressed cache instead of Cargo's build directory. A generated
-  `Cargo.toml` is an export for Rust consumers (v1).
+  content-addressed cache instead of Cargo's build directory. It is the one
+  reader of the package's `tide.toml`: it snapshots the manifest with the
+  sources, so its bytes are part of the cache key, rejects malformed input and
+  unknown keys, and gives every consumer the same parsed content, the grant
+  check and the seal's manifest entry (04 §11.1) among them. The package's
+  grants are the manifest's, and each must be one the trusted build caller
+  passed, so candidate source never grants itself authority; without a
+  manifest, the caller's grants apply. A generated `Cargo.toml` is an export
+  for Rust consumers (v1).
 - **rustc and LLVM are the release backend**, replacing D12's C backend and
   its Cranelift-class backend; open question 7 lapses. An interpreter is
   built only on D12's conditions.
