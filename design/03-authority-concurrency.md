@@ -395,6 +395,18 @@ N1). Test builds add the simulator behind one predictable branch.
   `==` does not. `Hash` on a reference hashes the referent. `Shared::same`
   and `std::ptr::eq` compare identity without exposing it; Tide's `ptr::eq`
   takes `&T` where core's takes raw pointers, so it needs no grant.
+  Under the grant, D3's lossless rule counts an address as a `usize`:
+  `p as usize`, `p as u64`, `f as usize`, and `n as *const T` for `n` a
+  `usize` or a narrower unsigned integer are accepted, while `p as u32`,
+  `p as isize`, `f as u32`, and `n as *const T` for a `u64`, `u128`, or
+  signed `n` are `FX0301`, spelled with `addr()` and D3's conversions:
+  `u32::try_from(p.addr())`, `usize::try_from(n)? as *const T`, or
+  `n.cast_unsigned() as *const T` for `n: isize`. A cast between raw
+  pointer types, or from a reference to one, keeps the address
+  and is accepted, even when it drops a slice's length, as `cast()` does.
+  A lossless cast says nothing about provenance: a pointer cast from an
+  integer may be dereferenced only as Rust's exposed-provenance rules
+  allow.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
   deterministic though unspecified. Maps keyed by untrusted input take a key
   from `Rand`: `HashMap::with_hasher(RandomState::from_rand(&rand))`.

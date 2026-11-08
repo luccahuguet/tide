@@ -258,7 +258,8 @@ strictly wider signed, `bool` to any integer, `u8` to `char`, `char` to
 `u32` and wider, integer to float when exact (`u16 as f32`, `u32 as f64`),
 `f32 as f64`, and a fieldless enum to an integer holding every
 discriminant. `usize`/`isize` count as 32 to 64 bits: `u32 as usize` and
-`usize as u64`, not `u64 as usize` (provisional). Lossy `as` is `FX0301`:
+`usize as u64`, not `u64 as usize` (provisional). An address (11) counts
+as a `usize`. Lossy `as` is `FX0301`:
 
 | Rust | Tide |
 | --- | --- |
@@ -439,8 +440,7 @@ at compile time by `const fn`. Build a value that needs run-time work in
 (but unspecified). For untrusted keys use
 `HashMap::with_hasher(RandomState::from_rand(&rand))`. `Arc` has no
 `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, or `into_inner`,
-because their results depend on other tasks; `make_mut` stays. Creating an
-`Arc` takes `&Tasks` (7.4); creating an `Rc` or `Cell` does not.
+because their results depend on other tasks; `make_mut` stays.
 
 ### 6.5 Write-only sinks are not authority
 
@@ -553,10 +553,10 @@ proposes adding the parameter (companion 14.2).
 
 The checker admits only listed `core`, `alloc`, and std inherent items;
 everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
-raw pointer types and address observers (`addr()`, `{:p}`) without the
-`unsafe` grant; `core::sync::atomic`; `OnceLock`, `LazyLock`; float
-observers and math methods (4.3); I/O methods on re-exported std types
-(`Path::exists`, `metadata`; use `fs`); and `io::Error::last_os_error`.
+addresses without the `unsafe` grant (11); `core::sync::atomic`;
+`OnceLock`, `LazyLock`; float observers and math methods (4.3); I/O
+methods on re-exported std types (`Path::exists`, `metadata`; use `fs`);
+and `io::Error::last_os_error`.
 
 ### 6.10 Patterns
 
@@ -954,7 +954,7 @@ needs human approval (11), except adding one where there was none.
 | Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
 | A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
 | `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant (`FX0520` without it) |
-| Raw pointers | `*const T`, `*mut T`, casts to or from them, `{:p}`, comparing, hashing, or printing them | `unsafe` grant (`FX0520` without it) |
+| Addresses | `*const T`, `*mut T`, `{:p}`; a function pointer's integer casts, ordering, hashing, `Debug` | `unsafe` grant (`FX0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
 authority (12.4), contracts, trust holes, and grants. Changes that need a human

@@ -316,7 +316,11 @@ borrow-related error (provisional: one writer, eleven tasks).
   same build or still checked at run time; a `pub` precondition that a deleted
   check depends on stays checked at function entry.
 - `as` is accepted only where it is lossless; lossy conversions use
-  `TryFrom`, `truncate()`, or explicit float rounding methods.
+  `TryFrom`, `truncate()`, or explicit float rounding methods. Under the
+  `unsafe` grant an address, a raw or function pointer's, counts as a
+  `usize` (03 GLOBAL-4), so `p as u64` is lossless and `p as u32` is not:
+  the grant admits unsafe code, not silent truncation, and a truncated
+  address is the same bug as a truncated length.
 - Floats are IEEE 754. Every operation that reads a float's sign or bits
   treats any NaN as one canonical NaN, and math functions use one libm on
   every target, so observable results match across targets while arithmetic

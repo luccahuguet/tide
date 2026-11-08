@@ -3,3 +3,7 @@
 pub fn address(x: &u8) -> usize {
     (x as *const u8).addr() //~ FX0520
 }
+
+pub fn rebuild(n: usize) {
+    let _ = n as *const u8; //~ FX0520
+}

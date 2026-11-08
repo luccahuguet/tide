@@ -96,7 +96,7 @@ not cite is a best mapping that a case must confirm.
 | GLOBAL-1 | §2.2, 03:299 | A `static` must be `Sync + Pure + 'static`; no `static mut` in safe code | both | FX0502; E0277 for `Sync` |
 | GLOBAL-2 | §2.2, 03:302 | No lazy statics: a static's initializer is evaluated at compile time by `const fn` | both | rustc E0015; `LazyLock`/`OnceLock` FX0520; `lazy_static!` FX0502 |
 | GLOBAL-3 | §2.2, 03:307 | Safe code has no thread-locals or task-locals | checker | `thread_local!` FX0502 |
-| GLOBAL-4 | §2.2, 03:310 | Raw pointer types, pointer-to-integer casts, `addr`, `{:p}`, and a function pointer's address observers only under the `unsafe` grant | checker | FX0520 (via ADMIT-1; ref:956) |
+| GLOBAL-4 | §2.2, 03:310 | Raw pointer types, pointer-to-integer casts, `addr`, `{:p}`, and a function pointer's address observers only under the `unsafe` grant; under it, an address counts as a `usize` in D3's lossless rule | checker | FX0520 (via ADMIT-1; ref:956); FX0301 for a lossy address cast |
 | GLOBAL-6 | §2.2, 03:320 | `Arc` and `sync::Weak` are not `Pure`, take `&Tasks` to create, and lack count observers | both | `Pure` part: needing rule's code or FX0517; FX0505; E0599 / E0061 |
 | SINK-8 | §2.4, 03:424 | `dbg!` is an error in release and CI profiles; `print!` in a library and printing in a `with` closure are lints | checker | FX0507 (error); FX0508, FX0607 (lints) |
 | SINK-10 | §2.4, 03:435 | `Secret<T>` has no `Debug`/`Display`, so formatting one is a type error | rustc | E0277 |
