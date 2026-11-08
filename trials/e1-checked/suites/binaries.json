@@ -1,0 +1,330 @@
+{
+  "B1": [
+    {
+      "args": [
+        "two",
+        "a.txt",
+        "b.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "a.txt:3:three two\nb.txt:2:two\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [
+        "-i",
+        "two",
+        "a.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "a.txt:2:Two\na.txt:3:three two\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [
+        "zzz",
+        "a.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "",
+      "code": 1
+    },
+    {
+      "args": [
+        "",
+        "a.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "a.txt:1:one\na.txt:2:Two\na.txt:3:three two\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [
+        "two",
+        "missing.txt",
+        "a.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "a.txt:3:three two\n",
+      "stderr_prefix": "findtext: missing.txt: ",
+      "code": 2
+    },
+    {
+      "args": [
+        "two"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: findtext",
+      "code": 2
+    },
+    {
+      "args": [
+        "-x",
+        "two",
+        "a.txt"
+      ],
+      "stdin": "",
+      "files": {
+        "a.txt": "one\nTwo\nthree two\n",
+        "b.txt": "nothing\r\ntwo\r\n"
+      },
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: findtext",
+      "code": 2
+    }
+  ],
+  "B2": [
+    {
+      "args": [
+        "--col",
+        "2"
+      ],
+      "stdin": "a,1\nb,-5\n\nc,10\n",
+      "files": {},
+      "env": {},
+      "stdout": "count=3 sum=6 min=-5 max=10\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [
+        "--sep",
+        ";",
+        "--col",
+        "1"
+      ],
+      "stdin": "4;x\n2;y\n",
+      "files": {},
+      "env": {},
+      "stdout": "count=2 sum=6 min=2 max=4\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "count=0\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [],
+      "stdin": "1\nx\n",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "colstats: line 2: ",
+      "code": 1
+    },
+    {
+      "args": [],
+      "stdin": "9223372036854775807\n1\n",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "colstats: overflow",
+      "code": 1
+    },
+    {
+      "args": [
+        "--col",
+        "0"
+      ],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: colstats",
+      "code": 2
+    },
+    {
+      "args": [
+        "--col"
+      ],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: colstats",
+      "code": 2
+    },
+    {
+      "args": [
+        "--sep",
+        "ab"
+      ],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: colstats",
+      "code": 2
+    }
+  ],
+  "B5": [
+    {
+      "args": [
+        "A",
+        "B"
+      ],
+      "stdin": "",
+      "files": {},
+      "env": {
+        "A": "1"
+      },
+      "stdout": "A=1\nB is unset\n",
+      "stderr_prefix": "",
+      "code": 1
+    },
+    {
+      "args": [
+        "--defaults",
+        "d.env",
+        "A",
+        "B",
+        "C"
+      ],
+      "stdin": "",
+      "files": {
+        "d.env": "B=two\n# c\nA=zzz\n\nC=x=y\n"
+      },
+      "env": {
+        "A": "1"
+      },
+      "stdout": "A=1\nB=two\nC=x=y\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [
+        "--defaults",
+        "nope.env",
+        "A"
+      ],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "envreport: nope.env: ",
+      "code": 2
+    },
+    {
+      "args": [
+        "--defaults",
+        "d.env",
+        "A"
+      ],
+      "stdin": "",
+      "files": {
+        "d.env": "oops\n"
+      },
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "envreport: d.env:1: ",
+      "code": 2
+    },
+    {
+      "args": [],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: envreport",
+      "code": 2
+    }
+  ],
+  "B8": [
+    {
+      "args": [],
+      "stdin": "{\"user\":\"bo\",\"bytes\":5,\"op\":\"read\"}\n{\"user\":\"al\",\"bytes\":7,\"op\":\"write\",\"extra\":1}\n{\"user\":\"bo\",\"bytes\":3,\"op\":\"write\"}\n",
+      "files": {},
+      "env": {},
+      "stdout": "al read=0 write=7\nbo read=5 write=3\n",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [],
+      "stdin": "{\"user\":\"bo\",\"bytes\":5,\"op\":\"read\"}\n{bad\n{\"user\":\"al\",\"bytes\":7,\"op\":\"write\",\"extra\":1}\n{\"user\":\"bo\",\"bytes\":3,\"op\":\"write\"}\n",
+      "files": {},
+      "env": {},
+      "stdout": "al read=0 write=7\nbo read=5 write=3\n",
+      "stderr_prefix": "usage: line 2: ",
+      "code": 1
+    },
+    {
+      "args": [],
+      "stdin": "{\"user\":\"a\",\"bytes\":1,\"op\":\"delete\"}\n",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: line 1: ",
+      "code": 1
+    },
+    {
+      "args": [],
+      "stdin": "{\"user\":\"a\",\"bytes\":-1,\"op\":\"read\"}\n",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: line 1: ",
+      "code": 1
+    },
+    {
+      "args": [],
+      "stdin": "",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "",
+      "code": 0
+    },
+    {
+      "args": [],
+      "stdin": "{\"user\":\"a\",\"bytes\":18446744073709551615,\"op\":\"read\"}\n{\"user\":\"a\",\"bytes\":18446744073709551615,\"op\":\"read\"}\n",
+      "files": {},
+      "env": {},
+      "stdout": "",
+      "stderr_prefix": "usage: overflow",
+      "code": 1
+    }
+  ]
+}
