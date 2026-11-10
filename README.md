@@ -307,9 +307,9 @@ Cited evidence behind the decisions, in [research/](research/):
   set architecture, write specifications, and review; every change to
   `main` except a generated Starcompass import update (no review) or a
   planning-only one (no Codex pass) gets a Codex supervisor pass beside
-  its first Opus review and a narrow Codex re-check of any fixes once the
-  Opus reviews come clean, and only findings in the tiers a change edits, or earlier
-  ones, block it.
+  its first Opus review, each reviewer re-checks only the fixes to its own
+  findings, and only findings in the tiers a change edits, or earlier ones,
+  block it.
 - [BR_WORKFLOW.md](BR_WORKFLOW.md): how `br` tracks work and which `.beads/`
   files are committed.
 - Open work lives in beads (`.beads/issues.jsonl`), managed with `br`.
