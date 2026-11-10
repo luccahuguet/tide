@@ -23,22 +23,24 @@ Tide std in `rustc/`, injected as `std`, and pass `-Zallow-features=`, as the
 admission driver does (ADMIT-2); the case's rustc errors are the union of the
 two. It then checks the case the same two ways with the admission driver,
 `crates/tide-admit`, against the stub std built by the pinned nightly, passing
-`--tide-grant=unsafe` for `//@ grants: unsafe`. The driver's `FX` codes are
-the ones `tide-admit --tide-print-codes` lists, such as `FX0520`; its errors in
-those codes are the union of the two runs. It needs an x86_64 host
+`--tide-grant=unsafe` for `//@ grants: unsafe` and `--tide-profile=release`
+for `//@ profile: release`. The driver's `FX` codes are
+the ones `tide-admit --tide-print-codes` lists, such as `FX0520`; its diagnostics in
+those codes, with their severity, are the union of the two runs. Library-only lints apply
+to the library build, not its executable test harness. It needs an x86_64 host
 (`authority/admit_hardware` names `core::arch::x86_64`), stable rustc and cargo
 1.96, the nightly that the root `rust-toolchain.toml` pins with `rustc-dev`,
 and the crates in `rustc/std/Cargo.lock`, offline. It prints one line per
 case:
 
-- `PASS`: rustc's errors match the case's rustc marks, the driver's errors
+- `PASS`: rustc's errors match the case's rustc marks, the driver's diagnostics
   match its marks in the driver's codes, and the case has no other `FX`
   marks.
 - `AWAITS CHECKER`: both match, and `FX` marks in other codes remain, which
   only later slices of the checker produce; the line lists those codes.
 - `FAIL`: rustc's errors differ from the rustc marks (rustc's output
-  follows, indented); the driver's errors in its codes differ from those
-  marks, or the driver accepts a case that rustc or those marks reject, or
+  follows, indented); the driver's diagnostics in its codes differ from those
+  marks (including warning versus error), or the driver accepts a case that rustc or error marks reject, or
   rejects one that neither does, or it crashes (exits with a status other
   than 0 or 1, or panics; the driver's output follows); or the case
   is malformed (no rule line, an ID not in `rules.md`, a malformed mark, an
@@ -101,10 +103,15 @@ pub fn nest(tasks: &Tasks) {
   reports a code in place of rustc's (an ambient call or a path that is not
   admitted), the rustc mark records what plain rustc says. A case with no
   marks must be accepted.
+- A checker warning uses `//~ WARN FX####`. `WARN` makes every following
+  code on that line a warning; error marks, if any, precede `WARN` (for
+  example `//~ FX0507 WARN FX0607`). Warning marks require the code at
+  warning severity without rejection unless the case also has error or rustc marks.
 - rustc's errors must equal the rustc marks as a set of (line, code) pairs.
   An error on an unmarked line, an uncoded error where no `error` mark is,
   or an error in another file fails the case. A case whose only marks are
-  `FX` must pass rustc. Warnings are ignored.
+  `FX` must pass rustc. Rustc warnings and driver warnings without an FX code
+  are ignored; driver FX warnings must match their warning marks.
 
 The shape follows rustc's own UI tests (`//@` directives, `//~` marks) and
 the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
@@ -185,6 +192,7 @@ ID in its section:
 | `UNSAFE` | 03 §2.6 | what the `unsafe` grant gates (RUN-4's hole 1) |
 | `AFREE` | 03 §3.2, §3.5 | `#[pure]`, `const fn`, memoization |
 | `PAR` | 03 §8.1 | `join` and parallel closures (`PAR-5` on) |
+| `CHANNEL` | 03 §6.4 | channel diagnostics |
 | `FORM` | 04 §1.2 | clause grammar |
 
 `PURE` goes to 02 §9 because 02 is the definition the checker implements

@@ -61,7 +61,7 @@ fail() { printf 'FAIL  %s: %s\n' "$name" "$1"; status=1; }
 
 check() { # check <file>
   local file="$1" rules bad marks want fx driven awaits kind mode log="" code=0 got
-  local grant=() dlog="" dcode=0 dgot c
+  local grant=() profile=() dlog="" dcode=0 dgot errors c
   name="${file#"$CASES"/}"
   [[ -f "$file" ]] || { fail "no such case"; return; }
   rules="$(rules_of "$file")"
@@ -70,19 +70,23 @@ check() { # check <file>
   [[ -z "$bad" ]] || { fail "rule IDs not in rules.md: $bad"; return; }
   bad="$(awk 'NR > 1 && /^\/\/@/ && !/^\/\/@ (grants: unsafe|profile: release)$/ { printf "%d ", NR }' "$file")"
   [[ -z "$bad" ]] || { fail "unknown '//@' lines: $bad"; return; }
-  # Marks: `//~ CODE ...` ends a line; a code is E####, `error` (uncoded), or FX####.
+  # WARN switches the remaining FX marks on a line from errors to warnings.
   marks="$(awk '{ i = index($0, "//~"); if (!i) next
       n = split(substr($0, i + 3), c, " "); if (!n) print "bad " NR ":(empty)"
-      for (k = 1; k <= n; k++)
-        print (c[k] ~ /^(E[0-9][0-9][0-9][0-9]|error)$/ ? "want " : \
-               c[k] ~ /^FX[0-9][0-9][0-9][0-9]$/ ? "fx " : "bad ") NR ":" c[k] }' "$file")"
+      severity = "error"
+      for (k = 1; k <= n; k++) {
+        if (c[k] == "WARN" && severity == "error" && k < n) { severity = "warning"; continue }
+        if (c[k] ~ /^FX[0-9][0-9][0-9][0-9]$/) print "fx " NR ":" severity ":" c[k]
+        else print (severity == "error" && c[k] ~ /^(E[0-9][0-9][0-9][0-9]|error)$/ ? "want " : "bad ") NR ":" c[k]
+      } }' "$file")"
   bad="$(sed -n 's/^bad //p' <<<"$marks" | tr '\n' ' ')"
   [[ -z "$bad" ]] || { fail "malformed marks: $bad"; return; }
   want="$(sed -n 's/^want //p' <<<"$marks" | sort -u)"
   fx="$(sed -n 's/^fx //p' <<<"$marks" | sort -u)"
-  # The FX marks the driver decides, as line:code, and the codes it does not.
+  # The FX marks the driver decides, as line:severity:code, and the codes it does not.
   driven="$(grep -E ":($CODES)\$" <<<"$fx")"
-  awaits="$(grep -vE ":($CODES)\$" <<<"$fx" | sed -n 's/^[0-9]*://p' | sort -u | tr '\n' ' ')"
+  errors="$(grep ':error:' <<<"$driven")"
+  awaits="$(grep -vE ":($CODES)\$" <<<"$fx" | sed -n 's/^[0-9]*:[^:]*://p' | sort -u | tr '\n' ' ')"
   kind=lib
   grep -qw '^fn main' "$file" && kind=bin
   # -Zallow-features= as the admission driver passes it (ADMIT-2); stable rustc
@@ -109,10 +113,11 @@ check() { # check <file>
   # The driver passes rustc -Zallow-features= itself (ADMIT-2) and takes the
   # case's grant as a flag.
   grep -qx '//@ grants: unsafe' "$file" && grant=(--tide-grant=unsafe)
+  grep -qx '//@ profile: release' "$file" && profile=(--tide-profile=release)
   # Exit 1 is a rejection; any other failure, or a panic, is the driver's crash.
   for mode in "--crate-type=$kind" --test; do
     c=0
-    dlog+="$("$DRIVER" "${grant[@]}" --edition 2024 --tide-std "$ADMIT_RLIB" "${ADMIT_DEPS[@]}" "$mode" \
+    dlog+="$("$DRIVER" "${grant[@]}" "${profile[@]}" --crate-type="$kind" --edition 2024 --tide-std "$ADMIT_RLIB" "${ADMIT_DEPS[@]}" "$mode" \
         --crate-name "$(basename "$file" .rs | tr -c 'a-zA-Z0-9_\n' _)" --emit metadata \
         --out-dir "$OUT/admit" --error-format=short "$file" 2>&1)"$'\n' || c=$?
     (( c > dcode )) && dcode=$c
@@ -122,14 +127,14 @@ check() { # check <file>
     sed '/^$/d; s/^/      /' <<<"$dlog"
     return
   fi
-  # Each driver diagnostic as line:code in the case, path:line:code elsewhere.
-  dgot="$(awk -v f="$file" 'match($0, /:[0-9]+:[0-9]+: error: FX[0-9][0-9][0-9][0-9]:/) {
+  # Each driver diagnostic retains its severity, including warnings in rejected cases.
+  dgot="$(awk -v f="$file" 'match($0, /:[0-9]+:[0-9]+: (error|warning): FX[0-9][0-9][0-9][0-9]:/) {
       path = substr($0, 1, RSTART - 1); split(substr($0, RSTART + 1, RLENGTH - 2), p, ":")
-      print (path == f ? "" : path ":") p[1] ":" substr(p[4], 2) }' <<<"$dlog" | sort -u)"
+      print (path == f ? "" : path ":") p[1] ":" substr(p[3], 2) ":" substr(p[4], 2) }' <<<"$dlog" | sort -u)"
   # The driver must report exactly the marks it decides, and reject exactly the
   # cases that rustc or those marks reject.
-  if [[ "$driven" != "$dgot" || -n "$want$driven" && $dcode == 0 || -z "$want$driven" && $dcode != 0 ]]; then
-    fail "driver errors [${dgot//$'\n'/ }], marked [${driven//$'\n'/ }], exit $dcode"
+  if [[ "$driven" != "$dgot" || -n "$want$errors" && $dcode == 0 || -z "$want$errors" && $dcode != 0 ]]; then
+    fail "driver diagnostics [${dgot//$'\n'/ }], marked [${driven//$'\n'/ }], exit $dcode"
     sed '/^$/d; s/^/      /' <<<"$dlog"
   elif [[ -n "$awaits" ]]; then
     printf 'AWAITS CHECKER  %s: %s\n' "$name" "${awaits% }"

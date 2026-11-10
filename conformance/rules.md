@@ -2,7 +2,7 @@
 
 Every v0-core normative rule in `design/02-memory.md`,
 `design/03-authority-concurrency.md`, and `design/04-contracts.md` that makes
-rustc or the Tide checker accept or reject a program at compile time, taken
+rustc or the Tide checker accept, reject, or warn on a program at compile time, taken
 at `a3b0177`. The chapters own the rules; this file lists them so cases can
 name them, and `run.sh` reads the IDs from the first column. `run.sh --trace`
 gives each ID's cases.
@@ -109,6 +109,7 @@ not cite is a best mapping that a case must confirm.
 | AFREE-1 | §3.2, 03:795 | `#[pure]` asserts authority-freedom for every instantiation the bounds allow | checker | FX0511 |
 | AFREE-2 | §3.5 table, 03:852 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters (rustc accepts both); type parameters bounded at the definition | checker | FX0518 |
 | = SEND-3 | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
+| CHANNEL-1 | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker | FX0608 (lint) |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
 | LOCK-4 | §6.5, 03:1317 | `f` must be `Pure`; printing inside it is a lint | checker | FX0603; FX0607 (lint) |
 | LOCK-5 | §6.5, 03:1323 | `with`/`with2`/`with_all` return `Result<R, LockError>` | rustc | type errors (ignoring the result is FX0702, ref:803) |
@@ -166,7 +167,6 @@ one-file case cannot hold; their cases wait for the admission driver.
 - TASK-6 (03:1231): runtime shielding.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
-- Unbounded `channel` in a library (03:1259): lint FX0608, a warning, which a case cannot mark (marks record errors).
 - LOCK-2 (03:1309): runtime `Aliased` check.
 - LOCK-3 (03:1312): runtime acquisition order.
 - LOCK-6 (03:1325): runtime poisoning.

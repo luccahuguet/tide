@@ -488,6 +488,8 @@ pub mod sync {
             unimplemented!()
         }
         pub fn same(a: &Shared<T>, b: &Shared<T>) -> bool { unimplemented!() }
+        pub fn with_all<R>(cells: &[Shared<T>], f: impl FnOnce(&mut [&mut T]) -> R + Pure)
+            -> Result<R, LockError> { unimplemented!() }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -543,7 +545,11 @@ pub mod sync {
         pub fn sync_channel<T: Send>(bound: usize, tasks: &Tasks) -> (SyncSender<T>, Receiver<T>) {
             unimplemented!()
         }
+        pub fn channel<T: Send>(tasks: &Tasks) -> (Sender<T>, Receiver<T>) {
+            unimplemented!()
+        }
 
+        pub struct Sender<T>(PhantomData<std::sync::mpsc::Sender<T>>);
         pub struct SyncSender<T>(PhantomData<std::sync::mpsc::SyncSender<T>>);
         pub struct Receiver<T>(PhantomData<std::sync::mpsc::Receiver<T>>);
         impl<T> SyncSender<T> {

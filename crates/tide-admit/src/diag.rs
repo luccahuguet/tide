@@ -1,6 +1,6 @@
-//! Tide diagnostics. Each is a rustc error whose message starts with its FX code and a colon
-//! (`FX0520: ...`), at the span in the user's code that caused it, so rustc's own renderer
-//! and `--error-format` apply to it.
+//! Tide diagnostics. Each is a rustc error or warning whose message starts with its FX code
+//! and a colon (`FX0520: ...`), at the span in the user's code that caused it, so rustc's own
+//! renderer and `--error-format` apply to it.
 
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::ty::TyCtxt;
@@ -14,6 +14,10 @@ pub enum Code {
     Fx0502,
     /// A call of, or other reference to, the binary's `main` (ROOT-5).
     Fx0506,
+    /// `dbg!` in a release build (SINK-8).
+    Fx0507,
+    /// Printing to stdout from a library (SINK-8).
+    Fx0508,
     /// A `#[pure]` function whose parameter types are not all `Pure` (AFREE-1).
     Fx0511,
     /// A binary's `main` without `#[tide::main]` (ROOT-1).
@@ -29,6 +33,10 @@ pub enum Code {
     Fx0603,
     /// A `Shared` payload that is not `Pure` (LOCK-1).
     Fx0606,
+    /// Printing inside a `Shared::with` closure (LOCK-4).
+    Fx0607,
+    /// An unbounded channel in a library (reference 7.3).
+    Fx0608,
     /// A parallel closure that is not `Pure`, `Send`, and, when shared, `Fn` and `Sync`
     /// (PAR-5, PAR-6).
     Fx0610,
@@ -51,6 +59,8 @@ impl Code {
         Code::Fx0101,
         Code::Fx0502,
         Code::Fx0506,
+        Code::Fx0507,
+        Code::Fx0508,
         Code::Fx0511,
         Code::Fx0512,
         Code::Fx0517,
@@ -58,6 +68,8 @@ impl Code {
         Code::Fx0520,
         Code::Fx0603,
         Code::Fx0606,
+        Code::Fx0607,
+        Code::Fx0608,
         Code::Fx0610,
         Code::Fx0611,
         Code::Fx0612,
@@ -71,6 +83,8 @@ impl Code {
             Code::Fx0101 => "FX0101",
             Code::Fx0502 => "FX0502",
             Code::Fx0506 => "FX0506",
+            Code::Fx0507 => "FX0507",
+            Code::Fx0508 => "FX0508",
             Code::Fx0511 => "FX0511",
             Code::Fx0512 => "FX0512",
             Code::Fx0517 => "FX0517",
@@ -78,6 +92,8 @@ impl Code {
             Code::Fx0520 => "FX0520",
             Code::Fx0603 => "FX0603",
             Code::Fx0606 => "FX0606",
+            Code::Fx0607 => "FX0607",
+            Code::Fx0608 => "FX0608",
             Code::Fx0610 => "FX0610",
             Code::Fx0611 => "FX0611",
             Code::Fx0612 => "FX0612",
@@ -85,6 +101,10 @@ impl Code {
             Code::Fx0911 => "FX0911",
             Code::Fx0915 => "FX0915",
         }
+    }
+
+    fn is_lint(self) -> bool {
+        matches!(self, Code::Fx0508 | Code::Fx0607 | Code::Fx0608)
     }
 }
 
@@ -145,6 +165,16 @@ impl Diagnostics {
         self.found
             .dedup_by(|b, a| (a.span.lo(), a.code) == (b.span.lo(), b.code));
         for d in self.found {
+            if d.code.is_lint() {
+                let mut diag = tcx
+                    .dcx()
+                    .struct_span_warn(d.span, format!("{}: {}", d.code.as_str(), d.message));
+                if let Some(help) = d.help {
+                    diag.help(help);
+                }
+                diag.emit();
+                continue;
+            }
             let mut diag = tcx
                 .dcx()
                 .struct_span_err(d.span, format!("{}: {}", d.code.as_str(), d.message));

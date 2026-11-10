@@ -1429,7 +1429,7 @@ Channels follow Rust's `std::sync::mpsc`, except that creating one takes
 bounded; `Sender` is `Clone`; a `Receiver` is iterable. `send` on a full
 `sync_channel`, `recv`, and `recv_deadline(t)` are checkpoints;
 `recv_deadline` returns `Timeout` at `t`. Payloads must be `Send`
-(`02-memory.md` SEND-3). An unbounded `channel` in a library is lint
+(`02-memory.md` SEND-3). **CHANNEL-1.** An unbounded `channel` in a library is lint
 `FX0608`.
 
 Rust's `RecvError` is a unit struct and `SendError(T)` gives no reason, so

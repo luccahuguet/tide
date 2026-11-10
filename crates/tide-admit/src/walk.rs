@@ -47,6 +47,7 @@ use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
 mod mono;
+mod sinks;
 pub use mono::check_mono_items;
 
 /// What the package's manifest grants it (03 RUN-4).
@@ -1346,6 +1347,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             match (data.kind, data.macro_def_id) {
                 (ExpnKind::Macro(kind, _), Some(mac)) => {
                     self.use_def(mac, data.call_site);
+                    if kind == MacroKind::Bang {
+                        self.sink_expansion(mac, data.call_site);
+                    }
                     // UNSAFE-1: `#[trusted_pure]` is a trust hole.
                     if kind == MacroKind::Attr
                         && !self.grants.unsafe_
@@ -1803,6 +1807,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
 
     fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
         if let Some(t) = self.typeck_of(e.hir_id) {
+            self.lint_sink_expr(e, t);
             // Method calls, overloaded operators, and indexing.
             if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
                 self.use_def(def_id, e.span);
