@@ -1,7 +1,7 @@
 # References
 
 This file lists the languages, projects, papers, and measurements Tide draws
-on, with the decisions (D0–D17 in `design/01-design.md`) each one informed. It
+on, with the decisions (D0–D18 in `design/01-design.md`) each one informed. It
 is a bibliography, not the language reference, which is `design/reference.md`.
 Each report in `research/` holds the full citations and context; reports
 written before the rename call the language Ferox.
@@ -71,6 +71,11 @@ in that column.
 | [lust](https://github.com/t3dotgg/lust-lang) (Theo Browne) | Evidence that Tide's edit-loop target is reachable on a checked subset of valid Rust: a warm daemon rechecks one edited body 60–250x faster than `cargo check` (self-reported); cold checks are about 2.5x | Not decided: whether Tide should itself be a checked Rust subset (`research/12` open question 7). Its `tcc` development backend, whose binaries run slower than Cargo debug builds | D12; thesis | 12 |
 | [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift) | The development backend: about 10x faster compiles than LLVM for about 14% slower code; embeds in a Rust compiler | – | D12 | 03, 09, perf |
 | [TPDE](https://arxiv.org/pdf/2505.22610) | Data showing a faster backend alone buys about 17% end to end | The backend as the main speed lever | D12 | 03 |
+| [mbx (Mr. Boxington)](https://github.com/jdx/mr-boxington) | Prior art for the driver's artifact cache and for fleet builds, nothing adopted yet: keys from path-normalized inputs, restore by reflink or hard link, in-flight deduplication, a machine-wide compiler budget. Six parallel jobs took 54.7 s with 31 compilers at peak against 1m7s with 172 (self-reported) | Not decided. Its own edit-loop rows show a whole-crate cache does not beat Cargo's incremental rebuild | D12, D18 | 03, 13 |
+| [kache](https://docs.rs/crate/kache) | Prior art for the same cache: a `RUSTC_WRAPPER` with BLAKE3 keys and a content-addressed blob store. A second Firefox worktree added about 3 GB instead of 16.6 GB on a reflink filesystem (self-reported, one run) | Not decided. Zero-copy restores need reflinks; elsewhere the store is a second copy | D12, D18 | 03, 13 |
+| [Cargo cross-workspace cache](https://goals.rust-lang.org/2026/cargo-cross-workspace-cache.html) (2026 project goal) | Design reference for blob-store layout and garbage collection; its work on absolute paths in rustc output helps any rustc-backed cache | Direct reuse by Tide is unestablished: the proposal has [shared storage separate from `build-dir`](https://github.com/rust-lang/cargo/issues/5931#issuecomment-5498506395), its minimum design excludes path crates, and the recorded work remains design and prototypes; Tide still needs its admission policy | D12, D18 | 03 |
+| [wild](https://github.com/wild-linker/wild) | Link-time data for the edit-to-tests target: about 0.6 s for a Zed debug binary where LLD takes about eight times as long (self-reported) | Counting on incremental linking, which is "not yet implemented"; the README lists Linux ELF and Wasm, while [Mach-O benchmarks](https://github.com/wild-linker/wild/blob/main/benchmarks/mac-mini-m4.md) remain preliminary and omit unsupported features | D12 | 03 |
+| [ovnfs](https://github.com/stencil-hq/ovnfs) | Lessons only: per-agent copy-on-write checkouts from one daemon; a checkout needs a point-in-time base, since an overlay over a live tree gave torn reads ([oh-my-pi #4627](https://github.com/can1357/oh-my-pi/issues/4627)) | A view that is "best effort, not a frozen snapshot"; file isolation as a sandbox, which it says it is not | – | 13 |
 | [Salsa / rust-analyzer](https://rust-analyzer.github.io/blog/2020/07/20/three-architectures-for-responsive-ide.html) | Query engine with early cutoff and durability; laziness; impls in known modules | Macros that create items | D4, D6, D12 | 03, 08 |
 | [Polonius](https://blog.rust-lang.org/2026/08/04/enabling-polonius-alpha-on-nightly) | A later, compatible relaxation of borrow precision | Polonius precision in v0 (2–3x worst-case cost) | D2 | 02, 03, perf |
 | [facet](https://github.com/facet-rs/facet) / [serde](https://github.com/serde-rs/serde/issues/2538) | facet: read-only `Shape` reflection. serde: derive-generated monomorphic code, the model for `Encode`/`Decode` | Reflection-driven serialization by default; proc macros; precompiled derive binaries | D6, D13 | 08, perf |
@@ -260,3 +265,6 @@ Claims that rest on summaries or unverified prior knowledge are flagged in
 place: "unverified" in 02, "secondary" in 03, 06, 08, and 10, "Not verified
 here" in 04, and `[background]` in 07; 05 and 09 name the threads left thin.
 Treat flagged claims as secondary or background evidence, not as findings.
+Section 11 of 03 and "Tooling prior art" in 13 were added on 2026-11-09 from
+primary sources fetched that day; figures a project measured on itself are
+marked "self-reported" there and in the table above.

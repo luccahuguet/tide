@@ -12,7 +12,10 @@ delegated web search of practitioner write-ups supplied "Practitioner
 reports" (three primary sources returned 403 and are quoted through the
 secondary source named); a second search of papers, benchmarks, and incident
 reports supplied "Empirical evidence"; most 2026 items there are arXiv preprints, and figures
-marked *secondary* were seen only in write-ups about a study.
+marked *secondary* were seen only in write-ups about a study. "Tooling
+prior art" was added on 2026-11-09 (bead `fx-zmr`); its sources were fetched
+directly that day, and a figure a project measured on itself is marked
+self-reported.
 
 ---
 
@@ -329,20 +332,116 @@ unproven in practice.
 
 ---
 
+## Tooling prior art (cited, added 2026-11-09)
+
+### T1. One compiler budget for the whole machine
+
+- mbx is a build cache for Cargo projects with a machine-wide scheduler.
+  Every compiler it starts takes a permit from one pool shared by all
+  builds that use the same cache directory; CPU and predicted memory are
+  budgeted separately; a compilation identical to one already running waits
+  for it and restores its result; a dead process's permits return to the
+  pool [T02]. Its README advises giving each build its own target
+  directory, to avoid Cargo's directory lock (P5) [T01].
+- Six overlapping check, Clippy, and test-compile jobs on one CI runner,
+  from an empty store (self-reported; three trials, medians; a 15-crate
+  workspace): 2m12s in turn; 1m7s in parallel with no scheduler, peaking at
+  172 compilers; 54.7 s with the scheduler, peaking at 31 of 32 permits.
+  Cache hits over the batch rose from 23 to 3,550, because the scheduler
+  holds identical compilations until the first finishes. A second project
+  gave 50.7 s, 48.2 s with 162 compilers, and 39.2 s with 32 [T03].
+- kache, which mbx credits as its design's inspiration [T01], has the same
+  two parts: a miss "joins a machine-wide flight, takes a memory-weighted
+  permit and a per-key lock" [T04]. Its vendor names "fleets of agents that
+  each want their own checkout" as a use it builds for, and reports that a
+  second Firefox worktree on a reflink filesystem added about 3 GB of new
+  data, against 16.6 GB for its build directory on paper (self-reported, one
+  run) [T05]. In v2.0.0, `kache test-runner` takes test slots from the
+  compiler scheduler's pool and sets `RUST_TEST_THREADS` to the slots it
+  holds when no thread count was supplied. On Unix, `kache init` enables
+  this unless passed `--no-shell`; the runner can time out and run without
+  slots [T14].
+- `research/03-compile-speed.md` §11 has both tools' cache design, their
+  other numbers, and their limits.
+
+**Inference.** Need 10 combines concurrent cache reuse with one machine-wide
+compiler budget. A cache that concurrent agents can share removes repeated
+work. It does not stop N agents from each starting a full set of compilers: without
+a scheduler, six jobs ran 162 to 172 compilers on a machine with 32
+permits. A fleet needs one budget for the machine, held by whatever starts
+the compilers. Under D18 that is Tide's driver, which owns every rustc
+invocation. Kache's test runner is prior art for extending that budget to
+tests [T14]. How Tide's tests and simulations draw on it remains open.
+
+### T2. Copy-on-write checkouts, and an overlay over a live tree
+
+- ovnfs gives each agent an "isolated, copy-on-write" view of a folder
+  without copying it. One daemon serves every checkout as a folder of a
+  single mount: FUSE on Linux, NFSv3 on macOS, SMB or WinFsp on Windows,
+  with no root. Writes go to the checkout's own layer; `diff` shows them and
+  a three-way `apply` merges them back. Build outputs and ignored files show
+  the live folder until the checkout writes them [T06]. The repository was
+  four days old when fetched (created 2026-11-05, v0.3.0 on 2026-11-08).
+- Its stated limits: it "isolates files, not processes: it is not a
+  sandbox" [T06], and "the view is best effort, not a frozen snapshot: a
+  source file the user rewrites while the agent is reading it can show
+  either version" [T07].
+- Its figures are self-reported, with no hardware named: opening a checkout
+  of a 49,000-file repository takes "about a second" and `git status` inside
+  it "under three" [T08]. The repository has a script that compares Cargo
+  build times in a git worktree, an ovnfs checkout, and a copy-on-write
+  clone, but publishes no results [T09], so what a FUSE mount costs a build
+  is not known.
+- The failure that motivates snapshots is documented in oh-my-pi issue
+  #4627 (5 July 2026). That agent's OverlayFS backend used the live,
+  writable repository as the overlay's lower layer. By the reporter's
+  analysis, copy-up reads the lower file in chunks without a lock, so a
+  parent's concurrent write left the child a file that was part old and
+  part new, with no error; the reporter reproduced it in 500 of 500 runs on
+  fuse-overlayfs (the reporter's figure). Git's `index.lock` did not exclude
+  across layers either, so parent and child could both hold it [T10]. The
+  kernel documentation says that if the
+  underlying filesystem changes while it is part of a mounted overlay, "the
+  behavior of the overlay is undefined" [T11].
+- ovnfs did not replace that backend. The maintainer closed the issue the
+  same day ("I don't really see this as an issue"), and the pull request
+  removing OverlayFS was closed unmerged [T10]; the backend is still listed
+  in oh-my-pi's README [T13]. Since version 18.17.0
+  (2026-11-06) oh-my-pi gives isolated subagents ovnfs checkouts when it
+  finds the ovnfs binary and the backend setting is `auto` [T12].
+
+**Inference.** For need 3 a per-agent checkout needs a point-in-time source
+base. ovnfs's default live-tree view lacks a frozen-snapshot guarantee
+[T07], while `ovnfs new --rev REV` starts from a revision's tracked files
+[T08]. The same live-tree hazard reaches a build cache under a fleet. A
+parent agent may edit a file while a child's build reads it, so a content-addressed
+cache stores a wrong artifact under a right-looking key unless the key is
+computed from the bytes the compiler read. D18's driver snapshots the
+manifest with the sources, and [RUN-2](../design/03-authority-concurrency.md)
+serves rustc's source reads through the driver's file loader, where the
+driver can bind the key to the bytes it serves. A cache outside the tree
+also makes the checkout mechanism irrelevant to build
+reuse, provided keys do not depend on the checkout's path (research/03
+§11). Restoring by reflink or hard link needs the store and the target on
+one filesystem, and a FUSE checkout is a different one, so outputs restored
+into such a checkout would be copies; this was not tested.
+
+---
+
 ## Needs, ranked, and where Tide stands
 
 | # | Need | Evidence | Tide today | Gap |
 | --- | --- | --- | --- | --- |
 | 1 | Review that fits human attention | X1, P3, E1 | The trust diff (D11) reports what changed in what code may do: authority, contracts, `unsafe` | E3 must show it shrinks review of agent PRs; nothing yet presents it per PR |
 | 2 | Tests and specs the agent cannot weaken | X6, P2, E1 | `#[protected]` tests (D14); contracts in the trust surface (D11) | Signatures, contracts, and grants are not protected; a weakened `ensures` is not flagged as such |
-| 3 | Parallel work without collisions | X2, P5, E7 | Interface artifacts; a body edit never rechecks dependents (D12); content-hashed definitions and stable IDs (D14); no globals (D7) | No first-class delegation boundary: "this interface is sealed, implement behind it" lives only in prompts |
+| 3 | Parallel work without collisions | X2, P5, E7, T2 | Interface artifacts; a body edit never rechecks dependents (D12); content-hashed definitions and stable IDs (D14); no globals (D7) | No first-class delegation boundary: "this interface is sealed, implement behind it" lives only in prompts |
 | 4 | Validation per change, off the shared queue | X3, X8, P6, E6 | Nothing runs at build time; capabilities bound what tests can touch (D7, D13); simulated time (D15) | "Safe to run an unreviewed branch's tests without a VM" is implied, not stated or tested |
 | 5 | A fast, strict check loop | X7, P1, P9, E4 | Targets of tens of milliseconds per edit (D12) | Unproven until a checker exists; lust shows the target is reachable on a Rust subset (research/12) |
 | 6 | Low cost per spawn | X4, E2 | A 25,000-token reference budget (D14); locality (D7) | The reference is paid again by every fresh subagent; no measure of tokens per task |
 | 7 | State that survives compaction | X5, P4, E3 | Seeds and replay commands (D15), snapshot hashes, stable diagnostic codes (D14), rule IDs (D0) make state compact to hand off | None at the language level |
 | 8 | Stable suites | X6, P9, E5 | Deterministic simulation: authority-routed nondeterminism cannot flake, and virtual time makes results independent of machine load (D15) | Undersold: the pitch never says that tests do not flake under 20 parallel agents |
 | 9 | Bounded runs and attributable failures | P7, P8 | The simulator counts steps (D15); every failure carries a seed and a replay command (D14) | Promise that every `tide` command is bounded in time and output, and that a failure names the change and seed that caused it |
-| 10 | Builds that many agents can share | P5 | Content-hashed definitions and cached interface artifacts (D12, D14) | State that the build cache is safe for concurrent agents across worktrees, unlike Cargo's `target/` lock |
+| 10 | Builds that many agents can share | P5, T1 | Content-hashed definitions and cached interface artifacts (D12, D14) | State that the build cache is safe for concurrent agents across worktrees, unlike Cargo's `target/` lock, and give the driver one compiler budget for the machine (T1) |
 
 **Inference, on need 6.** A new language charges a context tax on every
 spawn. A fleet that starts thousands of subagents pays Tide's reference
@@ -479,6 +578,23 @@ Empirical sources (delegated web search, 2026-10-19):
 - [E33] MAST, Mar 2025: https://arxiv.org/abs/2503.13657
 - [E34] AgenticFlict, Apr 2026: https://arxiv.org/abs/2604.03551
 - [E35] Xu et al., Jul 2026: https://arxiv.org/abs/2607.04697
+
+Tooling sources (fetched directly, 2026-11-09):
+
+- [T01] mbx (Mr. Boxington) README: https://github.com/jdx/mr-boxington
+- [T02] mbx, how it works (machine-wide scheduling): https://mr-boxington.jdx.dev/how-it-works
+- [T03] mbx benchmarks (self-reported): https://mr-boxington.jdx.dev/benchmarks
+- [T04] kache architecture: https://kunobi.ninja/docs/kache/how-it-works/architecture
+- [T05] kache storage report (self-reported): https://kunobi.ninja/blog/kache-storage-worktrees
+- [T06] ovnfs README: https://github.com/stencil-hq/ovnfs
+- [T07] ovnfs limitations: https://github.com/stencil-hq/ovnfs/blob/main/docs/limitations.md
+- [T08] ovnfs checkouts: https://github.com/stencil-hq/ovnfs/blob/main/docs/checkouts.md
+- [T09] ovnfs development (benchmark script): https://github.com/stencil-hq/ovnfs/blob/main/docs/development.md
+- [T10] oh-my-pi issue #4627, 5 Jul 2026: https://github.com/can1357/oh-my-pi/issues/4627
+- [T11] Linux kernel, overlay filesystem: https://docs.kernel.org/filesystems/overlayfs.html
+- [T12] oh-my-pi coding-agent changelog, 18.17.0: https://github.com/can1357/oh-my-pi/blob/main/packages/coding-agent/CHANGELOG.md
+- [T13] oh-my-pi README (pi-iso backends): https://github.com/can1357/oh-my-pi
+- [T14] kache v2.0.0 configuration, test runner: https://github.com/kunobi-ninja/kache/blob/v2.0.0/docs/getting-started/configuration.mdx#test-runner
 
 Practitioner sources (delegated web search, 2026-10-19):
 
