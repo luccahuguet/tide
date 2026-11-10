@@ -370,3 +370,65 @@ fn link_mode_keeps_the_source_loader_boundary() {
         0
     );
 }
+
+/// std::io's core (bead fx-ecb) passes the driver and runs: an in-memory reader through
+/// `BufReader` and `BufRead::lines`, writes through `Write` and `BufWriter`, `Cursor` and
+/// `SeekFrom`, an `io::Error` from an `ErrorKind` through `?`, and `is_cancelled()`.
+#[test]
+fn io_core_builds_and_runs() {
+    let source = r#"
+use std::io::{self, BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
+
+fn numbered(input: impl Read, out: &mut impl Write) -> io::Result<usize> {
+    let mut words = 0;
+    for (i, line) in BufReader::new(input).lines().enumerate() {
+        let line = line?;
+        words += line.split_whitespace().count();
+        writeln!(out, "{}: {line}", i + 1)?;
+    }
+    out.flush()?;
+    Ok(words)
+}
+
+fn find(found: bool) -> io::Result<()> {
+    if found { Ok(()) } else { Err(io::ErrorKind::NotFound.into()) }
+}
+
+#[tide::main]
+fn main() -> io::Result<()> {
+    let mut out = Vec::new();
+    let words = numbered(&b"alpha beta\r\ngamma\n"[..], &mut out)?;
+    print!("{}", String::from_utf8(out).unwrap());
+
+    let mut cursor = Cursor::new(Vec::new());
+    {
+        let mut w = BufWriter::new(&mut cursor);
+        w.write_all(b"xyz")?;
+        w.flush()?;
+    }
+    cursor.seek(SeekFrom::Start(1))?;
+    let mut rest = String::new();
+    cursor.read_to_string(&mut rest)?;
+
+    let missing = find(false).unwrap_err();
+    let cancelled = io::Error::from(io::ErrorKind::Cancelled);
+    let custom = io::Error::new(io::ErrorKind::InvalidData, "bad header");
+    println!(
+        "words={words} rest={rest} missing={missing} {:?} cancelled={} {} custom={custom}",
+        missing.kind(),
+        missing.is_cancelled(),
+        cancelled.is_cancelled(),
+    );
+    Ok(())
+}
+"#;
+    let dir = package("io-core", source);
+    let out = checked(&mut driver(&dir));
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "1: alpha beta\n2: gamma\nwords=3 rest=yz missing=entity not found NotFound \
+         cancelled=false true custom=bad header\n"
+    );
+}

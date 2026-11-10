@@ -40,7 +40,9 @@ arrays, tuples, `Option`, `Result`, `Vec`, `Box`, `Rc`, `Arc` (created with
 `SystemTime`, `std::{cmp, ops, mem, fmt, convert}`, and the `std::io` traits
 and types (`Read`, `Write`, `Seek`, `BufRead`, `BufReader`, `BufWriter`,
 `io::Error`, `io::ErrorKind`, `io::Result`). What changes is how you
-*obtain* I/O objects (6) and the default hasher (6.4). Testing is Rust's
+*obtain* I/O objects (6) and the default hasher (6.4). Dropping a
+`BufWriter` discards unflushed bytes; `Lines` ends after a cancellation
+error (03 §1.1). Testing is Rust's
 (`#[test]`, `#[should_panic(expected = "..")]`, `#[cfg(test)] mod tests`,
 the `assert!` family); a test may take parameters (10.2).
 

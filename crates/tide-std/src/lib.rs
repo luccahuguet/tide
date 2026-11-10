@@ -11,12 +11,15 @@
 //! - the capability types `Root` carries, as identities: `Fs`, `Net`, `Clock`, `Rand`, `Env`,
 //!   `Stdin`, `Proc`, and `Tasks`;
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
-//!   prelude's `Error` trait and parameterless Rust `#[test]`.
+//!   prelude's `Error` trait and parameterless Rust `#[test]`;
+//! - `std::io`'s core (bead `fx-ecb`): `Read`, `Write`, `Seek`, `BufRead`, `BufReader`,
+//!   `BufWriter`, `io::Error` with `ErrorKind::Cancelled`, and `io::Result`, over in-memory
+//!   readers and writers (`io/mod.rs`).
 //!
 //! Not provided yet: every capability operation and attenuation of reference 6.1 (tasks,
 //! files, network, time, randomness, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
-//! `io`'s and `time`'s Rust items (`Read`, `Write`, `io::Error`, `Duration`, ...);
+//! `time`'s Rust items (`Duration`, ...);
 //! collections, `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; property tests and
 //! `#[sim_test]`; the contract attributes and the `Error`, `Encode`, and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
@@ -69,12 +72,7 @@ pub mod env {
     );
 }
 
-pub mod io {
-    crate::capability!(
-        /// Authority to read standard input. It has no operations yet.
-        Stdin
-    );
-}
+pub mod io;
 
 pub mod process {
     pub use std::process::{ExitCode, Termination};

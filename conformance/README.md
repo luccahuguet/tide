@@ -116,9 +116,14 @@ owns runtime behavior. It includes Tide's std's crate-root items
 (`crates/tide-std/src/root.rs`: `Root`, `Pure`, `tide::main`, the sinks and
 `panic!`, the runtime entry, and Rust's re-exports) and declares the
 capability types with that file's `capability!`, so those items share one
-definition at the same paths; the admission driver's rules (`policy.rs`,
-`pure.rs`) key them alike. Production's parameterless Rust `#[test]` and the
-stub's oracle attribute share a compile-time fixture,
+definition at the same paths. Its I/O core also includes
+`crates/tide-std/src/io/shared.rs`, sharing the traits, errors, adapters and
+buffered types with production. The supported I/O API follows Rust with
+`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
+`Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+The admission driver's rules (`policy.rs`, `pure.rs`) key the shared items
+alike. Production's parameterless Rust `#[test]` and the stub's oracle
+attribute share a compile-time fixture,
 `authority/root_executable.rs`, also built and run against production std by
 the driver's `tests/build.rs`; property generation remains unavailable in
 production. A case that uses only the shared items is checked against Tide's

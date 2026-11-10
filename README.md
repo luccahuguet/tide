@@ -159,7 +159,11 @@ has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities without operations, `Pure`, and the `out` and `err` sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`), and parameterless Rust `#[test]`;
-its crate docs list what it does not provide yet. The conformance runner injects
+the `std::io` core over in-memory readers and writers is shared with conformance
+through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
+`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
+`Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+The crate docs list what it does not provide yet. The conformance runner injects
 a stub std, sharing those definitions except its oracle `#[test]` attribute,
 whose supported parameterless form has a shared conformance/production fixture. The
 installed pinned toolchain is trusted and treated as immutable, as are the host

@@ -88,7 +88,6 @@ const NOT_PURE: &[(&str, Carries)] = &[
     ("tide_std::process::ChildStderr", PROC),
     ("tide_std::process::Stdio", PROC),
     ("tide_std::process::Signals", PROC),
-    ("tide_std::io::Lines", HIDDEN),
     ("tide_std::log::LogConfig", HIDDEN),
     ("tide_std::sim::World", HIDDEN),
     ("tide_std::sim::Faults", HIDDEN),

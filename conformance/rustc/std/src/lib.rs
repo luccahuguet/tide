@@ -5,16 +5,16 @@
 //! std=`), as spikes/d18 does. It is a compile-time fixture: Tide's std
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
-//! runtime entry, and Rust's re-exports) and declares the capability types
-//! with its `capability!`, so those have one definition and the same paths in
-//! both. Beyond them it defines only the items and methods the trial's
-//! programs and the cases use, with every field, variant, derive, and `Error`
-//! impl the reference gives them (other impls as needed), with the signatures
-//! `design/reference.md` and 02/03 give, and re-exports Rust's items where the
-//! reference keeps their API. Each of its own bodies is `unimplemented!()`, so
-//! it decides type and borrow verdicts only, except `with_hasher`, which builds
-//! the value so that a `static` evaluates. Lines marked `GUESS` fix a signature
-//! no design document fixes.
+//! runtime entry, and Rust's re-exports) and `std::io`'s core (`io/shared.rs`),
+//! and declares the capability types with its `capability!`, so those have one
+//! definition and the same paths in both. Beyond them it defines only the
+//! items and methods the trial's programs and the cases use, with every field,
+//! variant, derive, and `Error` impl the reference gives them (other impls as
+//! needed), with the signatures `design/reference.md` and 02/03 give, and
+//! re-exports Rust's items where the reference keeps their API. The remaining
+//! stub methods use `unimplemented!()`, except `with_hasher`, which builds the
+//! value so that a `static` evaluates. The corpus decides type and borrow
+//! verdicts only. Lines marked `GUESS` fix a signature no design document fixes.
 
 #![allow(unused_variables, dead_code)]
 
@@ -51,7 +51,8 @@ pub mod process {
 }
 
 pub mod io {
-    pub use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
+    // Tide's std's io core, included as `root.rs` is, so each item has one definition.
+    include!("../../../../crates/tide-std/src/io/shared.rs");
 
     crate::capability!(Stdin);
     /// Reference 6.1: `io::Stdin`'s methods with `&self` receivers.
@@ -300,7 +301,7 @@ pub mod collections {
 }
 
 pub mod fs {
-    use std::io;
+    use crate::io;
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
 
@@ -407,7 +408,7 @@ pub mod net {
         Reset,
         Dns,
         Status(u16),
-        Io(std::io::Error),
+        Io(crate::io::Error),
     }
     impl NetError {
         pub fn is_cancelled(&self) -> bool { unimplemented!() }

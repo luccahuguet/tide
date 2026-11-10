@@ -102,11 +102,8 @@ const MAX_OBLIGATION_DEPTH: usize = 64;
 
 const GRANT: &str = "needs the package's `unsafe` grant";
 
-/// `io::Error::new` and `io::Error::other`, by `Crates::key`.
-const IO_ERROR_NEW: &[&str] = &[
-    "alloc::io::error::<impl core::io::error::Error>::new",
-    "alloc::io::error::<impl core::io::error::Error>::other",
-];
+/// `io::Error::new` and `io::Error::other`, Tide's std's own (03 §1.1), by `Crates::key`.
+const IO_ERROR_NEW: &[&str] = &["tide_std::io::Error::new", "tide_std::io::Error::other"];
 
 struct Walk<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -559,14 +556,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             self.forged(made, span);
         }
         let (for_closures, for_others) = match role {
-            Role::TideStd => pure::needs(&key),
-            Role::Alloc if IO_ERROR_NEW.contains(&key.as_str()) => {
+            Role::TideStd if IO_ERROR_NEW.contains(&key.as_str()) => {
                 let into = tcx.get_diagnostic_item(sym::Into);
                 if let Some(&tr) = clauses.iter().find(|t| Some(t.def_id) == into) {
                     self.io_error_payload(tr, span);
                 }
                 (Need::Bound, Need::Bound)
             }
+            Role::TideStd => pure::needs(&key),
             _ => (Need::Bound, Need::Bound),
         };
         let lang = tcx.lang_items();

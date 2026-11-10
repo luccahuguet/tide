@@ -149,9 +149,9 @@ Notes:
   spreads over `Stdin`, `io::Read`, and `IsTerminal`. `Stdin` and `&Stdin`
   also implement `io::Read`, as in Rust. No call is ambiguous, because
   inherent methods win, but an `io::Read` import used only for these calls
-  is unused (`FX0913`, safe fix). `lines()` ends after yielding a
-  cancellation error, so `stdin.lines().flatten()` cannot spin in a
-  cancelled scope.
+  is unused (`FX0913`, safe fix). Like `io::Lines`, `lines()` ends after
+  yielding a cancellation error, so `stdin.lines().flatten()` cannot spin
+  in a cancelled scope.
 - **Network errors.** `NetError` has `Timeout`, `Cancelled`, `Denied` (a
   host outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
   response), and `Io(io::Error)`. `is_transient()` is true for `Timeout`,
@@ -180,6 +180,20 @@ Notes:
   for a read; TASK-3). It is `Send + Sync + Pure`, implements `Debug`,
   `Display`, and `Error`, and, as `IntoInnerError` does, `From<BufError> for
   io::Error`, so `?` into an `io::Result` drops the buffer.
+- **`std::io`'s own types.** `io::Error`, `io::ErrorKind`, `io::Result`, the
+  `Read`, `Write`, `Seek`, and `BufRead` traits with their adapters,
+  `BufReader`, `BufWriter`, and `IntoInnerError` are Tide std's own types
+  following Rust's API with `BufWriter<W: Sized>`; its Drop discards pending
+  bytes without I/O (TASK-6). `Cursor` and `SeekFrom` are Rust's. Rust's
+  `ErrorKind` cannot gain `Cancelled`, and its nearest kind, `Interrupted`,
+  is one that `read_exact`, `read_to_end`, and `write_all` retry, which
+  under level-triggered cancellation would never end. So `ErrorKind` is
+  Tide's, with Rust's kinds and `Cancelled`, which no provided method
+  retries, and `io::Error`, whose `is_cancelled()` tests that kind, and the
+  traits that return it are Tide's too. `Lines`, `Split`, and `Bytes` end
+  after yielding a cancellation error. `io::Error::new` and `other` keep
+  Rust's signatures, so ADMIT-1's payload rule (`02-memory.md` §9) applies
+  to them unchanged.
 - **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
   value. Authority is spent at seeding; drawing from a `Pcg64` is
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.

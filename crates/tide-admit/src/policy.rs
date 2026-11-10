@@ -138,6 +138,11 @@ pub const RULES: &[Rule] = &[
     deny("core::macros::builtin::include*", BUILD_READ),
     deny("core::macros::builtin::env", BUILD_READ),
     deny("core::macros::builtin::option_env", BUILD_READ),
+    // ---- std::io: Tide's std owns `io::Error`, `ErrorKind`, and the traits (03 §1.1), which
+    // are admitted as its own items, and re-exports Rust's `Cursor` and `SeekFrom`.
+    deny("tide_std::io::Error::last_os_error", OS_ERROR),
+    allow("core::io::cursor::Cursor::*"),
+    allow("core::io::seek::SeekFrom::*"),
     // ---- core
     allow("core::alloc::Allocator"),
     allow("core::any::*"),
@@ -165,7 +170,6 @@ pub const RULES: &[Rule] = &[
     allow("core::iter::*"),
     allow("core::macros::*"), // `assert!`, `matches!`, `write!`, `format_args!`, derives
     allow("core::marker::*"),
-    allow("core::io::*"),  // `io::Error` and `io::ErrorKind`
     allow("core::mem::*"), // `zeroed` is an `unsafe` fn, which needs the grant
     allow("core::num::*"), // integer methods: `checked_*`, `wrapping_*`, `saturating_*`, ...
     allow("core::ops::*"),
@@ -183,7 +187,6 @@ pub const RULES: &[Rule] = &[
     allow("alloc::collections::*"),
     allow("alloc::fmt::*"),
     allow("alloc::intrinsics::write_box_via_move"), // `vec!` expansions
-    allow("alloc::io::*"), // `io::Error::new` and `io::Error::other` (their `Pure` rule is FX0517)
     allow("alloc::macros::*"),
     allow("alloc::rc::*"),
     allow("alloc::slice::*"),
@@ -204,11 +207,6 @@ pub const RULES: &[Rule] = &[
     deny("std::path::absolute", CWD),
     allow("std::path::*"),
     allow("std::ffi::os_str::*"), // `OsStr` and `OsString` do no I/O (03 §1.1)
-    deny(
-        "std::io::error::<impl core::io::error::Error>::last_os_error",
-        OS_ERROR,
-    ),
-    allow("std::io::error::<impl core::io::error::Error>::from_raw_os_error"),
     // What `main` may return (reference 6.2); `ExitCode::from(u8)` is a `From` impl.
     allow("std::process::ExitCode::SUCCESS"),
     allow("std::process::ExitCode::FAILURE"),
