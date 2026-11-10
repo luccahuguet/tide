@@ -31,7 +31,8 @@ or `.agent-protocols.exceptions.json`, then render from the pinned source.
 
 ### Local exceptions
 
-No local exceptions.
+- `AP-PLAN-001` in the 'no shared files' test for running issues at once, in Tide under a coordinator (overlay, Parallel work). Two beads with no dependency may run at once although both edit a file, when they edit different parts of it (sections, table rows, modules, tests) and it is not a single-holder file. They still land one at a time. The coordinator rebases the later bead; its implementer resolves any textual conflict in its worktree before review. That rebase counts as a change since the frozen candidate, so this exception requires the later bead's reviewers to re-check what the rebase changed: Most ready Tide beads edit a few registry-like files (tide-std's crate root, the conformance stub std, tide-admit's build tests, conformance/rules.md) or separate sections of one design chapter. The file-level test would run them in sequence and leave agent places idle during single-reviewer rounds. On 2026-11-07 fx-xrx, fx-aw6, fx-kw8.9 and fx-zr3 overlapped on such files; those that rebased landed with clean rebase checks.
+  Approved by lucca (owner) on 2026-11-09; review condition: Review after five landings under it, and at once if a rebase over a shared file leads to a blocking finding or a reverted landing. It ends when the imported AP-PLAN-001 no longer tests shared files.
 
 ## Canonical protocols
 
@@ -356,3 +357,43 @@ AP-PLAN-001, and AP-SESSION-001; AP-SESSION-001's budgets still apply.
   each attempt failed, or with the scope choice and a recommended answer;
   run `br update <id> --status blocked`, adding `--add-label owner` when
   only the owner can unblock it; and end the run. Never wait for an answer.
+
+### Parallel work
+
+Tide has no standing fronts: no session owns an area of the repository. The
+coordinator is the session the owner names, else the one that started first.
+These rules add to AP-COORDINATOR-001 and AP-PLAN-001 (decision `fx-hbs`,
+2026-11-09):
+
+- Agents: besides the coordinator, at most four working agents run at once.
+  Implementers, reviewers, and research agents all count. When the coordinator
+  runs in Eon, it launches them as interactive Opus or Codex (`gpt-6.1-sol`)
+  CLIs in panes of its tab. Subagents and background review passes count
+  toward the four.
+- Beads: a free place goes to the in-flight bead nearest landing before a
+  new bead starts.
+- Sessions: `scripts/autorun.sh` stays serial and does not run while a
+  coordinator has beads in flight. Any other Tide session asks the
+  coordinator to claim a bead for it.
+- Writes: only the coordinator writes to the main checkout, to `main`, and
+  through `br`. A worker changes only its bead's worktree and never
+  `.beads/`, reads beads with `br --no-db`, and ends at a candidate and a
+  report file, which the coordinator records on the bead.
+- Landing: the coordinator rebases a candidate onto `main` between review
+  rounds, never during one, and reruns every check whose inputs the rebase
+  changed, so the tree that lands is the tree that was checked. After each
+  fast-forward the coordinator commits the ledger.
+- Shared files: no exception covers the single-holder files, which one
+  in-flight bead holds at a time: `design/reference.md` with the companion's
+  count of it, whose holder spends D14's 25,000-token budget and recounts on
+  its rebased candidate; and `GOVERNANCE.md`, `.agent-protocols.local.md`,
+  `.agent-protocols.exceptions.json`, and the files rendered from them.
+- Heavy runs: full suites (`cargo test --workspace` and `conformance/run.sh`) use
+  `~/.cache/eon-agents/eon-overseer/heavy.sh`; Tide holds at most one slot at
+  a time, and the coordinator runs full suites one after another, avoiding
+  booked quiet slots. Any other whole-workspace build or compiling trial/spike
+  script also goes through `heavy.sh`. Focused single-crate checks may run
+  outside `heavy.sh` under `nice -n 19` with `CARGO_BUILD_JOBS=4`, one at
+  a time, never while `~/.cache/eon-agents/eon-overseer/quiet-until` marks an
+  active quiet window. A timed run asks eon-overseer for a quiet slot. eon-overseer owns
+  `heavy.sh`'s policy files; Tide sessions never edit them.

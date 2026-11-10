@@ -329,6 +329,8 @@ Cited evidence behind the decisions, in [research/](research/):
   every 10th session of each run, and when it stops with no work left, it
   runs the `correct` skill in a session of its own and logs the beads it
   filed and its cost; those beads stay uncommitted in `.beads/`.
+  It does not run while a coordinator has beads in flight (AGENTS.md,
+  Parallel work).
   `scripts/autorun-test.sh` tests it offline with a stub agent.
 - `scripts/handoff-guard.sh` is a Claude Code Stop hook for attended
   sessions: under 350k tokens of context, with a pickable bead ready, it

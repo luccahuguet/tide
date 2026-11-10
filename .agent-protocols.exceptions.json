@@ -1,4 +1,13 @@
 {
   "schema": 1,
-  "exceptions": []
+  "exceptions": [
+    {
+      "approved_at": "2026-11-09",
+      "approved_by": "lucca (owner)",
+      "protocol": "AP-PLAN-001",
+      "reason": "Most ready Tide beads edit a few registry-like files (tide-std's crate root, the conformance stub std, tide-admit's build tests, conformance/rules.md) or separate sections of one design chapter. The file-level test would run them in sequence and leave agent places idle during single-reviewer rounds. On 2026-11-07 fx-xrx, fx-aw6, fx-kw8.9 and fx-zr3 overlapped on such files; those that rebased landed with clean rebase checks.",
+      "review_condition": "Review after five landings under it, and at once if a rebase over a shared file leads to a blocking finding or a reverted landing. It ends when the imported AP-PLAN-001 no longer tests shared files.",
+      "scope": "the 'no shared files' test for running issues at once, in Tide under a coordinator (overlay, Parallel work). Two beads with no dependency may run at once although both edit a file, when they edit different parts of it (sections, table rows, modules, tests) and it is not a single-holder file. They still land one at a time. The coordinator rebases the later bead; its implementer resolves any textual conflict in its worktree before review. That rebase counts as a change since the frozen candidate, so this exception requires the later bead's reviewers to re-check what the rebase changed"
+    }
+  ]
 }
