@@ -67,6 +67,8 @@ locked crates are missing, the one-time network setup remedy is:
 cargo +1.96.0 fetch --locked --manifest-path trials/e1-checked/rust/Cargo.toml
 ```
 
+Tide setup likewise vendors the root `Cargo.lock` offline into `target/e1-checked/tide-vendor-<lock hash prefix>` and builds with source replacement; if missing, run `cargo +nightly-2026-08-09 fetch --locked` once from the repository root.
+
 The dependency identity fx-ic2 records under protocol §5 is the full SHA-256
 of `rust/Cargo.lock`; its first 16 hex characters select the generated cache.
 Cargo verifies vendored files on locked builds. No third-party source is

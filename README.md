@@ -127,24 +127,31 @@ artifact pairs. rustc's codegen and link temporaries stay in private cache stagi
 host tools may use their own temporary paths. The driver never executes either
 output. For reviewed demo code:
 
-```
-TIDE_MACROS_DIR="$(
-  cargo build --offline -p tide_std --message-format=json |
-    grep -o '"filenames":\[[^]]*\]' | grep -o '"[^"]*/libtide_macros[^"]*\.so"' |
-    tr -d '"' | while IFS= read -r lib; do dirname "$lib"; done
-)"
+```bash
+mapfile -t TIDE_LIBRARIES < <(
+  cargo build --offline --locked -p tide_std --message-format=json |
+    grep -o '"filenames":\[[^]]*\]' |
+    grep -o '"[^"]*\.\(rlib\|so\|dylib\|dll\)"' | tr -d '"'
+)
+TIDE_DEP_ARGS=()
+for lib in "${TIDE_LIBRARIES[@]}"; do
+  TIDE_DEP_ARGS+=(--tide-dep-dir "$(dirname "$lib")")
+  if [[ "$lib" == */libtide_std.rlib ]]; then TIDE_STD="$lib"; fi
+done
 target/debug/tide-admit --crate-type=bin --emit=link --crate-name=hello \
-  --tide-std target/debug/libtide_std.rlib --tide-dep-dir "$TIDE_MACROS_DIR" \
+  --tide-std "$TIDE_STD" "${TIDE_DEP_ARGS[@]}" \
   --out-dir target/demo path/to/demo/src/main.rs
 target/demo/hello
 target/debug/tide-admit --test --emit=link --crate-name=hello \
-  --tide-std target/debug/libtide_std.rlib --tide-dep-dir "$TIDE_MACROS_DIR" \
+  --tide-std "$TIDE_STD" "${TIDE_DEP_ARGS[@]}" \
   --out-dir target/demo-tests path/to/demo/src/lib.rs
 target/demo-tests/hello-test
 ```
 
-`TIDE_MACROS_DIR` is the directory of `libtide_macros` in Cargo's
-`compiler-artifact` message's `filenames`, independent of Cargo's build layout.
+In Bash, `TIDE_LIBRARIES` collects every library filename from Cargo's
+`compiler-artifact` messages. `TIDE_STD` selects the std artifact and
+`TIDE_DEP_ARGS` passes each library's directory (including macros and libm)
+with `--tide-dep-dir`, independent of Cargo's build layout.
 
 Execution is a separate trusted caller action. `--test` builds Rust's ordinary
 harness for parameterless `#[test]` functions, without property generation,
@@ -178,7 +185,13 @@ through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
 `std::collections` keeps Rust's API, with fixed-key `HashMap`/`HashSet` and
-`Rand`-seeded hashing. The crate docs list what it does not provide yet.
+`Rand`-seeded hashing.
+The shared `std::float::{bits, min, max, total_cmp}` observers canonicalize NaNs
+and order -0.0 below +0.0. `std::math` replaces the banned inherent math methods
+for `f32` and `f64`, using pinned `libm` 0.2.16 with `force-soft-floats` on
+every supported target; non-SSE2 x86 is rejected because x87 native arithmetic
+does not meet D3. The functions document their deterministic compositions.
+The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std, sharing those definitions except its oracle `#[test]` attribute,
 whose supported parameterless form has a shared conformance/production fixture. The

@@ -13,6 +13,8 @@
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
+//! - canonical float observers (`float`) and deterministic math (`math`), generic over
+//!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
 //!   prelude's `Error` trait and parameterless Rust `#[test]`;
 //! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
@@ -33,7 +35,7 @@
 //! time, random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! `time`'s Rust items (`Duration`, ...);
-//! `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; property tests and
+//! `sync`, `par`, `arena`, `ptr`, and `sim`; property tests and
 //! `#[sim_test]`; the contract attributes and the `Error`, `Encode`, and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
@@ -87,6 +89,11 @@ pub mod env {
 }
 
 pub mod io;
+
+/// Canonical float observers (reference §4.3).
+pub mod float;
+/// Target-independent math (reference §4.3).
+pub mod math;
 
 pub mod process {
     pub use std::process::{ExitCode, Termination};

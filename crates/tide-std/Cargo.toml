@@ -6,4 +6,6 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+# D3: one software libm on every target, including when features are unified.
+libm = { version = "=0.2.16", default-features = false, features = ["force-soft-floats"] }
 tide-macros = { path = "../tide-macros" }

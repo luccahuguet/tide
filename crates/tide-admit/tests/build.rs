@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 
+#[path = "../../tide-std/tests/support/mod.rs"]
+mod support;
+
 const HELLO: &str = include_str!("../../../conformance/cases/authority/root_executable.rs");
 
 fn checked(command: &mut Command) -> Output {
@@ -20,45 +23,7 @@ fn std_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("build/std");
-        std::fs::create_dir_all(&dir).unwrap();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let rustc = Path::new(env!("TIDE_SYSROOT")).join("bin/rustc");
-        checked(
-            Command::new(&rustc)
-                .env_clear()
-                .args([
-                    "--edition=2024",
-                    "--crate-type=proc-macro",
-                    "--crate-name=tide_macros",
-                    "--extern=proc_macro",
-                    "-Clinker=/usr/bin/cc",
-                    "-Clinker-flavor=gnu-cc",
-                    "-Clink-self-contained=-linker",
-                    "-Clink-arg=-B/usr/bin",
-                    "-Zunstable-options",
-                ])
-                .arg(root.join("tide-macros/src/lib.rs"))
-                .arg("--out-dir")
-                .arg(&dir),
-        );
-        checked(
-            Command::new(rustc)
-                .env_clear()
-                .args([
-                    "--edition=2024",
-                    "--crate-type=rlib",
-                    "--crate-name=tide_std",
-                    "-Coverflow-checks=on",
-                ])
-                .arg(root.join("tide-std/src/lib.rs"))
-                .arg(format!(
-                    "--extern=tide_macros={}/libtide_macros.so",
-                    dir.display()
-                ))
-                .arg("--out-dir")
-                .arg(&dir),
-        );
-        dir
+        support::build_std(&dir)
     })
 }
 
@@ -543,4 +508,100 @@ fn main() -> io::Result<()> {
         "1: alpha beta\n2: gamma\nwords=3 rest=yz missing=entity not found NotFound \
          cancelled=false true custom=bad header\n"
     );
+}
+
+#[test]
+fn float_math_builds_and_executes_against_production_std() {
+    let source = include_str!("../../../conformance/cases/authority/float_math.rs");
+    let dir = package("float-math", source);
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"FLOAT_MATH_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+        checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
+        let out = checked(&mut Command::new(dir.join("out/demo-test")));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("2 passed"));
+    }
+}
+
+#[test]
+fn float_banned_methods_still_report_fx0520_with_production_std() {
+    // Each rejection is isolated so one diagnostic cannot conceal an unguarded method.
+    for ty in ["f32", "f64"] {
+        for (method, args) in [
+            ("to_bits", ""),
+            ("is_sign_positive", ""),
+            ("is_sign_negative", ""),
+            ("copysign", "x"),
+            ("signum", ""),
+            ("total_cmp", "&x"),
+            ("min", "x"),
+            ("max", "x"),
+            ("sin", ""),
+            ("cos", ""),
+            ("tan", ""),
+            ("asin", ""),
+            ("acos", ""),
+            ("atan", ""),
+            ("sinh", ""),
+            ("cosh", ""),
+            ("tanh", ""),
+            ("asinh", ""),
+            ("acosh", ""),
+            ("atanh", ""),
+            ("exp", ""),
+            ("exp2", ""),
+            ("exp_m1", ""),
+            ("ln", ""),
+            ("ln_1p", ""),
+            ("log2", ""),
+            ("log10", ""),
+            ("cbrt", ""),
+            ("round_ties_even", ""),
+            ("powf", "x"),
+            ("hypot", "x"),
+            ("atan2", "x"),
+            ("abs_sub", "x"),
+            ("powi", "3"),
+            ("sin_cos", ""),
+            ("log", "x"),
+            ("fract", ""),
+            ("recip", ""),
+            ("to_degrees", ""),
+            ("to_radians", ""),
+            ("div_euclid", "x"),
+            ("rem_euclid", "x"),
+            ("midpoint", "x"),
+            ("clamp", "0.0, 1.0"),
+        ] {
+            let dir = package(
+                &format!("float-reject-{ty}-{method}"),
+                &format!(
+                    "#[tide::main] fn main() {{ let x = 0.5{ty}; let _ = x.{method}({args}); }}"
+                ),
+            );
+            let out = driver(&dir)
+                .arg("--emit=metadata")
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{ty}::{method}: {}",
+                stderr(&out)
+            );
+            assert!(
+                stderr(&out).contains("FX0520:"),
+                "{ty}::{method}: {}",
+                stderr(&out)
+            );
+            assert!(
+                stderr(&out).contains(method),
+                "{ty}::{method}: {}",
+                stderr(&out)
+            );
+        }
+    }
 }

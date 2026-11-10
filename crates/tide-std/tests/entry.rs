@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 
+mod support;
+
 fn tmp() -> PathBuf {
     PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("entry")
 }
@@ -19,45 +21,12 @@ fn rustc() -> Command {
     c
 }
 
-fn run(c: &mut Command) -> Output {
-    let out = c.stdin(Stdio::null()).output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out
-}
-
 /// Builds `tide_macros` and `tide_std` into one directory, once per test process.
 fn std_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = tmp().join("std");
-        std::fs::create_dir_all(&dir).unwrap();
-        run(rustc()
-            .args([
-                "--crate-type=proc-macro",
-                "--crate-name=tide_macros",
-                "--extern=proc_macro",
-            ])
-            .arg("../tide-macros/src/lib.rs")
-            .arg("--out-dir")
-            .arg(&dir));
-        let macros = format!(
-            "{}tide_macros{}",
-            std::env::consts::DLL_PREFIX,
-            std::env::consts::DLL_SUFFIX
-        );
-        run(rustc()
-            .args(["--crate-type=rlib", "--crate-name=tide_std", "src/lib.rs"])
-            .arg(format!(
-                "--extern=tide_macros={}",
-                dir.join(macros).display()
-            ))
-            .arg("--out-dir")
-            .arg(&dir));
-        dir
+        support::build_std(&dir)
     })
 }
 

@@ -140,22 +140,31 @@ def toolchain(name):
 
 
 def rust_vendor():
-    lock = HERE / "rust/Cargo.lock"
+    return offline_vendor("rust", HERE / "rust", RUST)
+
+
+def tide_vendor():
+    return offline_vendor("tide", ROOT, NIGHTLY)
+
+
+def offline_vendor(arm, project, channel):
+    lock = project / "Cargo.lock"
     pinned = lock.read_bytes()
     STATE.mkdir(parents=True, exist_ok=True)
-    dest = STATE / f"rust-vendor-{sha256(pinned).hexdigest()[:16]}"
+    dest = STATE / f"{arm}-vendor-{sha256(pinned).hexdigest()[:16]}"
     if dest.exists():
         return dest
-    tmp = Path(tempfile.mkdtemp(prefix="rust-vendor-", dir=STATE))
+    tmp = Path(tempfile.mkdtemp(prefix=f"{arm}-vendor-", dir=STATE))
     try:
-        result = subprocess.run([str(toolchain(RUST) / "bin/cargo"), "vendor", "--locked", "--offline",
-                                 "--manifest-path", str(HERE / "rust/Cargo.toml"), str(tmp)],
+        result = subprocess.run([str(toolchain(channel) / "bin/cargo"), "vendor", "--locked", "--offline",
+                                 "--manifest-path", str(project / "Cargo.toml"), str(tmp)],
                                 cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
         if lock.read_bytes() != pinned:
             raise ValueError("cargo vendor changed the pinned Cargo.lock")
         if result.returncode:
+            manifest = " --manifest-path trials/e1-checked/rust/Cargo.toml" if arm == "rust" else ""
             raise ValueError(result.stderr + "\nOne-time setup remedy (needs network): "
-                             "cargo +1.96.0 fetch --locked --manifest-path trials/e1-checked/rust/Cargo.toml")
+                             f"cargo +{channel} fetch --locked{manifest}")
         try:
             os.rename(tmp, dest)
         except OSError:
@@ -480,15 +489,18 @@ def base_config(arm, local=False):
     if arm == "rust":
         config["vendor"] = str(rust_vendor())
     if arm == "tide":
+        vendor = tide_vendor()
         STATE.mkdir(parents=True, exist_ok=True)
         # As rustup's proxy does: build scripts put rustlib/<target>/lib first, whose
         # rustc-dev copy of librustc_driver finds libLLVM only through <sysroot>/lib.
         build_env = {"PATH": config["sysroot"] + "/bin:/usr/bin:/bin", "HOME": str(STATE),
-                     "CARGO_HOME": str(STATE / "cargo-home"), "TMPDIR": str(STATE), "CARGO_BUILD_JOBS": "6",
+                     "CARGO_HOME": str(STATE / "cargo-home"), "TMPDIR": str(STATE), "CARGO_BUILD_JOBS": os.environ.get("CARGO_BUILD_JOBS", "6"),
                      "LD_LIBRARY_PATH": config["sysroot"] + "/lib"}
         built = subprocess.run([config["sysroot"] + "/bin/cargo", "build", "--offline", "--locked",
                                 "-p", "tide-admit", "-p", "tide_std", "--target-dir", str(ROOT / "target"),
-                                "--message-format=json"], cwd=ROOT, stdin=subprocess.DEVNULL,
+                                "--message-format=json", "--config", 'source.crates-io.replace-with="vendored"',
+                                "--config", "source.vendored.directory=" + json.dumps(str(vendor))],
+                               cwd=ROOT, stdin=subprocess.DEVNULL,
                                capture_output=True, text=True, timeout=120, env=build_env)
         if built.returncode:
             raise ValueError(built.stderr)

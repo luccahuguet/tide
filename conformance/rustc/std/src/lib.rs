@@ -46,6 +46,12 @@ crate::declare_prelude! {
     pub use spike_macros::{ensures, invariant, invariants, requires};
 }
 
+// Production owns float/math behavior and signatures in both std surfaces.
+#[path = "../../../../crates/tide-std/src/float.rs"]
+pub mod float;
+#[path = "../../../../crates/tide-std/src/math.rs"]
+pub mod math;
+
 pub mod process {
     pub use std::process::{ExitCode, Termination};
     crate::capability!(Proc);

@@ -324,7 +324,9 @@ borrow-related error (provisional: one writer, eleven tasks).
 - Floats are IEEE 754. Every operation that reads a float's sign or bits
   treats any NaN as one canonical NaN, and math functions use one libm on
   every target, so observable results match across targets while arithmetic
-  stays native. Rust leaves NaN bits and math precision unspecified, and its
+  stays native; targets whose native float arithmetic is not IEEE 754
+  (x86 without SSE2) are unsupported, and the std refuses to build there.
+  Rust leaves NaN bits and math precision unspecified, and its
   inherent float methods cannot be overridden, so the observers and math
   methods (`to_bits`, `is_sign_positive`, `is_sign_negative`, `copysign`,
   `signum`, `total_cmp`, `min`, `max`, `sin`, `exp`, and the rest) are outside

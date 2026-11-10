@@ -83,6 +83,8 @@ class HarnessTests(unittest.TestCase):
             result = h.run([sys.executable, "-c", "import os,sys; print(os.environ.get('E1_SECRET')); print(sys.stdin.read())"], config, root)
             self.assertEqual(result["code"], 0)
             self.assertEqual(result["stdout"], "None\n\n")
+            with patch.dict(h.os.environ, {"CARGO_BUILD_JOBS": "4"}):
+                self.assertEqual(h.environment(config, root)["CARGO_BUILD_JOBS"], "6")
             result = h.run(["/usr/bin/env"], config, root, env={})
             self.assertEqual(result["stdout"], "")
 
@@ -373,6 +375,35 @@ pub mod acceptance { #[test] fn case1() {} }
                 setup.return_value = subprocess.CompletedProcess([], 1, "", "missing archive")
                 with self.assertRaisesRegex(ValueError, "missing archive[\\s\\S]*cargo \\+1.96.0 fetch --locked"):
                     h.rust_vendor()
+                self.assertEqual(list((root / "state").iterdir()), [dest])
+                self.assertEqual(lock.read_bytes(), b"different dependencies")
+
+    def test_tide_offline_vendor_setup_is_pinned_cached_and_cleans_failure(self):
+        with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
+            root = Path(tmp)
+            lock = root / "Cargo.lock"
+            lock.write_bytes(b"locked dependencies")
+            def vendor(cmd, **kwargs):
+                self.assertIn("--offline", cmd)
+                self.assertIn("--locked", cmd)
+                self.assertEqual(cmd[0], "/toolchain/bin/cargo")
+                self.assertEqual(cmd[cmd.index("--manifest-path") + 1], str(root / "Cargo.toml"))
+                self.assertNotIn("env", kwargs)
+                (Path(cmd[-1]) / "vendored").touch()
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            with patch.object(h, "ROOT", root), patch.object(h, "STATE", root / "state"), \
+                 patch.object(h, "toolchain", return_value=Path("/toolchain")), \
+                 patch.object(h.subprocess, "run", side_effect=vendor) as setup:
+                dest = h.tide_vendor()
+                self.assertEqual(dest.name, "tide-vendor-" + h.sha256(lock.read_bytes()).hexdigest()[:16])
+                self.assertTrue((dest / "vendored").exists())
+                self.assertEqual(h.tide_vendor(), dest)
+                self.assertEqual(setup.call_count, 1)
+                lock.write_bytes(b"different dependencies")
+                setup.side_effect = None
+                setup.return_value = subprocess.CompletedProcess([], 1, "", "missing archive")
+                with self.assertRaisesRegex(ValueError, "missing archive[\\s\\S]*cargo \\+nightly-2026-08-09 fetch --locked"):
+                    h.tide_vendor()
                 self.assertEqual(list((root / "state").iterdir()), [dest])
                 self.assertEqual(lock.read_bytes(), b"different dependencies")
 
