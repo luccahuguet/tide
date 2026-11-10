@@ -159,9 +159,20 @@ has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities, `Pure`, and the `out` and `err` sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`), parameterless Rust `#[test]`,
-and the partial thread task lifecycle (`Tasks::scope`, `Scope::spawn`,
-`Task::join`), with scoped borrows, automatic joins and single-panic
-propagation; task cancellation and multi-failure selection remain unavailable.
+and the thread task runtime (`Tasks::scope`, `Scope::spawn`,
+`Task::join`, `Scope::cancel`), with scoped borrows, automatic joins, TASK-2
+failure precedence and cancellation echoes, and level-triggered
+`Tasks::checkpoint` / `Tasks::yield_now`. Checkpoints return `task::Cancelled`,
+convertible to `io::Error` with `ErrorKind::Cancelled`; map explicitly to
+`TaskError::Cancelled` when needed.
+Unlimited spawn and joins are not checkpoints; in-memory I/O does not suspend
+and ignores cancellation. Limits, deadlines, shields and isolation remain
+unavailable. Suppressed failures/echoes/panics emit nothing at the default log
+level; their debug record is deferred until the log sink exists. Discarded task
+values drop on the child or receiver thread depending on timing, so a destructor panic
+is attributed to the thread that runs it. Suppressed payload drops on the panic
+path follow PANIC-2 and can abort; on the non-panic path, a drop panic surfaces
+in the scope's caller.
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.

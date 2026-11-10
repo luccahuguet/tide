@@ -119,8 +119,9 @@ one verdict in a header: a per-line mark fails a case rejected on the wrong
 line or for an incidental reason, which a single verdict would let pass.
 
 The stub is a compile-time fixture of Tide's std (`crates/tide-std`), which
-owns runtime behavior. It includes the production task lifecycle (`task.rs`:
-`Tasks`, `Scope`, `Task`, `TaskError` and scope/spawn/join) and Tide's std's crate-root items
+owns runtime behavior. It includes the production task runtime (`task.rs`:
+`Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, scope/spawn/join/cancel, and
+checkpoint/yield_now) and Tide's std's crate-root items
 (`crates/tide-std/src/root.rs`: `Root`, `Pure`, `tide::main`, the sinks and
 `panic!`, the runtime entry, and Rust's re-exports) and declares the
 capability types with that file's `capability!`, so those items share one

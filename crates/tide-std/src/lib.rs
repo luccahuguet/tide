@@ -2,7 +2,7 @@
 //! Tide program names its items as `std::...` and cannot name Rust's std. It owns the runtime
 //! behavior of every item it exposes.
 //!
-//! This partial runtime (beads `fx-nkv.1`, `fx-nkv.2`) provides:
+//! This partial std provides:
 //!
 //! - the entry: `#[tide::main]`, `Root`, and the runtime entry it calls, which mints the
 //!   process's one `Root` (03 ROOT-1, RUN-1);
@@ -10,8 +10,9 @@
 //! - `Pure` (reference 6.6), which the admission driver decides;
 //! - the capability types `Root` carries, as identities: `Fs`, `Net`, `Clock`, `Rand`, `Env`,
 //!   `Stdin`, `Proc`, and `Tasks`;
-//! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, and `Task::join`, scoped
-//!   borrows, automatic joins, and single-panic propagation (`task.rs`);
+//! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
+//!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
+//!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
 //!   prelude's `Error` trait and parameterless Rust `#[test]`;
 //! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
@@ -21,7 +22,13 @@
 //!   `BufWriter`, `io::Error` with `ErrorKind::Cancelled`, and `io::Result`, over in-memory
 //!   readers and writers (`io/mod.rs`).
 //!
-//! Not provided yet: task cancellation, multi-failure selection, limits, deadlines, shields and
+//! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
+//! record is deferred until the log sink exists. Discarded task values drop on the child or
+//! receiver thread depending on timing, so a destructor panic is attributed to the thread that
+//! runs it. Suppressed payload drops on the panic path follow PANIC-2 and can abort; on the
+//! non-panic path, a drop panic surfaces in the scope's caller.
+//!
+//! Not provided yet: task limits, deadlines, shields and
 //! isolation; other capability operations and attenuation of reference 6.1 (files, network,
 //! time, random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;

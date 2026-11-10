@@ -6,7 +6,7 @@
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, and Rust's re-exports), `std::io`'s core (`io/shared.rs`),
-//! and its task lifecycle (`task.rs`), and declares the capability types with
+//! and its task runtime (`task.rs`), and declares the capability types with
 //! its `capability!`, so those have one definition and the same paths in both.
 //! Beyond them it defines only the items and methods the trial's programs and
 //! the cases use, with every field, variant, derive, and `Error` impl the
@@ -209,7 +209,7 @@ pub mod net {
 }
 
 pub mod task {
-    // Production owns the exposed lifecycle items and their compile-time verdicts.
+    // Production owns the exposed task items and their compile-time verdicts.
     include!("../../../../crates/tide-std/src/task.rs");
 
     // Later task APIs remain compile-time fixtures only.
@@ -232,13 +232,6 @@ pub mod task {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
     }
     impl std::error::Error for Panicked {}
-
-    #[derive(Debug)]
-    pub struct Cancelled;
-    impl std::fmt::Display for Cancelled {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for Cancelled {}
 }
 
 pub mod sync {

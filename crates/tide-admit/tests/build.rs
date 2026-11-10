@@ -188,6 +188,18 @@ fn collections_cannot_draw_ambient_keys_through_a_generic_hasher() {
 }
 
 #[test]
+fn task_failures_and_cancellation_build_and_run_against_production_std() {
+    let source = include_str!("../../../conformance/cases/tasks/task_cancellation.rs");
+    let dir = package("task-cancellation", source);
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"CANCELLATION_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    }
+}
+
+#[test]
 fn checked_hello_builds_without_running_and_ignores_candidate_configuration() {
     let dir = package("hello", HELLO);
     std::fs::create_dir(dir.join("package/.cargo")).unwrap();

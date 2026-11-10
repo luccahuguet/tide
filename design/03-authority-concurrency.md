@@ -1207,6 +1207,7 @@ impl Tasks {
         -> Result<T, Panicked>;
     pub fn shield<T>(&self, body: impl FnOnce() -> T) -> T;
     pub fn checkpoint(&self) -> Result<(), Cancelled>;
+    pub fn yield_now(&self) -> Result<(), Cancelled>;
 }
 impl<'s, 'env, E> Scope<'s, 'env, E> {    // Copy; origin 's
     pub fn spawn<U: Send + 's, F>(self, f: F) -> Task<'s, U, E>
