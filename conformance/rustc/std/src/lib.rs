@@ -5,16 +5,17 @@
 //! std=`), as spikes/d18 does. It is a compile-time fixture: Tide's std
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
-//! runtime entry, and Rust's re-exports) and `std::io`'s core (`io/shared.rs`),
-//! and declares the capability types with its `capability!`, so those have one
-//! definition and the same paths in both. Beyond them it defines only the
-//! items and methods the trial's programs and the cases use, with every field,
-//! variant, derive, and `Error` impl the reference gives them (other impls as
-//! needed), with the signatures `design/reference.md` and 02/03 give, and
-//! re-exports Rust's items where the reference keeps their API. The remaining
-//! stub methods use `unimplemented!()`, except `with_hasher`, which builds the
-//! value so that a `static` evaluates. The corpus decides type and borrow
-//! verdicts only. Lines marked `GUESS` fix a signature no design document fixes.
+//! runtime entry, and Rust's re-exports), `std::io`'s core (`io/shared.rs`),
+//! and its task lifecycle (`task.rs`), and declares the capability types with
+//! its `capability!`, so those have one definition and the same paths in both.
+//! Beyond them it defines only the items and methods the trial's programs and
+//! the cases use, with every field, variant, derive, and `Error` impl the
+//! reference gives them (other impls as needed), with the signatures
+//! `design/reference.md` and 02/03 give, and re-exports Rust's items where the
+//! reference keeps their API. The remaining stub methods use `unimplemented!()`,
+//! except `with_hasher`, which builds the value so that a `static` evaluates.
+//! The corpus decides type and borrow verdicts only. Lines marked `GUESS` fix a
+//! signature no design document fixes.
 
 #![allow(unused_variables, dead_code)]
 
@@ -432,19 +433,11 @@ pub mod net {
 }
 
 pub mod task {
-    use std::marker::PhantomData;
+    // Production owns the exposed lifecycle items and their compile-time verdicts.
+    include!("../../../../crates/tide-std/src/task.rs");
 
-    crate::capability!(Tasks);
-
-    /// 02 §8.2 and 03 §6.1.
+    // Later task APIs remain compile-time fixtures only.
     impl Tasks {
-        pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
-        where
-            E: From<TaskError> + Send,
-            F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>,
-        {
-            unimplemented!()
-        }
         pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
         where
             F: FnOnce() -> T + Send + 'static,
@@ -463,48 +456,6 @@ pub mod task {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
     }
     impl std::error::Error for Panicked {}
-
-    /// `Scope<'s, 'env: 's, E>`: `Copy`, `'s` and `'env` invariant, as in std (02 §8.2).
-    pub struct Scope<'s, 'env: 's, E> {
-        _p: PhantomData<(&'s mut &'s (), &'env mut &'env (), fn(E) -> E)>,
-    }
-    impl<E> Clone for Scope<'_, '_, E> {
-        fn clone(&self) -> Self { *self }
-    }
-    impl<E> Copy for Scope<'_, '_, E> {}
-
-    impl<'s, 'env, E> Scope<'s, 'env, E> {
-        pub fn spawn<U: Send + 's, F>(self, f: F) -> Task<'s, U, E>
-        where
-            F: FnOnce() -> Result<U, E> + Send + 's,
-        {
-            unimplemented!()
-        }
-    }
-
-    /// `Send` and `Sync` exactly when `U, E: Send` (02 §8.1's table), through the
-    /// impls below: a `Mutex<(U, E)>` marker would give `Sync` iff `Send` but make
-    /// `U` and `E` invariant.
-    /// GUESS: the variance (`'s` invariant, `U` and `E` covariant); 02 §4 does
-    /// not table `Task`.
-    pub struct Task<'s, U, E> {
-        _p: PhantomData<(&'s mut &'s (), fn() -> (U, E), *const ())>,
-    }
-    unsafe impl<U: Send, E: Send> Send for Task<'_, U, E> {}
-    unsafe impl<U: Send, E: Send> Sync for Task<'_, U, E> {}
-    impl<U, E> Task<'_, U, E> {
-        pub fn join(self) -> Result<U, E> { unimplemented!() }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum TaskError {
-        Cancelled,
-        DeadlineExceeded,
-    }
-    impl std::fmt::Display for TaskError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for TaskError {}
 
     #[derive(Debug)]
     pub struct Cancelled;

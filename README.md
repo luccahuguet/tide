@@ -157,9 +157,12 @@ environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-as identities without operations, `Pure`, and the `out` and `err` sinks
-(`print!`, `println!`, `eprint!`, `eprintln!`), and parameterless Rust `#[test]`;
-the `std::io` core over in-memory readers and writers is shared with conformance
+as identities, `Pure`, and the `out` and `err` sinks
+(`print!`, `println!`, `eprint!`, `eprintln!`), parameterless Rust `#[test]`,
+and the partial thread task lifecycle (`Tasks::scope`, `Scope::spawn`,
+`Task::join`), with scoped borrows, automatic joins and single-panic
+propagation; task cancellation and multi-failure selection remain unavailable.
+The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.

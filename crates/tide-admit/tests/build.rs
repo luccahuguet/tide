@@ -88,6 +88,18 @@ fn driver(dir: &Path) -> Command {
 }
 
 #[test]
+fn task_lifecycle_builds_and_runs_against_production_std() {
+    let source = include_str!("../../../conformance/cases/tasks/task_lifecycle.rs");
+    let dir = package("task-lifecycle", source);
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"TASKS_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    }
+}
+
+#[test]
 fn checked_hello_builds_without_running_and_ignores_candidate_configuration() {
     let dir = package("hello", HELLO);
     std::fs::create_dir(dir.join("package/.cargo")).unwrap();
