@@ -1,10 +1,21 @@
 //! Tide's toolchain macros, which Tide's std re-exports: `#[tide::main]` (`std::tide`), and the
-//! sink and panic macros (`print!` and its kin, `panic!`). The admission driver
+//! sink and panic macros (`print!` and its kin, `panic!`), and the `Error` derive. The admission driver
 //! recognizes `#[tide::main]` as the macro named `main` that Tide's std exports, and treats the
 //! entry point it generates as the toolchain's own code only when it is the crate-root `main` of
 //! an executable crate.
 
+mod error;
+
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
+
+/// Derives Display, Error, and field conversions (reference 2.2).
+#[proc_macro_derive(Error, attributes(error, from, source))]
+pub fn derive_error(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    error::expand(input)
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
 
 /// `#[tide::main] fn main(root: Root) -> R` (03 ROOT-1, reference 6.2): generates Rust's
 /// parameterless `main`, which calls Tide's runtime entry with the user's `main`. The entry mints

@@ -20,7 +20,13 @@ pub use std::{
 
 // `panic!` alone, since re-exporting `std::panic` would also export the module and
 // `catch_unwind`; `print!` and its kin write to the sinks below.
-pub use tide_macros::{eprint, eprintln, panic, print, println};
+pub use tide_macros::{Error, eprint, eprintln, panic, print, println};
+
+/// Support for the toolchain Error derive; shared by production and conformance.
+#[doc(hidden)]
+pub mod __error {
+    include!("error.rs");
+}
 
 /// The sinks that `print!` and its kin write to (03 §2.4). Every call evaluates the arguments and
 /// formats the whole record before writing any of it (SINK-3), so the destination never decides
@@ -80,7 +86,7 @@ macro_rules! declare_prelude {
                     Unpin, Vec, assert, cfg, derive, drop, format_args, stringify,
                 };
                 pub use crate::{
-                    assert_eq, assert_ne, debug_assert, eprint, eprintln, format, matches, panic,
+                    Error, assert_eq, assert_ne, debug_assert, eprint, eprintln, format, matches, panic,
                     print, println, todo, unimplemented, unreachable, vec, write, writeln,
                 };
                 pub use std::error::Error;

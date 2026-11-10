@@ -41,7 +41,7 @@ crate::declare_prelude! {
     pub use crate::dbg;
     pub use crate::Secret;
     pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
-    pub use oracle_macros::{Error, sim_test, test};
+    pub use oracle_macros::{sim_test, test};
     pub use conformance_macros::{pure, trusted_pure};
     pub use spike_macros::{ensures, invariant, invariants, requires};
 }

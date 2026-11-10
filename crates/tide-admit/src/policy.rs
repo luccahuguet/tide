@@ -157,6 +157,7 @@ pub const RULES: &[Rule] = &[
     allow("core::convert::*"),
     allow("core::default::*"),
     allow("core::error::*"),
+    allow("<(dyn core::error::Error*)>::*"), // Error downcasts, as Rust's trait API
     allow("core::f32::consts::*"),
     allow("core::f64::consts::*"),
     allow("core::fmt::*"),

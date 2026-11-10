@@ -166,6 +166,9 @@ has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities, `Pure`, and the `out` and `err` sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`), parameterless Rust `#[test]`,
+the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
+backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
+unannotated enum variants with manual Display are also unsupported),
 and the thread task runtime (`Tasks::scope`, `Scope::spawn`,
 `Task::join`, `Scope::cancel`), with scoped borrows, automatic joins, TASK-2
 failure precedence and cancellation echoes, and level-triggered

@@ -1559,6 +1559,27 @@ fn raw_pointer_key(m: hir::Mutability) -> &'static str {
     if m.is_mut() { "*mut T" } else { "*const T" }
 }
 
+/// Struct/variant expressions and patterns can omit node_args; their ADT still owns them.
+fn path_args<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    typeck: &ty::TypeckResults<'tcx>,
+    def: DefId,
+    id: HirId,
+) -> GenericArgsRef<'tcx> {
+    let args = typeck.node_args(id);
+    if args.len() < tcx.generics_of(def).count()
+        && matches!(
+            tcx.def_kind(def),
+            DefKind::Struct | DefKind::Variant | DefKind::Ctor(..)
+        )
+        && let Some(ty) = typeck.node_type_opt(id)
+        && let ty::Adt(_, args) = ty.kind()
+    {
+        return args;
+    }
+    args
+}
+
 /// The trait refs among `def_id`'s where-clauses (a trait's include its supertraits), at `args`.
 fn where_clauses<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -1798,8 +1819,9 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             if let Some(def_id) = t.type_dependent_def_id(id) {
                 let span = qpath.span();
                 self.use_def(def_id, span);
-                self.use_generic(def_id, t.node_args(id), span, true);
-                self.named(t.node_args(id).types(), span);
+                let args = path_args(self.tcx, t, def_id, id);
+                self.use_generic(def_id, args, span, true);
+                self.named(args.types(), span);
             }
         }
         intravisit::walk_qpath(self, qpath, id)
@@ -1811,8 +1833,9 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             // Method calls, overloaded operators, and indexing.
             if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
                 self.use_def(def_id, e.span);
-                self.use_generic(def_id, t.node_args(e.hir_id), e.span, true);
-                self.named(t.node_args(e.hir_id).types(), e.span);
+                let args = path_args(self.tcx, t, def_id, e.hir_id);
+                self.use_generic(def_id, args, e.span, true);
+                self.named(args.types(), e.span);
             }
             if let Some(ty) = t.node_type_opt(e.hir_id) {
                 self.use_ty(ty, e.span);

@@ -605,3 +605,209 @@ fn float_banned_methods_still_report_fx0520_with_production_std() {
         }
     }
 }
+
+#[test]
+fn error_derive_builds_and_executes_against_production_std() {
+    let source = include_str!("../../../conformance/cases/errors/derive.rs");
+    let dir = package("error-derive", source);
+    checked(&mut driver(&dir));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"ERROR_DERIVE_RAN\n");
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = checked(&mut Command::new(dir.join("out/demo-test")));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+}
+
+#[test]
+fn error_derive_rejects_malformed_helpers_at_the_input() {
+    for (name, source, message, line) in [
+        (
+            "literal",
+            "#[derive(Debug, Error)]\n#[error(12)]\nstruct Bad;",
+            "expected a string literal or `transparent`",
+            2,
+        ),
+        (
+            "duplicate",
+            "#[derive(Debug, Error)]\n#[error(\"one\")]\n#[error(\"two\")]\nstruct Bad;",
+            "duplicate #[error]",
+            3,
+        ),
+        (
+            "transparent",
+            "#[derive(Debug, Error)]\n#[error(transparent)]\nstruct Bad(u8, u8);",
+            "requires exactly one field",
+            2,
+        ),
+        (
+            "from",
+            "#[derive(Debug, Error)]\n#[error(\"bad\")]\nstruct Bad(#[from] std::io::Error, u8);",
+            "no fields other than the source",
+            3,
+        ),
+        (
+            "sources",
+            "#[derive(Debug, Error)]\n#[error(\"bad\")]\nstruct Bad { #[source] a: std::io::Error, #[source] b: std::io::Error }",
+            "more than one source",
+            3,
+        ),
+        (
+            "field",
+            "#[derive(Debug, Error)]\n#[error(\"bad\")]\nstruct Bad { #[error(\"field\")] n: u8 }",
+            "not allowed on a field",
+            3,
+        ),
+        (
+            "placement",
+            "#[derive(Debug, Error)]\n#[source]\n#[error(\"bad\")]\nstruct Bad;",
+            "only allowed on a field",
+            2,
+        ),
+        (
+            "source_args",
+            "#[derive(Debug, Error)]\n#[error(\"bad\")]\nstruct Bad(#[source(wrong)] std::io::Error);",
+            "unexpected token",
+            3,
+        ),
+        (
+            "format",
+            "#[derive(Debug, Error)]\n#[error(\"{missing}\")]\nstruct Bad;",
+            "missing",
+            2,
+        ),
+        (
+            "empty_enum",
+            "#[derive(Debug, Error)]\n#[error(12)]\nenum Bad {}",
+            "expected a string literal or `transparent`",
+            2,
+        ),
+        (
+            "overridden_bad_default",
+            "#[derive(Debug, Error)]\n#[error(12)]\nenum Bad { #[error(\"override\")] Unit }",
+            "expected a string literal or `transparent`",
+            2,
+        ),
+        (
+            "empty_duplicate",
+            "#[derive(Debug, Error)]\n#[error(\"one\")]\n#[error(\"two\")]\nenum Bad {}",
+            "duplicate #[error]",
+            3,
+        ),
+        (
+            "empty_placement",
+            "#[derive(Debug, Error)]\n#[from]\nenum Bad {}",
+            "only allowed on a field",
+            2,
+        ),
+        (
+            "positional_ambiguity",
+            "#[derive(Debug, Error)]\n#[error(\"{} {1}\", .0, 7)]\nstruct Bad(u8);",
+            "ambiguous positional argument",
+            2,
+        ),
+        (
+            "invalid_index",
+            "#[derive(Debug, Error)]\n#[error(\"{+0}\")]\nstruct Bad(u8);",
+            "invalid format string",
+            2,
+        ),
+        (
+            "overflowing_index",
+            "#[derive(Debug, Error)]\n#[error(\"{184467440737095516160}\")]\nstruct Bad(u8);",
+            "invalid format string",
+            2,
+        ),
+        (
+            "option_arity",
+            "type Option<A, B> = (A, B);\n#[derive(Debug, Error)]\n#[error(\"bad\")]\nstruct Bad(#[from] Option<std::io::Error, u8>);",
+            "as_dyn_error",
+            2,
+        ),
+        (
+            "missing_variant",
+            "#[derive(Debug, Error)]\nenum Bad {\n    #[error(\"one\")]\n    One,\n    Two,\n}",
+            "missing #[error] attribute on variant",
+            5,
+        ),
+    ] {
+        let dir = package(&format!("error-negative-{name}"), source);
+        let out = driver(&dir)
+            .args([
+                "--crate-type=lib",
+                "--emit=metadata",
+                "--error-format=short",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", stderr(&out));
+        let err = stderr(&out);
+        assert!(
+            err.lines()
+                .any(|l| l.contains(&format!("demo.rs:{line}:")) && l.contains(message)),
+            "{name}: {err}"
+        );
+        assert!(!dir.join("out/demo").exists());
+    }
+}
+
+#[test]
+fn error_derive_formats_the_original_pointer_with_an_unsafe_grant() {
+    let dir = package(
+        "error-pointer",
+        r#"
+#[derive(Debug, Error)]
+#[error("{address:p}")]
+struct Address<'a> { address: &'a u8 }
+#[tide::main]
+fn main() {
+    let byte = 7;
+    let address = &byte;
+    assert_eq!(Address { address }.to_string(), format!("{address:p}"));
+    println!("POINTER_RAN");
+}
+"#,
+    );
+    checked(driver(&dir).arg("--tide-grant=unsafe"));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"POINTER_RAN\n");
+}
+
+#[test]
+fn generic_error_types_still_require_pure() {
+    let dir = package(
+        "error-generic-pure",
+        r#"
+#[derive(Debug, Error)]
+#[error("bounded")]
+enum Bounded<T: Pure> { Value { value: T } }
+#[tide::main]
+fn main(root: Root) { let _ = Bounded::Value { value: root.net }; }
+"#,
+    );
+    let out = driver(&dir).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("FX0517"), "{}", stderr(&out));
+    assert!(!dir.join("out/demo").exists());
+}
+
+#[test]
+fn generic_error_patterns_keep_distinct_type_arguments() {
+    let dir = package(
+        "error-pattern-args",
+        r#"
+#[derive(Debug, Error)]
+#[error("bounded")]
+enum Bounded<P: Pure, T> { Value { marker: P, value: T } }
+#[tide::main]
+fn main(root: Root) {
+    let e = Bounded::Value { marker: 7u8, value: root.net };
+    assert_eq!(e.to_string(), "bounded");
+    println!("PATTERNS_RAN");
+}
+"#,
+    );
+    let out = checked(&mut driver(&dir));
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"PATTERNS_RAN\n");
+}
