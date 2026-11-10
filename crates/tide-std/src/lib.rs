@@ -14,16 +14,19 @@
 //!   borrows, automatic joins, and single-panic propagation (`task.rs`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
 //!   prelude's `Error` trait and parameterless Rust `#[test]`;
+//! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
+//!   and fixed default keys, capability-seeded `RandomState`, and
+//!   Rust's ordered collections, queue, and heap (see `collections`);
 //! - `std::io`'s core (bead `fx-ecb`): `Read`, `Write`, `Seek`, `BufRead`, `BufReader`,
 //!   `BufWriter`, `io::Error` with `ErrorKind::Cancelled`, and `io::Result`, over in-memory
 //!   readers and writers (`io/mod.rs`).
 //!
 //! Not provided yet: task cancellation, multi-failure selection, limits, deadlines, shields and
 //! isolation; other capability operations and attenuation of reference 6.1 (files, network,
-//! time, randomness, environment, input, processes); `Root`'s `log` field;
+//! time, random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! `time`'s Rust items (`Duration`, ...);
-//! collections, `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; property tests and
+//! `sync`, `par`, `arena`, `ptr`, `float`, `math`, and `sim`; property tests and
 //! `#[sim_test]`; the contract attributes and the `Error`, `Encode`, and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
@@ -63,7 +66,8 @@ pub mod time {
 
 pub mod rand {
     crate::capability!(
-        /// Authority to draw randomness. It has no operations yet.
+        /// Randomness authority, used by `collections::hash_map::RandomState::from_rand`.
+        /// It has no draw methods yet.
         Rand
     );
 }

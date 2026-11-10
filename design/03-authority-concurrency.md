@@ -424,6 +424,8 @@ N1). Test builds add the simulator behind one predictable branch.
 - **GLOBAL-5.** `HashMap::new()` uses a fixed key, so iteration order is
   deterministic though unspecified. Maps keyed by untrusted input take a key
   from `Rand`: `HashMap::with_hasher(RandomState::from_rand(&rand))`.
+  The fixed-key iteration order is repeatable for the same mutation history,
+  toolchain and target, not portable across toolchains or targets.
 - **GLOBAL-6.** `Arc<T>` and `sync::Weak<T>` are synchronization handles
   (D7), so neither is `Pure` and creating either takes `&Tasks`: the last
   release runs `T::drop` in whichever task drops last, `make_mut` calls

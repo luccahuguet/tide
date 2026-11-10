@@ -5,6 +5,9 @@
 // `#[macro_export]` macro it defines cannot be named by path, so its macros come from
 // `tide-macros`.
 
+// Shared with the conformance std, like the crate-root items below.
+pub mod collections;
+
 // Rust's std modules and macros whose API Tide keeps (reference 1, 2.1).
 pub use std::{
     any, array, borrow, boxed, cell, char, clone, cmp, convert, default, error, f32, f64, fmt,

@@ -100,6 +100,94 @@ fn task_lifecycle_builds_and_runs_against_production_std() {
 }
 
 #[test]
+fn collections_execute_with_fixed_and_capability_seeded_keys() {
+    let dir = package(
+        "collections",
+        include_str!("../../../conformance/cases/authority/collections_executable.rs"),
+    );
+    checked(&mut driver(&dir));
+    let first = checked(&mut Command::new(dir.join("out/demo")));
+    let second = checked(&mut Command::new(dir.join("out/demo")));
+    assert!(!first.stdout.is_empty());
+    assert_eq!(
+        first.stdout, second.stdout,
+        "fixed-key iteration changed across processes"
+    );
+    assert_ne!(
+        first.stderr, second.stderr,
+        "OS-seeded hash fingerprints repeated"
+    );
+}
+
+#[test]
+fn collections_disjoint_lookups_enforce_safety() {
+    let dir = package(
+        "collection-unchecked-lookup",
+        r#"
+#[tide::main]
+fn main() {
+    let mut map = std::collections::HashMap::from([(1, 10), (2, 20)]);
+    // Distinct keys satisfy the unchecked lookup's safety contract.
+    let [first, missing, second] = unsafe { map.get_disjoint_unchecked_mut([&1, &0, &2]) };
+    *first.unwrap() += 1;
+    assert!(missing.is_none());
+    *second.unwrap() += 2;
+    assert_eq!(map[&1], 11);
+    assert_eq!(map[&2], 22);
+}
+"#,
+    );
+    let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("FX0901"), "{}", stderr(&out));
+    assert!(!dir.join("out/demo").exists());
+    checked(driver(&dir).arg("--tide-grant=unsafe"));
+    checked(&mut Command::new(dir.join("out/demo")));
+
+    let dir = package(
+        "collection-overlapping-lookup",
+        r#"
+#[tide::main]
+fn main() {
+    let mut map = std::collections::HashMap::from([(1, 10)]);
+    let _ = map.get_disjoint_mut([&1, &1]);
+}
+"#,
+    );
+    checked(&mut driver(&dir));
+    let out = Command::new(dir.join("out/demo"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("duplicate keys found"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn collections_cannot_draw_ambient_keys_through_a_generic_hasher() {
+    for (name, expression) in [
+        ("map", "std::collections::HashMap::<u8, u8, std::hash::RandomState>::default()"),
+        ("set", "std::collections::HashSet::<u8, std::hash::RandomState>::default()"),
+    ] {
+        let dir = package(
+            &format!("ambient-collection-{name}"),
+            &format!("#[tide::main] fn main() {{ let _ = {expression}; }}"),
+        );
+        let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(
+            stderr(&out).contains("FX0520: `impl core::default::Default for std::hash::random::RandomState`"),
+            "{}", stderr(&out)
+        );
+        assert!(!dir.join("out/demo").exists());
+    }
+}
+
+#[test]
 fn checked_hello_builds_without_running_and_ignores_candidate_configuration() {
     let dir = package("hello", HELLO);
     std::fs::create_dir(dir.join("package/.cargo")).unwrap();

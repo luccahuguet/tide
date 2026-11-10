@@ -229,6 +229,8 @@ pub const RULES: &[Rule] = &[
     ),
     allow("std::collections::hash::*"),
     allow("std::hash::random::RandomState"),
+    allow("std::hash::random::DefaultHasher"),
+    allow("std::hash::random::DefaultHasher::*"),
 ];
 
 /// Glob match where `*` matches any run of characters, `::` included; a leading `*` is literal.
