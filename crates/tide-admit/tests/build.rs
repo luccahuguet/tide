@@ -1316,6 +1316,196 @@ fn error_derive_builds_and_executes_against_production_std() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
 }
 
+/// `derive(Encode, Decode)` and `std::json` (bead fx-08m) pass the driver and execute: round
+/// trips of structs, enums, `Option`, `Vec`, and maps, each `#[codec]` key, missing and unknown
+/// keys, malformed input, float and integer limits, and a map keyed from `Rand`.
+#[test]
+fn codec_derives_and_json_build_and_execute_against_production_std() {
+    let source = include_str!("../../../conformance/cases/codec/json.rs");
+    let dir = package("codec-json", source);
+    let out = checked(&mut driver(&dir));
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"CODEC_RAN\n");
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = checked(&mut Command::new(dir.join("out/demo-test")));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+}
+
+#[test]
+fn codec_recursive_newtype_returns_error_in_subprocess() {
+    let source = r#"
+#[derive(Decode)]
+struct Link(Option<Box<Link>>);
+
+#[tide::main]
+fn main(_root: Root) {
+    assert!(std::json::decode::<Link>(b"null").unwrap().0.is_none());
+    let error = std::json::decode::<Link>(b"0").err().unwrap();
+    assert!(error.to_string().starts_with("recursion limit exceeded"));
+}
+"#;
+    let dir = package("codec-recursive-newtype", source);
+    checked(&mut driver(&dir));
+    checked(Command::new("timeout").arg("10").arg(dir.join("out/demo")));
+}
+
+/// Each case's errors are all on `line`, and one of them contains `message`.
+#[test]
+fn codec_derives_reject_unsupported_input_at_its_line() {
+    for (name, source, message, line) in [
+        (
+            "variant_skip",
+            "#[derive(Encode)]\nenum Bad {\n    #[codec(skip)]\n    A,\n}",
+            "`skip` is not allowed here, since `encode` cannot fail",
+            3,
+        ),
+        (
+            "unknown_key",
+            "#[derive(Encode)]\nstruct Bad {\n    #[codec(skip_serializing_if = \"Option::is_none\")]\n    a: Option<u8>,\n}",
+            "unknown `#[codec]` key; `#[codec]` takes `rename = \"..\"`, `rename_all = \"..\"`, `default`, and `skip`",
+            3,
+        ),
+        (
+            "not_in_v0",
+            "#[derive(Decode)]\n#[codec(deny_unknown_fields)]\nstruct Bad { a: u8 }",
+            "`deny_unknown_fields` is not in v0",
+            2,
+        ),
+        (
+            "default_path",
+            "#[derive(Decode)]\nstruct Bad {\n    #[codec(default = \"make\")]\n    a: u8,\n}",
+            "`default` takes no value",
+            3,
+        ),
+        (
+            "rename_forms",
+            "#[derive(Decode)]\nstruct Bad {\n    #[codec(rename(deserialize = \"b\"))]\n    a: u8,\n}",
+            "expected `=`",
+            3,
+        ),
+        (
+            "field_collision",
+            "#[derive(Encode)]\nstruct Bad {\n    a: u8,\n    #[codec(rename = \"a\")]\n    b: u8,\n}",
+            "two fields have the JSON name `a`",
+            5,
+        ),
+        (
+            "variant_collision",
+            "#[derive(Decode)]\n#[codec(rename_all = \"lowercase\")]\nenum Bad {\n    Ab,\n    AB,\n}",
+            "two variants have the JSON name `ab`",
+            5,
+        ),
+        (
+            "case_name",
+            "#[derive(Encode)]\n#[codec(rename_all = \"Title Case\")]\nstruct Bad { a: u8 }",
+            "expected one of \"lowercase\", \"UPPERCASE\", \"PascalCase\", \"camelCase\", \"snake_case\", \"SCREAMING_SNAKE_CASE\", \"kebab-case\", \"SCREAMING-KEBAB-CASE\"",
+            2,
+        ),
+        (
+            "variant_rename_all",
+            "#[derive(Encode)]\nenum Bad {\n    #[codec(rename_all = \"camelCase\")]\n    A { long_name: u8 },\n}",
+            "`rename_all` is not allowed here; it goes on the struct or enum",
+            3,
+        ),
+        (
+            "container_rename",
+            "#[derive(Encode)]\n#[codec(rename = \"Good\")]\nstruct Bad { a: u8 }",
+            "`rename` is not allowed here; it goes on a field or a variant",
+            2,
+        ),
+        (
+            "enum_default",
+            "#[derive(Decode)]\n#[codec(default)]\nenum Bad { A }",
+            "`default` is not allowed here; it goes on a field or a struct",
+            2,
+        ),
+        (
+            "tuple_field",
+            "#[derive(Decode)]\nstruct Bad(\n    #[codec(default)]\n    u8,\n    u8,\n);",
+            "`#[codec]` is not allowed on a tuple field",
+            3,
+        ),
+        (
+            "unit_default",
+            "#[derive(Decode)]\n#[codec(default)]\nstruct Bad;",
+            "`default` is not allowed here; it goes on a field or a struct with named fields or an array representation",
+            2,
+        ),
+        (
+            "newtype_default",
+            "#[derive(Encode)]\n#[codec(default)]\nstruct Bad(u8);",
+            "`default` is not allowed here; it goes on a field or a struct with named fields or an array representation",
+            2,
+        ),
+        (
+            "duplicate_key",
+            "#[derive(Encode)]\nstruct Bad {\n    #[codec(rename = \"a\")]\n    #[codec(rename = \"b\")]\n    c: u8,\n}",
+            "duplicate `rename`",
+            4,
+        ),
+        (
+            "union",
+            "#[derive(Encode)]\nunion Bad { a: u8 }",
+            "cannot be derived for a union",
+            2,
+        ),
+        // ROOT-4: a capability has no `Decode`, and `skip` needs the `Default` it also lacks.
+        (
+            "capability",
+            "#[derive(Decode)]\nstruct Bad {\n    net: std::net::Net,\n}",
+            "Decode",
+            3,
+        ),
+        (
+            "capability_skip",
+            "#[derive(Decode)]\nstruct Bad {\n    #[codec(skip)]\n    net: std::net::Net,\n}",
+            "Default",
+            4,
+        ),
+        // Decoding is owned: a borrowed field encodes only.
+        (
+            "borrowed",
+            "#[derive(Encode, Decode)]\nstruct Bad<'a> {\n    name: &'a str,\n}",
+            "Decode",
+            3,
+        ),
+        (
+            "non_string_key",
+            "use std::collections::BTreeMap;\n#[derive(Encode)]\nstruct Bad {\n    by_id: BTreeMap<u32, u8>,\n}",
+            "Encode",
+            4,
+        ),
+        // `skip` needs `Default` for `Decode` only.
+        (
+            "missing_default",
+            "struct Plain;\n#[derive(Encode)]\nstruct Fine {\n    #[codec(skip)]\n    a: Plain,\n}\n#[derive(Decode)]\nstruct Bad {\n    #[codec(skip)]\n    a: Plain,\n}",
+            "Default",
+            10,
+        ),
+    ] {
+        let dir = package(&format!("codec-negative-{name}"), source);
+        let out = driver(&dir)
+            .args([
+                "--crate-type=lib",
+                "--emit=metadata",
+                "--error-format=short",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", stderr(&out));
+        let err = stderr(&out);
+        let errors: Vec<_> = err.lines().filter(|l| l.contains(": error")).collect();
+        assert!(
+            errors
+                .iter()
+                .all(|l| l.contains(&format!("demo.rs:{line}:")))
+                && errors.iter().any(|l| l.contains(message)),
+            "{name}: {err}"
+        );
+    }
+}
+
 #[test]
 fn error_derive_rejects_malformed_helpers_at_the_input() {
     for (name, source, message, line) in [

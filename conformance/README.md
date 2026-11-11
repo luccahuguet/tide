@@ -136,6 +136,9 @@ through the driver.
 The stub's `std::time` is the production `time.rs`: `Clock`, `Duration`,
 `Instant`, `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH`.
 `authority/clock_time.rs` also executes against production through the driver.
+Through `root.rs` the stub also includes the production codec engine and
+`std::json` (`codec.rs`, `json.rs`), with the `Encode` and `Decode` derives;
+`codec/json.rs` also executes against production through the driver.
 The float observers and math functions use the production `float.rs` and `math.rs`
 files directly, with the same pinned software `libm` dependency. Their shared
 fixture, `authority/float_math.rs`, also executes against production through the

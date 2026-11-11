@@ -20,7 +20,15 @@ pub use std::{
 
 // `panic!` alone, since re-exporting `std::panic` would also export the module and
 // `catch_unwind`; `print!` and its kin write to the sinks below.
-pub use tide_macros::{Error, eprint, eprintln, panic, print, println};
+pub use tide_macros::{Decode, Encode, Error, eprint, eprintln, panic, print, println};
+
+/// The `Encode` and `Decode` traits, which share their derives' names, and the engine those
+/// derives call; shared by production and conformance.
+#[doc(hidden)]
+#[path = "codec.rs"]
+pub mod __codec;
+pub use __codec::{Decode, Encode};
+pub mod json;
 
 /// Support for the toolchain Error derive; shared by production and conformance.
 #[doc(hidden)]
@@ -86,8 +94,9 @@ macro_rules! declare_prelude {
                     Unpin, Vec, assert, cfg, derive, drop, format_args, stringify,
                 };
                 pub use crate::{
-                    Error, assert_eq, assert_ne, debug_assert, eprint, eprintln, format, matches, panic,
-                    print, println, todo, unimplemented, unreachable, vec, write, writeln,
+                    Decode, Encode, Error, assert_eq, assert_ne, debug_assert, eprint, eprintln, format,
+                    matches, panic, print, println, todo, unimplemented, unreachable, vec, write,
+                    writeln,
                 };
                 pub use std::error::Error;
                 pub use crate::Root;

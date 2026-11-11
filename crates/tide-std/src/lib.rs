@@ -41,7 +41,11 @@
 //!   Rust's ordered collections, queue, and heap (see `collections`);
 //! - `std::io`'s core (bead `fx-ecb`): `Read`, `Write`, `Seek`, `BufRead`, `BufReader`,
 //!   `BufWriter`, `io::Error` with `ErrorKind::Cancelled`, and `io::Result`, over in-memory
-//!   readers and writers (`io/mod.rs`).
+//!   readers and writers (`io/mod.rs`);
+//! - the prelude's `Encode` and `Decode` traits and derives with `#[codec(rename, rename_all,
+//!   default, skip)]`, and `std::json`: `encode`, `decode`, and `json::Error` (bead `fx-08m`;
+//!   `json.rs` states the encoding, `codec.rs` lists the std types with impls). The derives
+//!   take no other serde key, and no key on a tuple field or `skip` on a variant.
 //!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
@@ -55,14 +59,14 @@
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
 //! `par`, `arena`, `ptr`, and `sim`; `#[sim_test]`, requires-guided generation,
-//! generated contract tests, the contract attributes, and the `Encode` and `Decode` derives. A
+//! generated contract tests, and the contract attributes. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
-//! `root.rs`, `task.rs` (including its scheduler), `sync.rs`, and `time.rs` share their
-//! definitions with the conformance fixture std. The identity-only capability types use `root.rs`'s `capability!` in
-//! both crates.
+//! `root.rs` (with `codec.rs` and `json.rs`), `task.rs` (including its scheduler), `sync.rs`, and `time.rs`
+//! share their definitions with the conformance fixture std. The identity-only capability types
+//! use `root.rs`'s `capability!` in both crates.
 
 include!("root.rs");
 

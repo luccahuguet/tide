@@ -191,6 +191,9 @@ as identities (`Tasks` and `Clock` have operations, below), `Pure`, and the `out
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
 unannotated enum variants with manual Display are also unsupported),
+the prelude's `Encode` and `Decode` derives with `#[codec(rename, rename_all,
+default, skip)]` and `std::json` (`encode`, `decode`, `json::Error`; JSON only,
+with no other serde key),
 and the thread task runtime (`Tasks::scope`, `Scope::spawn`,
 `Task::join`, `Scope::cancel`), with scoped borrows, automatic joins, TASK-2
 failure precedence and cancellation echoes, and level-triggered

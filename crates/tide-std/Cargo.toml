@@ -1,7 +1,7 @@
 [package]
 name = "tide_std"
 version = "0.0.0"
-description = "Tide's std, injected as std by the admission driver (D18): the entry, sinks, Pure, and capability types"
+description = "Tide's std, injected as std by the admission driver (D18): the entry, sinks, Pure, capability types, and the JSON codec"
 edition.workspace = true
 publish.workspace = true
 
