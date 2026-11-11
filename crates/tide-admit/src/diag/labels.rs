@@ -16,10 +16,23 @@ struct SelfBorrow {
 }
 
 impl SelfBorrow {
-    fn matches(&self, primary: Span, rustc_code: Option<u32>) -> bool {
+    fn matches(&self, diag: &DiagInner, rustc_code: Option<u32>) -> bool {
+        let Some(primary) = diag.span.primary_span() else {
+            return false;
+        };
         match rustc_code {
             Some(505) => self.owner.lo() == primary.lo() && self.owner.hi() == primary.hi(),
-            Some(515 | 597) => self.borrow.contains(primary),
+            Some(515) => {
+                self.borrow.contains(primary)
+                    || (primary.contains(self.owner)
+                        && primary.contains(self.borrow)
+                        && diag.span.span_labels_raw().iter().any(|(span, message)| {
+                            self.borrow.contains(*span)
+                                && format_diag_message(message, &diag.args)
+                                    .contains("borrowed here")
+                        }))
+            }
+            Some(597) => self.borrow.contains(primary),
             _ => false,
         }
     }
@@ -86,6 +99,48 @@ impl OwnedClosure {
     }
 }
 
+// Every supplementary code has one row owning its rustc mapping, site policy and text.
+// Site recording is typed (`owned`, `record_self_borrow`); arbitrary Codes cannot be recorded.
+enum Site {
+    Owned,
+    SelfBorrow,
+    None,
+}
+
+struct Rule {
+    code: Code,
+    rustc_codes: &'static [u32],
+    wording: Option<&'static str>,
+    site: Site,
+    message: &'static str,
+}
+
+// Instance-depth errors alone prove no constructor growth. Certain local cycles
+// already receive FX0407 from the definition graph; unresolved dispatch stays unlabelled.
+const RULES: &[Rule] = &[
+    Rule {
+        code: Code::Fx0203,
+        rustc_codes: &[373, 521, 597, 515],
+        wording: Some("lifetime may not live long enough"),
+        site: Site::Owned,
+        message: "a closure in an owned position cannot capture a non-static borrow; move owned data in or name its lifetime",
+    },
+    Rule {
+        code: Code::Fx0210,
+        rustc_codes: &[505, 515, 597],
+        wording: None,
+        site: Site::SelfBorrow,
+        message: "this struct literal borrows from an owner it moves into a field; keep the owner and view apart or store indices",
+    },
+    Rule {
+        code: Code::Fx0402,
+        rustc_codes: &[119],
+        wording: None,
+        site: Site::None,
+        message: "overlapping impls are not admitted; use one impl or a newtype",
+    },
+];
+
 #[derive(Default)]
 struct Sites {
     self_borrows: Vec<SelfBorrow>,
@@ -128,44 +183,43 @@ struct Labels {
 impl Emitter for Labels {
     fn emit_diagnostic(&mut self, diag: DiagInner) {
         let mut labels = Vec::new();
-        if diag.level() == Level::Error
-            && let Some(span) = diag.span.primary_span()
+        if matches!(diag.level(), Level::Error | Level::Fatal) && diag.span.primary_span().is_some()
         {
             let rustc_code = diag.code.map(|code| code.as_u32());
-            let region_error = rustc_code.is_none()
-                && diag.messages.iter().any(|(message, _)| {
-                    format_diag_message(message, &diag.args) == "lifetime may not live long enough"
-                });
             let sites = self.sites.0.lock().unwrap();
-            // A self-borrow elsewhere in the literal does not explain another field's error.
-            if sites
-                .self_borrows
-                .iter()
-                .any(|site| site.matches(span, rustc_code))
-            {
-                labels.push(Code::Fx0210);
-            }
-            if sites
-                .owned
-                .iter()
-                .any(|site| site.matches(&diag, rustc_code, region_error))
-            {
-                labels.push(Code::Fx0203);
+            for rule in RULES {
+                let wording = rustc_code.is_none()
+                    && rule.wording.is_some_and(|prefix| {
+                        diag.messages.iter().any(|(message, _)| {
+                            format_diag_message(message, &diag.args).starts_with(prefix)
+                        })
+                    });
+                if !wording && !rustc_code.is_some_and(|code| rule.rustc_codes.contains(&code)) {
+                    continue;
+                }
+                let matches = match rule.site {
+                    Site::None => true,
+                    Site::SelfBorrow => sites
+                        .self_borrows
+                        .iter()
+                        .any(|site| site.matches(&diag, rustc_code)),
+                    Site::Owned => sites
+                        .owned
+                        .iter()
+                        .any(|site| site.matches(&diag, rustc_code, wording)),
+                };
+                if matches {
+                    labels.push(rule);
+                }
             }
         }
         let span = diag.span.primary_span();
         self.inner.emit_diagnostic(diag);
-        for code in labels {
-            let message = match code {
-                Code::Fx0203 => {
-                    "a closure in an owned position cannot capture a non-static borrow; move owned data in or name its lifetime"
-                }
-                Code::Fx0210 => {
-                    "this struct literal borrows from an owner it moves into a field; keep the owner and view apart or store indices"
-                }
-                _ => unreachable!(),
-            };
-            let mut label = DiagInner::new(Level::Error, format!("{}: {message}", code.as_str()));
+        for rule in labels {
+            let mut label = DiagInner::new(
+                Level::Error,
+                format!("{}: {}", rule.code.as_str(), rule.message),
+            );
             label.span = span.unwrap().into();
             // Forward directly: rustc already counted the rejecting error, and a label
             // must neither re-enter the diagnostic context nor label itself.

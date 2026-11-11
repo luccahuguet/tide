@@ -1,4 +1,4 @@
-//@ rules: PURE-1
+//@ rules: PURE-1, LIFE-3
 // `Pure` obligations that no expression's type shows: those of the `Deref` impl that an
 // autoderef or a deref coercion selects; of a `Drop` impl and of a trait impl's method or
 // associated type, whose where-clauses drop glue (of values that a constructor passed as a
@@ -113,21 +113,21 @@ impl<T> Show for Logged<T> {
 }
 
 pub trait Wrap {
-    type Out<U>: Deref;
+    type Out<U>: Deref; //~ FX0403
 }
 
 impl Wrap for Holder {
-    type Out<U> = Checked<U> where U: Pure; //~ FX0517
+    type Out<U> = Checked<U> where U: Pure; //~ FX0403 FX0517
 }
 
 pub trait Supply {
-    type Supplied<U>: Deref + Default
+    type Supplied<U>: Deref + Default //~ FX0403
     where
         U: Pure;
 }
 
 impl Supply for Holder {
-    type Supplied<U> = Checked<Option<U>> where U: Pure;
+    type Supplied<U> = Checked<Option<U>> where U: Pure; //~ FX0403
 }
 
 pub fn supplied<T: Supply>() {

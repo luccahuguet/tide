@@ -1,0 +1,47 @@
+Model: claude-opus-5-5 · Date: 2026-11-11
+
+Verdict: request_changes
+
+Candidate: `c69662c` on `d9a02c0`; `git diff d9a02c0 c69662c | sha256sum` = `ba5ca7125499c109595d27cacbcaa0660b696ebf3c9ac152f30b964ca8897f24` (matches the brief). The checkout stayed clean. I did not open `trials/e1-checked/`.
+
+Read: the AGENTS.md rules for Tide, `br --no-db show fx-u65.3` (including the 2026-11-11 design decisions and the fx-u65.2 notes), research/27 §FX04xx and C1/C5/C6/C8, reference §5, D4, conformance/README.md and rules.md, the whole diff, `walk.rs` `select`/`user_written`, `synthesis.rs` (planning and insertion), and the invocation insertion flow. I also read the Codex r1/r2 reviews, fix-r1 (with its addendum), and both author reports.
+
+Most of the change is sound. FX0401–FX0405 and FX0408 match the decisions. The label table has one owner: typed site recording, no `unreachable!` fallback, and rustc's diagnostic is always forwarded before any label. Dropping the instance-limit label is the right reading of the never-false policy. E0119 always means a conflicting impl, so mapping it to FX0402 without a site check is certain. The E0515 secondary-span arm requires the paired "borrowed here" label inside the recorded borrow field, and the new invocation test protects it. On provenance: trusted ranges are exactly the bytes this run inserted. They are shifted by earlier insertions and mapped through `original_relative_byte_pos`, so BOM and CRLF are handled. `contains` requires the whole span inside one insertion. The planning compile's walk sees an empty `Insertions`; it is only filled in after `plan` (`invocation.rs:352-359`). User macro definitions are FX0101, and the inserted text invokes no macros. So `source_callsite()` cannot pull user-written bodies into a trusted range. The parts of the inserted text that come from user HIR (copied ADT where-clauses, field types) duplicate user source that is still checked where the user wrote it.
+
+One FX0407 graph defect blocks.
+
+1. **Blocking: unresolved trait dispatch is recorded as an edge to the trait item, so it reaches the default body and causes false FX0407 errors on finite code rustc accepts.**
+   Evidence: `crates/tide-admit/src/walk/traits.rs:204-227`. When `select` returns `None`, `callee` stays as the trait item's DefId. That covers `ImplSource::Param` for `x.f()` with `T: K`, object dispatch, and ambiguity. Because the trait is local, `:218` keeps the DefId and `:222` pushes an edge `caller → K::f`. If `K::f` has a default body, that body's own calls are edges out of the same node, so cycles form through dispatch the graph never resolved. This contradicts the decision (C6: "calls through a trait method on a type parameter are not resolvable at the definition; leave those to [rustc]"), the coordinator's fix-r1 item 2 ("keep the documented fallback for parameter or dynamic dispatch that genuinely can't be resolved"), and the docs (`conformance/README.md:119`, `README.md:67`: "Unresolved … dispatch retain(s) rustc's checks"). It also makes the graph inconsistent: param dispatch reaches a trait's default body but never an impl body (the blanket-impl test at `tests/build.rs:1858` gets no edge into `impl<T> Step for T`).
+   Reproducer (probe `wrap_default`, candidate driver, Rust std): exit 1, `lib.rs:2:35: error: FX0407`. `rustup run stable rustc --crate-type=lib --emit=link -C link-dead-code` builds it, exit 0. Every instance terminates: `g<S>` → default `f` → `g<Wrap<S>>` → `Wrap`'s override.
+   ```rust
+   pub trait K: Sized { fn f(self) { g(Wrap(self)) } }
+   pub struct Wrap<T>(T);
+   impl<T> K for Wrap<T> { fn f(self) {} }
+   pub fn g<T: K>(x: T) { x.f() }
+   pub struct S;
+   impl K for S {}
+   pub fn entry() { g(S) }
+   ```
+   Fix: keep the trait-item edge only when selection proves the default body runs, that is `Selected::Impl(local impl)` and the impl does not override the method (the `find` at `:208-212` returns `None`). For `None` and `Builtin`, record no edge. Add this source to `trait_recursion_accept.rs`. Keep a rejected case where a selected impl uses the default and the default body grows (for example `trait K: Sized { fn f(self) { Wrap(self).f() } } impl<T> K for Wrap<T> {}`), so the certain default-body path stays covered.
+
+2. **Non-blocking (alternative): the function-level cycle test rejects finite recursion whose wrapped parameter never comes back around the cycle.**
+   Evidence: `traits.rs:221` marks an edge as growing when any argument wraps any caller parameter, and `:230-252` then asks only whether the callee reaches the caller. Probes, all exit 1 with FX0407, and all built by stable rustc with `--emit=link -C link-dead-code`:
+   - `reset`: `f<T> → g::<Vec<T>>`, `g<U> → f::<u8>`.
+   - `fixed_wrap`: `f<T, U>(x: T, _: U) { f(x.clone(), Some(x)) }`, which is idempotent at `<T, Option<T>>`.
+
+   The literal C6 text ("a call that passes a generic argument containing one of the caller's type parameters inside a constructor") covers these, so this is not a deviation. But the docs call it "constructor growth" and "certain constructor growth" (`conformance/README.md:115-123`), and these cycles do not grow. The standard precise shape costs about the same: ECMA-335 §II.9.2's expanding-cycle check, also used for C# generic recursion. Its nodes are (function, type-parameter) pairs. Each call adds an edge from every caller parameter that occurs in a callee argument to that callee parameter, marked *expanding* when the occurrence is under a constructor. FX0407 then fires when an expanding edge lies on a cycle. That accepts both probes, and every case the corpus has now keeps its verdict. Either adopt it now (it replaces the `grows` bool with per-parameter edges and reuses the same reachability loop), or state the over-approximation in `conformance/README.md:115` and REF-0407 and comment on `fx-djp`.
+
+3. **Non-blocking: FX0401 cannot be satisfied for a foreign trait on a non-local self type, and the message says to move the impl anyway.**
+   Evidence: `traits.rs:86-103`. Probe `placement_foreign`: `pub struct Local(pub u8); impl From<Local> for u16 { … }` gives `error: FX0401: … move the impl`, but no module qualifies. The same holds for `impl PartialEq<Local> for &str` and for `impl ForeignTrait for Box<Local>`. This follows C8 literally ("the trait's module is the only choice"), but nothing records that consequence, and the fix text is false advice. Fix: when neither module is local, use a distinct message ("no module may hold this impl; implement it on a local type or a newtype"). State in `conformance/README.md:109` that such impls are not admitted. Ask the decision owner to confirm that §5.2 means this.
+
+4. **Non-blocking: the adopted FX0406 sentence checks only the bounded type, not the bound's trait arguments.**
+   Evidence: `traits.rs:106-116`; D4 at `design/01-design.md:353-356`. Probes `bound_arg` (`impl<T> Foo<T> for u8 where u8: Foo<Vec<T>>`) and `bound_arg_param` (`impl<T, U> Foo<U> for T where T: Foo<Vec<U>>`) both pass the subterm test, because the bounded type is concrete or a parameter. The reference row ("not smaller than its head") rejects both. Rustc rejects both itself with E0275 at the definition (stable and driver, exit 1), so nothing unsound is admitted. They just get no FX0406. This follows the binding C5 sentence, so it does not block this change. Recommend a `fx-djp` comment proposing that the sentence also apply to each type argument of the bound's trait.
+
+5. **Non-blocking (docs leftover): research/27 still describes the FX0407 recursion-limit label that this change removed.**
+   Evidence: `research/27-fx-rule-enforcement.md:54` ("plus a label on rustc's 'reached the recursion limit…'"), `:110` ("the recursion-limit error to FX0407"), `:130` ("leave those to the labelled instantiation error"). Later slices cite research/27. The bead's 2026-11-11 decision comment says "labelled" too. Fix: add an "Adopted with changes (fx-u65.3)" note under C6, as C1 has, stating that no instance-limit label is added and why (finite chains hit the same limit).
+
+6. **Nit:** `trait_recursion_accept.rs` gives no accepted case for unresolved parameter dispatch next to a default body. Finding 1's regression fills that gap. The build test name at `tests/build.rs:1858` and the README wording are accurate.
+
+Proof: the candidate driver `target/debug/tide-admit` (built 2026-11-11 20:58 -03, before the 21:00 amend; Codex r2 used the same artifact) with pinned nightly and Rust std, `--crate-type=lib --emit=metadata`. The comparison oracle was `rustup run stable rustc --edition 2024`. Every run was serial under `nice -n 19`, `CARGO_BUILD_JOBS=4`, `timeout 45`, stdin closed. Before each batch, the 1-minute load was below 12 (it ranged 7.9–10.8), available memory was 14–15 GB, and no quiet window was active. Probe sources and logs are in `/tmp/claude-1000/-home-lucca-pjs-lab-tide--worktrees-fx-u65-3/d10dbe53-d260-4980-a54f-f4c98c653f16/scratchpad/probes/cases/` (`wrap_default`, `reset`, `fixed_wrap`, `placement_foreign`, `bound_arg`, `bound_arg_param`, `bound_arg_use`). I ran no suites; workspace and conformance proof stays with the author's frozen-candidate runs.
+
+Minimal approval path: fix finding 1 in `traits.rs` with its two regressions. The coordinator can take findings 2–5 now or comment them on `fx-djp`; only finding 1 changes text this change edits in a way the decisions do not already cover. The author fixes, and this reviewer re-checks only that fix. DONE

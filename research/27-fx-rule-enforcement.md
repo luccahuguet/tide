@@ -51,7 +51,7 @@ Case shape unless stated: a `<rule>_reject.rs` under `conformance/cases/<area>/`
 | FX0404 | HIR: a written `for<..>` binder: `PolyTraitRef` or where-predicate `bound_generic_params` with an explicitly written lifetime parameter, and a `fn` pointer type's explicit binder. Elided ones from `Fn(&T) -> &U` sugar are synthesized and allowed. | Distinguish written from elided by the parameter's kind (explicit vs elided) or by `span.from_expansion()`/source text [unverified which field the pin exposes]. |
 | FX0405 | AST: negative impl polarity; `auto trait`. | Both are unstable, so rustc adds E0658. |
 | FX0406 | HIR + `tcx.predicates_of(impl)`: a trait predicate whose bounded type is neither a type parameter, a projection of one, nor a strict subterm of the impl head (choice C5). | No existing case. |
-| FX0407 | Definition check over the local call graph (choice C6), plus a label on rustc's "reached the recursion limit while instantiating" for instances the definition check cannot see. | |
+| FX0407 | Definition check for expanding cycles between local function type parameters (choice C6, adopted with changes below); no instance-limit label. | |
 | FX0408 | `tcx.inherent_impls(adt)` for each local ADT: collect associated fn names across all its inherent impls; a repeated name is FX0408 at the later definition. | rustc's E0592 covers only overlapping impls; `impl S<u8> { fn new }` and `impl S<u16> { fn new }` is what rustc accepts and Tide rejects. An overlapping pair carries both codes. |
 
 ### 1.3 fx-u65.4: authority
@@ -101,13 +101,13 @@ Suggested landing order: .2, .4, .5, .3, .6 (.6 waits on fx-mhd).
 
 ## 2. Open design choices
 
-**C1. Rules that rustc already decides ("both" rows): re-decide or label?** Affected: FX0203, FX0210, FX0402 (overlap), FX0407 (instances), and optionally FX0910.
+**C1. Rules that rustc already decides ("both" rows): re-decide or label?** Affected: FX0203, FX0210, FX0402 (overlap), FX0407 (instances, excluded by C6's adoption note), and optionally FX0910.
 
 - A. Re-decide in the walk. Fails for FX0203: typeck results erase regions, so a capture of `&'static str` cannot be told from `&'a str`, and rejecting every reference capture would reject code the reference allows (§3.4: owned means borrowing nothing except `'static` data).
 - B. Label rustc's verdict. On the pin a driver can install its own emitter (`DiagCtxt::set_emitter`, and `Emitter::emit_diagnostic(DiagInner)`) [pin: `rustc_errors/src/lib.rs:496`, `emitter.rs:53`]. A wrapper forwards every diagnostic and, when an error matches a mapped code and lies within a site the walk recorded, emits one extra `FXnnnn` error at the same span.
 - C. Leave rustc's code and drop the FX mark. That weakens the bead's Acceptance, which is the owner's call.
 
-Recommend **B**, scoped narrowly: E0119 to FX0402 with no site test; the recursion-limit error to FX0407; region and borrow errors (E0373, E0521, E0597, the uncoded "lifetime may not live long enough") to FX0203 only inside recorded candidate sites; E0505/E0515/E0597 to FX0210 only inside recorded struct literals. Reason: rustc stays the single owner of the borrow and coherence verdicts (AP-OWNERSHIP-001) and the driver only names them. The rejection itself never depends on the label, so a missed label costs a code, not soundness. If the wrapper proves fragile, FX0402 has a clean fallback (`overlapping_trait_impls`); FX0203 does not.
+Recommend **B**, scoped narrowly: E0119 to FX0402 with no site test; no recursion-limit label for FX0407 (see C6's adoption note); region and borrow errors (E0373, E0521, E0597, the uncoded "lifetime may not live long enough") to FX0203 only inside recorded candidate sites; E0505/E0515/E0597 to FX0210 only inside recorded struct literals. Reason: rustc stays the single owner of the borrow and coherence verdicts (AP-OWNERSHIP-001) and the driver only names them. The rejection itself never depends on the label, so a missed label costs a code, not soundness. If the wrapper proves fragile, FX0402 has a clean fallback (`overlapping_trait_impls`); FX0203 does not.
 
 **Adopted with changes (fx-u65.2)**. Labels prefer precision over recall; uncertain labels are omitted and rustc retains its error and rejection. E0373 uses rustc's closure/borrowed-place spans.
 Other FX0203 errors require a certain whole-binding chain (`&`/`&mut` or receiver-tied borrow methods); projections, destructuring and reassignment invalidate it.
@@ -127,7 +127,21 @@ Recommend **C**, with `-A unused_imports` passed to rustc so the user sees one d
 
 **C5. FX0406 "structurally smaller" is undefined.** The one example is `impl<T> Foo for T where Vec<T>: Foo`, fix "bound `T` directly". Haskell's equivalent, the Paterson conditions, requires each constraint to have fewer constructors and variables than the head and no variable more often ([GHC user guide, instance termination](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/instances.html)). Applied literally that rejects `impl<T: Pure> K for T`, a blanket impl the reference itself writes. Recommend the subterm reading: a where-clause or bound on an impl is accepted when its bounded type is a type parameter, a projection of one, contains no type parameter, or is a strict subterm of the impl's self type or trait arguments; otherwise FX0406. It accepts the stated fix and rejects the stated example. Record it in 01 D4 as one sentence.
 
-**C6. FX0407 scope.** rustc detects polymorphic recursion only when an instance is collected, as "reached the recursion limit while instantiating" ([rust issue 43520 mirror](https://google.18789066745.workers.dev/rust-lang/rust/issues/43520), [issue 88925 mirror](https://github.colasdn.workers.dev/rust-lang/rust/issues/88925)), and some cases take hours to hit the limit ([issue 132558 mirror](https://scriptagc.wasmer.app/https_www_github_com/rust-lang/rust/issues/132558)). The reference's example, an uncalled generic fn in a library, is never instantiated, so rustc accepts it. Recommend a definition check: among local generic fns, in each call-graph cycle, a call that passes a generic argument containing one of the caller's type parameters inside a constructor (`Vec<T>`, `&T`, a closure type) is FX0407. Permuting parameters (`f::<B, A>`) stays legal because it cannot grow. Calls through a trait method on a type parameter are not resolvable at the definition; leave those to the labelled instantiation error.
+**C6. FX0407 scope.** rustc detects polymorphic recursion only when an instance is collected, as "reached the recursion limit while instantiating" ([rust issue 43520 mirror](https://google.18789066745.workers.dev/rust-lang/rust/issues/43520), [issue 88925 mirror](https://github.colasdn.workers.dev/rust-lang/rust/issues/88925)), and some cases take hours to hit the limit ([issue 132558 mirror](https://scriptagc.wasmer.app/https_www_github_com/rust-lang/rust/issues/132558)). The reference's example, an uncalled generic fn in a library, is never instantiated, so rustc accepts it. Recommend a definition check: among local generic fns, in each call-graph cycle, a call that passes a generic argument containing one of the caller's type parameters inside a constructor (`Vec<T>`, `&T`, a closure type) is FX0407. Permuting parameters (`f::<B, A>`) stays legal because it cannot grow. Calls through a trait method on a type parameter are not resolvable at the definition; leave those to rustc's unlabelled instantiation checks.
+
+**Adopted with changes (fx-u65.3)**. No instance-limit label is added: finite
+chains hit the same rustc limit, so the error alone cannot prove forbidden
+growth. The definition check uses the expanding-cycle refinement from
+[ECMA-335 §II.9.2](https://carlwa.com/ecma-335/#ii.9.2-generics-and-recursive-inheritance-graphs),
+applied to (function, type parameter) nodes. Each occurrence of a caller type
+parameter in a callee argument adds an edge to that callee parameter; an
+occurrence under a constructor marks it expanding. FX0407 fires only when an
+expanding edge lies on a cycle, so resets and idempotent wrapping remain legal.
+Projections normalize in the caller's environment; unresolved aliases prove no
+parameter flow. Trait dispatch contributes edges only for selected local impls:
+to their overriding method with substituted impl arguments, or to the default
+body when that impl has no override. Parameter, object, builtin and ambiguous
+dispatch add no edge; rustc retains its checks.
 
 **C7. Which calls are "ambient" (FX0501)?** §6.9's list ends with "...". Recommend a closed table in `policy.rs`: the named items plus the other items of the same Rust std modules that perform an operation in §6.1's capability table (file openers, `std::env` readers, `Instant`/`SystemTime::now` and `elapsed`, `thread::sleep`, `process::exit`/`abort`, `Command::new`, `io::stdin`, socket constructors), and by name `thread_rng`. Anything else keeps today's verdict. Reason: a closed table is testable row by row.
 

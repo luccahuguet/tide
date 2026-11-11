@@ -151,12 +151,13 @@ already implements them; `--tide-print-codes` names the enforced subset.
 | --- | --- | --- | --- | --- |
 | REF-0102 | D6; ref §2.2 | Only the closed derive set is admitted | checker | FX0102 |
 | REF-0103 | D6; ref §2.1 | Only the fixed bang forms are admitted; named carve-outs retain their own codes | checker | FX0103 |
-| REF-0210 | D2; ref §3.6 | When a literal moves a whole owner and borrows it in another field, label E0505 at the owner value or E0515/E0597 inside the paired borrow expression; omit uncertain evidence | both | FX0210 |
+| REF-0210 | D2; ref §3.6 | When a literal moves a whole owner and borrows it in another field, label E0505 at the owner value or E0515/E0597 inside the paired borrow expression (E0515 also via its secondary borrowed-here span); omit uncertain evidence | both | FX0210 |
 | REF-0301 | D3; ref §4.2 | Only lossless numeric as casts; pointer-sized integers and addresses count as 32 to 64 bits | checker | FX0301 |
-| REF-0401 | D4; ref §5.2 | Impls live in the module of their type or trait | checker | FX0401 |
+| REF-0401 | D4; ref §5.2 | Impls live in the exact module of their local ADT or trait; non-local self types use the trait module | checker | FX0401 |
+| REF-0402 | D4; ref §5.1 | No specialization or overlapping impls | both | FX0402; E0119 for overlap |
 | REF-0405 | D4; ref §5.1 | No negative impls or user auto traits | both | FX0405 |
-| REF-0406 | D4; ref §5.1 | Impl bounds are structurally smaller than the impl head | checker | FX0406 |
-| REF-0407 | D3; ref §5.1 | No polymorphic recursion | both | FX0407 |
+| REF-0406 | D4; ref §5.1 | Impl bounds use parameters, their projections, concrete types, or strict subterms of self/trait arguments | checker | FX0406 |
+| REF-0407 | D3; ref §5.1 | No expanding cycles between (function, type parameter) nodes: parameter flow under a constructor must not cycle; trait edges require selected local impls; unresolved aliases and rustc instance-depth errors alone prove no growth | checker | FX0407 |
 | REF-0408 | D3; ref §5.1 | One inherent method per name per type | checker | FX0408 |
 | REF-0601 | D8; ref §7 | No async/await, Future or Pin | checker | FX0601 |
 | REF-0602 | D8; ref §7.1 | No unstructured thread or runtime spawning | both | FX0602 |

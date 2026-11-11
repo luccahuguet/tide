@@ -49,7 +49,9 @@ use crate::pure::{self, Need, Pure};
 mod mono;
 mod sinks;
 mod surface;
+mod traits;
 pub use mono::check_mono_items;
+pub use traits::check_trait_surface;
 
 /// What the package's manifest grants it (03 RUN-4).
 #[derive(Clone, Copy, Default)]
@@ -73,12 +75,15 @@ pub fn check_crate(
     obligations: bool,
     test_library: Option<CrateNum>,
     labels: &RustcLabels,
+    insertions: &crate::synthesis::Insertions,
 ) -> Holes {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants, test_library);
     walk.labels = labels.clone();
+    walk.insertions = Some(insertions);
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
+    walk.ceiling_cycles();
     walk.entry_point(tide_std);
     walk.check_expansions();
     for def in tcx.hir_crate_items(()).definitions() {
@@ -122,6 +127,8 @@ struct Walk<'a, 'tcx> {
     pure: Option<Pure<'a, 'tcx>>,
     diags: Diagnostics,
     labels: RustcLabels,
+    trait_calls: Vec<traits::Call>,
+    insertions: Option<&'a crate::synthesis::Insertions>,
     typeck: Option<&'tcx ty::TypeckResults<'tcx>>,
     owner: Option<LocalDefId>,
     seen_obligations: FxHashSet<(ty::TraitRef<'tcx>, Option<LocalDefId>)>,
@@ -155,6 +162,8 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             pure: crate_pure(tcx, crates),
             diags: Diagnostics::default(),
             labels: RustcLabels::default(),
+            trait_calls: Vec::new(),
+            insertions: None,
             typeck: None,
             owner: None,
             seen_obligations: FxHashSet::default(),
@@ -344,8 +353,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// Whether `span` is in code the toolchain generates: the harness's `main` under `--test`,
     /// the descriptors of `core`'s `#[test]`, which use the sysroot's `test` crate, and the
     /// entry point that Tide's std's `#[tide::main]` generates as the binary's crate-root
-    /// `main`, which starts the runtime.
+    /// `main`, which starts the runtime, and structural test impls inserted by this run.
     fn generated_by_toolchain(&self, mut span: Span) -> bool {
+        if self
+            .insertions
+            .is_some_and(|edits| edits.contains(self.tcx, span))
+        {
+            return true;
+        }
         while span.from_expansion() {
             let expn = span.ctxt().outer_expn();
             let data = expn.expn_data();
@@ -1715,12 +1730,16 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         let outer = self.item.replace(item.owner_id.def_id);
         let def = item.owner_id.def_id;
         self.surface_item(item);
+        let valid_bounds = self.ceiling_item(item);
         match item.kind {
             hir::ItemKind::Impl(hir::Impl {
                 of_trait: Some(header),
                 ..
             }) => {
-                self.trait_impl(def);
+                // Do not ask selection to solve a bound that already exceeds the ceiling.
+                if valid_bounds {
+                    self.trait_impl(def);
+                }
                 if header.safety.is_unsafe() && !written_by_other_crate(item.span) {
                     self.granted(self.tcx.def_span(def), "an `unsafe impl`");
                 }
@@ -1758,6 +1777,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         // The item holds the trust holes found outside its bodies.
         let outer = self.item.replace(item.owner_id.def_id);
         if let hir::ImplItemKind::Type(hir_ty) = item.kind {
+            self.ceiling_associated_type(item.generics, item.span);
             let def = item.owner_id.def_id;
             let ty = self.tcx.type_of(def).instantiate_identity();
             self.declared(def, ty.skip_normalization(), hir_ty.span);
@@ -1770,6 +1790,9 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     fn visit_trait_item(&mut self, item: &'tcx hir::TraitItem<'tcx>) {
         // The item holds the trust holes found outside its bodies.
         let outer = self.item.replace(item.owner_id.def_id);
+        if let hir::TraitItemKind::Type(..) = item.kind {
+            self.ceiling_associated_type(item.generics, item.span);
+        }
         // A method with a body is checked from `visit_fn`.
         if let hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(_)) = &item.kind {
             self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
@@ -1870,6 +1893,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
         if let Some(t) = self.typeck_of(e.hir_id) {
             self.surface_expr(e, t);
+            self.ceiling_call(e, t);
             self.lint_sink_expr(e, t);
             // Method calls, overloaded operators, and indexing.
             if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
@@ -1936,6 +1960,11 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             self.surface_output(output);
         }
         intravisit::walk_fn_ret_ty(self, output);
+    }
+
+    fn visit_generic_param(&mut self, param: &'tcx hir::GenericParam<'tcx>) {
+        self.ceiling_parameter(param);
+        intravisit::walk_generic_param(self, param);
     }
 
     fn visit_generic_args(&mut self, args: &'tcx hir::GenericArgs<'tcx>) {

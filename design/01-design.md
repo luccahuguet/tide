@@ -350,7 +350,10 @@ operators.
   associated types, lifetime parameters on traits, rank-N types
   (higher-ranked lifetimes from elision in `Fn` sugar and `fn` pointer
   types are allowed), negative bounds, or user auto traits. Impl
-  where-clauses must be structurally smaller than the impl head.
+  where-clauses must be structurally smaller than the impl head: a bound is
+  accepted when its bounded type is a type parameter, a projection of one,
+  contains no type parameter, or is a strict subterm of the impl's self type
+  or trait arguments; otherwise it is `FX0406`.
 - Generics are definition-checked: instantiation never produces a type error.
 - Coherence never treats a missing auto or marker trait (`Send`, `Sync`,
   `Pure`) as making two impls disjoint.

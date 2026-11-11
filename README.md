@@ -59,7 +59,14 @@ lifetime parameters on traits (`FX0201`), unresolved output elision, including
 function types and `Fn` sugar (`FX0202`, LIFE-4), and lossy numeric casts (`FX0301`). It labels rustc's borrow errors for closures in
 owned positions when the evidence is certain (`FX0203`) and struct literals that
 move an owner into one field and borrow it in another (`FX0210`). Wrong-input elision keeps rustc's
-region error. It also rejects `#![no_std]` (`FX0520`) and package build scripts
+region error. It enforces the trait power ceiling (`FX0401`–`FX0408`): impl
+placement, specialization and overlap, generic associated types, explicit
+higher-ranked binders, negative impls and user auto traits, structural impl
+bounds, polymorphic recursion and duplicate inherent method names. Definition
+checks reject expanding cycles between function type parameters, including
+selected local trait impls. Unresolved dispatch retains rustc's checks;
+instance-depth failures alone do not receive `FX0407`.
+It also rejects `#![no_std]` (`FX0520`) and package build scripts
 (`FX0915`), and caches successful checks/builds by source and trusted-input
 content. A crate it admits against Tide's std also gets a trust artifact beside its metadata,
 `<crate>.interface.json` (D11, 03 §4.1): each exported item's declared

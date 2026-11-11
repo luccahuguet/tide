@@ -33,6 +33,28 @@ impl Insertions {
         Some(result)
     }
 
+    /// Only bytes inserted by this compiler run are trusted, never a source attribute.
+    pub fn contains(&self, tcx: TyCtxt<'_>, span: Span) -> bool {
+        let span = span.source_callsite();
+        let file = tcx.sess.source_map().lookup_source_file(span.lo());
+        let FileName::Real(name) = &file.name else {
+            return false;
+        };
+        let Some(edits) = name.local_path().and_then(|path| self.0.get(path)) else {
+            return false;
+        };
+        let lo = file.original_relative_byte_pos(span.lo()).0 as usize;
+        let hi = file.original_relative_byte_pos(span.hi()).0 as usize;
+        let mut shift = 0;
+        for (&offset, code) in edits {
+            let start = offset + shift;
+            if start <= lo && hi <= start + code.len() {
+                return true;
+            }
+            shift += code.len();
+        }
+        false
+    }
     fn append(&mut self, tcx: TyCtxt<'_>, module: LocalModId, code: &str) {
         let (body, declaration, _) = tcx.hir_get_module(module);
         let end = body.spans.inner_span.hi();

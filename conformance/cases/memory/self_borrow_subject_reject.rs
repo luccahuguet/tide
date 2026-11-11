@@ -13,7 +13,7 @@ pub fn pushed(v: &mut Vec<Doc<'static>>) {
 pub fn returned<'a>() -> Doc<'a> {
     let text = String::from("owner");
     let y = String::from("other");
-    Doc { //~ E0515
+    Doc { //~ E0515 FX0210
         word: &text,
         other: &y,
         text, //~ E0505 FX0210

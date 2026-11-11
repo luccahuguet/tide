@@ -27,6 +27,22 @@ pub enum Code {
     Fx0210,
     /// A lossy `as` cast (D3).
     Fx0301,
+    /// Impl placement (D4).
+    Fx0401,
+    /// Specialization or overlapping impls (D4).
+    Fx0402,
+    /// Generic associated types (D4).
+    Fx0403,
+    /// Explicit higher-ranked binders (D4).
+    Fx0404,
+    /// Negative impls or user auto traits (D4).
+    Fx0405,
+    /// An impl bound outside the structural subterm ceiling (D4).
+    Fx0406,
+    /// Polymorphic recursion (D3).
+    Fx0407,
+    /// Duplicate inherent method names (D3).
+    Fx0408,
     /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
     Fx0502,
     /// A call of, or other reference to, the binary's `main` (ROOT-5).
@@ -87,6 +103,14 @@ impl Code {
         Code::Fx0203,
         Code::Fx0210,
         Code::Fx0301,
+        Code::Fx0401,
+        Code::Fx0402,
+        Code::Fx0403,
+        Code::Fx0404,
+        Code::Fx0405,
+        Code::Fx0406,
+        Code::Fx0407,
+        Code::Fx0408,
         Code::Fx0502,
         Code::Fx0506,
         Code::Fx0507,
@@ -122,6 +146,14 @@ impl Code {
             Code::Fx0203 => "FX0203",
             Code::Fx0210 => "FX0210",
             Code::Fx0301 => "FX0301",
+            Code::Fx0401 => "FX0401",
+            Code::Fx0402 => "FX0402",
+            Code::Fx0403 => "FX0403",
+            Code::Fx0404 => "FX0404",
+            Code::Fx0405 => "FX0405",
+            Code::Fx0406 => "FX0406",
+            Code::Fx0407 => "FX0407",
+            Code::Fx0408 => "FX0408",
             Code::Fx0502 => "FX0502",
             Code::Fx0506 => "FX0506",
             Code::Fx0507 => "FX0507",

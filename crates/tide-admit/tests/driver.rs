@@ -894,3 +894,91 @@ trust holes
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn trait_ceiling_rejects_definitions_and_accepts_their_rewrites() {
+    for (name, rejected, accepted, code) in [
+        (
+            "placement",
+            "pub struct S; mod child { impl super::S {} }",
+            "pub struct S; impl S {}",
+            "FX0401",
+        ),
+        (
+            "overlap",
+            "pub trait K {} impl<T> K for T {} impl K for u8 {}",
+            "pub trait K {} pub struct S; impl K for S {}",
+            "FX0402",
+        ),
+        (
+            "gat",
+            "pub trait K { type A<T>; }",
+            "pub trait K { type A; }",
+            "FX0403",
+        ),
+        (
+            "binder",
+            "pub type Callback = for<'a> fn(&'a u8) -> &'a u8;",
+            "pub type Callback = fn(&u8) -> &u8;",
+            "FX0404",
+        ),
+        ("auto", "pub auto trait K {}", "pub trait K {}", "FX0405"),
+        (
+            "bounds",
+            "pub trait K {} impl<T> K for T where Vec<T>: K {}",
+            "pub trait K {} impl<T: K> K for Vec<T> {}",
+            "FX0406",
+        ),
+        (
+            "recursion",
+            "pub fn f<T>(x: T) { f(vec![x]); }",
+            "pub fn f<A, B>(a: A, b: B) { f(b, a); }",
+            "FX0407",
+        ),
+        (
+            "names",
+            "pub struct S<T>(T); impl S<u8> { pub fn new() {} } impl S<u16> { pub fn new() {} }",
+            "pub struct S<T>(T); impl S<u8> { pub fn new_byte() {} } impl S<u16> { pub fn new_word() {} }",
+            "FX0408",
+        ),
+    ] {
+        let (exit, err) = admit(
+            &format!("traits-{name}-reject"),
+            &format!("#![allow(warnings)]\n{rejected}"),
+            &[],
+        );
+        assert_eq!(exit, 1, "{name}: {err}");
+        assert!(err.contains(&format!("error: {code}:")), "{name}: {err}");
+        if name == "overlap" {
+            assert!(err.contains("E0119"), "{err}");
+        }
+        let (exit, err) = admit(&format!("traits-{name}-accept"), accepted, &[]);
+        assert_eq!(exit, 0, "{name}: {err}");
+    }
+}
+
+#[test]
+fn trait_placement_explains_when_no_module_can_hold_the_impl() {
+    let source = "pub struct Local; impl From<Local> for u16 { fn from(_: Local) -> u16 { 0 } }";
+    let (exit, err) = admit("trait-placement-no-module", source, &[]);
+    assert_eq!(exit, 1, "{err}");
+    assert!(err.contains("FX0401: no module can hold this impl"), "{err}");
+    assert!(err.contains("Into<u16> for Local"), "{err}");
+    assert!(err.contains("newtype"), "{err}");
+    assert!(!err.contains("move the impl"), "{err}");
+}
+
+#[test]
+fn trait_recursion_distinguishes_constructors_projections_and_selected_impl_args() {
+    let accepted = include_str!("../../../conformance/cases/memory/trait_recursion_accept.rs");
+    let rejected = include_str!("../../../conformance/cases/memory/trait_recursion_reject.rs");
+    let (exit, err) = admit("trait-recursion-regressions-accept", accepted, &[]);
+    assert_eq!(exit, 0, "{err}");
+    let (exit, err) = admit("trait-recursion-regressions-reject", rejected, &[]);
+    assert_eq!(exit, 1, "{err}");
+    assert_eq!(
+        err.matches("error: FX0407:").count(),
+        rejected.matches("//~ FX0407").count(),
+        "{err}"
+    );
+}

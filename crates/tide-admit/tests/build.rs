@@ -2270,3 +2270,95 @@ fn simulated_files_match_real_files_and_replay() {
         assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed; 0 failed"));
     }
 }
+
+#[test]
+fn trait_dispatch_recursion_keeps_rustcs_failure_without_an_uncertain_label() {
+    // The parameter dispatch in bounce cannot prove a cycle back to the blanket impl.
+    let dir = package(
+        "trait-dispatch-recursion",
+        r#"
+trait Step { fn step(self); }
+impl<T> Step for T { fn step(self) { bounce(Some(self)); } }
+fn bounce<T: Step>(x: T) { x.step(); }
+#[tide::main]
+fn main(_: Root) { bounce(0u8); }
+"#,
+    );
+    let output = driver(&dir).output().unwrap();
+    let error = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "{error}");
+    assert!(
+        error.contains("reached the recursion limit while instantiating"),
+        "{error}"
+    );
+    assert!(!error.contains("FX0407"), "{error}");
+    assert!(!dir.join("out/demo").exists());
+}
+
+#[test]
+fn synthesized_impls_are_trusted_without_trusting_adjacent_user_impls() {
+    let source = r#"
+mod generated {
+    #[derive(Debug)] struct Bag<T> { rows: Vec<T> }
+    #[test] fn check(value: Bag<u8>) { let _ = value; }
+}
+"#;
+    let dir = package("trait-synthesis-provenance-accept", source);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let dir = package(
+        "trait-synthesis-provenance-reject",
+        &format!(
+            "{source}\npub trait Marker {{}}\nimpl<T> Marker for T where Vec<T>: Clone {{}}\n"
+        ),
+    );
+    let output = driver(&dir)
+        .args(["--crate-type=lib", "--test"])
+        .output()
+        .unwrap();
+    let error = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "{error}");
+    let labels: Vec<_> = error
+        .lines()
+        .filter(|line| line.contains("error: FX"))
+        .collect();
+    assert_eq!(labels.len(), 1, "{error}");
+    assert!(
+        labels[0].contains("demo.rs:8:") && labels[0].contains("FX0406:"),
+        "{error}"
+    );
+}
+
+#[test]
+fn finite_trait_dispatch_chain_keeps_rustcs_limit_failure_without_a_growth_label() {
+    let mut source = String::from("pub trait K { fn step(); }\nfn f<T: K>() { T::step(); }\n");
+    for n in 0..9 {
+        let body = if n == 0 {
+            String::new()
+        } else {
+            format!("f::<S{}>();", n - 1)
+        };
+        source.push_str(&format!(
+            "pub struct S{n}; impl K for S{n} {{ fn step() {{ {body} }} }}\n"
+        ));
+    }
+    source.push_str("pub fn entry() { f::<S8>(); }\n");
+    for (limit, success) in [(4, false), (128, true)] {
+        let dir = package(
+            &format!("finite-trait-chain-{limit}"),
+            &format!("#![recursion_limit=\"{limit}\"]\n{source}"),
+        );
+        let output = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .output()
+            .unwrap();
+        let error = stderr(&output);
+        assert_eq!(output.status.success(), success, "{error}");
+        assert!(!error.contains("FX0407"), "{error}");
+        if !success {
+            assert!(
+                error.contains("reached the recursion limit while instantiating"),
+                "{error}"
+            );
+        }
+    }
+}

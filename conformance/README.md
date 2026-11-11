@@ -82,8 +82,10 @@ receiver-tied borrow method. A projected borrow counts when its loan root is
 that moved owner. Copies, reborrows, raw-pointer results and loan paths through
 stored references are omitted. The label
 matches E0505 only at the exact span of the moved owner field's value, and E0515/E0597 only when
-the primary span lies inside the paired borrow field's expression. Other
-fields' errors and errors spanning the entire literal receive no FX0210. The label
+the primary span lies inside the paired borrow field's expression. E0515 on
+an entire returned literal also qualifies when its secondary "borrowed here"
+label lies inside that paired borrow field. Other fields' errors receive no
+FX0210. The label
 layer prefers precision over recall: every label is a supplementary
 explanation of an error rustc already rejects and must never be false. When
 provenance is uncertain, the label may be absent; rustc's error and rejection
@@ -101,6 +103,35 @@ sourced only from the reference/decision record use `REF-<FX digits>` IDs in
 applies only to unsafe blocks, with or without the grant: a `// SAFETY:` line
 in the comment lines directly above the block or its statement, never a
 trailing same-line comment or a requirement on unsafe impls.
+
+The trait slice enforces `FX0401`–`FX0408` as errors. Impl placement uses
+exact module equality: the local ADT's module or the trait's module; for a
+non-local self type only a local trait's module qualifies. If neither module is
+local, the impl is not admitted; implement a trait on the local type (for
+example, `Into<u16> for Local` rather than `From<Local> for u16`) or use a
+newtype. A function-local impl uses the enclosing module. Specialization is checked before lowering; overlap
+labels rustc's E0119. Associated type parameters and explicit binders are
+rejected while elided `Fn` and bare `fn` lifetimes remain legal. Impl bounds
+accept a parameter, its projection, a type containing no type parameter, or a
+strict subterm of the self type or trait arguments. The definition graph uses
+(function, type parameter) nodes, including uncalled generic definitions.
+Each caller parameter occurring in a callee type argument has an edge to that
+callee parameter; an occurrence under a constructor marks an expanding edge.
+`FX0407` rejects an expanding edge on a cycle. Selected local trait impls use
+their overriding method and substituted impl arguments, or the trait's default
+body when the selected impl has no override. Other trait dispatch contributes
+no edge. Projections are normalized in the caller's environment; unresolved
+aliases do not prove parameter flow. Permutations, acyclic growth, and cycles
+that reset or discard the wrapped parameter pass. Unresolved parameter or
+dynamic dispatch and function pointers retain rustc's checks. An instantiation
+recursion-limit failure alone does not prove forbidden growth: finite concrete
+chains can hit the same limit. Without an expanding-cycle proof, rustc's
+failure stays unlabelled. Inherent method
+names are unique across all impls of the same type, including disjoint impls;
+trait methods keep their separate namespaces. Trusted macro-generated forms
+and property-test impls inserted by this driver run are not candidate
+definitions. Insertion provenance is tracked by exact byte ranges; adjacent
+user code remains checked. `#[allow]` does not silence these errors.
 
 ## Case format
 

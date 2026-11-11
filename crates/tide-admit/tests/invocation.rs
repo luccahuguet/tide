@@ -64,6 +64,44 @@ fn borrow_labels_preserve_rustc_errors_and_leave_unrelated_borrows_alone() {
 }
 
 #[test]
+fn self_borrow_e0515_labels_only_the_paired_borrow() {
+    let dir = package(
+        "self-borrow-secondary",
+        r#"
+pub struct Doc<'a> { word: &'a str, other: &'a str, text: String }
+pub fn f<'a>() -> Doc<'a> {
+    let text = String::from("owner");
+    let y = String::from("other");
+    Doc {
+        word: &text,
+        other: &y,
+        text,
+    }
+}
+"#,
+    );
+    let out = driver(&dir).output().unwrap();
+    let error = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{error}");
+    assert_eq!(
+        error
+            .lines()
+            .filter(|line| line.contains(":6:") && line.contains("E0515"))
+            .count(),
+        2,
+        "{error}"
+    );
+    assert_eq!(
+        error
+            .lines()
+            .filter(|line| line.contains(":6:") && line.contains("error: FX0210:"))
+            .count(),
+        1,
+        "{error}"
+    );
+}
+
+#[test]
 fn malformed_and_empty_arguments_fail_before_compilation() {
     for args in [
         vec![],
