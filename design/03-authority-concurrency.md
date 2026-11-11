@@ -1783,6 +1783,21 @@ The test body runs as the simulation's main task. `#[sim_test(seeds = N)]`
 gives a test a fresh `SimRoot` per seed; `tide test` runs 100 seeds by
 default and `tide sim --test` runs more.
 
+The production subset exposes `Root::sim` and `#[sim_test]` in driver-built
+libtest binaries. `Root::sim` runs in-process on the calling thread as task 0;
+dropping `SimRoot` ends it. `#[sim_test]` re-executes one exact test in a child
+with empty stdin and a wall-clock timeout as the backstop, running seeds `0..N`
+(default 100) in order. The first seed and every failing seed run twice; byte
+comparison reports the first differing NDJSON line pair, including ordered sink
+output. Failures print seeds, causes and traces; signal/timeout or a missing
+summary names the last started seed. Ordinary failures name the failing seeds;
+success emits at most one libtest-captured summary, with seed-start records kept
+internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
+REPLAY-2 identity validation. Tasks, single-cell `Shared`, clocks and sinks are
+modeled; other capabilities carry simulated identities but their operations,
+world setup, faults, nodes, manifests, generated simulation parameters and the
+`tide` commands remain planned. The child has no RUN-3 sandbox.
+
 ### 9.3 Time and scheduling
 
 - Monotonic time starts at zero, wall time at 2000-01-01T00:00:00Z.

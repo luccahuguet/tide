@@ -28,6 +28,7 @@ pub(super) enum Operation {
     Advance,
     Deadlock,
     Exit,
+    Sink,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,6 +70,7 @@ pub(super) struct Scheduler {
     rng: u64,
     step: usize,
     pub(super) trace: String,
+    pub(super) records: Vec<crate::sim::Record>,
     // Virtual time moves only in `pick`, when no task is runnable.
     pub(super) now: Duration,
     timers: BTreeMap<TimerKey, TaskId>,
@@ -90,6 +92,7 @@ impl Scheduler {
             rng: seed ^ 0x7469_6465_7363_6864, // "tideschd"
             step: 0,
             trace: String::new(),
+            records: Vec::new(),
             now: Duration::ZERO,
             timers: BTreeMap::new(),
             next_timer: 0,
@@ -223,6 +226,33 @@ impl Scheduler {
         };
         writeln!(self.trace, ",\"outcome\":\"{outcome}\"}}").unwrap();
         pending
+    }
+
+    pub(super) fn sink(&mut self, task: TaskId, stream: &str, message: &str, span: Span) {
+        self.event(
+            task,
+            Pending {
+                operation: Operation::Sink,
+                span,
+            },
+            "sink",
+            None,
+        );
+        self.trace.push_str(",\"stream\":");
+        quoted(&mut self.trace, stream);
+        self.trace.push_str(",\"message\":");
+        quoted(&mut self.trace, message);
+        self.trace.push_str("}\n");
+        self.records.push(crate::sim::Record {
+            node: "main".into(),
+            time: self.now,
+            sink: match stream {
+                "out" => crate::sim::Sink::Out,
+                "err" => crate::sim::Sink::Err,
+                _ => unreachable!("unsupported sink"),
+            },
+            message: message.into(),
+        });
     }
 
     /// Records what a blocking capability operation returned.
@@ -383,23 +413,30 @@ impl Scheduler {
         if let Some(target) = target {
             write!(self.trace, ",\"target\":{target}").unwrap();
         }
-        self.trace.push_str(",\"span\":{\"file\":\"");
-        for ch in pending.span.file().chars() {
-            match ch {
-                '"' => self.trace.push_str("\\\""),
-                '\\' => self.trace.push_str("\\\\"),
-                '\u{0}'..='\u{1f}' => write!(self.trace, "\\u{:04x}", u32::from(ch)).unwrap(),
-                _ => self.trace.push(ch),
-            }
-        }
+        self.trace.push_str(",\"span\":{\"file\":");
+        quoted(&mut self.trace, pending.span.file());
         write!(
             self.trace,
-            "\",\"line\":{},\"column\":{}}}",
+            ",\"line\":{},\"column\":{}}}",
             pending.span.line(),
             pending.span.column(),
         )
         .unwrap();
     }
+}
+
+// JSON strings for spans and sink messages; each record must stay on one physical line.
+fn quoted(out: &mut String, value: &str) {
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0}'..='\u{1f}' => write!(out, "\\u{:04x}", u32::from(ch)).unwrap(),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
 }
 
 impl Operation {
@@ -421,6 +458,7 @@ impl Operation {
             Self::Advance => ("advance", None),
             Self::Deadlock => ("deadlock", None),
             Self::Exit => ("exit", None),
+            Self::Sink => ("sink", None),
         }
     }
 

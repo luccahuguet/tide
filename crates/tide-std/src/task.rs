@@ -26,6 +26,7 @@ struct Runtime {
     // Real waiting threads; cancellation and resources unpark them to recheck.
     waiting: Vec<thread::Thread>,
     baton: Option<Baton>,
+    simulation_ended: bool,
 }
 
 struct Baton {
@@ -267,8 +268,13 @@ impl Enter {
 }
 impl Drop for Enter {
     fn drop(&mut self) {
+        // SimRoot may have been dropped out of order inside this scope. Never restore its
+        // dead main context after the live-task assertion unwinds through the scope.
+        let previous = self.0.take().filter(|context| {
+            context.task.is_none() || !sim_lock(context.runtime.lock()).simulation_ended
+        });
         CURRENT.with(|slot| {
-            slot.replace(self.0.take());
+            slot.replace(previous);
         });
     }
 }
@@ -419,15 +425,13 @@ impl Context {
     }
 }
 
-// fx-nkv.6 owns the public SimRoot and uses this guard for its main task.
-#[allow(dead_code)]
+// SimRoot keeps this guard on the thread that holds the main task baton.
 pub(crate) struct Simulation {
     tasks: Tasks,
     clock: crate::time::Clock,
     _main: Enter,
 }
 
-#[allow(dead_code)]
 impl Simulation {
     #[track_caller]
     pub(crate) fn new(seed: u64) -> Self {
@@ -466,35 +470,24 @@ impl Simulation {
     pub(crate) fn clock(&self) -> &crate::time::Clock {
         &self.clock
     }
-
-    /// Virtual time since the simulation began. Reading it is not a scheduling point.
-    pub(crate) fn elapsed(&self) -> Duration {
-        let runtime = self.tasks.simulation.as_ref().unwrap();
-        sim_lock(runtime.lock())
-            .baton
-            .as_ref()
-            .unwrap()
-            .scheduler
-            .now
-    }
-
-    pub(crate) fn trace(&self) -> String {
-        let runtime = self.tasks.simulation.as_ref().unwrap();
-        sim_lock(runtime.lock())
-            .baton
-            .as_ref()
-            .unwrap()
-            .scheduler
-            .trace
-            .clone()
-    }
 }
 
 impl Drop for Simulation {
     fn drop(&mut self) {
-        let runtime = sim_lock(self.tasks.simulation.as_ref().unwrap().lock());
+        let mut runtime = sim_lock(self.tasks.simulation.as_ref().unwrap().lock());
         let ended = runtime.baton.as_ref().unwrap().scheduler.current == Some(0)
             && runtime.scopes.is_empty();
+        if ended {
+            runtime.baton.as_mut().unwrap().scheduler.finish(
+                0,
+                if thread::panicking() {
+                    Outcome::Panic
+                } else {
+                    Outcome::Ok
+                },
+            );
+        }
+        runtime.simulation_ended = true;
         // Assert unlocked: a failure must not poison the lock or abort an unwind in progress.
         drop(runtime);
         assert!(
@@ -504,7 +497,21 @@ impl Drop for Simulation {
     }
 }
 
-/// Rejects a real cell or real file authority used inside a simulation.
+// Sinks never hand off the baton. Format before entering here, outside the runtime lock.
+pub(crate) fn record_sink(stream: &str, message: &str, span: Span) -> bool {
+    let Some(context) = Context::current().filter(|context| context.task.is_some()) else {
+        return false;
+    };
+    context.lock().baton.as_mut().unwrap().scheduler.sink(
+        context.task.unwrap(),
+        stream,
+        message,
+        span,
+    );
+    true
+}
+
+/// Rejects real authority used inside a simulation.
 pub(crate) fn outside_simulation() {
     Context::outside_simulation();
 }
@@ -533,6 +540,40 @@ pub(crate) fn observe_cancellation() -> bool {
 }
 
 impl Tasks {
+    pub(crate) fn sim_elapsed(&self) -> Duration {
+        sim_lock(self.simulation.as_ref().unwrap().lock())
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .now
+    }
+
+    pub(crate) fn sim_trace(&self) -> String {
+        sim_lock(self.simulation.as_ref().unwrap().lock())
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .trace
+            .clone()
+    }
+
+    pub(crate) fn sim_records(&self) -> Vec<crate::sim::Record> {
+        sim_lock(self.simulation.as_ref().unwrap().lock())
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .records
+            .clone()
+    }
+
+    pub(crate) fn unmodeled(&self, capability: &str) -> ! {
+        self.context(); // Reject handles from another or an ended simulation first.
+        panic!("simulated {capability} operations are not available yet")
+    }
+
     pub(crate) fn real() -> Self {
         Self { simulation: None }
     }

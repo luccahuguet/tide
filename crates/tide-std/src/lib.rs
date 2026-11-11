@@ -23,10 +23,20 @@
 //! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, and single-cell `with`, with FIFO
 //!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
 //!   reserved for the planned multi-cell operations (03 §6.5);
-//! - an internal seeded scheduler for structured tasks, single-cell `Shared`, and `Clock`, with
+//! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
+//!   single-cell `Shared`, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
-//!   when none is left (03 §9.3). The public entry and runner are pending;
+//!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
+//!   `elapsed`, `records`, and `trace` inspect without scheduling. Sinks record ordered events
+//!   instead of writing to host streams;
+//! - `#[sim_test] fn t(sim: SimRoot)` (100 seeds) and `#[sim_test(seeds = N)]` (0..N),
+//!   one child process per test with a wall-clock backstop of 300 s per seed and empty stdin.
+//!   The first and each failing seed runs twice for byte identity. Failures print seeds,
+//!   causes, and traces; success emits only a single summary, captured by libtest.
+//!   Signal/timeout or a missing summary names the last seed started; ordinary failures name
+//!   the failing seeds. `TIDE_SIM_SEED` selects one fresh decimal u64 seed through the internal
+//!   runner hook, without source/build identity checks;
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
@@ -50,7 +60,8 @@
 //! - real files: `Fs`, `Mode`, `OpenOptions`, `File`, directory listings, and type/length
 //!   metadata (`fs.rs`). `dir` confines paths with Linux `openat2`; file operations check
 //!   cancellation, except the shielded `File::close`, and panic inside a simulation until
-//!   simulated files exist (bead `fx-byk.2`).
+//!   simulated files exist (bead `fx-byk.2`); simulated `Fs` identities also reject operations
+//!   after their simulation ends. Simulated `Rand` rejects Rand-backed hash initialization.
 //!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
@@ -63,21 +74,23 @@
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
-//! `par`, `arena`, `ptr`, and `sim`; `#[sim_test]`, requires-guided generation,
+//! `par`, `arena`, `ptr`; world setup, faults, nodes, replay manifests, generated simulation
+//! parameters, requires-guided generation,
 //! generated contract tests, and the contract attributes. A
 //! program that uses one fails to compile, as for any missing item.
-//! Executable tests use rustc's ordinary harness, without simulated capabilities or process
-//! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
+//! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
+//! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's
+//! unreviewed-branch guarantee.
 //!
 //! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
-//! scheduler), `sync.rs`, and `time.rs`
+//! scheduler), `sync.rs`, `sim.rs` (with its runner), and `time.rs`
 //! share their definitions with the conformance fixture std. The identity-only capability
 //! types use `root.rs`'s `capability!` in both crates.
 
 include!("root.rs");
 
 crate::declare_prelude! {
-    pub use crate::test::test;
+    pub use crate::test::{test, sim_test};
 }
 
 pub mod test;
@@ -126,3 +139,5 @@ pub mod process {
 
 pub mod task;
 pub mod sync;
+
+pub mod sim;

@@ -7,6 +7,7 @@
 
 mod codec;
 mod error;
+mod sim_test;
 mod test;
 
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
@@ -24,6 +25,14 @@ pub fn derive_error(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     test::expand(attr.into(), syn::parse_macro_input!(item as syn::ItemFn))
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
+
+/// Runs a simulation test over 100 seeds, or `seeds = N`, in a child process.
+#[proc_macro_attribute]
+pub fn sim_test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    sim_test::expand(attr.into(), syn::parse_macro_input!(item as syn::ItemFn))
         .unwrap_or_else(|e| e.into_compile_error())
         .into()
 }

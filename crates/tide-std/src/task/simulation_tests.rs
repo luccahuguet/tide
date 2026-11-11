@@ -75,7 +75,7 @@ fn two_tasks(seed: u64) -> (String, u32, u32) {
         .unwrap();
     let acquire_line = line!() + 1;
     assert_eq!(cell.with(|n| *n), Ok(3));
-    (simulation.trace(), join_line, acquire_line)
+    (simulation.tasks().sim_trace(), join_line, acquire_line)
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn first_scheduled_failure_sets_the_cancellation_cause() {
             });
             let winner = result.unwrap_err();
             assert_eq!(
-                simulation.trace().contains("\"outcome\":\"echo\""),
+                simulation.tasks().sim_trace().contains("\"outcome\":\"echo\""),
                 winner == Failure::Second
             );
             winners.push(winner);
@@ -343,7 +343,7 @@ fn callback_panic_releases_the_baton_poisons_the_cell_and_reaches_scope() {
         }))
         .unwrap_err();
         assert_eq!(*panic.downcast::<u32>().unwrap(), 73);
-        assert!(simulation.trace().contains("\"outcome\":\"panic\""));
+        assert!(simulation.tasks().sim_trace().contains("\"outcome\":\"panic\""));
     });
 }
 
@@ -443,10 +443,10 @@ fn cancel_takes_no_scheduling_point_and_the_next_checkpoint_observes_it() {
                     while tasks.checkpoint().is_ok() {}
                     Err::<(), _>(Ended::Child)
                 });
-                let before = simulation.trace();
+                let before = simulation.tasks().sim_trace();
                 scope.cancel();
                 scope.cancel();
-                let trace = simulation.trace();
+                let trace = simulation.tasks().sim_trace();
                 // A point here would add its own record and, with two runnable tasks, a
                 // `sched` record with a draw. Only the first-cause transition is recorded.
                 let added = trace.strip_prefix(before.as_str()).unwrap();
@@ -490,7 +490,7 @@ fn body_error_with_unfinished_children_cancels_once_and_blocks_at_scope_exit() {
                     (Ended::Body, "\"outcome\":\"echo\"")
                 };
                 assert_eq!(result, Err(winner));
-                let trace = simulation.trace();
+                let trace = simulation.tasks().sim_trace();
                 let count = |a: &str, b: &str| {
                     trace
                         .lines()
@@ -556,7 +556,7 @@ fn rejected_native_spawn_keeps_its_panic_and_leaves_no_phantom_task() {
                 })
                 .unwrap();
             // The abandoned registration, task 2, never ran and was never runnable.
-            let trace = simulation.trace();
+            let trace = simulation.tasks().sim_trace();
             for line in trace.lines() {
                 assert!(!line.contains("\"task\":2,"), "{line}");
                 if let Some((_, runnable)) = line.split_once("\"runnable\":[") {
@@ -726,20 +726,20 @@ fn the_last_representable_virtual_instant_is_a_finite_sleep_target() {
         let clock = simulation.clock();
         let start = clock.now();
         clock.sleep(Duration::MAX).unwrap();
-        assert_eq!(simulation.elapsed(), Duration::MAX);
+        assert_eq!(simulation.tasks().sim_elapsed(), Duration::MAX);
         assert_eq!(clock.now() - start, Duration::MAX);
-        let trace = simulation.trace();
+        let trace = simulation.tasks().sim_trace();
         let panic = catch_unwind(AssertUnwindSafe(|| clock.system_time())).unwrap_err();
         assert_eq!(
             message(&*panic),
             Some("`system_time()` exceeds the representable wall-time range")
         );
-        assert_eq!(simulation.trace(), trace);
+        assert_eq!(simulation.tasks().sim_trace(), trace);
         // The range failure did not poison the runtime or consume a trace step.
         assert_eq!(clock.now() - start, Duration::MAX);
         simulation.tasks().checkpoint().unwrap();
         clock.sleep(Duration::ZERO).unwrap();
-        let after = simulation.trace();
+        let after = simulation.tasks().sim_trace();
         assert!(after.starts_with(&trace), "{after}");
         for (step, line) in after.lines().enumerate() {
             assert!(line.starts_with(&format!("{{\"step\":{step},")), "{line}");
@@ -767,7 +767,7 @@ fn a_sleeper_wakes_at_its_exact_virtual_instant_and_only_blocked_tasks_move_time
         }
         clock.sleep(Duration::ZERO).unwrap();
         clock.sleep_until(start).unwrap();
-        assert_eq!((clock.now(), simulation.elapsed()), (start, Duration::ZERO));
+        assert_eq!((clock.now(), simulation.tasks().sim_elapsed()), (start, Duration::ZERO));
         tasks
             .scope::<_, TaskError, _>(|scope| {
                 scope.spawn(|| {
@@ -778,18 +778,18 @@ fn a_sleeper_wakes_at_its_exact_virtual_instant_and_only_blocked_tasks_move_time
                 Ok(())
             })
             .unwrap();
-        assert_eq!(simulation.elapsed(), 5 * SECOND);
+        assert_eq!(simulation.tasks().sim_elapsed(), 5 * SECOND);
         clock
             .monotonic_only()
             .sleep_until(start + 7 * SECOND)
             .unwrap();
-        assert_eq!(simulation.elapsed(), 7 * SECOND);
+        assert_eq!(simulation.tasks().sim_elapsed(), 7 * SECOND);
         assert_eq!(clock.now() - start, 7 * SECOND);
         assert_eq!(wall(clock), Duration::from_secs(946_684_807));
         // Seven virtual seconds pass without waiting for them.
         assert!(started.elapsed() < 5 * SECOND);
 
-        let trace = simulation.trace();
+        let trace = simulation.tasks().sim_trace();
         let lines = |a: &str, b: &str| -> Vec<&str> {
             let matching = trace
                 .lines()
@@ -874,8 +874,8 @@ fn two_sleepers(seed: u64) -> (Vec<u8>, String) {
             Ok(())
         })
         .unwrap();
-    assert_eq!(simulation.elapsed(), SECOND);
-    (order.lock().unwrap().clone(), simulation.trace())
+    assert_eq!(simulation.tasks().sim_elapsed(), SECOND);
+    (order.lock().unwrap().clone(), simulation.tasks().sim_trace())
 }
 
 #[test]
@@ -944,11 +944,11 @@ fn cancellation_ends_a_sleep_at_once_and_takes_its_timer() {
                     _ => Ok(()),
                 };
                 assert_eq!(result, expected);
-                assert_eq!(simulation.elapsed(), SECOND);
+                assert_eq!(simulation.tasks().sim_elapsed(), SECOND);
                 // The cancelled sleeper's timer is gone: the next jump is this sleep's own.
                 clock.sleep(2 * SECOND).unwrap();
-                assert_eq!(simulation.elapsed(), 3 * SECOND);
-                let trace = simulation.trace();
+                assert_eq!(simulation.tasks().sim_elapsed(), 3 * SECOND);
+                let trace = simulation.tasks().sim_trace();
                 assert!(!trace.contains("\"to\":5000000000"), "{trace}");
                 assert!(trace.contains(",\"result\":\"cancelled\"}"), "{trace}");
             }
@@ -997,7 +997,7 @@ fn polling_while_a_timer_waits_fails_the_seed_with_the_stall_report() {
             report.contains("\n  task 0 runnable in ") && report.contains(file!()),
             "{report}"
         );
-        assert_eq!(simulation.elapsed(), Duration::ZERO);
+        assert_eq!(simulation.tasks().sim_elapsed(), Duration::ZERO);
         // Without a pending timer the same loop is no stall.
         for _ in 0..3000 {
             tasks.yield_now().unwrap();

@@ -12,8 +12,6 @@ rustix = { version = "=1.1.6", default-features = false, features = ["fs", "std"
 tide-macros = { path = "../../../crates/tide-macros" }
 # Contract lowering from the D18 spike.
 spike_macros = { package = "tide_macros", path = "../../../spikes/d18/macros" }
-# The E1 trial's #[sim_test] shim, used as is.
-oracle_macros = { path = "../../../trials/e1-dialect/rustc/macros" }
 # #[pure] and #[trusted_pure], which neither of the above defines.
 conformance_macros = { path = "../macros" }
 

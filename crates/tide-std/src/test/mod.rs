@@ -6,13 +6,17 @@
 //! levels. Tuples support up to twelve elements. Implement `Arbitrary` to
 //! choose a type's generation behavior.
 //! Shrinking allows 1,000 evaluations and stops after 128 without improvement.
+//!
+//! `#[sim_test] fn t(sim: std::sim::SimRoot)` runs 100 seeded simulations in one child
+//! process; `seeds = N` selects 0..N. `TIDE_SIM_SEED` selects one fresh seed internally.
+//! Generated simulation parameters and shrinking remain planned.
 
 mod arbitrary;
 mod runner;
 
 pub use arbitrary::{Arbitrary, Borrowed};
 pub use runner::{property_result, run};
-pub use tide_macros::test;
+pub use tide_macros::{sim_test, test};
 
 use std::collections::VecDeque;
 use std::fmt::{Debug, Write};

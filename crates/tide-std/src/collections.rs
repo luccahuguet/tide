@@ -22,7 +22,7 @@ pub mod hash_map {
 
     /// The default collection builder (03 GLOBAL-5). `default()` uses a fixed key;
     /// `from_rand()` uses OS-seeded keys and requires randomness authority.
-    /// When a simulated `Rand` exists, `from_rand` must use that backend for replay.
+    /// Simulated randomness is unavailable; `from_rand` rejects it until its backend exists.
     #[derive(Clone)]
     pub struct RandomState(std::hash::DefaultHasher);
     impl std::fmt::Debug for RandomState {
@@ -32,7 +32,11 @@ pub mod hash_map {
         }
     }
     impl RandomState {
-        pub fn from_rand(_rand: &crate::rand::Rand) -> RandomState {
+        pub fn from_rand(rand: &crate::rand::Rand) -> RandomState {
+            if let Some(tasks) = &rand.0 {
+                tasks.unmodeled("Rand");
+            }
+            crate::task::outside_simulation();
             RandomState(std::hash::RandomState::new().build_hasher())
         }
     }

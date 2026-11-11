@@ -29,9 +29,9 @@
 //!
 //! This is a partial build path for reviewed/trusted demo code only: the operator must review
 //! source, grants and dependencies before building/running, including granted assembly and native
-//! link inputs. There is no assembler/linker OS sandbox, simulated test Root, test-process
-//! isolation, snapshot execution gate, or RUN-5 coverage verdict. The Tide std prelude supplies
-//! plain and property `#[test]` entries in libtest. The `tide test` and `tide sim` commands
+//! link inputs. There is no assembler/linker OS sandbox, snapshot execution gate, or RUN-5
+//! coverage verdict. Tide std supplies plain/property `#[test]`, `Root::sim`, and process-isolated
+//! `#[sim_test]` entries in libtest; simulation children have no OS sandbox. The `tide test` and `tide sim` commands
 //! are planned.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>

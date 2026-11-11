@@ -148,8 +148,11 @@ alike. Production and the stub share the `#[test]` macro and property
 generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile-time fixture,
 `authority/root_executable.rs`, also built and run against production std by
 the driver's `tests/build.rs`; parameterized property tests also execute through
-that driver suite. Requires-guided generation, simulation tests and generated
-contract tests remain planned in production. Structural generator insertion
+that driver suite. The fixture includes production's `sim.rs` and runner and uses its
+`#[sim_test]` macro: `tasks/simulation_runner.rs` also executes through the driver,
+covering seeded scopes, the split-update bug and ordered sink traces. Later world/fault/node
+operations remain fixture stubs. Requires-guided generation and generated contract tests
+remain planned in production. Structural generator insertion
 preserves original source lines, but columns of following tokens on an insertion's
 physical line can shift. A case that uses only the shared items is checked against Tide's
 std's own definitions. Every other item is the stub's own, a signature for an
@@ -158,9 +161,9 @@ a blanket impl, so rustc accepts every `Pure` bound and every `Pure` verdict
 is the checker's (an `FX` mark). The stub's own bodies are `unimplemented!()`,
 so the corpus decides compile-time verdicts only; rules decided at run time,
 in the simulator, or in the sandbox are outside it (`rules.md` lists them).
-`rustc/std` is copied from `trials/e1-dialect/rustc/std`, whose copy stays
-frozen as the trial's record, and uses the trial's `macros` crate as is, and
-Tide's std's macros (`crates/tide-macros`); `rustc/macros` adds `#[pure]` and
+`rustc/std` originated in `trials/e1-dialect/rustc/std`, whose copy stays
+frozen as the trial's record, and uses Tide's std's macros (`crates/tide-macros`);
+`rustc/macros` adds `#[pure]` and
 `#[trusted_pure]`, which leave their item unchanged. The trial's contract
 macros are the D18 spike's (`spikes/d18/macros`), so a contract case's rustc
 marks record that lowering's errors, and the case's comment says where they

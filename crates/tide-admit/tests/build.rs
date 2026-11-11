@@ -1740,3 +1740,98 @@ fn real_files_build_and_run_against_production_std() {
     assert!(out.stderr.is_empty(), "{}", stderr(&out));
     assert_eq!(std::fs::read_to_string(dir.join("outside")).unwrap(), "untouched");
 }
+
+#[test]
+fn simulation_tests_find_lost_updates_and_reexecute_seeds() {
+    let dir = package(
+        "simulation-runner",
+        include_str!("../../../conformance/cases/tasks/simulation_runner.rs"),
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let executable = dir.join("out/demo-test");
+    let run = |name: &str, seed: Option<&str>| {
+        let mut command = Command::new(&executable);
+        command.args(["--exact", name, "--nocapture", "--include-ignored"]);
+        command
+            .env_remove("TIDE_SIM_SEED")
+            .env_remove("__TIDE_SIM_CHILD");
+        if let Some(seed) = seed {
+            command.env("TIDE_SIM_SEED", seed);
+        }
+        command.stdin(Stdio::null()).output().unwrap()
+    };
+    for (name, count) in [
+        ("fixed_updates", 20),
+        ("default_seeds", 100),
+        ("ignored_simulation", 1),
+        ("r#loop", 1),
+        ("empty_range", 0),
+    ] {
+        let out = run(&format!("simulation::{name}"), None);
+        let output = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+        assert!(out.status.success(), "{output}");
+        assert!(output.contains(&format!("{count} passed; 0 failed ({count} seeds)")), "{output}");
+        assert!(!output.contains("TIDE_SIM_SEED_START"), "{output}");
+        assert_eq!(output.matches("test result:").count(), 1, "{output}");
+    }
+    let captured = checked(Command::new(&executable).args(["--exact", "simulation::fixed_updates"]));
+    let output = String::from_utf8_lossy(&captured.stdout);
+    assert_eq!(output.matches("test result:").count(), 1, "{output}");
+    assert!(!output.contains("TIDE_SIM_SEED_START"), "{output}");
+    assert!(!output.contains("simulation simulation::fixed_updates:"), "{output}");
+    assert!(captured.stderr.is_empty(), "{}", stderr(&captured));
+    let selected = run("simulation::fixed_updates", Some("19"));
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&selected.stdout),
+        stderr(&selected)
+    );
+    assert!(selected.status.success(), "{output}");
+    assert!(output.contains("1 passed; 0 failed (1 seeds)"), "{output}");
+    let invalid = run("simulation::fixed_updates", Some("invalid"));
+    assert!(!invalid.status.success());
+    assert!(stderr(&invalid).contains("TIDE_SIM_SEED must be a decimal u64"));
+    let out = run("simulation::plain_simulation", None);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("PLAIN_SIM_RAN"));
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("quote="));
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+
+    let out = run("simulation::loses_updates", None);
+    let output = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+    assert!(!out.status.success(), "{output}");
+    assert!(output.contains("lost update"), "{output}");
+    let failed = output
+        .lines()
+        .find_map(|line| line.strip_prefix("simulation failure seed="))
+        .and_then(|line| line.split_whitespace().next())
+        .expect(&output);
+    assert!(output.contains("(20 seeds)"), "{output}");
+    assert!(output.contains("failing seeds:"), "{output}");
+    assert!(!output.contains("last started seed"), "{output}");
+    assert!(!output.contains("TIDE_SIM_SEED_START"), "{output}");
+    let captured = Command::new(&executable)
+        .args(["--exact", "simulation::loses_updates"])
+        .env("TIDE_SIM_SEED", failed)
+        .env_remove("__TIDE_SIM_CHILD")
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(!captured.status.success());
+    assert!(captured.stderr.is_empty(), "{}", stderr(&captured));
+    let captured_output = String::from_utf8_lossy(&captured.stdout);
+    assert!(captured_output.contains("lost update"), "{captured_output}");
+    assert!(captured_output.contains("\"kind\":\"sink\""), "{captured_output}");
+    // One fixed seed in two fresh child processes must give the same trace and sink output.
+    let trace = |out: Output| {
+        assert!(!out.status.success());
+        stderr(&out)
+            .lines()
+            .filter(|line| line.starts_with('{'))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let first = trace(run("simulation::loses_updates", Some(failed)));
+    assert!(!first.is_empty());
+    assert!(first.iter().any(|line| line.contains("\"kind\":\"sched\"")));
+    assert!(first.iter().any(|line| line.contains("\"kind\":\"sink\"")));
+    assert_eq!(first, trace(run("simulation::loses_updates", Some(failed))));
+}

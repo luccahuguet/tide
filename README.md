@@ -187,7 +187,7 @@ for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities (`Fs`, `Tasks` and `Clock` have operations, below), `Pure`, and the `out` and `err` sinks
-(`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`,
+(`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`, `#[sim_test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
 unannotated enum variants with manual Display are also unsupported),
@@ -224,12 +224,32 @@ in a cancelled scope, and a cancel ends one in progress. A sleep whose target
 is not after now does not block, and a sleep whose target overflows ends only
 by cancellation. `monotonic_only()` gives a `Clock` whose `system_time()` panics.
 
-Production std includes an internal seeded scheduler for structured tasks,
+Production std includes a seeded scheduler for structured tasks,
 single-cell `Shared`, and `Clock`. It runs one task at a time between
 scheduling points and records decisions and waits with source locations.
 Virtual time starts at zero and jumps to the next timer only when every task
-is blocked; with no timer left, the run ends in a deadlock report. The public
-`Root::sim` entry, `#[sim_test]` runner, and simulated I/O are still pending.
+is blocked; with no timer left, the run ends in a deadlock report.
+`Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
+task 0 until the root drops. `sim.tasks`, single-cell `Shared`, and `sim.clock`
+work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
+ordered sink records, and provisional NDJSON events without scheduling. `out`
+and `err` append sink events under simulation and do not write to host streams.
+Other capabilities carry simulated identities; file operations and Rand-backed
+hash initialization panic until their simulated backends exist.
+
+`#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
+`#[sim_test(seeds = 20)]` runs `0..20`. Each entry re-executes its driver-built
+test binary once with an exact libtest filter, empty stdin, and a wall-clock
+backstop of 300 s per seed. The child catches panics per seed, checks the first and
+every failing seed twice for identical traces/output, and prints failing seeds,
+causes, and traces on failure. Success emits at most one summary line, captured
+by libtest; seed-start records stay internal. Signal/timeout or a missing summary
+names the last started seed; ordinary failures name the failing seeds. The
+internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
+the test binary; it does no build/source identity validation. Replay manifests
+and their identity checks, simulated files/network/randomness, world setup,
+faults, generated simulation parameters and shrinking remain planned.
+These test processes are for reviewed/trusted code; they have no OS sandbox.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with

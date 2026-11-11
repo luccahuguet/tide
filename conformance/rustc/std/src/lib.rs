@@ -8,7 +8,8 @@
 //! runtime entry, Rust's re-exports, and the codec engine and `std::json`,
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
 //! its real file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
-//! (`task.rs`), single-cell `Shared` (`sync.rs`), and `std::time` (`time.rs`). It declares
+//! (`task.rs`), single-cell `Shared` (`sync.rs`), seeded simulations and their runner
+//! (`sim.rs`), and `std::time` (`time.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
 //! types the same definitions and paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
@@ -45,7 +46,7 @@ crate::declare_prelude! {
     pub use crate::Secret;
     pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
     pub use crate::test::test;
-    pub use oracle_macros::sim_test;
+    pub use crate::test::sim_test;
     pub use conformance_macros::{pure, trusted_pure};
     pub use spike_macros::{ensures, invariant, invariants, requires};
 }
@@ -367,6 +368,7 @@ pub mod par {
 }
 
 pub mod sim {
+    include!("../../../../crates/tide-std/src/sim.rs");
     use crate::env::Env;
     use crate::fs::Fs;
     use crate::io::Stdin;
@@ -374,33 +376,16 @@ pub mod sim {
     use crate::net::Net;
     use crate::process::Proc;
     use crate::rand::Rand;
-    use crate::task::Tasks;
-    use crate::time::{Clock, Duration};
+    use crate::time::Clock;
     use std::marker::PhantomData;
     use std::path::Path;
 
-    /// `Root`'s capability fields, plus setup and inspection (reference 6.8).
-    pub struct SimRoot {
-        pub fs: Fs,
-        pub net: Net,
-        pub clock: Clock,
-        pub rand: Rand,
-        pub env: Env,
-        pub stdin: Stdin,
-        pub proc: Proc,
-        pub tasks: Tasks,
-        pub world: World,
-        pub faults: Faults,
-    }
     impl SimRoot {
         pub fn node(&self, name: &str) -> SimNode { unimplemented!() }
-        pub fn elapsed(&self) -> Duration { unimplemented!() }
-        pub fn records(&self) -> Vec<Record> { unimplemented!() }
         /// GUESS: returns `()` (companion 17 gives no type).
         pub fn run_for(&self, d: Duration) { unimplemented!() }
     }
 
-    pub struct World(());
     impl World {
         pub fn file(&self, path: impl AsRef<Path>, contents: impl AsRef<[u8]>) { unimplemented!() }
         /// GUESS: element and return types of `args` and `stdin`.
@@ -409,7 +394,6 @@ pub mod sim {
         pub fn http(&self, addr: &str, f: impl Fn(&Request) -> Reply + 'static) { unimplemented!() }
     }
 
-    pub struct Faults(());
     impl Faults {
         pub fn at(&self, t: Duration, fault: Fault) { unimplemented!() }
     }
@@ -451,30 +435,6 @@ pub mod sim {
         pub fn hang() -> Reply { unimplemented!() }
     }
 
-    pub struct Record {
-        pub node: String,
-        pub time: Duration,
-        pub sink: Sink,
-        pub message: String,
-    }
-    pub enum Sink {
-        Out,
-        Err,
-        Dbg,
-        Log(Level),
-    }
-    pub enum Level {
-        Error,
-        Warn,
-        Info,
-        Debug,
-        Trace,
-    }
-}
-
-/// Test code only (ROOT-3).
-impl Root {
-    pub fn sim(seed: u64) -> sim::SimRoot { unimplemented!() }
 }
 
 /// Reference 6.5 and 03 SINK-10: neither `Debug` nor `Display`.

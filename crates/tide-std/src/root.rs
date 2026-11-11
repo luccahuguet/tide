@@ -50,13 +50,19 @@ pub mod __error {
 /// and never fails (SINK-1): when stdout is a closed pipe, the process exits quietly with status
 /// 141, as under the default `SIGPIPE` action, and any other record that cannot be written is
 /// discarded (SINK-5).
+/// Under simulation, the formatted record instead enters the ordered sink trace without a
+/// scheduling point or host write.
 #[doc(hidden)]
 pub mod __sink {
     use std::fmt::{self, Arguments};
     use std::io::{self, Write};
 
+    #[track_caller]
     pub fn out(args: Arguments<'_>, newline: bool) {
         let record = format(args, newline);
+        if crate::task::record_sink("out", &record, std::panic::Location::caller()) {
+            return;
+        }
         if let Err(e) = write(io::stdout().lock(), &record)
             && e.kind() == io::ErrorKind::BrokenPipe
         {
@@ -64,8 +70,12 @@ pub mod __sink {
         }
     }
 
+    #[track_caller]
     pub fn err(args: Arguments<'_>, newline: bool) {
         let record = format(args, newline);
+        if crate::task::record_sink("err", &record, std::panic::Location::caller()) {
+            return;
+        }
         let _ = write(io::stderr().lock(), &record);
     }
 
@@ -140,7 +150,8 @@ macro_rules! capability {
     ($(#[$attr:meta])* $name:ident) => {
         $(#[$attr])*
         #[derive(Clone)]
-        pub struct $name(pub(crate) ());
+        // The handle distinguishes simulated identities before their operations are modeled.
+        pub struct $name(#[allow(dead_code)] pub(crate) Option<crate::task::Tasks>);
     };
 }
 pub(crate) use capability;
@@ -181,14 +192,23 @@ pub mod __rt {
         let root = crate::Root {
             _private: (),
             fs: crate::fs::Fs::root(),
-            net: crate::net::Net(()),
+            net: crate::net::Net(None),
             clock: crate::time::Clock::new(crate::task::Time::real()),
-            rand: crate::rand::Rand(()),
-            env: crate::env::Env(()),
-            stdin: crate::io::Stdin(()),
-            proc: crate::process::Proc(()),
+            rand: crate::rand::Rand(None),
+            env: crate::env::Env(None),
+            stdin: crate::io::Stdin(None),
+            proc: crate::process::Proc(None),
             tasks: crate::task::Tasks::real(),
         };
         main(root).report()
+    }
+}
+
+impl Root {
+    /// Starts a seeded simulation on this test's calling thread (task 0).
+    /// Dropping the returned root ends it. Nested simulations are rejected.
+    #[track_caller]
+    pub fn sim(seed: u64) -> crate::sim::SimRoot {
+        crate::sim::SimRoot::new(seed)
     }
 }

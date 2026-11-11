@@ -27,7 +27,7 @@ pub enum Mode {
 
 /// File-system authority, attenuated with `dir` or `read_only`.
 #[derive(Clone)]
-pub struct Fs(FsBackend, Mode);
+pub struct Fs(FsBackend, Mode, Option<crate::task::Tasks>);
 
 #[derive(Clone)]
 enum FsBackend {
@@ -125,10 +125,20 @@ fn normal_name(p: &Path) -> io::Result<()> {
 
 impl Fs {
     pub(crate) fn root() -> Self {
-        Self(FsBackend::Real(real::Fs::default()), Mode::ReadWrite)
+        Self(FsBackend::Real(real::Fs::default()), Mode::ReadWrite, None)
+    }
+
+    // shortcut: identity only; fx-byk.2 replaces the marker with the simulated store.
+    pub(crate) fn simulated(tasks: &crate::task::Tasks) -> Self {
+        let mut fs = Self::root();
+        fs.2 = Some(tasks.clone());
+        fs
     }
 
     fn check(&self, write: bool) -> io::Result<()> {
+        if let Some(tasks) = &self.2 {
+            tasks.unmodeled("Fs");
+        }
         checkpoint()?;
         if write && self.1 == Mode::Read {
             return Err(io::ErrorKind::PermissionDenied.into());
@@ -148,12 +158,12 @@ impl Fs {
         let p = p.as_ref();
         self.check_path(p)?;
         match &self.0 {
-            FsBackend::Real(fs) => Ok(Self(FsBackend::Real(fs.dir(p)?), mode)),
+            FsBackend::Real(fs) => Ok(Self(FsBackend::Real(fs.dir(p)?), mode, None)),
         }
     }
 
     pub fn read_only(&self) -> Self {
-        Self(self.0.clone(), Mode::Read)
+        Self(self.0.clone(), Mode::Read, self.2.clone())
     }
 
     #[track_caller]
