@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::attrs::AttributeKind;
 use rustc_hir::def::{CtorOf, DefKind, Res};
-use rustc_hir::def_id::{DefId, LocalDefId};
+use rustc_hir::def_id::{CrateNum, DefId, LocalDefId};
 use rustc_hir::intravisit::{self, FnKind, Visitor};
 use rustc_hir::{self as hir, HirId};
 use rustc_hir_typeck::expr_use_visitor::{Delegate, ExprUseVisitor, PlaceBase, PlaceWithHirId};
@@ -65,9 +65,15 @@ pub type Holes = BTreeMap<(String, String, String), usize>;
 /// the operator supplied Tide's std, so a binary's `main` needs its `#[tide::main]` (ROOT-1).
 /// Without `obligations`, a switch for the backstop's tests, the walk skips its obligation steps
 /// (`obligation`, `pure_obligation`).
-pub fn check_crate(tcx: TyCtxt<'_>, grants: Grants, tide_std: bool, obligations: bool) -> Holes {
+pub fn check_crate(
+    tcx: TyCtxt<'_>,
+    grants: Grants,
+    tide_std: bool,
+    obligations: bool,
+    test_library: Option<CrateNum>,
+) -> Holes {
     let crates = Crates::new(tcx);
-    let mut walk = Walk::new(tcx, &crates, grants);
+    let mut walk = Walk::new(tcx, &crates, grants, test_library);
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.entry_point(tide_std);
@@ -123,6 +129,8 @@ struct Walk<'a, 'tcx> {
     item_env: Option<TypingEnv<'tcx>>,
     /// Whether the obligation steps run (`check_crate`).
     obligations: bool,
+    /// The exact artifact this driver just admitted for a separate test crate.
+    test_library: Option<CrateNum>,
     /// The item being visited, which holds the trust holes found outside bodies.
     item: Option<LocalDefId>,
     /// Trust holes: (holding item, what, the site's span, or none for a use counted once).
@@ -130,7 +138,12 @@ struct Walk<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> Walk<'a, 'tcx> {
-    fn new(tcx: TyCtxt<'tcx>, crates: &'a Crates, grants: Grants) -> Self {
+    fn new(
+        tcx: TyCtxt<'tcx>,
+        crates: &'a Crates,
+        grants: Grants,
+        test_library: Option<CrateNum>,
+    ) -> Self {
         Walk {
             tcx,
             crates,
@@ -143,6 +156,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             seen_pure: FxHashSet::default(),
             item_env: None,
             obligations: true,
+            test_library,
             item: None,
             holes: FxHashSet::default(),
         }
@@ -234,11 +248,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// Items of the local crate are admitted, as is whatever Tide's std re-exports and the
     /// items of the traits it re-exports; Tide's std's own items unless a rule says otherwise;
-    /// `core`, `alloc`, and Rust's std only where a rule allows; any other crate's items never.
+    /// `core`, `alloc`, and Rust's std only where a rule allows. The paired test library's
+    /// definitions are admitted, with their visibility decided by rustc.
     fn admit_def(&self, def_id: DefId) -> Result<Admitted, Rejection> {
         let role = self.crates.role(def_id.krate);
         let exported = |d| self.crates.exported(d);
         if role == Role::Local
+            || (self.test_library == Some(def_id.krate)
+                && !matches!(self.tcx.def_kind(def_id), DefKind::Macro(_)))
             || exported(def_id)
             || self.tcx.trait_of_assoc(def_id).is_some_and(exported)
         {
@@ -251,15 +268,20 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
     }
 
-    /// An impl is admitted when a rule allows its key, or else when it comes from Tide's std or
-    /// both the trait and the self type's head are admitted.
+    /// The driver checks this impl in its defining crate during this invocation.
+    fn owns_impl(&self, impl_def_id: DefId) -> bool {
+        impl_def_id.is_local() || self.test_library == Some(impl_def_id.krate)
+    }
+
+    /// For other crates, a rule can decide an impl by key. An unlisted impl is admitted when it
+    /// comes from Tide's std or both the trait and the self type's head are admitted.
     fn admit_impl(
         &self,
         impl_def_id: DefId,
         used_as: ty::TraitRef<'tcx>,
     ) -> Result<Admitted, Rejection> {
         let role = self.crates.role(impl_def_id.krate);
-        if role == Role::Local {
+        if self.owns_impl(impl_def_id) {
             return Ok(Admitted::Free);
         }
         let key = impl_key(self.tcx, impl_def_id);

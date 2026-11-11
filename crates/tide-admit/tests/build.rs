@@ -52,6 +52,146 @@ fn driver(dir: &Path) -> Command {
     command
 }
 
+fn paired_test_driver(dir: &Path) -> Command {
+    let mut command = driver(dir);
+    command
+        .args(["--crate-type=lib", "--test", "--tide-test-library"])
+        .arg(dir.join("candidate/src/lib.rs"))
+        .stdin(Stdio::null());
+    command
+}
+
+#[test]
+fn separate_library_tests_require_public_items_and_admit_both_crates() {
+    let suite = "#[test] fn paints() { assert_eq!(tide_candidate::pigment(), 7); }";
+    let dir = package("separate-library-tests", suite);
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    let test = |emit: &str| {
+        let mut command = paired_test_driver(&dir);
+        command.arg(format!("--emit={emit}"));
+        command
+    };
+    let executable = dir.join("out/demo-test");
+    for emit in ["metadata", "link"] {
+        let library = "fn pigment() -> u8 { 7 } #[cfg(test)] mod writer { compile_error!(\"writer tests enabled\"); }";
+        std::fs::write(&candidate, format!("pub {library}")).unwrap();
+        checked(&mut test(emit));
+        if emit == "link" {
+            let run = checked(Command::new(&executable).arg("--exact").arg("paints"));
+            assert!(String::from_utf8_lossy(&run.stdout).contains("1 passed"));
+        }
+        std::fs::write(&candidate, format!("pub(crate) {library}")).unwrap();
+        let out = test(emit).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(stderr(&out).contains("E0603"), "{}", stderr(&out));
+        assert!(std::fs::read_dir(dir.join("out")).unwrap().next().is_none());
+    }
+
+    let unsafe_library = "pub fn pigment() -> u8 { unsafe { 7 } }";
+    let unsafe_suite = "#[test] fn paints() { unsafe { tide_candidate::pigment(); } }";
+    for (library, suite) in [
+        (unsafe_library, suite),
+        ("pub fn pigment() -> u8 { 7 }", unsafe_suite),
+    ] {
+        std::fs::write(&candidate, library).unwrap();
+        std::fs::write(dir.join("package/src/demo.rs"), suite).unwrap();
+        let out = test("link").output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(stderr(&out).contains("FX0901"), "{}", stderr(&out));
+        assert!(!executable.exists());
+    }
+
+    let out = test("link")
+        .arg("--tide-dep-dir")
+        .arg(dir.join("candidate"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("trusted dependencies must be separate"));
+}
+
+#[test]
+fn separate_library_tests_cannot_read_each_others_sources() {
+    let dir = package("separate-library-source-reads", "");
+    let candidate = dir.join("candidate/src/lib.rs");
+    let suite = dir.join("package/src/demo.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    for (reader, target, prefix) in [
+        (&candidate, &suite, ""),
+        (&suite, &candidate, "extern crate tide_candidate;"),
+    ] {
+        std::fs::write(target, "// foreign source canary").unwrap();
+        std::fs::write(
+            reader,
+            format!("{prefix}\ncore::compile_error!(core::include_str!({target:?}));"),
+        )
+        .unwrap();
+        let out = paired_test_driver(&dir).output().unwrap();
+        let diagnostic = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{diagnostic}");
+        assert!(diagnostic.contains("FX0520"), "{diagnostic}");
+        assert!(
+            !diagnostic.contains("foreign source canary"),
+            "{diagnostic}"
+        );
+    }
+}
+
+#[test]
+fn separate_library_tests_accept_local_impls_and_check_pure_at_use() {
+    let suite = r#"
+extern crate tide_candidate as solution;
+mod test {
+    use solution::Shape;
+
+    fn sides<T: Shape>(shape: T) -> u8 { shape.sides() }
+    fn empty() {}
+
+    #[test] fn counts_sides() { assert_eq!(sides(empty as fn()), 3); }
+}
+"#;
+    let dir = package("separate-library-impls-and-clauses", suite);
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    std::fs::write(
+        &candidate,
+        r#"
+pub trait Shape { fn sides(&self) -> u8; }
+impl Shape for fn() {
+    #[inline]
+    fn sides(&self) -> u8 { 3 }
+}
+pub fn require_pure<T: Pure>() {}
+"#,
+    )
+    .unwrap();
+    checked(&mut paired_test_driver(&dir));
+    let run =
+        checked(Command::new(dir.join("out/demo-test")).args(["--exact", "test::counts_sides"]));
+    assert!(String::from_utf8_lossy(&run.stdout).contains("1 passed"));
+
+    std::fs::write(
+        dir.join("package/src/demo.rs"),
+        r#"
+#[test]
+fn check_clause() { tide_candidate::require_pure::<std::time::Clock>(); }
+"#,
+    )
+    .unwrap();
+    let out = paired_test_driver(&dir).output().unwrap();
+    let diagnostic = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{diagnostic}");
+    assert!(
+        diagnostic
+            .lines()
+            .any(|line| line.contains("demo.rs:")
+                && line.contains("FX0517: `Clock` is never `Pure`")),
+        "{diagnostic}"
+    );
+    assert!(!dir.join("out/demo-test").exists());
+}
+
 #[test]
 fn task_lifecycle_builds_and_runs_against_production_std() {
     let source = include_str!("../../../conformance/cases/tasks/task_lifecycle.rs");

@@ -193,8 +193,7 @@ class HarnessTests(unittest.TestCase):
 
     def test_acceptance_requires_frozen_names_and_consistent_results(self):
         for arm in ["rust", "tide"]:
-            prefix = "acceptance::" if arm == "tide" else ""
-            names = [prefix + f"case{i}" for i in range(1, 6)]
+            names = [f"case{i}" for i in range(1, 6)]
             listing = "".join(name + ": test\n" for name in names)
             with self.subTest(arm=arm), tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
                 config = {"arm": arm, "task": "A4"}
@@ -324,8 +323,7 @@ pub mod acceptance { #[test] fn case1() {} }
                     self.assertTrue(text.startswith("use solution::*;"))
                     self.assertIn("fn case", text)
                     names = sorted(re.findall(r"^fn (case\w*)\(", text, re.M))
-                    prefix = "acceptance::" if arm == "tide" else ""
-                    self.assertEqual([prefix + name for name in names], h.acceptance_tests(task, arm))
+                    self.assertEqual(names, h.acceptance_tests(task))
         cases = json.loads((h.HERE / "suites/binaries.json").read_text())
         self.assertEqual(set(cases), h.BINS)
         self.assertEqual(sum(map(len, cases.values())), 26)
@@ -333,22 +331,47 @@ pub mod acceptance { #[test] fn case1() {} }
     def test_tide_link_success_cannot_masquerade_as_executed_tests(self):
         with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
             root = Path(tmp)
-            config = {"arm": "tide", "task": "A2", "driver": "driver", "std": "std", "deps": []}
+            config = {"arm": "tide", "task": "A2", "driver": "driver", "std": "std", "deps": ["/operator"]}
             green = {"code": 0, "stdout": "", "stderr": ""}
             with patch.object(h, "run", return_value=green) as driver, \
                  patch.object(h, "test_command", return_value=[green]) as tests:
-                for acceptance, marker, mode in [(True, "fx-dsa", "test-acceptance"),
-                                                 (False, "fx-nkv.6 and fx-m72", "test-writer")]:
-                    results = h.executable_tests(config, root, root, acceptance=acceptance)
-                    self.assertTrue(any(r["code"] and marker in r["stderr"] for r in results))
-                    self.assertIn("--emit=link", driver.call_args.args[0])
-                    self.assertEqual(tests.call_args.args[0], [str(root / "output" / mode / "solution-test")])
-                first = h.grade(config, root, "pub fn placeholder() {}", compile_only=True)
-                self.assertTrue(any("library boundary" in r["stderr"] for r in first["results"]))
+                results = h.executable_tests(config, root, root, acceptance=False)
+                self.assertTrue(any(r["code"] and "fx-nkv.6 and fx-m72" in r["stderr"] for r in results))
+                self.assertIn("--emit=link", driver.call_args.args[0])
+                self.assertEqual(tests.call_args.args[0], [str(root / "output/test-writer/solution-test")])
                 with patch.object(h, "run_binary_cases", return_value=[green]) as cases:
                     results = h.binary_cases(dict(config, task="B1"), root, root)
                     self.assertTrue(all(r["code"] == 0 for r in results))
                     self.assertEqual(cases.call_args.args[0], root / "output/bin/solution")
+
+    def test_tide_library_boundary_compiles_separate_sources_before_execution(self):
+        for first, code in [(True, 0), (False, 0), (False, 1)]:
+            with self.subTest(first=first, code=code), tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
+                root = Path(tmp)
+                config = {"arm": "tide", "task": "A2", "driver": "driver", "std": "std", "deps": ["/operator"]}
+                candidate = "pub fn placeholder() {}"
+                def compile(cmd, *_args):
+                    if not any(arg.startswith("--tide-test-library=") for arg in cmd):
+                        return {"code": 0, "stdout": "", "stderr": ""}
+                    library = root / "acceptance/package/src/lib.rs"
+                    entry = root / "acceptance/suite/src/lib.rs"
+                    self.assertEqual(library.read_text(), candidate)
+                    self.assertEqual(entry.read_text(), "extern crate tide_candidate as solution;\n" + h.suite("A2", "tide"))
+                    self.assertEqual(cmd[-1], str(entry))
+                    self.assertIn("--tide-test-library=" + str(library), cmd)
+                    self.assertEqual([arg for arg in cmd if arg.startswith("--tide-dep-dir=")], ["--tide-dep-dir=/operator"])
+                    self.assertIn("--emit=" + ("metadata" if first else "link"), cmd)
+                    return {"code": code, "stdout": "", "stderr": ""}
+                with patch.object(h, "run", side_effect=compile), \
+                     patch.object(h, "test_command", return_value=[]) as tests:
+                    result = h.grade(config, root, candidate, compile_only=first)
+                    self.assertEqual([r["code"] for r in result["results"] if r.get("stage") == "L"], [code])
+                    acceptance_calls = [call for call in tests.call_args_list if call.kwargs.get("acceptance")]
+                    if first or code:
+                        self.assertEqual(acceptance_calls, [])
+                    else:
+                        self.assertEqual(len(acceptance_calls), 1)
+                        self.assertEqual(acceptance_calls[0].args[0], [str(root / "acceptance/output/test-acceptance/acceptance-test")])
 
     def test_offline_vendor_setup_is_pinned_cached_and_cleans_failure(self):
         with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:

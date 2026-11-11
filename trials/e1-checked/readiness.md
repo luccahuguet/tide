@@ -46,7 +46,7 @@ Every failing stage is covered below. Compiler diagnostics are abridged to
 their code and missing item; raw text and command identity remain in the JSON.
 The map assigns first errors, not every subsequent compiler diagnostic.
 
-Stage keys: S = source ./check; ML/MT = grade check-lib/check-test metadata;
+Stage keys for 31a9800: S = source ./check; ML/MT = grade check-lib/check-test metadata;
 W = linked writer-harness build; A = linked acceptance-harness build;
 B = linked binary build; R = fuller Tide-runner check; L = library-boundary check.
 For a row listing several compilation stages the first error is the same in
@@ -104,7 +104,7 @@ surface to fx-yg5, codec to fx-08m, process input to fx-5vj, files/io results
 and OpenOptions/Mode to fx-byk, cancellation to fx-zc1, time to fx-o8j,
 parallelism to fx-iob, channels to fx-o4h, Shared to fx-nkv.4, scoped lifecycle/
 failure results to fx-nkv.2/fx-nkv.3, and contract attributes to fx-mhd.
-fx-dsa owns separate admitted-library import and blocks fx-ic2.
+At 31a9800, separate admitted-library import was pending under fx-dsa for fx-ic2.
 fx-kw8.9 is closed and is not a remaining failure owner.
 
 C10's TcpListener/TcpStream and stream Read/Write belong to fx-hxw (its
@@ -125,9 +125,9 @@ avoid the optional Error derive in these references.
 
 Driver-only builds use separate output directories for metadata, writer tests,
 acceptance tests and binaries. Per-test limits and named libtest log checks
-remain active. The first-check library measure also explicitly retains fx-dsa.
-Its sibling-module probe also changes crate-path resolution and test selection;
-fx-dsa owns replacement with a separate admitted crate.
+remain active. The L marker above describes the recorded revision. The current
+L stage compiles the suite against a separately admitted library in both
+first-check and full grading.
 prepare writes no check/test scripts; the broker dispatches logical commands
 directly to trusted harness.py command SESSION MODE. fx-ic2 owns that broker.
 

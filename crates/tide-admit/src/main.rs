@@ -21,6 +21,11 @@
 //! beside its trust artifact. A linked build removes its previous executable before checking.
 //! The shared `<crate-name>.interface.json` belongs to the latest invocation; separate output
 //! directories retain bin/test/profile artifact pairs. The driver never runs an output.
+//! `--test --tide-test-library SOURCE.rs` admits a library from a separate package, then
+//! compiles the test crate with that library available as `tide_candidate`. Both use full
+//! admission without grants. Both modes build a fresh library rlib in private staging.
+//! Metadata mode checks the suite without linking it. Link mode publishes the test executable.
+//! A killed build can leave a `.tide-test-*` directory. Later invocations never read it.
 //!
 //! This is a partial build path for reviewed/trusted demo code only: the operator must review
 //! source, grants and dependencies before building/running, including granted assembly and native
@@ -29,6 +34,7 @@
 //! executable-test path, not `tide test`/`tide sim` or the RUN-1 unreviewed-branch guarantee.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
+//!        tide-admit --test --tide-test-library SOURCE.rs [options] <suite.rs>
 //!        tide-admit --tide-print-codes     the FX codes it decides, one per line
 //!        tide-admit --tide-diff BASE HEAD  what changed between two trust artifacts
 //!                                          (`interface/diff.rs`)

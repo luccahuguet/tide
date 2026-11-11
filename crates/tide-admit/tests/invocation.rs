@@ -47,6 +47,50 @@ fn malformed_and_empty_arguments_fail_before_compilation() {
 }
 
 #[test]
+fn separate_library_arguments_require_source_and_full_admission() {
+    let full = "`--tide-test-library` requires `--test` and full admission without grants";
+    for (args, diagnostic) in [
+        (vec!["--tide-test-library=lib.rs"], full),
+        (
+            vec!["--test", "--tide-test-library=libfake.rlib"],
+            "`--tide-test-library` requires a .rs source",
+        ),
+        (
+            vec![
+                "--test",
+                "--tide-test-library=lib.rs",
+                "--crate-name=tide_candidate",
+            ],
+            "`--tide-test-library` reserves crate name `tide_candidate`",
+        ),
+        (
+            vec![
+                "--test",
+                "--tide-test-library=lib.rs",
+                "--tide-grant=unsafe",
+            ],
+            full,
+        ),
+        (
+            vec![
+                "--test",
+                "--tide-test-library=lib.rs",
+                "--tide-test-backstop",
+            ],
+            full,
+        ),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
+            .arg("demo.rs")
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert_eq!(stderr(&out).trim_end(), format!("tide-admit: {diagnostic}"));
+    }
+}
+
+#[test]
 fn inherited_environment_and_candidate_configuration_cannot_configure_rustc() {
     let dir = package("environment", "pub fn f() {}\n");
     let wrapper = dir.join("wrapper");

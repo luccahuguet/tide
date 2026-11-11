@@ -7,12 +7,14 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rustc_ast::ast::{AttrKind, Attribute, Item, ItemKind, MacCall};
 use rustc_ast::token::{Delimiter, TokenKind};
 use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_ast::visit::{self, Visitor};
 use rustc_driver::{Callbacks, Compilation};
+use rustc_hir::def_id::CrateNum;
 use rustc_interface::interface::{Compiler, Config};
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::CrateType;
@@ -26,6 +28,8 @@ use rustc_span::{
 use crate::diag::{Code, Diagnostics};
 use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
+const TEST_LIBRARY_NAME: &str = "tide_candidate";
+
 struct Admission {
     grants: Grants,
     /// The staging directory, which gets the trust artifact (`interface.rs`).
@@ -36,6 +40,9 @@ struct Admission {
     /// binary's entry point needs (ROOT-1); the driver's own tests on Rust's std have none.
     tide_std: bool,
     sources: Sources,
+    library_artifact: Option<PathBuf>,
+    test_library: Option<CrateNum>,
+    write_interface: bool,
     backstop_only: bool,
     test_ice: bool,
 }
@@ -54,15 +61,29 @@ impl Callbacks for Admission {
         assert!(!self.test_ice, "`--tide-test-ice`: a seeded compiler crash");
         // Before `check_crate` lowers the crate, which takes the expanded AST.
         check_expanded(tcx, self.tide_std);
-        self.holes = check_crate(tcx, self.grants, self.tide_std, !self.backstop_only);
+        self.test_library = self.library_artifact.as_ref().and_then(|path| {
+            tcx.crates(()).iter().copied().find(|&krate| {
+                tcx.crate_extern_paths(krate)
+                    .iter()
+                    .any(|loaded| loaded == path)
+            })
+        });
+        self.holes = check_crate(
+            tcx,
+            self.grants,
+            self.tide_std,
+            !self.backstop_only,
+            self.test_library,
+        );
         Compilation::Continue
     }
     fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         // rustc's analysis stops before this on any error, the walk's included.
-        check_mono_items(tcx, self.grants, &mut self.holes);
+        check_mono_items(tcx, self.grants, &mut self.holes, self.test_library);
         // In link mode too, no rejected instance may reach codegen or the linker.
         tcx.dcx().abort_if_errors();
-        if self.tide_std
+        if self.write_interface
+            && self.tide_std
             && tcx.dcx().has_errors().is_none()
             && let Err(e) = crate::interface::write(tcx, &self.holes, &self.out)
         {
@@ -82,6 +103,7 @@ struct Invocation {
     name: String,
     kind: String,
     test: bool,
+    test_library: Option<PathBuf>,
     link: bool,
     profile: String,
     grants: Grants,
@@ -130,6 +152,7 @@ impl Invocation {
                     | "--error-format"
                     | "--tide-std"
                     | "--tide-dep-dir"
+                    | "--tide-test-library"
                     | "--tide-compile"
                     | "--tide-profile"
             ) {
@@ -151,6 +174,9 @@ impl Invocation {
                     "--out-dir" => this.out = value.into(),
                     "--tide-std" if this.std.is_none() => this.std = Some(value.into()),
                     "--tide-dep-dir" => this.deps.push(value.into()),
+                    "--tide-test-library" if this.test_library.is_none() => {
+                        this.test_library = Some(value.into());
+                    }
                     "--tide-compile" if this.compile.is_none() => this.compile = Some(value.into()),
                     _ => return Err(format!("unsupported argument `{arg}`")),
                 }
@@ -185,10 +211,31 @@ impl Invocation {
         {
             return Err("invalid crate name".into());
         }
+        if let Some(library) = &this.test_library {
+            if !this.test
+                || this.grants.unsafe_
+                || this.backstop_only
+                || this.test_ice
+                || this.compile.is_some()
+            {
+                return Err(
+                    "`--tide-test-library` requires `--test` and full admission without grants"
+                        .into(),
+                );
+            }
+            if library.extension().is_none_or(|ext| ext != "rs") {
+                return Err("`--tide-test-library` requires a .rs source".into());
+            }
+            if this.name == TEST_LIBRARY_NAME {
+                return Err(format!(
+                    "`--tide-test-library` reserves crate name `{TEST_LIBRARY_NAME}`"
+                ));
+            }
+        }
         Ok(this)
     }
 
-    fn rustc_args(&self, out: &Path) -> Vec<String> {
+    fn rustc_args(&self, out: &Path, library_artifact: Option<&Path>) -> Vec<String> {
         let mut args = vec![
             "tide-admit".into(),
             "--edition=2024".into(),
@@ -224,12 +271,16 @@ impl Invocation {
         ];
         if self.link {
             args.extend([
+                "-Zunstable-options".into(),
+                format!("-Ztemps-dir={}", out.display()),
+            ]);
+        }
+        if self.link && self.kind != "rlib" {
+            args.extend([
                 "-Clinker=/usr/bin/cc".into(),
                 "-Clinker-flavor=gnu-cc".into(),
                 "-Clink-self-contained=-linker".into(),
                 "-Clink-arg=-B/usr/bin".into(),
-                "-Zunstable-options".into(),
-                format!("-Ztemps-dir={}", out.display()),
                 "-o".into(),
                 out.join("executable").display().to_string(),
             ]);
@@ -241,6 +292,12 @@ impl Invocation {
         }
         if let Some(std) = &self.std {
             args.extend(["--extern".into(), format!("std={}", std.display())]);
+        }
+        if let Some(library) = library_artifact {
+            args.extend([
+                "--extern".into(),
+                format!("{TEST_LIBRARY_NAME}={}", library.display()),
+            ]);
         }
         for dep in &self.deps {
             args.extend(["-L".into(), format!("dependency={}", dep.display())]);
@@ -255,6 +312,213 @@ impl Invocation {
             if self.test { "-test" } else { "" }
         ))
     }
+
+    fn compile(
+        &self,
+        out: &Path,
+        sources: Sources,
+        library_artifact: Option<&Path>,
+        write_interface: bool,
+    ) -> ExitCode {
+        let rustc_args = self.rustc_args(out, library_artifact);
+        let mut admission = Admission {
+            grants: self.grants,
+            out: out.into(),
+            holes: Holes::new(),
+            sources,
+            tide_std: self.std.is_some(),
+            library_artifact: library_artifact.map(Path::to_path_buf),
+            test_library: None,
+            write_interface,
+            backstop_only: self.backstop_only,
+            test_ice: self.test_ice,
+        };
+        rustc_driver::catch_with_exit_code(|| {
+            rustc_driver::run_compiler(&rustc_args, &mut admission)
+        })
+    }
+
+    fn package_root(&mut self, cwd: &Path) -> Result<PathBuf, String> {
+        // Lexical, so a `..` cannot hide the package root from the checks below.
+        let mut source = PathBuf::new();
+        for component in cwd.join(&self.source).components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    source.pop();
+                }
+                std::path::Component::CurDir => (),
+                _ => source.push(component.as_os_str()),
+            }
+        }
+        self.source = source;
+        let source_dir = self.source.parent().ok_or("missing source directory")?;
+        let lexical_package = if source_dir.file_name().is_some_and(|s| s == "src") {
+            source_dir.parent().ok_or("missing package directory")?
+        } else {
+            source_dir
+        };
+        let package =
+            fs::canonicalize(lexical_package).map_err(|_| "cannot resolve package directory")?;
+        if package != lexical_package {
+            return Err("package path must not traverse a directory symlink".into());
+        }
+        Ok(package)
+    }
+
+    fn source_paths(&self, package: &Path) -> Result<(PathBuf, PathBuf), String> {
+        let source_root = fs::canonicalize(self.source.parent().ok_or("missing source directory")?)
+            .map_err(|_| "cannot resolve source directory")?;
+        if !source_root.starts_with(package) {
+            return Err("source directory leaves its package".into());
+        }
+        let source =
+            fs::canonicalize(&self.source).map_err(|_| "cannot resolve candidate source")?;
+        if !source.starts_with(&source_root) {
+            return Err("candidate source leaves its source directory".into());
+        }
+        Ok((source_root, source))
+    }
+
+    fn trusted_inputs(&mut self, package: &Path) -> Result<(), String> {
+        if let Some(std) = &mut self.std {
+            *std = fs::canonicalize(&*std).map_err(|_| "cannot resolve trusted std")?;
+            if !std.is_file() || std.starts_with(package) {
+                return Err("trusted std must be a file outside the candidate package".into());
+            }
+        }
+        for dep in &mut self.deps {
+            *dep = fs::canonicalize(&*dep)
+                .map_err(|_| "cannot resolve trusted dependency directory")?;
+            if !dep.is_dir() || dep.starts_with(package) || package.starts_with(&*dep) {
+                return Err(
+                    "trusted dependencies must be separate from the candidate package".into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn clear_outputs(&self) -> Result<(), String> {
+        // Failed builds leave neither an earlier interface nor their requested executable.
+        if self.link {
+            remove_if_present(&self.executable())?;
+        }
+        remove_if_present(&self.out.join(format!("{}.interface.json", self.name)))
+    }
+
+    fn compile_with_library(
+        &self,
+        cwd: &Path,
+        package: &Path,
+        library: PathBuf,
+    ) -> Result<ExitCode, String> {
+        let mut library = Invocation {
+            source: library,
+            std: self.std.clone(),
+            deps: self.deps.clone(),
+            name: TEST_LIBRARY_NAME.into(),
+            kind: "rlib".into(),
+            // The downstream mono-item backstop needs the rlib's export and MIR metadata.
+            link: true,
+            profile: self.profile.clone(),
+            ..Invocation::default()
+        };
+        let library_package = library.package_root(cwd)?;
+        if library_package.starts_with(package) || package.starts_with(&library_package) {
+            return Err("the test and its library must be in separate packages".into());
+        }
+        if self.out.starts_with(&library_package)
+            || self.deps.iter().any(|dep| self.out.starts_with(dep))
+        {
+            return Err("test output must be outside the library package and trusted dependency directories".into());
+        }
+        self.clear_outputs()?;
+        let (suite_root, suite_source) = self.source_paths(package)?;
+        let (root, source) = library.source_paths(&library_package)?;
+        if reject_build_script(package) || reject_build_script(&library_package) {
+            return Ok(ExitCode::FAILURE);
+        }
+        library.trusted_inputs(&library_package)?;
+        let sources = source_snapshot(&suite_root, &suite_source, &mut Vec::new())?;
+        let library_sources = source_snapshot(&root, &source, &mut Vec::new())?;
+        let staging = create_test_staging(&self.out)?;
+        let result = (|| {
+            let status = library.compile(&staging, library_sources, None, false);
+            if status != ExitCode::SUCCESS {
+                return Ok(status);
+            }
+            let artifact = staging.join(format!("lib{TEST_LIBRARY_NAME}.rlib"));
+            let status = self.compile(&staging, sources, Some(&artifact), false);
+            if status == ExitCode::SUCCESS && self.link {
+                fs::rename(staging.join("executable"), self.executable())
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(status)
+        })();
+        let _ = fs::remove_dir_all(staging);
+        result
+    }
+}
+
+fn create_test_staging(out: &Path) -> Result<PathBuf, String> {
+    const ATTEMPTS: usize = 16;
+    let error = |e| {
+        format!(
+            "cannot create paired test staging under {}: {e}",
+            out.display()
+        )
+    };
+    fs::create_dir_all(out).map_err(error)?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    let mut dir = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        dir.mode(0o700);
+    }
+    // A killed build can leave a directory behind even after its sandbox PID is reused.
+    for attempt in 0..ATTEMPTS {
+        let staging = out.join(format!(".tide-test-{pid}-{nonce}-{attempt}"));
+        match dir.create(&staging) {
+            Ok(()) => return Ok(staging),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(error(e)),
+        }
+    }
+    Err(format!(
+        "cannot create paired test staging under {}: {ATTEMPTS} names already exist",
+        out.display()
+    ))
+}
+
+fn remove_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
+fn reject_build_script(package: &Path) -> bool {
+    if package.join("build.rs").symlink_metadata().is_err() {
+        return false;
+    }
+    eprintln!(
+        "error: {}: package build scripts are not admitted",
+        Code::Fx0915.as_str()
+    );
+    true
+}
+
+fn source_snapshot(root: &Path, source: &Path, key: &mut Vec<u8>) -> Result<Sources, String> {
+    let sources = Sources::snapshot(root, key).map_err(|_| "cannot snapshot candidate sources")?;
+    if !sources.files.contains_key(source) {
+        return Err("candidate source is not admitted".into());
+    }
+    Ok(sources)
 }
 
 fn record(key: &mut Vec<u8>, label: &[u8], bytes: &[u8]) {
@@ -676,82 +940,22 @@ pub fn run() -> Result<ExitCode, String> {
     // Only now, so no earlier panic gets a hook that writes reports.
     rustc_driver::install_ice_hook("the tide-admit driver (crates/tide-admit)", |_| ());
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    // Lexical, so a `..` cannot hide the package root from the checks below.
-    let mut source = PathBuf::new();
-    for component in cwd.join(&invocation.source).components() {
-        match component {
-            std::path::Component::ParentDir => {
-                source.pop();
-            }
-            std::path::Component::CurDir => (),
-            _ => source.push(component.as_os_str()),
-        }
-    }
-    invocation.source = source;
-    let source_dir = invocation
-        .source
-        .parent()
-        .ok_or("missing source directory")?;
-    let lexical_package = if source_dir.file_name().is_some_and(|s| s == "src") {
-        source_dir.parent().ok_or("missing package directory")?
-    } else {
-        source_dir
-    };
-    let package_root =
-        fs::canonicalize(lexical_package).map_err(|_| "cannot resolve package directory")?;
-    if package_root != lexical_package {
-        return Err("package path must not traverse a directory symlink".into());
-    }
-    let package = package_root.as_path();
+    let package = invocation.package_root(&cwd)?;
     invocation.out = destination(&invocation.out).map_err(|e| e.to_string())?;
-    if invocation.out.starts_with(package) {
+    if invocation.out.starts_with(&package) {
         return Err("output and cache must be outside the candidate package".into());
     }
-    // A failed build leaves neither an earlier trust artifact nor its requested executable.
-    if invocation.link {
-        match fs::remove_file(invocation.executable()) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.to_string()),
-            _ => (),
-        }
+    if let Some(library) = invocation.test_library.take() {
+        invocation.trusted_inputs(&package)?;
+        return invocation.compile_with_library(&cwd, &package, library);
     }
-    let artifact = invocation
-        .out
-        .join(format!("{}.interface.json", invocation.name));
-    match fs::remove_file(artifact) {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.to_string()),
-        _ => (),
-    }
-    let source_root =
-        fs::canonicalize(source_dir).map_err(|_| "cannot resolve source directory")?;
-    if !source_root.starts_with(package) {
-        return Err("source directory leaves its package".into());
-    }
-    let source =
-        fs::canonicalize(&invocation.source).map_err(|_| "cannot resolve candidate source")?;
-    if !source.starts_with(&source_root) {
-        return Err("candidate source leaves its source directory".into());
-    }
-    if package.join("build.rs").symlink_metadata().is_ok() {
-        eprintln!(
-            "error: {}: package build scripts are not admitted",
-            Code::Fx0915.as_str()
-        );
+    invocation.clear_outputs()?;
+    let (source_root, source) = invocation.source_paths(&package)?;
+    if reject_build_script(&package) {
         return Ok(ExitCode::FAILURE);
     }
     fs::create_dir_all(&invocation.out).map_err(|e| e.to_string())?;
-    if let Some(std) = &mut invocation.std {
-        *std = fs::canonicalize(&*std).map_err(|_| "cannot resolve trusted std")?;
-        if !std.is_file() || std.starts_with(package) {
-            return Err("trusted std must be a file outside the candidate package".into());
-        }
-    }
-    for dep in &mut invocation.deps {
-        *dep =
-            fs::canonicalize(&*dep).map_err(|_| "cannot resolve trusted dependency directory")?;
-        if !dep.is_dir() || dep.starts_with(package) || package.starts_with(&*dep) {
-            return Err("trusted dependencies must be separate from the candidate package".into());
-        }
-    }
+    invocation.trusted_inputs(&package)?;
     let mut key = Vec::new();
     fingerprint(&exe, &mut key).map_err(|e| e.to_string())?;
     // The installed pinned toolchain is trusted and immutable; operator artifacts are hashed below.
@@ -771,7 +975,7 @@ pub fn run() -> Result<ExitCode, String> {
     for dep in &invocation.deps {
         fingerprint(dep, &mut key).map_err(|e| e.to_string())?;
     }
-    for arg in invocation.rustc_args(&invocation.out) {
+    for arg in invocation.rustc_args(&invocation.out, None) {
         record(&mut key, b"argument", arg.as_bytes());
     }
     record(
@@ -785,11 +989,7 @@ pub fn run() -> Result<ExitCode, String> {
         &[u8::from(invocation.backstop_only)],
     );
     record(&mut key, b"test ice", &[u8::from(invocation.test_ice)]);
-    let sources = Sources::snapshot(&source_root, &mut key)
-        .map_err(|_| "cannot snapshot candidate sources")?;
-    if !sources.files.contains_key(&source) {
-        return Err("candidate source is not admitted".into());
-    }
+    let sources = source_snapshot(&source_root, &source, &mut key)?;
     let key: String = SourceFileHash::new_in_memory(SourceFileHashAlgorithm::Sha256, &key)
         .hash_bytes()
         .iter()
@@ -814,19 +1014,7 @@ pub fn run() -> Result<ExitCode, String> {
         // A killed earlier run with this pid may have left its staging directory.
         let _ = fs::remove_dir_all(&out);
         fs::create_dir(&out).map_err(|e| e.to_string())?;
-        let rustc_args = invocation.rustc_args(&out);
-        let mut admission = Admission {
-            grants: invocation.grants,
-            out: out.clone(),
-            holes: Holes::new(),
-            sources,
-            tide_std: invocation.std.is_some(),
-            backstop_only: invocation.backstop_only,
-            test_ice: invocation.test_ice,
-        };
-        return Ok(rustc_driver::catch_with_exit_code(|| {
-            rustc_driver::run_compiler(&rustc_args, &mut admission)
-        }));
+        return Ok(invocation.compile(&out, sources, None, true));
     }
     // Granted assembly and native links can read inputs the source snapshot cannot key.
     let cacheable = !invocation.link || !invocation.grants.unsafe_;

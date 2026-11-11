@@ -110,11 +110,11 @@ target and fails if it produces no matching test executable.
 
 Acceptance test names live in harness.py's `ACCEPTANCE_TESTS`, outside writer
 directories, and freeze with the suites. Both arms must list exactly those
-names (with the current Tide adapter's `acceptance::` prefix). Every expected
-test runs with `--logfile` at a fresh harness-chosen path inside its execution
-directory. After exit, the harness reads the original file through its open
-handle and records its contents. Passing requires exactly `ok <expected name>`
-and a newline, with nothing else, and exit 0. Writer tests may instead log
+names. Every expected test runs with `--logfile` at a fresh path the harness
+chooses inside its execution directory. After exit, the harness reads the file
+through its original open handle and records its contents. A pass requires
+exit 0 and a log containing exactly `ok <expected name>` followed by a newline.
+Writer tests may instead log
 `ignored <name>` or `ignored: <reason> <name>`; acceptance tests may not.
 Stdout/stderr are retained for diagnostics and do not determine per-test
 outcomes, so uncaptured output may interleave with libtest's console output.
@@ -176,17 +176,17 @@ Rust build cache. Its results prove only the recorded source checks/cases;
 they are neither an isolation proof nor a gate run. Never use that mode for
 writer code. Ordinary writer builds keep their cache inside their fresh tree.
 
-Tide uses only the pinned driver and production std. Metadata checks, linked
-writer tests, linked acceptance probes and binary builds each have a separate
-output directory. `--emit=link --test` builds `solution-test`; the harness runs
-each listed test with the same time/result checks as Rust. Binary cases run
-the driver's linked `solution` through the shared process-case loop.
-No direct-rustc or stub fallback exists. A plain libtest pass still leaves an
-explicit writer-test failure: property/simulation/generated tests and vacuity
-need fx-nkv.6/fx-m72. Tide library acceptance remains a sibling-module probe;
-both full readiness and first-check compilation explicitly fail its separate
-admitted-library boundary until fx-dsa supplies the interface. That replacement
-also owns proper crate-path resolution and separation of writer/acceptance tests.
+Tide uses the pinned driver and production std. Metadata checks, linked
+writer tests, linked acceptance tests and binary builds each have a separate
+output directory. `--emit=link --test` builds `solution-test` for writer tests.
+The L stage uses `--tide-test-library` to admit the library and compile the
+acceptance suite as a second crate that imports its public API. First-check
+grading uses metadata mode. Full grading builds `acceptance-test` and runs
+each listed test with the same time and result checks as Rust. Binary cases
+run the driver's linked `solution` through the shared process-case loop.
+A plain libtest pass still leaves an explicit writer-test failure while
+property and simulation tests, generated contract tests, and the vacuity
+floor depend on fx-nkv.6 and fx-m72.
 
 This is not the agent-session runner: `fx-ic2` must restrict writer tools and
 reads, terminate the agent session at 40 minutes even when no command is run,

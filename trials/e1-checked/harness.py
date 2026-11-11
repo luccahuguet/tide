@@ -121,9 +121,8 @@ def suite(task, arm):
     return "use solution::*;\n" + text
 
 
-def acceptance_tests(task, arm):
-    prefix = "acceptance::" if arm == "tide" else ""
-    return [prefix + name for name in ACCEPTANCE_TESTS[task].split()]
+def acceptance_tests(task):
+    return ACCEPTANCE_TESTS[task].split()
 
 
 def integrity_flags(text):
@@ -248,11 +247,6 @@ def package(work, config, candidate, acceptance=False):
         if acceptance and task not in BINS:
             (dest / "tests").mkdir()
             (dest / "tests/acceptance.rs").write_text(suite(task, arm))
-    elif acceptance and task not in BINS:
-        # fx-dsa must replace this probe: sibling modules alter visibility, crate paths and test selection.
-        (dest / "src/solution.rs").write_text(candidate)
-        (dest / "src/acceptance.rs").write_text("use crate::solution;\n" + suite(task, arm))
-        (dest / "src/lib.rs").write_text("mod solution;\n#[cfg(test)]\nmod acceptance;\n")
     return dest
 
 
@@ -271,26 +265,35 @@ def tide_artifacts(config):
     return ["--tide-std=" + config["std"]] + ["--tide-dep-dir=" + p for p in config["deps"]]
 
 
-def tide_library_boundary():
-    return {"code": 2, "stdout": "", "stderr": "Tide library boundary unproven: acceptance is a sibling-module "
-            "probe; a separately admitted crate importing the candidate needs fx-dsa\n"}
+def tide_library_boundary(config, work, pkg, *, link):
+    entry = work / "suite/src/lib.rs"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("extern crate tide_candidate as solution;\n" + suite(config["task"], "tide"))
+    out = work / "output/test-acceptance"
+    built = run([config["driver"], "--edition=2024", "--test", "--crate-name=acceptance",
+                 "--emit=" + ("link" if link else "metadata"), *tide_artifacts(config),
+                 "--tide-test-library=" + str(pkg / "src/lib.rs"), "--out-dir=" + str(out), str(entry)],
+                config, work)
+    results = [dict(built, stage="L")]
+    if link and built["code"] == 0:
+        results += test_command([str(out / "acceptance-test")], config, work, acceptance=True)
+    return results
 
 
 def executable_tests(config, work, pkg, *, acceptance):
     config = dict(config, deadline=min(config.get("deadline", float("inf")), time.monotonic() + 120))
     if config["arm"] == "tide":
+        if acceptance:
+            return tide_library_boundary(config, work, pkg, link=True)
         entry = pkg / ("src/main.rs" if config["task"] in BINS else "src/lib.rs")
-        out = work / ("output/test-acceptance" if acceptance else "output/test-writer")
+        out = work / "output/test-writer"
         built = run([config["driver"], "--edition=2024", "--test", "--emit=link", "--crate-name=solution",
                      *tide_artifacts(config), "--out-dir=" + str(out), str(entry)], config, work)
         results = [built]
         if built["code"] == 0:
-            results += test_command([str(out / "solution-test")], config, work, acceptance=acceptance)
-        if not acceptance:
-            results.append({"code": 2, "stdout": "", "stderr": "tide test runner unavailable: property, simulation "
-                            "and generated contract tests and the vacuity floor need fx-nkv.6 and fx-m72; plain #[test] only\n"})
-        elif config["task"] not in BINS:
-            results.append(tide_library_boundary())
+            results += test_command([str(out / "solution-test")], config, work)
+        results.append({"code": 2, "stdout": "", "stderr": "tide test runner unavailable: property, simulation "
+                        "and generated contract tests and the vacuity floor need fx-nkv.6 and fx-m72; plain #[test] only\n"})
         return results
     cmd = [config["sysroot"] + "/bin/cargo", "test", "--offline", "--locked", "--no-run", "--message-format=json"]
     cmd += ["--test", "acceptance"] if acceptance else (["--bin", "solution"] if config["task"] in BINS else ["--lib"])
@@ -331,7 +334,7 @@ def test_command(cmd, config, work, *, acceptance=False):
         if listing["code"]: return results
         tests = [line.removesuffix(": test") for line in listing["stdout"].splitlines() if line.endswith(": test")]
         if acceptance:
-            expected = acceptance_tests(config["task"], config["arm"])
+            expected = acceptance_tests(config["task"])
             listing["expected_tests"], listing["observed_tests"] = expected, tests
             if tests != expected:
                 listing["observed_exit"], listing["code"] = listing["code"], 1
@@ -469,7 +472,7 @@ def grade(config, work, text, compile_only=False):
     pkg = package(acceptance_work, config, text, acceptance=True)
     results = checks(config, acceptance_work, pkg)
     if compile_only and config["arm"] == "tide" and config["task"] not in BINS:
-        results.append(tide_library_boundary())
+        results += tide_library_boundary(config, acceptance_work, pkg, link=False)
     # Probe the executable boundary even if metadata fails, so its owner is visible too.
     if not compile_only:
         writer_work = work / "writer"

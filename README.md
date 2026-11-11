@@ -157,6 +157,16 @@ Execution is a separate trusted caller action. `--test` builds Rust's ordinary
 harness for parameterless `#[test]` functions, without property generation,
 simulated capabilities or Tide's structured test results; this is not `tide test`.
 
+Add `--tide-test-library path/to/library/src/lib.rs` to `--test` to check a
+separate test crate against a library. Pass the test crate's source as the
+positional argument. Its package must be disjoint from the library package,
+and it imports the library as `tide_candidate` under Rust's crate visibility
+rules. The driver admits both crates without grants and builds a fresh library
+archive in private staging. Metadata mode checks the suite and `--emit=link`
+publishes the test executable. The pair publishes no library or trust artifact.
+A killed build can leave a private `.tide-test-*` directory. Later invocations
+create fresh staging and never read those leftovers.
+
 `--tide-std PATH` and repeatable `--tide-dep-dir DIR` select trusted toolchain
 artifacts outside the candidate package. These are operator inputs, like
 grants; candidate source, Cargo configuration, toolchain files, and inherited

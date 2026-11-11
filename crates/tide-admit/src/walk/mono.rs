@@ -5,8 +5,8 @@
 //! upstream generics (`-Zshare-generics=no`). A library's `#[inline]` functions, like its
 //! generics, are checked in the crates that instantiate them.
 //!
-//! A method of a non-local trait impl whose key a rule denies, or gives the `unsafe` grant the
-//! package lacks, is rejected (`FX0520`); a key no rule lists does not count, since std's
+//! Outside the local crate and the paired test library, a rule can reject a trait impl method
+//! directly or require an `unsafe` grant (`FX0520`). Unlisted keys are allowed because std's
 //! internals instantiate unlisted impls. Where an item outside `core`, `alloc`, and Rust's std is
 //! used, its where-clauses at its instance's args, and its trait method's for an impl's method,
 //! must meet their `Pure` part, as at a use in the walk (`FX0517` and the codes
@@ -14,7 +14,7 @@
 //! items; a denied impl that no local item reaches this way, at the crate root.
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
-use rustc_hir::def_id::{CRATE_DEF_ID, DefId, LocalDefId};
+use rustc_hir::def_id::{CRATE_DEF_ID, CrateNum, DefId, LocalDefId};
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
 use rustc_middle::mono::{CollectionMode, MonoItem};
 use rustc_middle::ty::print::with_forced_trimmed_paths;
@@ -28,9 +28,14 @@ type Users<'tcx> = FxHashMap<MonoItem<'tcx>, Vec<(MonoItem<'tcx>, Span)>>;
 
 /// Checks the crate's mono items, emits its diagnostics, and adds the trust holes it finds to the
 /// walk's `holes`: the impls the `unsafe` grant admits, held by the local items that use them.
-pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants, holes: &mut Holes) {
+pub fn check_mono_items(
+    tcx: TyCtxt<'_>,
+    grants: Grants,
+    holes: &mut Holes,
+    test_library: Option<CrateNum>,
+) {
     let crates = Crates::new(tcx);
-    let mut walk = Walk::new(tcx, &crates, grants);
+    let mut walk = Walk::new(tcx, &crates, grants, test_library);
     walk.item_env = Some(TypingEnv::fully_monomorphized());
     let items: FxIndexSet<MonoItem<'_>> = tcx
         .collect_and_partition_mono_items(())
@@ -51,8 +56,8 @@ pub fn check_mono_items(tcx: TyCtxt<'_>, grants: Grants, holes: &mut Holes) {
         };
         let def_id = instance.def_id();
         let role = crates.role(def_id.krate);
-        if role != Role::Local
-            && let Some(impl_def_id) = tcx.trait_impl_of_assoc(def_id)
+        if let Some(impl_def_id) = tcx.trait_impl_of_assoc(def_id)
+            && !walk.owns_impl(impl_def_id)
         {
             let key = impl_key(tcx, impl_def_id);
             let verdict = walk.decide(key.clone(), policy::lookup(&key), true);
