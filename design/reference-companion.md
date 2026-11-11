@@ -379,14 +379,41 @@ that seed against the current source, for example after a fix.
 The chapters are synchronized with 01 draft 3.7. These points remain open;
 this reference takes the reading shown.
 
-1. **`root.fs` and relative paths.** 03 §1.1 says `root.fs` "is rooted at
-   `/`"; this reference resolves relative paths against the starting
-   working directory (6.3).
+1. **`root.fs` and relative paths.** Settled by `fx-byk.1`: both 03 §1.1
+   and reference 6.3 resolve relative paths against the starting working
+   directory (`/` under simulation).
 2. **`with_all`.** 01 D8 says cells are accessed only through `with` and
    `with2`; 02 §8.4 and 03 §6.5 add `with_all` under a provisional name.
    Kept (7.4).
 3. **`#[pure]`.** 03 §3.2 settles it (`FX0511`); 01 still lists it as open
    question 4. Kept (6.6).
+
+### File backend behaviour (6.3; fx-byk.1 and fx-byk.2)
+
+Production provides real `Fs`, `File`, `OpenOptions`, listing and metadata
+items; conformance includes those same definitions. Simulation is planned.
+The recorded std choices (research/19-files.md S1–S12; 03 §1.1 and §9) are:
+
+- Listings snapshot names sorted by bytes; metadata exposes type and length.
+- Real `write_synced` follows at most 40 final symlinks, separately from each
+  parent-directory lookup's Linux budget. Ordinary `write` has Linux's total
+  40-link pathname budget; mixed directory/final chains can therefore succeed
+  only with `write_synced` (03 §1.1).
+- Entry-changing `rename`, `remove_file`, and `remove_dir` reject final `.`
+  or `..` with `InvalidInput`. File access mismatches give `PermissionDenied`,
+  and a read-only `Fs` cannot produce a `ReadWrite` child.
+- Confined real operations need Linux `openat2` and fail closed with
+  `Unsupported` if unavailable. Real files are Linux-only in v0; tide-std does
+  not build on other targets. Root relative
+  paths use the starting working directory. Kinds, rather than error text or
+  raw OS codes, define real/simulated equivalence.
+- Planned simulated file calls take one scheduling point and one uniform
+  `0..=1_000_000` ns draw from a separate fs seed stream. Pre-cancelled calls
+  have no draw, time or effect; shielded close still takes its point and draw.
+  Multi-call operations apply whole, a limit until fault modelling.
+- Planned `world.file` returns `()`, creates parents and replaces file contents
+  from simulated `/`, immediately without scheduling, time, draws or mode
+  checks. Setup errors panic; setup records a `world` trace event.
 
 ## 17. Simulation: faults, nodes, crashes
 

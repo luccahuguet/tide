@@ -504,7 +504,7 @@ impl Drop for Simulation {
     }
 }
 
-/// Rejects a real cell used inside a simulation.
+/// Rejects a real cell or real file authority used inside a simulation.
 pub(crate) fn outside_simulation() {
     Context::outside_simulation();
 }
@@ -524,7 +524,7 @@ impl SimCell {
     }
 }
 
-fn observe_cancellation() -> bool {
+pub(crate) fn observe_cancellation() -> bool {
     CURRENT.with(|slot| {
         slot.borrow()
             .as_ref()

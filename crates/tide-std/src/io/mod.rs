@@ -14,7 +14,7 @@
 //!
 //! `shared.rs` holds these items; the conformance corpus's fixture std includes it too, so they
 //! have one definition. Not provided here: `Stdin`'s reads, `stdout()`/`stderr()`, and the
-//! file and socket handles (their own beads), vectored I/O, `LineWriter`, `copy`, `empty`,
+//! socket handles (their own bead), vectored I/O, `LineWriter`, `copy`, `empty`,
 //! `sink`, `repeat`, `io::read_to_string`, `BufWriter::into_parts`, and `BufError`.
 
 include!("shared.rs");

@@ -7,10 +7,10 @@
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, Rust's re-exports, and the codec engine and `std::json`,
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
-//! its task runtime and scheduler (`task.rs`), single-cell `Shared` (`sync.rs`), and
-//! `std::time` (`time.rs`). It declares
-//! identity-only capabilities with `capability!`, giving those types the same definitions and
-//! paths in both crates.
+//! its real file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
+//! (`task.rs`), single-cell `Shared` (`sync.rs`), and `std::time` (`time.rs`). It declares
+//! identity-only capabilities with `capability!`, giving those
+//! types the same definitions and paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
 //! the cases use, with every field, variant, derive, and `Error` impl the
 //! reference gives them (other impls as needed), with the signatures
@@ -90,65 +90,9 @@ pub mod rand {
 }
 
 
-pub mod fs {
-    use crate::io;
-    use std::ffi::OsString;
-    use std::path::{Path, PathBuf};
-
-    /// Tide std's own listing types, with Rust's methods (03 §1.1, "Directory listings").
-    #[derive(Debug)]
-    pub struct ReadDir(());
-    impl Iterator for ReadDir {
-        type Item = io::Result<DirEntry>;
-        fn next(&mut self) -> Option<io::Result<DirEntry>> { unimplemented!() }
-    }
-    #[derive(Debug)]
-    pub struct DirEntry(());
-    impl DirEntry {
-        pub fn path(&self) -> PathBuf { unimplemented!() }
-        pub fn file_name(&self) -> OsString { unimplemented!() }
-        pub fn metadata(&self) -> io::Result<Metadata> { unimplemented!() }
-        pub fn file_type(&self) -> io::Result<FileType> { unimplemented!() }
-    }
-    /// Tide std's own, with Rust's methods (03 §1.1); the stub lists only these.
-    #[derive(Clone, Debug)]
-    pub struct Metadata(());
-    impl Metadata {
-        pub fn file_type(&self) -> FileType { unimplemented!() }
-        pub fn is_dir(&self) -> bool { unimplemented!() }
-        pub fn is_file(&self) -> bool { unimplemented!() }
-        pub fn is_symlink(&self) -> bool { unimplemented!() }
-        pub fn len(&self) -> u64 { unimplemented!() }
-    }
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct FileType(());
-    impl FileType {
-        pub fn is_dir(&self) -> bool { unimplemented!() }
-        pub fn is_file(&self) -> bool { unimplemented!() }
-        pub fn is_symlink(&self) -> bool { unimplemented!() }
-    }
-
-    pub enum Mode {
-        Read,
-        ReadWrite,
-    }
-
-    crate::capability!(Fs);
-
-    impl Fs {
-        pub fn read(&self, p: impl AsRef<Path>) -> io::Result<Vec<u8>> { unimplemented!() }
-        pub fn read_to_string(&self, p: impl AsRef<Path>) -> io::Result<String> { unimplemented!() }
-        pub fn write_synced(&self, p: impl AsRef<Path>, data: impl AsRef<[u8]>) -> io::Result<()> { unimplemented!() }
-        pub fn create_dir_all(&self, p: impl AsRef<Path>) -> io::Result<()> { unimplemented!() }
-        pub fn read_dir(&self, p: impl AsRef<Path>) -> io::Result<ReadDir> { unimplemented!() }
-        pub fn metadata(&self, p: impl AsRef<Path>) -> io::Result<Metadata> { unimplemented!() }
-        pub fn rename(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> { unimplemented!() }
-        pub fn sync_dir(&self, p: impl AsRef<Path>) -> io::Result<()> { unimplemented!() }
-        pub fn exists(&self, p: impl AsRef<Path>) -> io::Result<bool> { unimplemented!() }
-        pub fn dir(&self, p: impl AsRef<Path>, mode: Mode) -> io::Result<Fs> { unimplemented!() }
-        pub fn read_only(&self) -> Fs { unimplemented!() }
-    }
-}
+// Production owns the complete real file surface, including its runtime behavior.
+#[path = "../../../../crates/tide-std/src/fs.rs"]
+pub mod fs;
 
 // Production owns `Clock`, `Instant`, `SystemTime`, and their runtime.
 #[path = "../../../../crates/tide-std/src/time.rs"]

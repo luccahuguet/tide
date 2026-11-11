@@ -8,8 +8,9 @@
 //!   process's one `Root` (03 ROOT-1, RUN-1);
 //! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
 //! - `Pure` (reference 6.6), which the admission driver decides;
-//! - the capability types `Root` carries: the identities `Fs`, `Net`, `Rand`, `Env`, `Stdin`,
-//!   and `Proc`, and `Tasks` and `Clock`, which also name their simulation when they have one;
+//! - the capability types `Root` carries: the identities `Net`, `Rand`, `Env`, `Stdin`,
+//!   and `Proc`; `Fs` (real files, below); and `Tasks` and `Clock`, which also name their
+//!   simulation when they have one;
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
 //!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
 //!   `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH` with Rust's arithmetic and no `now()` or
@@ -45,7 +46,11 @@
 //! - the prelude's `Encode` and `Decode` traits and derives with `#[codec(rename, rename_all,
 //!   default, skip)]`, and `std::json`: `encode`, `decode`, and `json::Error` (bead `fx-08m`;
 //!   `json.rs` states the encoding, `codec.rs` lists the std types with impls). The derives
-//!   take no other serde key, and no key on a tuple field or `skip` on a variant.
+//!   take no other serde key, and no key on a tuple field or `skip` on a variant;
+//! - real files: `Fs`, `Mode`, `OpenOptions`, `File`, directory listings, and type/length
+//!   metadata (`fs.rs`). `dir` confines paths with Linux `openat2`; file operations check
+//!   cancellation, except the shielded `File::close`, and panic inside a simulation until
+//!   simulated files exist (bead `fx-byk.2`).
 //!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
@@ -54,7 +59,7 @@
 //! non-panic path, a drop panic surfaces in the scope's caller.
 //!
 //! Not provided yet: task limits, deadlines, shields and
-//! isolation; other capability operations and attenuation of reference 6.1 (files, network,
+//! isolation; other capability operations and attenuation of reference 6.1 (network,
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
@@ -64,9 +69,10 @@
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
-//! `root.rs` (with `codec.rs` and `json.rs`), `task.rs` (including its scheduler), `sync.rs`, and `time.rs`
-//! share their definitions with the conformance fixture std. The identity-only capability types
-//! use `root.rs`'s `capability!` in both crates.
+//! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
+//! scheduler), `sync.rs`, and `time.rs`
+//! share their definitions with the conformance fixture std. The identity-only capability
+//! types use `root.rs`'s `capability!` in both crates.
 
 include!("root.rs");
 
@@ -75,13 +81,7 @@ crate::declare_prelude! {
 }
 
 pub mod test;
-
-pub mod fs {
-    crate::capability!(
-        /// File-system authority. It has no operations yet.
-        Fs
-    );
-}
+pub mod fs;
 
 pub mod net {
     crate::capability!(

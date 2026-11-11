@@ -98,9 +98,21 @@ Notes:
 
 - **Paths.** An `Fs` resolves paths beneath its directory with
   `openat2(RESOLVE_BENEATH)` semantics: `..` and symlinks cannot leave it.
-  `root.fs` is rooted at `/`. A `Mode::Read` `Fs` returns `PermissionDenied`
+  `root.fs` accepts absolute paths from `/` and resolves relative paths against
+  the starting working directory (provisional; `/` under simulation). A
+  `Mode::Read` `Fs` returns `PermissionDenied`
   on writes. Read versus write is not a type distinction; exercised authority
-  (§4) classifies each method as `fs.read` or `fs.write`.
+  (§4) classifies each method as `fs.read` or `fs.write`. Attenuation cannot
+  widen authority: `dir(p, Mode::ReadWrite)` on a `Read` capability fails with
+  `PermissionDenied`, before resolving `p`. Real confinement pins an open
+  directory and uses Linux `openat2` with `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS`;
+  renaming the directory does not redirect the capability. A magic link inside
+  the base fails with ELOOP's raw kind (provisional), rather than
+  `PermissionDenied`; `write_synced` gives `PermissionDenied` on the same path.
+  There is no lexical fallback: an unavailable `openat2` returns `Unsupported`.
+  Real files are Linux-only in v0; tide-std does not build on other targets.
+  `.` or `..` as the last component of `rename`,
+  `remove_file`, or `remove_dir` gives `InvalidInput` (provisional).
 - **`exists`.** `fs.exists(p) -> io::Result<bool>` is Rust's
   `std::fs::exists`: `Ok(false)` when the lookup finds no file at `p`
   (`NotFound`, a broken symlink included), and `Err` for any other failure,
@@ -111,7 +123,10 @@ Notes:
   there as missing.
 - **Append and durability** (D7, D15). `fs.open_with(p,
   OpenOptions::new().append(true).create(true))` opens for append;
-  `OpenOptions` is Rust's builder without its ambient `open`. Writes are
+  `OpenOptions` is Rust's builder without its ambient `open`. Reading through
+  a write-only `File`, or writing or setting length through a read-only one,
+  returns `PermissionDenied` (provisional), rather than Rust's uncategorized
+  `EBADF` kind. Writes are
   durable only once synced: `file.sync()` (Rust's `sync_all` and `sync_data`
   are accepted spellings) for contents, and `fs.sync_dir(p)` for directory
   entries changed by `create`, `rename`, `remove_file`, `remove_dir`, or a
@@ -127,13 +142,20 @@ Notes:
   makes the emptying durable.
   D7's `Dir::sync_dir` is this method: an `Fs` from `dir()` is the
   directory capability. `write_synced` syncs the file and its entry.
+  The real backend follows at most 40 final symlinks explicitly to pin the
+  target's parent for syncing. Parent-directory lookups each retain Linux's
+  own 40-link budget. This differs deliberately from ordinary `write`'s
+  total pathname budget: a directory link followed by 40 final links can
+  succeed with `write_synced` while `write` returns `ELOOP`.
   After a simulated crash, unsynced writes may be lost or torn, but each
   directory-entry change survives whole or not at all, so a `rename` over a
   target leaves it naming the old file or the new one (§9.5). Atomic
   replace is therefore `write_synced` to a temporary, `rename` it over the
   target, and `sync_dir` the parent.
 - **Directory listings.** `fs.read_dir(p)` returns `io::Result<ReadDir>`, an
-  iterator of `io::Result<DirEntry>`, as in Rust. `DirEntry` keeps Rust's
+  iterator of `io::Result<DirEntry>`, as in Rust. Both backends return a
+  snapshot sorted by filename bytes (provisional); a listing error surfaces
+  from `read_dir` before the iterator is returned. `DirEntry` keeps Rust's
   `path()`, `file_name() -> OsString`, `metadata()`, and `file_type()`.
   Like a `File`, a `ReadDir` or `DirEntry` is a resource handle that
   carries the authority of the `Fs` that listed it, so it is not `Pure`;
@@ -142,7 +164,11 @@ Notes:
   yielding its first error. These, `Metadata`, and `FileType` are Tide
   std's own types with Rust's methods, so ADMIT-1's ban on I/O methods of
   re-exported std types does not reach them. `OsStr` and `OsString` keep
-  Rust's API, which does no I/O.
+  Rust's API, which does no I/O. Metadata currently exposes type and length;
+  times and permissions remain planned. Error kinds are the real/simulated
+  equivalence contract; simulated errors have no raw OS code and may differ
+  in display text. The real file surface is implemented in production std;
+  simulated files are planned in `fx-byk.2`.
 - **Standard input.** `Stdin`'s reads are inherent methods with `&self`
   receivers: `read_line(&mut String)`, `lines()`, `read_to_string(&mut
   String)`, `read_to_end(&mut Vec<u8>)`, and `is_terminal()`, which Rust
@@ -1744,7 +1770,11 @@ Setup follows Rust's builders: `world.args(impl IntoIterator<Item:
 AsRef<OsStr>>)` and `world.env_var(k: impl AsRef<OsStr>, v: impl
 AsRef<OsStr>)` as `Command::args` and `Command::env` take them, and
 `world.stdin(impl AsRef<[u8]>)` and `world.file(path, contents: impl
-AsRef<[u8]>)` take bytes or text. `world.http(addr, peer)` takes `peer:
+AsRef<[u8]>)` take bytes or text. The planned `world.file(path, contents)`
+returns `()`, resolves from simulated `/`, creates parents, and creates or
+replaces the file immediately, without a point, time, draw or mode check.
+Invalid setup (including a file parent or `..` above `/`) panics; one `world`
+trace event records the setup. `world.http(addr, peer)` takes `peer:
 impl Fn(&Request) -> Reply + Send + 'static`: the simulator calls it from
 whichever task's thread sends the request, so state it shares with the test
 body crosses tasks and must be a synchronization handle made from
@@ -1758,7 +1788,12 @@ default and `tide sim --test` runs more.
 - Monotonic time starts at zero, wall time at 2000-01-01T00:00:00Z.
   Computation takes no virtual time; capability operations take modeled
   latencies drawn from the seed, which cancellation cuts short only where
-  TASK-3 lets it: a file-system call's latency runs out first. Simulated
+  TASK-3 lets it: a file-system call's latency runs out first. The planned
+  file backend draws uniform whole nanoseconds in `0..=1_000_000` from its
+  own seed sub-stream, one draw and scheduling point per method call,
+  `ReadDir::next` included. A pre-cancelled call draws nothing, advances no
+  time and has no effect. Shielded `File::close` still takes one point and
+  draw. These latency rules are provisional. Simulated
   standard input behaves as a pipe. Without faults, each network packet takes
   1–10 ms, and a `Net::get` to a simulated peer is one round trip, two
   packet delays (2–20 ms), plus the reply's `after(d)`; connection setup and
@@ -1915,7 +1950,10 @@ Not simulated: CPU time and performance; memory exhaustion; stack depth;
 parallel speed-up (parallel regions run sequentially, §8.4);
 hardware faults beyond injected disk errors; foreign code's internals and
 threads; kernel behavior beyond the models; signals; timing side channels;
-real child processes, which need a `sim.world.proc` model.
+real child processes, which need a `sim.world.proc` model. The planned
+simulated file backend applies each multi-call operation whole after its
+latency; it does not expose partial effects when cancellation interrupts real
+multi-call operations. Modelling those partial effects belongs with faults.
 
 ## 10. The Bend Boundary (later tier, D16)
 

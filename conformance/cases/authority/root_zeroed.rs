@@ -41,7 +41,7 @@ pub fn forge_vec() -> Vec<Fs> {
 }
 
 pub fn transmuted() -> Fs {
-    unsafe { std::mem::transmute::<(), Fs>(()) } //~ FX0517
+    unsafe { std::mem::transmute::<[u8; std::mem::size_of::<Fs>()], Fs>([0; std::mem::size_of::<Fs>()]) } //~ FX0517
 }
 
 pub fn aligned(bytes: &[u8]) -> &[Fs] {

@@ -186,7 +186,7 @@ environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-as identities (`Tasks` and `Clock` have operations, below), `Pure`, and the `out` and `err` sinks
+as identities (`Fs`, `Tasks` and `Clock` have operations, below), `Pure`, and the `out` and `err` sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
@@ -235,6 +235,16 @@ The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+`std::fs` provides real files through `Fs`: path reads and writes, `OpenOptions`,
+`File` with `Read`/`Write`/`Seek`, directory mutation and listings, type/length
+metadata, and explicit sync and close. `dir(path, Mode)` pins a directory;
+confined paths use Linux 5.6+ `openat2` and fail closed with `Unsupported` when
+unavailable. Absolute paths and escapes return `PermissionDenied`; `Mode::Read`
+rejects writes and cannot widen to `ReadWrite`. Listings are snapshots sorted
+by filename bytes. File operations check cancellation; `File::close` is
+shielded. Real files panic when used inside a simulation. The conformance std
+includes production's file implementation.
+Simulated files, metadata times/permissions, and owned-buffer I/O remain planned.
 `std::collections` keeps Rust's API, with fixed-key `HashMap`/`HashSet` and
 `Rand`-seeded hashing.
 The shared `std::float::{bits, min, max, total_cmp}` observers canonicalize NaNs

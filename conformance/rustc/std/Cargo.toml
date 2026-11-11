@@ -7,6 +7,7 @@ description = "Conformance rustc oracle: a compile-time fixture of Tide std, inj
 
 [dependencies]
 libm = { version = "=0.2.16", default-features = false, features = ["force-soft-floats"] }
+rustix = { version = "=1.1.6", default-features = false, features = ["fs", "std"] }
 # Tide's std's macros, which the included crate-root items re-export.
 tide-macros = { path = "../../../crates/tide-macros" }
 # Contract lowering from the D18 spike.

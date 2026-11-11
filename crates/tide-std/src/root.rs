@@ -18,6 +18,11 @@ pub use std::{
     writeln,
 };
 
+/// Authority-free names used by paths and directory entries (03 §1.1).
+pub mod ffi {
+    pub use std::ffi::{OsStr, OsString};
+}
+
 // `panic!` alone, since re-exporting `std::panic` would also export the module and
 // `catch_unwind`; `print!` and its kin write to the sinks below.
 pub use tide_macros::{Decode, Encode, Error, eprint, eprintln, panic, print, println};
@@ -175,7 +180,7 @@ pub mod __rt {
         );
         let root = crate::Root {
             _private: (),
-            fs: crate::fs::Fs(()),
+            fs: crate::fs::Fs::root(),
             net: crate::net::Net(()),
             clock: crate::time::Clock::new(crate::task::Time::real()),
             rand: crate::rand::Rand(()),

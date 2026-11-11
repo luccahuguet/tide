@@ -1699,3 +1699,44 @@ fn main(root: Root) {
     let out = checked(&mut Command::new(dir.join("out/demo")));
     assert_eq!(out.stdout, b"PATTERNS_RAN\n");
 }
+
+/// Execute the shared production/conformance file implementation through admission.
+#[test]
+fn real_files_build_and_run_against_production_std() {
+    use std::os::unix::fs::symlink;
+    let source = include_str!("../../../conformance/cases/authority/files_executable.rs");
+    let dir = package("real-files", source);
+    let base = dir.join("files");
+    std::fs::create_dir_all(base.join("links")).unwrap();
+    std::fs::create_dir_all(base.join("synced")).unwrap();
+    std::fs::write(base.join("in.txt"), "safe").unwrap();
+    std::fs::write(dir.join("outside"), "untouched").unwrap();
+    symlink("../in.txt", base.join("links/ok")).unwrap();
+    symlink("../..", base.join("links/up")).unwrap();
+    symlink("/etc", base.join("links/abs")).unwrap();
+    symlink("../synced", base.join("links/dir")).unwrap();
+    symlink("missing-target", base.join("links/dangling")).unwrap();
+    symlink("synced/created", base.join("new-link")).unwrap();
+    symlink(
+        format!("{}synced/long-target", "./".repeat(160)),
+        base.join("long-link"),
+    )
+    .unwrap();
+    std::fs::create_dir(base.join("deep")).unwrap();
+    std::fs::write(base.join("deep/target"), "unchanged").unwrap();
+    symlink("deep", base.join("alias")).unwrap();
+    for n in 0..40 {
+        let target = if n == 39 {
+            "target".to_owned()
+        } else {
+            format!("l{}", n + 1)
+        };
+        symlink(target, base.join(format!("deep/l{n}"))).unwrap();
+    }
+    symlink("l0", base.join("deep/too-many")).unwrap();
+    checked(&mut driver(&dir));
+    let out = checked(Command::new(dir.join("out/demo")).current_dir(&dir));
+    assert_eq!(out.stdout, b"FILES_RAN\n");
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    assert_eq!(std::fs::read_to_string(dir.join("outside")).unwrap(), "untouched");
+}

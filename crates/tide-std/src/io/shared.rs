@@ -130,7 +130,7 @@ impl ErrorKind {
     }
 
     /// Rust's kind for an OS error; its unstable kinds are `Uncategorized`.
-    fn from_rust(kind: std::io::ErrorKind) -> ErrorKind {
+    pub(crate) fn from_rust(kind: std::io::ErrorKind) -> ErrorKind {
         use std::io::ErrorKind as R;
         match kind {
             R::NotFound => ErrorKind::NotFound,
@@ -380,16 +380,8 @@ pub trait Read {
         append_to_string(buf, |bytes| self.read_to_end(bytes))
     }
 
-    fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<()> {
-        while !buf.is_empty() {
-            match self.read(buf) {
-                Ok(0) => return Err(Error::READ_EXACT_EOF),
-                Ok(n) => buf = &mut buf[n..],
-                Err(e) if e.is_interrupted() => {}
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        read_exact(self, buf)
     }
 
     fn by_ref(&mut self) -> &mut Self
@@ -451,44 +443,14 @@ pub trait Write {
 
     fn flush(&mut self) -> Result<()>;
 
-    fn write_all(&mut self, mut buf: &[u8]) -> Result<()> {
-        while !buf.is_empty() {
-            match self.write(buf) {
-                Ok(0) => return Err(Error::WRITE_ALL_EOF),
-                Ok(n) => buf = &buf[n..],
-                Err(e) if e.is_interrupted() => {}
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
+    fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+        write_all(self, buf)
     }
 
     /// What `write!` and `writeln!` call. As in Rust, a formatting impl that returns an error
     /// while the writer did not panics.
     fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<()> {
-        struct Adapter<'a, T: ?Sized> {
-            inner: &'a mut T,
-            error: Result<()>,
-        }
-        impl<T: Write + ?Sized> fmt::Write for Adapter<'_, T> {
-            fn write_str(&mut self, s: &str) -> fmt::Result {
-                self.inner.write_all(s.as_bytes()).map_err(|e| {
-                    self.error = Err(e);
-                    fmt::Error
-                })
-            }
-        }
-        let mut output = Adapter {
-            inner: self,
-            error: Ok(()),
-        };
-        match fmt::write(&mut output, args) {
-            Ok(()) => Ok(()),
-            Err(_) if output.error.is_err() => output.error,
-            Err(_) => panic!(
-                "a formatting trait implementation returned an error when the underlying stream did not"
-            ),
-        }
+        write_fmt(self, args)
     }
 
     fn by_ref(&mut self) -> &mut Self
@@ -1484,3 +1446,56 @@ impl<W> fmt::Display for IntoInnerError<W> {
 }
 
 impl<W: Send + fmt::Debug> error::Error for IntoInnerError<W> {}
+
+// Shared with File, which checks cancellation even for empty buffers.
+pub(crate) fn read_exact<R: Read + ?Sized>(reader: &mut R, mut buf: &mut [u8]) -> Result<()> {
+    while !buf.is_empty() {
+        match reader.read(buf) {
+            Ok(0) => return Err(Error::READ_EXACT_EOF),
+            Ok(n) => buf = &mut buf[n..],
+            Err(e) if e.is_interrupted() => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+// Shared with File, which checks cancellation even for empty buffers.
+pub(crate) fn write_all<W: Write + ?Sized>(writer: &mut W, mut buf: &[u8]) -> Result<()> {
+    while !buf.is_empty() {
+        match writer.write(buf) {
+            Ok(0) => return Err(Error::WRITE_ALL_EOF),
+            Ok(n) => buf = &buf[n..],
+            Err(e) if e.is_interrupted() => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+// Shared with File, which checks cancellation even for empty buffers.
+pub(crate) fn write_fmt<W: Write + ?Sized>(writer: &mut W, args: fmt::Arguments<'_>) -> Result<()> {
+    struct Adapter<'a, T: ?Sized> {
+        inner: &'a mut T,
+        error: Result<()>,
+    }
+    impl<T: Write + ?Sized> fmt::Write for Adapter<'_, T> {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            self.inner.write_all(s.as_bytes()).map_err(|e| {
+                self.error = Err(e);
+                fmt::Error
+            })
+        }
+    }
+    let mut output = Adapter {
+        inner: writer,
+        error: Ok(()),
+    };
+    match fmt::write(&mut output, args) {
+        Ok(()) => Ok(()),
+        Err(_) if output.error.is_err() => output.error,
+        Err(_) => panic!(
+            "a formatting trait implementation returned an error when the underlying stream did not"
+        ),
+    }
+}

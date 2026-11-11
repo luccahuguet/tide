@@ -377,6 +377,8 @@ fn simulated_handles_require_their_own_live_simulation() {
     let real = Tasks::real();
     let real_cell = Shared::new(1, &real);
     let real_clock = crate::time::Clock::new(Time::real());
+    let fs = crate::fs::Fs::root();
+    let file = fs.open("Cargo.toml").unwrap();
     let (tasks, cell, clock) = {
         let simulation = Simulation::new(0);
         let tasks = simulation.tasks.clone();
@@ -398,11 +400,14 @@ fn simulated_handles_require_their_own_live_simulation() {
     let simulation = Simulation::new(0);
     fails();
     assert_eq!(Shared::new(7, &simulation.tasks).with(|n| *n), Ok(7));
-    let misuses: [&dyn Fn(); 9] = [
+    let misuses: [&dyn Fn(); 12] = [
         &|| _ = real_clock.now(),
         &|| _ = real_clock.system_time(),
         &|| _ = real_clock.sleep(Duration::ZERO),
         &|| _ = real_clock.sleep_until(real_clock.monotonic_only().now()),
+        &|| _ = fs.exists("Cargo.toml"),
+        &|| _ = crate::io::Read::read(&mut &file, &mut [0]),
+        &|| _ = fs.open("Cargo.toml").map(crate::fs::File::close),
         &|| _ = real.checkpoint(),
         &|| _ = real.yield_now(),
         &|| _ = real.scope::<(), TaskError, _>(|_| Ok(())),
@@ -416,8 +421,14 @@ fn simulated_handles_require_their_own_live_simulation() {
             Some("real capability used inside a simulation")
         );
     }
+    let close = catch_unwind(AssertUnwindSafe(|| file.close())).unwrap_err();
+    assert_eq!(
+        message(&*close),
+        Some("real capability used inside a simulation")
+    );
     drop(simulation);
     assert_eq!(real_cell.with(|n| *n), Ok(1));
+    assert!(fs.exists("Cargo.toml").unwrap());
 }
 
 #[test]
