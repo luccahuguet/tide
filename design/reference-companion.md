@@ -390,11 +390,15 @@ this reference takes the reading shown.
 
 ### File backend behaviour (6.3; fx-byk.1 and fx-byk.2)
 
-Production provides real `Fs`, `File`, `OpenOptions`, listing and metadata
-items; conformance includes those same definitions. Simulation is planned.
+Production provides real and simulated `Fs`, `File`, `OpenOptions`, listing
+and metadata items; conformance includes those same definitions.
 The recorded std choices (research/19-files.md S1–S12; 03 §1.1 and §9) are:
 
 - Listings snapshot names sorted by bytes; metadata exposes type and length.
+- Directory length is 0 on both backends because the host's directory
+  representation is not modeled.
+- Linux's 4096-byte pathname limit (including NUL) and 255-byte name limit
+  apply to each syscall-shaped argument.
 - Real `write_synced` follows at most 40 final symlinks, separately from each
   parent-directory lookup's Linux budget. Ordinary `write` has Linux's total
   40-link pathname budget; mixed directory/final chains can therefore succeed
@@ -407,11 +411,11 @@ The recorded std choices (research/19-files.md S1–S12; 03 §1.1 and §9) are:
   not build on other targets. Root relative
   paths use the starting working directory. Kinds, rather than error text or
   raw OS codes, define real/simulated equivalence.
-- Planned simulated file calls take one scheduling point and one uniform
+- Simulated file calls take one scheduling point and one uniform
   `0..=1_000_000` ns draw from a separate fs seed stream. Pre-cancelled calls
   have no draw, time or effect; shielded close still takes its point and draw.
   Multi-call operations apply whole, a limit until fault modelling.
-- Planned `world.file` returns `()`, creates parents and replaces file contents
+- `world.file` returns `()`, creates parents and replaces file contents
   from simulated `/`, immediately without scheduling, time, draws or mode
   checks. Setup errors panic; setup records a `world` trace event.
 

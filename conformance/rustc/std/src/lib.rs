@@ -7,7 +7,7 @@
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, Rust's re-exports, and the codec engine and `std::json`,
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
-//! its real file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
+//! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
 //! (`task.rs`), single-cell `Shared` (`sync.rs`), seeded simulations and their runner
 //! (`sim.rs`), and `std::time` (`time.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
@@ -91,7 +91,7 @@ pub mod rand {
 }
 
 
-// Production owns the complete real file surface, including its runtime behavior.
+// Production owns the complete real/simulated file surface, including its runtime behavior.
 #[path = "../../../../crates/tide-std/src/fs.rs"]
 pub mod fs;
 
@@ -378,7 +378,6 @@ pub mod sim {
     use crate::rand::Rand;
     use crate::time::Clock;
     use std::marker::PhantomData;
-    use std::path::Path;
 
     impl SimRoot {
         pub fn node(&self, name: &str) -> SimNode { unimplemented!() }
@@ -387,7 +386,6 @@ pub mod sim {
     }
 
     impl World {
-        pub fn file(&self, path: impl AsRef<Path>, contents: impl AsRef<[u8]>) { unimplemented!() }
         /// GUESS: element and return types of `args` and `stdin`.
         pub fn args<S: Into<String>>(&self, args: impl IntoIterator<Item = S>) { unimplemented!() }
         pub fn stdin(&self, bytes: impl AsRef<[u8]>) { unimplemented!() }

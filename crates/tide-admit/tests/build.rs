@@ -1835,3 +1835,21 @@ fn simulation_tests_find_lost_updates_and_reexecute_seeds() {
     assert!(first.iter().any(|line| line.contains("\"kind\":\"sink\"")));
     assert_eq!(first, trace(run("simulation::loses_updates", Some(failed))));
 }
+
+/// The same file program executes on production real and simulated Fs, then compares results.
+#[test]
+fn simulated_files_match_real_files_and_replay() {
+    let dir = package("simulated-files", include_str!("../../../conformance/cases/authority/simulated_files.rs"));
+    std::fs::create_dir_all(dir.join("files")).unwrap();
+    checked(&mut driver(&dir));
+    let real = checked(Command::new(dir.join("out/demo")).current_dir(&dir));
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let test = dir.join("out/demo-test");
+    let simulated = checked(Command::new(&test).args(["--exact", "simulated::equivalent_program", "--nocapture"]));
+    let observation = |out: &Output| String::from_utf8_lossy(&out.stdout).lines().find(|l| l.starts_with("OBS:")).unwrap().to_owned();
+    assert_eq!(observation(&real), observation(&simulated));
+    for name in ["fixed_seed_trace", "setup_time_and_cancellation", "cancellation_during_latency_returns_the_operation_result"] {
+        let out = checked(Command::new(&test).args(["--exact", &format!("simulated::{name}"), "--nocapture"]));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed; 0 failed"));
+    }
+}

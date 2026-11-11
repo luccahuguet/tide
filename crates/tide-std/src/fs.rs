@@ -6,17 +6,22 @@
 //! Real files are Linux-only in v0; tide-std does not build on other targets. Confinement
 //! requires Linux 5.6+ (`openat2`); unavailable kernels fail closed with `Unsupported`.
 //! Relative root paths use the process's starting directory.
-//! Listings are snapshots sorted by filename bytes. Metadata exposes type and length only.
-//! Error kinds are the contract; a future simulated backend need not reproduce OS codes or text.
+//! Listings are snapshots sorted by filename bytes. Metadata exposes type and length only;
+//! directory length is zero on both backends. Simulated calls take at most 1 ms and apply
+//! whole; links, crashes and faults are not modeled. Attenuation/data accessors do not schedule.
+//! Error kinds are the contract; simulated errors carry no OS code and may differ in text.
 //! `write_synced` follows up to 40 final symlinks separately from parent lookups; unlike
 //! `write`, this is not Linux's total 40-link pathname budget.
 
 use crate::io::{self, Read, Seek, SeekFrom, Write};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 #[path = "fs/real.rs"]
 mod real;
+#[path = "fs/sim.rs"]
+mod sim;
 
 /// Access permitted through an `Fs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,11 +32,11 @@ pub enum Mode {
 
 /// File-system authority, attenuated with `dir` or `read_only`.
 #[derive(Clone)]
-pub struct Fs(FsBackend, Mode, Option<crate::task::Tasks>);
-
+pub struct Fs(FsBackend, Mode);
 #[derive(Clone)]
 enum FsBackend {
     Real(real::Fs),
+    Sim(sim::Fs),
 }
 
 /// Options for `Fs::open_with`; this data cannot open a file by itself.
@@ -89,8 +94,7 @@ impl OpenOptions {
     }
 }
 
-// Every file operation enters here or through `File::close`. Each `Fs` is real until
-// fx-byk.2, so its I/O would run outside a simulation's schedule.
+// Real multi-call operations also check between their syscalls.
 pub(super) fn checkpoint() -> io::Result<()> {
     crate::task::outside_simulation();
     if crate::task::observe_cancellation() {
@@ -109,217 +113,282 @@ fn check_path(p: &Path, confined: bool) -> io::Result<()> {
     }
     Ok(())
 }
-
 fn normal_name(p: &Path) -> io::Result<()> {
     let bytes = p.as_os_str().as_encoded_bytes();
     if bytes.is_empty() {
         return Err(io::ErrorKind::NotFound.into());
     }
-    let end = bytes.iter().rposition(|&b| b != b'/').map_or(0, |i| i + 1);
-    let name = bytes[..end].rsplit(|&b| b == b'/').next().unwrap();
+    let name = trim_final_slashes(bytes)
+        .rsplit(|&b| b == b'/')
+        .next()
+        .unwrap();
     if name.is_empty() || name == b"." || name == b".." {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     Ok(())
 }
 
+fn trim_final_slashes(bytes: &[u8]) -> &[u8] {
+    let end = bytes.iter().rposition(|&b| b != b'/').map_or(0, |i| i + 1);
+    &bytes[..end]
+}
+
+// Preserve the raw suffix: Path::file_name discards trailing slashes and `.`.
+fn split(p: &Path) -> io::Result<(PathBuf, OsString)> {
+    let bytes = p.as_os_str().as_bytes();
+    if bytes.is_empty() {
+        return Err(io::ErrorKind::NotFound.into());
+    }
+    let end = trim_final_slashes(bytes).len();
+    if end == 0 {
+        return Ok((p.to_owned(), OsString::from(".")));
+    }
+    let start = bytes[..end]
+        .iter()
+        .rposition(|&b| b == b'/')
+        .map_or(0, |i| i + 1);
+    let parent = if start == 0 {
+        Path::new(".")
+    } else {
+        Path::new(OsStr::from_bytes(&bytes[..start]))
+    };
+    Ok((
+        parent.to_owned(),
+        OsString::from_vec(bytes[start..].to_vec()),
+    ))
+}
 impl Fs {
     pub(crate) fn root() -> Self {
-        Self(FsBackend::Real(real::Fs::default()), Mode::ReadWrite, None)
+        Self(FsBackend::Real(real::Fs::default()), Mode::ReadWrite)
     }
-
-    // shortcut: identity only; fx-byk.2 replaces the marker with the simulated store.
     pub(crate) fn simulated(tasks: &crate::task::Tasks) -> Self {
-        let mut fs = Self::root();
-        fs.2 = Some(tasks.clone());
-        fs
+        Self(FsBackend::Sim(sim::Fs::root(tasks)), Mode::ReadWrite)
     }
 
-    fn check(&self, write: bool) -> io::Result<()> {
-        if let Some(tasks) = &self.2 {
-            tasks.unmodeled("Fs");
-        }
-        checkpoint()?;
-        if write && self.1 == Mode::Read {
-            return Err(io::ErrorKind::PermissionDenied.into());
-        }
-        Ok(())
-    }
-
-    fn check_path(&self, p: &Path) -> io::Result<()> {
+    #[track_caller]
+    fn run<T>(
+        &self,
+        name: &'static str,
+        p: &Path,
+        write: bool,
+        f: impl FnOnce() -> io::Result<T>,
+    ) -> io::Result<T> {
+        let apply = || {
+            if write && self.1 == Mode::Read {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
+            self.check_path(p)?;
+            f()
+        };
         match &self.0 {
-            FsBackend::Real(fs) => check_path(p, fs.is_confined()),
+            FsBackend::Real(_) => {
+                checkpoint()?;
+                apply()
+            }
+            FsBackend::Sim(fs) => {
+                fs.tasks
+                    .file_op(name, p, false, std::panic::Location::caller(), apply)
+            }
         }
+    }
+    fn check_path(&self, p: &Path) -> io::Result<()> {
+        let confined = match &self.0 {
+            FsBackend::Real(fs) => fs.is_confined(),
+            FsBackend::Sim(fs) => fs.is_confined(),
+        };
+        check_path(p, confined)
+    }
+    /// Attenuation is data-only: it does not perform I/O or schedule.
+    pub fn read_only(&self) -> Self {
+        Self(self.0.clone(), Mode::Read)
     }
 
     #[track_caller]
     pub fn dir(&self, p: impl AsRef<Path>, mode: Mode) -> io::Result<Self> {
-        self.check(mode == Mode::ReadWrite)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
-            FsBackend::Real(fs) => Ok(Self(FsBackend::Real(fs.dir(p)?), mode, None)),
-        }
+        self.run("fs.dir", p, mode == Mode::ReadWrite, || {
+            Ok(Self(
+                match &self.0 {
+                    FsBackend::Real(fs) => FsBackend::Real(fs.dir(p)?),
+                    FsBackend::Sim(fs) => FsBackend::Sim(fs.dir(p)?),
+                },
+                mode,
+            ))
+        })
     }
-
-    pub fn read_only(&self) -> Self {
-        Self(self.0.clone(), Mode::Read, self.2.clone())
-    }
-
     #[track_caller]
     pub fn open(&self, p: impl AsRef<Path>) -> io::Result<File> {
-        self.open_with(p, OpenOptions::new().read(true))
+        self.open_options("fs.open", p.as_ref(), OpenOptions::new().read(true))
     }
-
     #[track_caller]
     pub fn create(&self, p: impl AsRef<Path>) -> io::Result<File> {
-        self.open_with(
-            p,
+        self.open_options(
+            "fs.create",
+            p.as_ref(),
             OpenOptions::new().write(true).create(true).truncate(true),
         )
     }
-
     #[track_caller]
     pub fn open_with(&self, p: impl AsRef<Path>, opts: &OpenOptions) -> io::Result<File> {
-        self.check(opts.writes())?;
-        let p = p.as_ref();
-        self.check_path(p)?;
-        opts.validate()?;
-        match &self.0 {
-            FsBackend::Real(fs) => Ok(File {
-                backend: FileBackend::Real(fs.open(p, opts)?),
+        self.open_options("fs.open_with", p.as_ref(), opts)
+    }
+    #[track_caller]
+    fn open_options(&self, name: &'static str, p: &Path, opts: &OpenOptions) -> io::Result<File> {
+        self.run(name, p, opts.writes(), || {
+            opts.validate()?;
+            Ok(File {
+                backend: match &self.0 {
+                    FsBackend::Real(fs) => FileBackend::Real(fs.open(p, opts)?),
+                    FsBackend::Sim(fs) => FileBackend::Sim(fs.open(p, opts)?),
+                },
                 read: opts.read,
                 write: opts.write || opts.append,
-            }),
-        }
+            })
+        })
     }
-
     #[track_caller]
     pub fn read(&self, p: impl AsRef<Path>) -> io::Result<Vec<u8>> {
-        let mut file = self.open(p)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        Ok(bytes)
+        let p = p.as_ref();
+        self.run("fs.read", p, false, || self.read_bytes(p))
     }
-
+    fn read_bytes(&self, p: &Path) -> io::Result<Vec<u8>> {
+        match &self.0 {
+            FsBackend::Real(_) => {
+                let mut bytes = Vec::new();
+                self.open(p)?.read_to_end(&mut bytes)?;
+                Ok(bytes)
+            }
+            FsBackend::Sim(fs) => fs.read(p),
+        }
+    }
     #[track_caller]
     pub fn read_to_string(&self, p: impl AsRef<Path>) -> io::Result<String> {
-        let mut file = self.open(p)?;
-        let mut text = String::new();
-        file.read_to_string(&mut text)?;
-        Ok(text)
+        let p = p.as_ref();
+        self.run("fs.read_to_string", p, false, || {
+            String::from_utf8(self.read_bytes(p)?).map_err(|_| io::ErrorKind::InvalidData.into())
+        })
     }
-
     #[track_caller]
     pub fn write(&self, p: impl AsRef<Path>, data: impl AsRef<[u8]>) -> io::Result<()> {
-        self.create(p)?.write_all(data.as_ref())
+        let p = p.as_ref();
+        self.run("fs.write", p, true, || match &self.0 {
+            FsBackend::Real(_) => self.create(p)?.write_all(data.as_ref()),
+            FsBackend::Sim(fs) => fs.write(p, data.as_ref()),
+        })
     }
-
     #[track_caller]
     pub fn write_synced(&self, p: impl AsRef<Path>, data: impl AsRef<[u8]>) -> io::Result<()> {
-        self.check(true)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
+        self.run("fs.write_synced", p, true, || match &self.0 {
             FsBackend::Real(fs) => fs.write_synced(p, data.as_ref()),
-        }
+            FsBackend::Sim(fs) => fs.write_synced(p, data.as_ref()),
+        })
     }
-
     #[track_caller]
     pub fn metadata(&self, p: impl AsRef<Path>) -> io::Result<Metadata> {
-        self.check(false)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
+        self.run("fs.metadata", p, false, || match &self.0 {
             FsBackend::Real(fs) => fs.metadata(p),
-        }
+            FsBackend::Sim(fs) => fs.metadata(p),
+        })
     }
-
-    #[track_caller]
-    pub fn exists(&self, p: impl AsRef<Path>) -> io::Result<bool> {
-        match self.metadata(p) {
-            Ok(_) => Ok(true),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e),
-        }
-    }
-
-    #[track_caller]
-    pub fn read_dir(&self, p: impl AsRef<Path>) -> io::Result<ReadDir> {
-        self.check(false)?;
-        let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
-            FsBackend::Real(fs) => Ok(ReadDir {
-                backend: ReadDirBackend::Real(fs.read_dir(p)?.into_iter()),
-                finished: false,
-            }),
-        }
-    }
-
-    #[track_caller]
-    pub fn rename(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
-        self.check(true)?;
-        let (from, to) = (from.as_ref(), to.as_ref());
-        self.check_path(from)?;
-        self.check_path(to)?;
-        normal_name(from)?;
-        normal_name(to)?;
-        match &self.0 {
-            FsBackend::Real(fs) => fs.rename(from, to),
-        }
-    }
-
     #[track_caller]
     pub fn remove_file(&self, p: impl AsRef<Path>) -> io::Result<()> {
-        self.check(true)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        normal_name(p)?;
-        match &self.0 {
-            FsBackend::Real(fs) => fs.remove(p, false),
-        }
+        self.run("fs.remove_file", p, true, || {
+            normal_name(p)?;
+            match &self.0 {
+                FsBackend::Real(fs) => fs.remove(p, false),
+                FsBackend::Sim(fs) => fs.remove(p, false),
+            }
+        })
     }
-
     #[track_caller]
     pub fn remove_dir(&self, p: impl AsRef<Path>) -> io::Result<()> {
-        self.check(true)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        normal_name(p)?;
-        match &self.0 {
-            FsBackend::Real(fs) => fs.remove(p, true),
-        }
+        self.run("fs.remove_dir", p, true, || {
+            normal_name(p)?;
+            match &self.0 {
+                FsBackend::Real(fs) => fs.remove(p, true),
+                FsBackend::Sim(fs) => fs.remove(p, true),
+            }
+        })
     }
-
     #[track_caller]
     pub fn remove_dir_all(&self, p: impl AsRef<Path>) -> io::Result<()> {
-        self.check(true)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
+        self.run("fs.remove_dir_all", p, true, || match &self.0 {
             FsBackend::Real(fs) => fs.remove_dir_all(p),
-        }
+            FsBackend::Sim(fs) => fs.remove_dir_all(p),
+        })
     }
-
     #[track_caller]
     pub fn create_dir_all(&self, p: impl AsRef<Path>) -> io::Result<()> {
-        self.check(true)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
+        self.run("fs.create_dir_all", p, true, || match &self.0 {
             FsBackend::Real(fs) => fs.create_dir_all(p),
-        }
+            FsBackend::Sim(fs) => fs.create_dir_all(p),
+        })
     }
-
     #[track_caller]
     pub fn sync_dir(&self, p: impl AsRef<Path>) -> io::Result<()> {
-        self.check(false)?;
         let p = p.as_ref();
-        self.check_path(p)?;
-        match &self.0 {
+        self.run("fs.sync_dir", p, false, || match &self.0 {
             FsBackend::Real(fs) => fs.sync_dir(p),
-        }
+            FsBackend::Sim(fs) => fs.sync_dir(p),
+        })
+    }
+    #[track_caller]
+    pub fn exists(&self, p: impl AsRef<Path>) -> io::Result<bool> {
+        let p = p.as_ref();
+        self.run("fs.exists", p, false, || {
+            let result = match &self.0 {
+                FsBackend::Real(fs) => fs.metadata(p),
+                FsBackend::Sim(fs) => fs.metadata(p),
+            };
+            match result {
+                Ok(_) => Ok(true),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+                Err(e) => Err(e),
+            }
+        })
+    }
+    #[track_caller]
+    pub fn rename(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> io::Result<()> {
+        let (from, to) = (from.as_ref(), to.as_ref());
+        self.run("fs.rename", from, true, || {
+            self.check_path(to)?;
+            normal_name(from)?;
+            normal_name(to)?;
+            match &self.0 {
+                FsBackend::Real(fs) => fs.rename(from, to),
+                FsBackend::Sim(fs) => fs.rename(from, to),
+            }
+        })
+    }
+    #[track_caller]
+    pub fn read_dir(&self, p: impl AsRef<Path>) -> io::Result<ReadDir> {
+        let p = p.as_ref();
+        self.run("fs.read_dir", p, false, || {
+            Ok(ReadDir {
+                backend: match &self.0 {
+                    FsBackend::Real(fs) => ReadDirBackend::Real(fs.read_dir(p)?.into_iter()),
+                    FsBackend::Sim(fs) => ReadDirBackend::Sim {
+                        entries: fs.read_dir(p)?.into_iter(),
+                        fs: fs.clone(),
+                        path: p.to_owned(),
+                    },
+                },
+                finished: false,
+            })
+        })
+    }
+    #[track_caller]
+    pub(crate) fn world_file(&self, p: &Path, data: &[u8]) {
+        let FsBackend::Sim(fs) = &self.0 else {
+            unreachable!()
+        };
+        fs.world_file(p, data);
     }
 }
 
@@ -329,11 +398,10 @@ pub struct File {
     read: bool,
     write: bool,
 }
-
 enum FileBackend {
     Real(std::fs::File),
+    Sim(sim::File),
 }
-
 impl std::fmt::Debug for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("File")
@@ -342,113 +410,170 @@ impl std::fmt::Debug for File {
             .finish()
     }
 }
-
 impl File {
-    fn check(&self, allowed: bool) -> io::Result<()> {
-        checkpoint()?;
-        if !allowed {
-            return Err(io::ErrorKind::PermissionDenied.into());
+    #[track_caller]
+    fn run<T>(
+        &self,
+        name: &'static str,
+        allowed: bool,
+        f: impl FnOnce() -> io::Result<T>,
+    ) -> io::Result<T> {
+        let apply = || {
+            if !allowed {
+                return Err(io::ErrorKind::PermissionDenied.into());
+            }
+            f()
+        };
+        match &self.backend {
+            FileBackend::Real(_) => {
+                checkpoint()?;
+                apply()
+            }
+            FileBackend::Sim(file) => file.tasks.file_op(
+                name,
+                &file.path,
+                false,
+                std::panic::Location::caller(),
+                apply,
+            ),
         }
-        Ok(())
     }
-
     #[track_caller]
     pub fn sync(&self) -> io::Result<()> {
-        self.sync_all()
+        self.run("file.sync", true, || match &self.backend {
+            FileBackend::Real(file) => real::sync_all(file),
+            FileBackend::Sim(_) => Ok(()),
+        })
     }
-
     #[track_caller]
     pub fn sync_all(&self) -> io::Result<()> {
-        self.check(true)?;
-        match &self.backend {
+        self.run("file.sync_all", true, || match &self.backend {
             FileBackend::Real(file) => real::sync_all(file),
-        }
+            FileBackend::Sim(_) => Ok(()),
+        })
     }
-
     #[track_caller]
     pub fn sync_data(&self) -> io::Result<()> {
-        self.check(true)?;
-        match &self.backend {
+        self.run("file.sync_data", true, || match &self.backend {
             FileBackend::Real(file) => real::sync_data(file),
-        }
+            FileBackend::Sim(_) => Ok(()),
+        })
     }
-
     #[track_caller]
     pub fn set_len(&self, n: u64) -> io::Result<()> {
-        self.check(self.write)?;
-        match &self.backend {
+        self.run("file.set_len", self.write, || match &self.backend {
             FileBackend::Real(file) => real::set_len(file, n),
-        }
+            FileBackend::Sim(file) => file.set_len(n),
+        })
     }
-
     #[track_caller]
     pub fn metadata(&self) -> io::Result<Metadata> {
-        self.check(true)?;
-        match &self.backend {
+        self.run("file.metadata", true, || match &self.backend {
             FileBackend::Real(file) => real::file_metadata(file),
-        }
+            FileBackend::Sim(file) => Ok(file.metadata()),
+        })
     }
-
     /// Always closes, even in a cancelled scope. A failed close must never be retried.
     #[track_caller]
     pub fn close(self) -> io::Result<()> {
-        crate::task::outside_simulation();
         match self.backend {
-            FileBackend::Real(file) => real::close(file),
-        }
-    }
-}
-
-impl Read for &File {
-    #[track_caller]
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.check(self.read)?;
-        match &self.backend {
             FileBackend::Real(file) => {
-                std::io::Read::read(&mut &*file, buf).map_err(real::io_error)
+                crate::task::outside_simulation();
+                real::close(file)
+            }
+            FileBackend::Sim(file) => {
+                let tasks = file.tasks.clone();
+                let path = file.path.clone();
+                tasks.file_op(
+                    "file.close",
+                    &path,
+                    true,
+                    std::panic::Location::caller(),
+                    || {
+                        drop(file);
+                        Ok(())
+                    },
+                )
             }
         }
     }
+}
+impl Read for &File {
+    #[track_caller]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.run("file.read", self.read, || match &self.backend {
+            FileBackend::Real(file) => {
+                std::io::Read::read(&mut &*file, buf).map_err(real::io_error)
+            }
+            FileBackend::Sim(file) => file.cursor(false, |cursor| cursor.read(buf)),
+        })
+    }
     #[track_caller]
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.check(self.read)?;
-        io::read_exact(self, buf)
+        self.run("file.read_exact", self.read, || match &self.backend {
+            FileBackend::Real(file) => real::Reader(file).read_exact(buf),
+            FileBackend::Sim(_) if buf.is_empty() => Ok(()),
+            FileBackend::Sim(file) => file.cursor(false, |cursor| io::read_exact(cursor, buf)),
+        })
+    }
+    #[track_caller]
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.run("file.read_to_end", self.read, || match &self.backend {
+            FileBackend::Real(file) => real::Reader(file).read_to_end(buf),
+            FileBackend::Sim(file) => file.cursor(false, |cursor| cursor.read_to_end(buf)),
+        })
+    }
+    #[track_caller]
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        self.run("file.read_to_string", self.read, || match &self.backend {
+            FileBackend::Real(file) => real::Reader(file).read_to_string(buf),
+            FileBackend::Sim(file) => file.cursor(false, |cursor| cursor.read_to_string(buf)),
+        })
     }
 }
 impl Write for &File {
     #[track_caller]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.check(self.write)?;
-        match &self.backend {
+        self.run("file.write", self.write, || match &self.backend {
             FileBackend::Real(file) => {
                 std::io::Write::write(&mut &*file, buf).map_err(real::io_error)
             }
-        }
+            FileBackend::Sim(file) => file.write(buf),
+        })
     }
     #[track_caller]
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.check(self.write)?;
-        io::write_all(self, buf)
+        self.run("file.write_all", self.write, || match &self.backend {
+            FileBackend::Real(_) => io::write_all(&mut &**self, buf),
+            FileBackend::Sim(file) => file.write(buf).map(|_| ()),
+        })
     }
     #[track_caller]
     fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> io::Result<()> {
-        self.check(self.write)?;
-        io::write_fmt(self, args)
+        // Format outside the store lock: user Display implementations may themselves do I/O.
+        self.run("file.write_fmt", self.write, || match &self.backend {
+            FileBackend::Real(_) => io::write_fmt(&mut &**self, args),
+            FileBackend::Sim(file) => {
+                let mut bytes = Vec::new();
+                bytes.write_fmt(args)?;
+                file.write(&bytes).map(|_| ())
+            }
+        })
     }
     #[track_caller]
     fn flush(&mut self) -> io::Result<()> {
-        self.check(true)
+        self.run("file.flush", true, || Ok(()))
     }
 }
 impl Seek for &File {
     #[track_caller]
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.check(true)?;
-        match &self.backend {
+        self.run("file.seek", true, || match &self.backend {
             FileBackend::Real(file) => {
                 std::io::Seek::seek(&mut &*file, pos).map_err(real::io_error)
             }
-        }
+            FileBackend::Sim(file) => file.seek(pos),
+        })
     }
 }
 impl Read for File {
@@ -459,6 +584,14 @@ impl Read for File {
     #[track_caller]
     fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         Read::read_exact(&mut &*self, buf)
+    }
+    #[track_caller]
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        Read::read_to_end(&mut &*self, buf)
+    }
+    #[track_caller]
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        Read::read_to_string(&mut &*self, buf)
     }
 }
 impl Write for File {
@@ -486,7 +619,7 @@ impl Seek for File {
     }
 }
 
-/// Snapshot of a directory's names, sorted by filename bytes.
+/// Snapshot of directory names, sorted by filename bytes.
 #[derive(Debug)]
 pub struct ReadDir {
     backend: ReadDirBackend,
@@ -495,6 +628,11 @@ pub struct ReadDir {
 #[derive(Debug)]
 enum ReadDirBackend {
     Real(std::vec::IntoIter<DirEntry>),
+    Sim {
+        entries: std::vec::IntoIter<DirEntry>,
+        fs: sim::Fs,
+        path: PathBuf,
+    },
 }
 impl Iterator for ReadDir {
     type Item = io::Result<DirEntry>;
@@ -503,21 +641,30 @@ impl Iterator for ReadDir {
         if self.finished {
             return None;
         }
-        if let Err(e) = checkpoint() {
-            self.finished = true;
-            return Some(Err(e));
-        }
-        let entry = match &mut self.backend {
-            ReadDirBackend::Real(entries) => entries.next(),
+        let result = match &mut self.backend {
+            ReadDirBackend::Real(entries) => checkpoint().map(|()| entries.next()),
+            ReadDirBackend::Sim { entries, fs, path } => fs.tasks.file_op(
+                "read_dir.next",
+                path,
+                false,
+                std::panic::Location::caller(),
+                || Ok(entries.next()),
+            ),
         };
-        if entry.is_none() {
-            self.finished = true;
+        match result {
+            Ok(None) => {
+                self.finished = true;
+                None
+            }
+            Ok(Some(entry)) => Some(Ok(entry)),
+            Err(e) => {
+                self.finished = true;
+                Some(Err(e))
+            }
         }
-        entry.map(Ok)
     }
 }
-
-/// An entry keeps its listing's directory descriptor, including after a rename.
+/// An entry keeps its listing's directory, including after a rename.
 #[derive(Debug)]
 pub struct DirEntry {
     backend: DirEntryBackend,
@@ -527,6 +674,7 @@ pub struct DirEntry {
 #[derive(Debug)]
 enum DirEntryBackend {
     Real(real::Entry),
+    Sim(sim::Fs),
 }
 impl DirEntry {
     pub fn path(&self) -> PathBuf {
@@ -537,14 +685,27 @@ impl DirEntry {
     }
     #[track_caller]
     pub fn metadata(&self) -> io::Result<Metadata> {
-        checkpoint()?;
-        match &self.backend {
-            DirEntryBackend::Real(entry) => entry.metadata(&self.name),
-        }
+        self.stat("dir_entry.metadata")
     }
     #[track_caller]
     pub fn file_type(&self) -> io::Result<FileType> {
-        Ok(self.metadata()?.file_type())
+        Ok(self.stat("dir_entry.file_type")?.file_type())
+    }
+    #[track_caller]
+    fn stat(&self, name: &'static str) -> io::Result<Metadata> {
+        match &self.backend {
+            DirEntryBackend::Real(entry) => {
+                checkpoint()?;
+                entry.metadata(&self.name)
+            }
+            DirEntryBackend::Sim(fs) => fs.tasks.file_op(
+                name,
+                &self.path,
+                false,
+                std::panic::Location::caller(),
+                || fs.metadata(Path::new(&self.name)),
+            ),
+        }
     }
 }
 
@@ -555,6 +716,12 @@ pub struct Metadata {
     len: u64,
 }
 impl Metadata {
+    fn new(kind: Kind, len: u64) -> Self {
+        Self {
+            file_type: FileType(kind),
+            len: if kind == Kind::Dir { 0 } else { len },
+        }
+    }
     pub fn file_type(&self) -> FileType {
         self.file_type
     }
@@ -567,6 +734,7 @@ impl Metadata {
     pub fn is_symlink(&self) -> bool {
         self.file_type.is_symlink()
     }
+    /// File length in bytes; directories return zero on both backends.
     pub fn len(&self) -> u64 {
         self.len
     }

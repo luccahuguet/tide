@@ -168,7 +168,7 @@ set `TIDE_TEST_SEED` to the reported seed and run the test binary with
 Structural generators are inserted into the defining modules before the final
 admitted compilation. Insertion preserves original line numbers; columns of
 following tokens on an insertion's physical line can shift.
-The `tide test` command, simulated capabilities, requires-guided generation
+The `tide test` command, remaining simulated capabilities, requires-guided generation
 and generated contract tests are planned.
 
 Add `--tide-test-library path/to/library/src/lib.rs` to `--test` to check a
@@ -235,12 +235,14 @@ scheduling points and records decisions and waits with source locations.
 Virtual time starts at zero and jumps to the next timer only when every task
 is blocked; with no timer left, the run ends in a deadlock report.
 `Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
-task 0 until the root drops. `sim.tasks`, single-cell `Shared`, and `sim.clock`
-work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
+task 0 until the root drops. `sim.tasks`, single-cell `Shared`, `sim.fs`, and
+`sim.clock` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
 ordered sink records, and provisional NDJSON events without scheduling. `out`
 and `err` append sink events under simulation and do not write to host streams.
-Other capabilities carry simulated identities; file operations and Rand-backed
-hash initialization panic until their simulated backends exist.
+`sim.world.file(path, contents)` creates or replaces a file and its parents
+immediately, from simulated `/`, without scheduling or virtual time. Invalid
+setup panics. Other capabilities carry simulated identities; Rand-backed hash
+initialization panics until its simulated backend exists.
 
 `#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
 `#[sim_test(seeds = 20)]` runs `0..20`. Each entry re-executes its driver-built
@@ -252,7 +254,7 @@ by libtest; seed-start records stay internal. Signal/timeout or a missing summar
 names the last started seed; ordinary failures name the failing seeds. The
 internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
 the test binary; it does no build/source identity validation. Replay manifests
-and their identity checks, simulated files/network/randomness, world setup,
+and their identity checks, simulated network/randomness, other world setup,
 faults, generated simulation parameters and shrinking remain planned.
 These test processes are for reviewed/trusted code; they have no OS sandbox.
 
@@ -260,16 +262,23 @@ The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
-`std::fs` provides real files through `Fs`: path reads and writes, `OpenOptions`,
-`File` with `Read`/`Write`/`Seek`, directory mutation and listings, type/length
-metadata, and explicit sync and close. `dir(path, Mode)` pins a directory;
+`std::fs` provides real and simulated files through the same `Fs`: path reads
+and writes, `OpenOptions`, `File` with `Read`/`Write`/`Seek`, directory mutation
+and listings, type/length metadata, and explicit sync and close.
+`dir(path, Mode)` pins a directory;
 confined paths use Linux 5.6+ `openat2` and fail closed with `Unsupported` when
 unavailable. Absolute paths and escapes return `PermissionDenied`; `Mode::Read`
 rejects writes and cannot widen to `ReadWrite`. Listings are snapshots sorted
-by filename bytes. File operations check cancellation; `File::close` is
-shielded. Real files panic when used inside a simulation. The conformance std
-includes production's file implementation.
-Simulated files, metadata times/permissions, and owned-buffer I/O remain planned.
+by filename bytes. Directory metadata length is zero on both backends.
+File operations check cancellation; `File::close` is shielded. Each simulated I/O call takes one scheduling point and a seed-drawn
+latency of at most 1 ms, including failed calls and `close`; pre-cancelled calls
+take no time or draw. Attenuation and data-only accessors do not schedule.
+Open handles retain identity after rename/removal. Simulated errors carry only
+kinds, with no OS code. The model has no links, disk crashes, fault injection or
+partial effects within a compound operation; sync validates and takes time.
+Real files panic inside a simulation, and simulated handles reject use outside
+their own simulation. The conformance std includes production's implementation.
+Metadata times/permissions and owned-buffer I/O remain planned.
 `std::collections` keeps Rust's API, with fixed-key `HashMap`/`HashSet` and
 `Rand`-seeded hashing.
 The shared `std::float::{bits, min, max, total_cmp}` observers canonicalize NaNs
@@ -281,7 +290,7 @@ The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std that shares these definitions, including the production `#[test]`
 macro and property generation/shrinking runtime. Requires-guided generation,
-simulation tests and generated contract tests remain planned in production. The
+generated simulation parameters/shrinking and generated contract tests remain planned. The
 installed pinned toolchain is trusted and treated as immutable, as are the host
 C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
 and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.

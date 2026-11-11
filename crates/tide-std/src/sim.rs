@@ -1,5 +1,5 @@
-// Seeded simulation for tests (03 §9). Tasks, Shared, clocks and sinks are modeled.
-// Other capability operations, world setup, faults, nodes and replay manifests are pending.
+// Seeded simulation for tests (03 §9). Tasks, Shared, files, clocks and sinks are modeled.
+// Other capability operations/setup, faults, nodes and replay manifests are pending.
 
 use crate::task::{Simulation, Tasks};
 use crate::time::Duration;
@@ -31,17 +31,16 @@ impl SimRoot {
     pub(crate) fn new(seed: u64) -> Self {
         let simulation = Simulation::new(seed);
         let tasks = simulation.tasks().clone();
+        let fs = crate::fs::Fs::simulated(&tasks);
         Self {
-            fs: crate::fs::Fs::simulated(&tasks),
+            fs: fs.clone(),
             net: crate::net::Net(Some(tasks.clone())),
             clock: simulation.clock().clone(),
             rand: crate::rand::Rand(Some(tasks.clone())),
             env: crate::env::Env(Some(tasks.clone())),
             stdin: crate::io::Stdin(Some(tasks.clone())),
             proc: crate::process::Proc(Some(tasks.clone())),
-            world: World {
-                _tasks: tasks.clone(),
-            },
+            world: World { fs },
             faults: Faults {
                 _tasks: tasks.clone(),
             },
@@ -66,9 +65,17 @@ impl SimRoot {
     }
 }
 
-/// Identity reserved for simulated input setup; operations are not provided yet.
+/// Simulated input setup. Only file setup is currently modeled.
 pub struct World {
-    _tasks: Tasks,
+    fs: crate::fs::Fs,
+}
+impl World {
+    /// Immediately creates or replaces a file and creates its parents, from simulated `/`.
+    /// Takes no virtual time and does not schedule. Panics on invalid setup paths.
+    #[track_caller]
+    pub fn file(&self, path: impl AsRef<std::path::Path>, contents: impl AsRef<[u8]>) {
+        self.fs.world_file(path.as_ref(), contents.as_ref());
+    }
 }
 /// Identity reserved for simulated faults; operations are not provided yet.
 pub struct Faults {
@@ -123,13 +130,9 @@ mod tests {
     }
 
     #[test]
-    fn unmodeled_identities_never_use_host_files_or_randomness() {
+    fn simulation_identities_never_use_host_files_or_randomness() {
         let (fs, rand, tasks) = {
             let sim = crate::Root::sim(0);
-            assert!(catch_unwind(AssertUnwindSafe(|| sim.fs.read("Cargo.toml"))).is_err());
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| sim.fs.read_only().exists("Cargo.toml"))).is_err()
-            );
             assert!(
                 catch_unwind(AssertUnwindSafe(|| {
                     crate::collections::hash_map::RandomState::from_rand(&sim.rand)

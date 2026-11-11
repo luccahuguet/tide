@@ -1,5 +1,7 @@
 // All OS-specific file operations live here; shared wrappers own mode and access policy.
-use super::{DirEntry, DirEntryBackend, File, FileBackend, Metadata, OpenOptions, checkpoint};
+use super::{
+    DirEntry, DirEntryBackend, File, FileBackend, Metadata, OpenOptions, checkpoint, split,
+};
 use crate::io::{self, Write};
 use rustix::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd};
 use rustix::fs::{self, AtFlags, FileType, Mode, OFlags};
@@ -75,30 +77,6 @@ fn resolve_from(
     } else {
         call(|| fs::openat(base, p, flags, mode))
     }
-}
-
-// Preserve the raw suffix: Path::file_name discards trailing slashes and `.`.
-fn split(p: &Path) -> io::Result<(PathBuf, OsString)> {
-    let bytes = p.as_os_str().as_bytes();
-    if bytes.is_empty() {
-        return Err(io::ErrorKind::NotFound.into());
-    }
-    let Some(end) = bytes.iter().rposition(|&b| b != b'/').map(|i| i + 1) else {
-        return Ok((p.to_owned(), OsString::from(".")));
-    };
-    let start = bytes[..end]
-        .iter()
-        .rposition(|&b| b == b'/')
-        .map_or(0, |i| i + 1);
-    let parent = if start == 0 {
-        Path::new(".")
-    } else {
-        Path::new(OsStr::from_bytes(&bytes[..start]))
-    };
-    Ok((
-        parent.to_owned(),
-        OsString::from_vec(bytes[start..].to_vec()),
-    ))
 }
 
 impl Fs {
@@ -325,15 +303,15 @@ pub(super) fn set_len(file: &std::fs::File, n: u64) -> io::Result<()> {
 }
 
 fn from_stat(stat: fs::Stat) -> Metadata {
-    Metadata {
-        file_type: super::FileType(match FileType::from_raw_mode(stat.st_mode) {
+    Metadata::new(
+        match FileType::from_raw_mode(stat.st_mode) {
             FileType::RegularFile => super::Kind::File,
             FileType::Directory => super::Kind::Dir,
             FileType::Symlink => super::Kind::Symlink,
             _ => super::Kind::Other,
-        }),
-        len: stat.st_size as u64,
-    }
+        },
+        stat.st_size as u64,
+    )
 }
 
 #[derive(Debug)]
@@ -396,8 +374,7 @@ fn empty_dir(fd: &OwnedFd) -> io::Result<()> {
 
 fn remove_entry(parent: &OwnedFd, name: &OsStr) -> io::Result<()> {
     let bytes = name.as_bytes();
-    let end = bytes.iter().rposition(|&b| b != b'/').unwrap() + 1;
-    let bare = OsStr::from_bytes(&bytes[..end]);
+    let bare = OsStr::from_bytes(super::trim_final_slashes(bytes));
     let stat = call(|| fs::statat(parent, bare, AtFlags::SYMLINK_NOFOLLOW))?;
     if bytes.ends_with(b"/") && FileType::from_raw_mode(stat.st_mode) != FileType::Directory {
         return Err(io::ErrorKind::NotADirectory.into());
@@ -509,5 +486,14 @@ mod tests {
         .unwrap_err();
         assert_eq!(attempts, 5);
         assert_eq!(e.kind(), io::ErrorKind::WouldBlock);
+    }
+}
+
+// Preserve TASK-3 checks between the syscalls of provided Read methods.
+pub(super) struct Reader<'a>(pub(super) &'a std::fs::File);
+impl crate::io::Read for Reader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        checkpoint()?;
+        std::io::Read::read(&mut self.0, buf).map_err(io_error)
     }
 }

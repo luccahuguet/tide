@@ -165,10 +165,13 @@ Notes:
   std's own types with Rust's methods, so ADMIT-1's ban on I/O methods of
   re-exported std types does not reach them. `OsStr` and `OsString` keep
   Rust's API, which does no I/O. Metadata currently exposes type and length;
-  times and permissions remain planned. Error kinds are the real/simulated
-  equivalence contract; simulated errors have no raw OS code and may differ
-  in display text. The real file surface is implemented in production std;
-  simulated files are planned in `fx-byk.2`.
+  directory length is zero on both backends (the host directory representation
+  is not modeled). Times and permissions remain planned. Error kinds are the
+  real/simulated equivalence contract; simulated errors have no raw OS code and may differ
+  in display text. Production std implements both backends, shared with the
+  conformance fixture.
+  Equivalence covers Linux case-sensitive file systems and the modeled file
+  surface; the simulator creates no symbolic or hard links.
 - **Standard input.** `Stdin`'s reads are inherent methods with `&self`
   receivers: `read_line(&mut String)`, `lines()`, `read_to_string(&mut
   String)`, `read_to_end(&mut Vec<u8>)`, and `is_terminal()`, which Rust
@@ -1770,7 +1773,7 @@ Setup follows Rust's builders: `world.args(impl IntoIterator<Item:
 AsRef<OsStr>>)` and `world.env_var(k: impl AsRef<OsStr>, v: impl
 AsRef<OsStr>)` as `Command::args` and `Command::env` take them, and
 `world.stdin(impl AsRef<[u8]>)` and `world.file(path, contents: impl
-AsRef<[u8]>)` take bytes or text. The planned `world.file(path, contents)`
+AsRef<[u8]>)` take bytes or text. `world.file(path, contents)`
 returns `()`, resolves from simulated `/`, creates parents, and creates or
 replaces the file immediately, without a point, time, draw or mode check.
 Invalid setup (including a file parent or `..` above `/`) panics; one `world`
@@ -1793,22 +1796,27 @@ output. Failures print seeds, causes and traces; signal/timeout or a missing
 summary names the last started seed. Ordinary failures name the failing seeds;
 success emits at most one libtest-captured summary, with seed-start records kept
 internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
-REPLAY-2 identity validation. Tasks, single-cell `Shared`, clocks and sinks are
-modeled; other capabilities carry simulated identities but their operations,
-world setup, faults, nodes, manifests, generated simulation parameters and the
-`tide` commands remain planned. The child has no RUN-3 sandbox.
+REPLAY-2 identity validation. Tasks, single-cell `Shared`, files, file setup,
+clocks and sinks are modeled; other capabilities carry simulated identities but
+their operations, other world setup, faults, nodes, manifests, generated
+simulation parameters and the `tide` commands remain planned. The child has no RUN-3 sandbox.
 
 ### 9.3 Time and scheduling
 
 - Monotonic time starts at zero, wall time at 2000-01-01T00:00:00Z.
   Computation takes no virtual time; capability operations take modeled
   latencies drawn from the seed, which cancellation cuts short only where
-  TASK-3 lets it: a file-system call's latency runs out first. The planned
+  TASK-3 lets it: a file-system call's latency runs out first. The
   file backend draws uniform whole nanoseconds in `0..=1_000_000` from its
   own seed sub-stream, one draw and scheduling point per method call,
-  `ReadDir::next` included. A pre-cancelled call draws nothing, advances no
+  `ReadDir::next` included (until the iterator ends); attenuation and data-only
+  accessors take no point or time. A pre-cancelled call draws nothing, advances no
   time and has no effect. Shielded `File::close` still takes one point and
-  draw. These latency rules are provisional. Simulated
+  draw. Each completed or pre-cancelled call records one `fs` event with its task,
+  operation, span, path, latency and result kind; names are provisional until
+  replay manifests. Sync calls validate and take time without a durability
+  split, since crashes and disk faults are not modeled yet.
+  These latency rules are provisional. Simulated
   standard input behaves as a pipe. Without faults, each network packet takes
   1–10 ms, and a `Net::get` to a simulated peer is one round trip, two
   packet delays (2–20 ms), plus the reply's `after(d)`; connection setup and
@@ -1965,7 +1973,7 @@ Not simulated: CPU time and performance; memory exhaustion; stack depth;
 parallel speed-up (parallel regions run sequentially, §8.4);
 hardware faults beyond injected disk errors; foreign code's internals and
 threads; kernel behavior beyond the models; signals; timing side channels;
-real child processes, which need a `sim.world.proc` model. The planned
+real child processes, which need a `sim.world.proc` model. The
 simulated file backend applies each multi-call operation whole after its
 latency; it does not expose partial effects when cancellation interrupts real
 multi-call operations. Modelling those partial effects belongs with faults.

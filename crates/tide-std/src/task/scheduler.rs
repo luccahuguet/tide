@@ -29,6 +29,8 @@ pub(super) enum Operation {
     Deadlock,
     Exit,
     Sink,
+    File(&'static str),
+    WorldFile,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +70,7 @@ pub(super) struct Scheduler {
     pub(super) current: Option<TaskId>,
     next_cell: usize,
     rng: u64,
+    fs_rng: u64,
     step: usize,
     pub(super) trace: String,
     pub(super) records: Vec<crate::sim::Record>,
@@ -89,7 +92,8 @@ impl Scheduler {
             }],
             current: Some(0),
             next_cell: 0,
-            rng: seed ^ 0x7469_6465_7363_6864, // "tideschd"
+            rng: seed ^ 0x7469_6465_7363_6864,    // "tideschd"
+            fs_rng: seed ^ 0x7469_6465_6669_6c65, // "tidefile"
             step: 0,
             trace: String::new(),
             records: Vec::new(),
@@ -363,18 +367,38 @@ impl Scheduler {
     }
 
     fn index(&mut self, bound: u64) -> u64 {
-        // Rejection avoids giving lower indices extra weight when 2^64 is not divisible.
-        let threshold = bound.wrapping_neg() % bound;
-        loop {
-            self.rng = self.rng.wrapping_add(0x9e37_79b9_7f4a_7c15);
-            let z = self.rng;
-            let z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-            let z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-            let draw = z ^ (z >> 31);
-            if draw >= threshold {
-                return draw % bound;
-            }
-        }
+        index(&mut self.rng, bound)
+    }
+
+    pub(super) fn file_latency(&mut self) -> Duration {
+        Duration::from_nanos(index(&mut self.fs_rng, 1_000_001))
+    }
+
+    pub(super) fn file_event(
+        &mut self,
+        task: TaskId,
+        operation: Operation,
+        span: Span,
+        path: &std::path::Path,
+        latency: Duration,
+        result: &str,
+    ) {
+        let kind = if operation == Operation::WorldFile {
+            "world"
+        } else {
+            "fs"
+        };
+        self.event(task, Pending { operation, span }, kind, None);
+        self.trace.push_str(",\"path\":");
+        quoted(&mut self.trace, &path.to_string_lossy());
+        write!(
+            self.trace,
+            ",\"latency\":{},\"result\":",
+            latency.as_nanos()
+        )
+        .unwrap();
+        quoted(&mut self.trace, result);
+        self.trace.push_str("}\n");
     }
 
     fn event(&mut self, task: TaskId, pending: Pending, kind: &str, wait: Option<&str>) {
@@ -425,6 +449,21 @@ impl Scheduler {
     }
 }
 
+// Rejection avoids giving lower indices extra weight when 2^64 is not divisible.
+fn index(rng: &mut u64, bound: u64) -> u64 {
+    let threshold = bound.wrapping_neg() % bound;
+    loop {
+        *rng = rng.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let z = *rng;
+        let z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        let z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        let draw = z ^ (z >> 31);
+        if draw >= threshold {
+            return draw % bound;
+        }
+    }
+}
+
 // JSON strings for spans and sink messages; each record must stay on one physical line.
 fn quoted(out: &mut String, value: &str) {
     out.push('"');
@@ -459,6 +498,8 @@ impl Operation {
             Self::Deadlock => ("deadlock", None),
             Self::Exit => ("exit", None),
             Self::Sink => ("sink", None),
+            Self::File(name) => (name, None),
+            Self::WorldFile => ("world.file", None),
         }
     }
 
@@ -466,6 +507,7 @@ impl Operation {
         match self {
             Self::CellNew(_) | Self::CellAcquire(_) | Self::CellRelease(_) => "cell",
             Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } => "cap",
+            Self::File(_) => "io_wait",
             _ => self.name().0,
         }
     }

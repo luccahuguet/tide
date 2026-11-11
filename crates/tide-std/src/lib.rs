@@ -9,8 +9,8 @@
 //! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
 //! - `Pure` (reference 6.6), which the admission driver decides;
 //! - the capability types `Root` carries: the identities `Net`, `Rand`, `Env`, `Stdin`,
-//!   and `Proc`; `Fs` (real files, below); and `Tasks` and `Clock`, which also name their
-//!   simulation when they have one;
+//!   and `Proc`; `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
+//!   name their simulation when they have one;
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
 //!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
 //!   `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH` with Rust's arithmetic and no `now()` or
@@ -24,7 +24,7 @@
 //!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
 //!   reserved for the planned multi-cell operations (03 §6.5);
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   single-cell `Shared`, and `Clock`, with
+//!   single-cell `Shared`, files, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
@@ -57,11 +57,15 @@
 //!   default, skip)]`, and `std::json`: `encode`, `decode`, and `json::Error` (bead `fx-08m`;
 //!   `json.rs` states the encoding, `codec.rs` lists the std types with impls). The derives
 //!   take no other serde key, and no key on a tuple field or `skip` on a variant;
-//! - real files: `Fs`, `Mode`, `OpenOptions`, `File`, directory listings, and type/length
-//!   metadata (`fs.rs`). `dir` confines paths with Linux `openat2`; file operations check
-//!   cancellation, except the shielded `File::close`, and panic inside a simulation until
-//!   simulated files exist (bead `fx-byk.2`); simulated `Fs` identities also reject operations
-//!   after their simulation ends. Simulated `Rand` rejects Rand-backed hash initialization.
+//! - real and simulated files: `Fs`, `Mode`, `OpenOptions`, `File`, directory listings,
+//!   and type/length metadata (`fs.rs`); directory length is zero on both backends.
+//!   Real `dir` confines paths with Linux `openat2`. Simulated handles use inode identity,
+//!   sorted listings, and one seed-drawn latency of at most 1 ms per I/O call. Calls check
+//!   cancellation before drawing; `File::close` is shielded. `sim.world.file` creates or
+//!   replaces a file and creates parents immediately, without time or a scheduling point.
+//!   Setup errors panic. Simulated compound operations apply whole; links, crashes and disk
+//!   faults are not modeled. Real files reject use in simulation; simulated handles reject
+//!   use outside their own simulation. Simulated `Rand` rejects Rand-backed hashing.
 //!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
@@ -74,7 +78,7 @@
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
-//! `par`, `arena`, `ptr`; world setup, faults, nodes, replay manifests, generated simulation
+//! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests, generated simulation
 //! parameters, requires-guided generation,
 //! generated contract tests, and the contract attributes. A
 //! program that uses one fails to compile, as for any missing item.

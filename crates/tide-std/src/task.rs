@@ -540,6 +540,74 @@ pub(crate) fn observe_cancellation() -> bool {
 }
 
 impl Tasks {
+    // File calls check cancellation once before drawing; their timers are shielded.
+    pub(crate) fn file_op<T>(
+        &self,
+        name: &'static str,
+        path: &std::path::Path,
+        shielded: bool,
+        span: Span,
+        f: impl FnOnce() -> crate::io::Result<T>,
+    ) -> crate::io::Result<T> {
+        let context = self.context().expect("file operation needs a simulation");
+        let operation = Operation::File(name);
+        let cancelled = !shielded && observe_cancellation();
+        let latency = if cancelled {
+            Duration::ZERO
+        } else {
+            context
+                .lock()
+                .baton
+                .as_mut()
+                .unwrap()
+                .scheduler
+                .file_latency()
+        };
+        let result = if cancelled {
+            Err(crate::io::ErrorKind::Cancelled.into())
+        } else {
+            let now = context.lock().baton.as_ref().unwrap().scheduler.now;
+            if latency.is_zero() {
+                context.point(operation, span);
+            } else {
+                let until = now
+                    .checked_add(latency)
+                    .expect("file latency exceeds virtual time range");
+                context.wait(operation, span, Some(until), false);
+            }
+            f()
+        };
+        let outcome = match &result {
+            Ok(_) => "ok".into(),
+            Err(e) => format!("{:?}", e.kind()),
+        };
+        context.lock().baton.as_mut().unwrap().scheduler.file_event(
+            context.task.unwrap(),
+            operation,
+            span,
+            path,
+            latency,
+            &outcome,
+        );
+        result
+    }
+
+    pub(crate) fn world_file(&self, path: &std::path::Path, span: Span, result: &str) {
+        let context = self.context().expect("world setup needs a simulation");
+        context.lock().baton.as_mut().unwrap().scheduler.file_event(
+            context.task.unwrap(),
+            Operation::WorldFile,
+            span,
+            path,
+            Duration::ZERO,
+            result,
+        );
+    }
+
+    pub(crate) fn check_simulation(&self) {
+        self.context().expect("simulated file needs a simulation");
+    }
+
     pub(crate) fn sim_elapsed(&self) -> Duration {
         sim_lock(self.simulation.as_ref().unwrap().lock())
             .baton
