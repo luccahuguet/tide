@@ -54,9 +54,14 @@ impls and `Pure` where-clauses, whatever route reached them (ADMIT-1). It constr
 every compiler invocation, clears the compiler environment (keeping only
 `RUSTC_ICE=0`, so a compiler crash writes no report file), snapshots candidate
 Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
-(`FX0101`), `#![no_std]` (`FX0520`), and package build scripts (`FX0915`), and
-caches successful checks/builds by source and trusted-input content. A crate
-it admits against Tide's std also gets a trust artifact beside its metadata,
+(`FX0101`), derives and bang forms outside the closed sets (`FX0102`, `FX0103`),
+lifetime parameters on traits (`FX0201`), unresolved output elision, including
+function types and `Fn` sugar (`FX0202`, LIFE-4), and lossy numeric casts (`FX0301`). It labels rustc's borrow errors for closures in
+owned positions when the evidence is certain (`FX0203`) and struct literals that
+move an owner into one field and borrow it in another (`FX0210`). Wrong-input elision keeps rustc's
+region error. It also rejects `#![no_std]` (`FX0520`) and package build scripts
+(`FX0915`), and caches successful checks/builds by source and trusted-input
+content. A crate it admits against Tide's std also gets a trust artifact beside its metadata,
 `<crate>.interface.json` (D11, 03 §4.1): each exported item's declared
 authority, with the access path that carries each kind (`app.db.net: net`, or
 `opaque(..)` where a type hides it), and the crate's trust holes, every site

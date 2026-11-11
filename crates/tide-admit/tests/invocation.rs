@@ -26,6 +26,44 @@ fn driver(dir: &std::path::Path) -> Command {
 }
 
 #[test]
+fn surface_errors_are_errors_even_under_allow_warnings() {
+    let dir = package("surface-errors", "#![allow(warnings)]\npub trait Parse<'a> {}\npub fn narrow(n: u64) -> u8 { n as u8 }\n");
+    let out = driver(&dir).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    for code in ["FX0201", "FX0301"] {
+        assert!(stderr(&out).contains(&format!("error: {code}:")), "{}", stderr(&out));
+    }
+    assert!(stderr(&out).contains(":2:17: error: FX0201:"), "{}", stderr(&out));
+}
+
+#[test]
+fn borrow_labels_preserve_rustc_errors_and_leave_unrelated_borrows_alone() {
+    for (name, source, rustc_error, label) in [
+        ("closure-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) }", "lifetime may not live long enough", "FX0203"),
+        ("closure-bound-earlier", r#"pub fn f() -> Box<dyn Fn() -> usize> { let s = String::from("x"); let job = || s.len(); Box::new(job) }"#, "E0373", "FX0203"),
+        ("closure-field", "pub struct Hook { f: Box<dyn Fn() -> usize> }\npub fn f(s: &str) -> Hook { Hook { f: Box::new(move || s.len()) } }", "lifetime may not live long enough", "FX0203"),
+        ("closure-explicit-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { return Box::new(move || s.len()); }", "lifetime may not live long enough", "FX0203"),
+        ("closure-argument", "pub fn takes(_: Box<dyn Fn() -> usize>) {} pub fn f(s: &str) { takes(Box::new(move || s.len())); }", "lifetime may not live long enough", "FX0203"),
+        ("borrowing-literal", "pub struct Doc<'a> { text: String, word: &'a str }\npub fn f<'a>() -> Doc<'a> { let text = String::from(\"x\"); Doc { word: &text, text } }", "E0515", "FX0210"),
+        ("unrelated-borrow", "pub fn f() { let r; { let x = String::from(\"x\"); r = &x; } let _ = r.len(); }", "E0597", ""),
+        ("opaque-capture", "pub fn f() -> impl FnMut() -> u8 { let mut n = 0; || { n += 1; n } }", "E0373", ""),
+        ("wrong-input-elision", "pub struct Token<'a>(&'a str); impl Token<'_> { pub fn f(&self, other: &str) -> &str { other } }", "lifetime may not live long enough", ""),
+    ] {
+        let dir = package(name, source);
+        let out = driver(&dir).output().unwrap();
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{name}: {err}");
+        assert!(err.contains(rustc_error), "{name}: {err}");
+        let fx: Vec<_> = err.lines().filter(|line| line.contains("error: FX")).collect();
+        if label.is_empty() {
+            assert!(fx.is_empty(), "{name}: {err}");
+        } else {
+            assert!(!fx.is_empty() && fx.iter().all(|line| line.contains(label)), "{name}: {err}");
+        }
+    }
+}
+
+#[test]
 fn malformed_and_empty_arguments_fail_before_compilation() {
     for args in [
         vec![],

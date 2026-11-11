@@ -42,12 +42,13 @@ use rustc_trait_selection::traits::{
 };
 
 use crate::crates::{Crates, Role};
-use crate::diag::{Code, Diagnostics};
+use crate::diag::{Code, Diagnostics, RustcLabels};
 use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
 mod mono;
 mod sinks;
+mod surface;
 pub use mono::check_mono_items;
 
 /// What the package's manifest grants it (03 RUN-4).
@@ -71,9 +72,11 @@ pub fn check_crate(
     tide_std: bool,
     obligations: bool,
     test_library: Option<CrateNum>,
+    labels: &RustcLabels,
 ) -> Holes {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants, test_library);
+    walk.labels = labels.clone();
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.entry_point(tide_std);
@@ -118,6 +121,7 @@ struct Walk<'a, 'tcx> {
     grants: Grants,
     pure: Option<Pure<'a, 'tcx>>,
     diags: Diagnostics,
+    labels: RustcLabels,
     typeck: Option<&'tcx ty::TypeckResults<'tcx>>,
     owner: Option<LocalDefId>,
     seen_obligations: FxHashSet<(ty::TraitRef<'tcx>, Option<LocalDefId>)>,
@@ -150,6 +154,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             grants,
             pure: crate_pure(tcx, crates),
             diags: Diagnostics::default(),
+            labels: RustcLabels::default(),
             typeck: None,
             owner: None,
             seen_obligations: FxHashSet::default(),
@@ -360,6 +365,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         false
     }
 
+    /// Candidate-written code, including tokens passed through a std attribute macro.
+    fn user_written(&self, span: Span) -> bool {
+        !written_by_other_crate(span) && !self.generated_by_toolchain(span)
+    }
+
     /// The typeck results that cover `id`: none in the signature of an item nested in a body.
     fn typeck_of(&self, id: HirId) -> Option<&'tcx ty::TypeckResults<'tcx>> {
         self.typeck.filter(|t| t.hir_owner == id.owner)
@@ -416,7 +426,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// UNSAFE-1: what needs the `unsafe` grant is a trust hole with it and `FX0901` without it.
     fn granted(&mut self, span: Span, what: &str) {
-        if written_by_other_crate(span) || self.generated_by_toolchain(span) {
+        if !self.user_written(span) {
             return;
         }
         if self.grants.unsafe_ {
@@ -1366,6 +1376,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let end = LocalExpnId::fresh_empty().as_u32();
         for i in 1..end {
             let data = LocalExpnId::from_u32(i).expn_data();
+            if self.surface_expansion(&data) {
+                continue;
+            }
             match (data.kind, data.macro_def_id) {
                 (ExpnKind::Macro(kind, _), Some(mac)) => {
                     self.use_def(mac, data.call_site);
@@ -1701,6 +1714,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         // The item holds the trust holes found outside its bodies.
         let outer = self.item.replace(item.owner_id.def_id);
         let def = item.owner_id.def_id;
+        self.surface_item(item);
         match item.kind {
             hir::ItemKind::Impl(hir::Impl {
                 of_trait: Some(header),
@@ -1804,7 +1818,11 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         let outer = (self.typeck, self.owner);
         self.typeck = Some(self.tcx.typeck_body(id));
         self.owner = Some(self.tcx.hir_body_owner_def_id(id));
-        self.visit_body(self.tcx.hir_body(id));
+        let body = self.tcx.hir_body(id);
+        if let Some(output) = self.surface_return_type() {
+            self.owned_value(body.value, Some(output), &[], &mut FxHashSet::default());
+        }
+        self.visit_body(body);
         (self.typeck, self.owner) = outer;
     }
 
@@ -1851,6 +1869,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
 
     fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
         if let Some(t) = self.typeck_of(e.hir_id) {
+            self.surface_expr(e, t);
             self.lint_sink_expr(e, t);
             // Method calls, overloaded operators, and indexing.
             if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
@@ -1910,6 +1929,24 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             }
         }
         intravisit::walk_pat(self, p)
+    }
+
+    fn visit_fn_ret_ty(&mut self, output: &'tcx hir::FnRetTy<'tcx>) {
+        if let hir::FnRetTy::Return(output) = output {
+            self.surface_output(output);
+        }
+        intravisit::walk_fn_ret_ty(self, output);
+    }
+
+    fn visit_generic_args(&mut self, args: &'tcx hir::GenericArgs<'tcx>) {
+        if args.parenthesized == hir::GenericArgsParentheses::ParenSugar {
+            for constraint in args.constraints {
+                if let Some(output) = constraint.ty() {
+                    self.surface_output(output);
+                }
+            }
+        }
+        intravisit::walk_generic_args(self, args);
     }
 
     /// Raw pointer types written in signatures and fields, which no expression's type shows.

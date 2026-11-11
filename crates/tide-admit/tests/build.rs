@@ -525,7 +525,7 @@ fn wrapped(x: Wrap<Leaf>) { assert!(x.0.0 < 3); }
 #[derive(Debug)]
 struct Many([u8; 512]);
 impl Arbitrary for Many {
-    fn arbitrary(g: &mut Gen) -> Self { Self(std::array::from_fn(|_| g.index(16) as u8)) }
+    fn arbitrary(g: &mut Gen) -> Self { Self(std::array::from_fn(|_| u8::try_from(g.index(16)).unwrap())) }
 }
 
 #[test]
@@ -861,7 +861,7 @@ impl Level {
     pub fn get(&self) -> u8 { self.0 }
 }
 impl Arbitrary for Level {
-    fn arbitrary(g: &mut Gen) -> Self { Level(g.index(4) as u8) }
+    fn arbitrary(g: &mut Gen) -> Self { Level(u8::try_from(g.index(4)).unwrap()) }
 }
 
 #[derive(Debug)]

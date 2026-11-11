@@ -579,7 +579,7 @@ fn numbers() {
         state ^= state >> 7;
         state ^= state << 17;
         let x = f64::from_bits(state);
-        let y = f32::from_bits((state >> 32) as u32);
+        let y = f32::from_bits(u32::try_from(state >> 32).unwrap());
         if x.is_finite() && y.is_finite() {
             float_round(x);
             float_round_32(y);

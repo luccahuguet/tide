@@ -141,6 +141,35 @@ not cite is a best mapping that a case must confirm.
 SEAL-2 and SEAL-3 need a crate together with its `tide.seal`, which a
 one-file case cannot hold; their cases wait for the admission driver.
 
+## Reference and decision-record rules
+
+Rules owned by `design/01-design.md` and `design/reference.md` that have no
+chapter ID use `REF-<FX digits>` here. The inventory does not imply the driver
+already implements them; `--tide-print-codes` names the enforced subset.
+
+| ID | Section | Rule, one line | Decided by | FX code(s) / rustc |
+| --- | --- | --- | --- | --- |
+| REF-0102 | D6; ref §2.2 | Only the closed derive set is admitted | checker | FX0102 |
+| REF-0103 | D6; ref §2.1 | Only the fixed bang forms are admitted; named carve-outs retain their own codes | checker | FX0103 |
+| REF-0210 | D2; ref §3.6 | When a literal moves a whole owner and borrows it in another field, label E0505 at the owner value or E0515/E0597 inside the paired borrow expression; omit uncertain evidence | both | FX0210 |
+| REF-0301 | D3; ref §4.2 | Only lossless numeric as casts; pointer-sized integers and addresses count as 32 to 64 bits | checker | FX0301 |
+| REF-0401 | D4; ref §5.2 | Impls live in the module of their type or trait | checker | FX0401 |
+| REF-0405 | D4; ref §5.1 | No negative impls or user auto traits | both | FX0405 |
+| REF-0406 | D4; ref §5.1 | Impl bounds are structurally smaller than the impl head | checker | FX0406 |
+| REF-0407 | D3; ref §5.1 | No polymorphic recursion | both | FX0407 |
+| REF-0408 | D3; ref §5.1 | One inherent method per name per type | checker | FX0408 |
+| REF-0601 | D8; ref §7 | No async/await, Future or Pin | checker | FX0601 |
+| REF-0602 | D8; ref §7.1 | No unstructured thread or runtime spawning | both | FX0602 |
+| REF-0604 | D8; ref §7.4 | Mutex habits use Shared and its scoped closures | both | FX0604 |
+| REF-0605 | D8; ref §7.2 | No select!; use deadline/cancellation operations | both | FX0605 |
+| REF-0701 | D5; ref §9 | No catch_unwind; isolate a task with spawn_isolated | both | FX0701 |
+| REF-0702 | D5; ref §9 | A Result in statement position cannot be ignored | checker | FX0702 |
+| REF-0902 | D11; ref §11 | Each unsafe block, with or without the grant, needs a SAFETY line comment directly above the block or its statement; unsafe impls need none | checker | FX0902 |
+| REF-0910 | D12; ref §12.1 | An out-of-line module needs its source file | both | FX0910 |
+| REF-0912 | D12; ref §12.2 | No user extern crate items | checker | FX0912 |
+| REF-0913 | D12; ref §12.2 | Unused imports are errors | checker | FX0913 |
+| REF-0914 | D12; ref §12.2 | No import cycles between modules | checker | FX0914 |
+
 ## Considered and excluded (runtime, simulator, sandbox, tooling, non-rejecting, or v1)
 
 - PANIC-1 (03:347): runtime abort, and the harness reruns in-flight tests.

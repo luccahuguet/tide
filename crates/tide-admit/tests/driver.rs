@@ -78,7 +78,7 @@ pub fn run(x: f64) -> f64 {
     let v: Vec<u32> = (1..4).map(|n| n * 2).collect();
     let _c = core::sync::atomic::AtomicU64::new(0);
     let s = format!(\"{v:?}\");
-    x.sqrt() + x.sin() + s.len() as f64
+    x.sqrt() + x.sin() + f64::from(u32::try_from(s.len()).unwrap())
 }
 mod sub;
 ";
@@ -693,11 +693,15 @@ fn trust_holes_are_held_by_the_item_that_writes_them() {
     let source = "\
 pub fn a() -> bool {
     let x = 1u8;
-    core::ptr::addr_of!(x).is_null() || core::ptr::addr_of!(x).is_null()
+    // SAFETY: these empty asm blocks touch no memory or stack.
+    unsafe { core::arch::asm!(\"\", options(nomem, nostack)); core::arch::asm!(\"\", options(nomem, nostack)); }
+    core::ptr::from_ref(&x).is_null() || core::ptr::from_ref(&x).is_null()
 }
 pub fn b() -> bool {
     let x = 1u8;
-    core::ptr::addr_of!(x).is_null()
+    // SAFETY: the empty asm block touches no memory or stack.
+    unsafe { core::arch::asm!(\"\", options(nomem, nostack)); }
+    core::ptr::from_ref(&x).is_null()
 }
 pub fn show(f: fn()) -> String {
     format!(\"{f:?}\")
@@ -732,12 +736,16 @@ core::arch::global_asm!(\".quad {}\", sym <fn(u8) as core::cmp::PartialOrd>::lt)
     let holes = &artifact[artifact.find("\"holes\"").unwrap()..];
     let expected = r#""holes": [
     {"item": "lib", "kind": "module", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "an `unsafe` block", "count": 1},
     {"item": "lib::a", "kind": "function", "hole": "uses `*const T`", "count": 1},
-    {"item": "lib::a", "kind": "function", "hole": "uses `core::ptr::addr_of`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "uses `core::arch::asm`", "count": 1},
     {"item": "lib::a", "kind": "function", "hole": "uses `core::ptr::const_ptr::<impl *const T>::is_null`", "count": 1},
+    {"item": "lib::a", "kind": "function", "hole": "uses `core::ptr::from_ref`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "an `unsafe` block", "count": 1},
     {"item": "lib::b", "kind": "function", "hole": "uses `*const T`", "count": 1},
-    {"item": "lib::b", "kind": "function", "hole": "uses `core::ptr::addr_of`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "uses `core::arch::asm`", "count": 1},
     {"item": "lib::b", "kind": "function", "hole": "uses `core::ptr::const_ptr::<impl *const T>::is_null`", "count": 1},
+    {"item": "lib::b", "kind": "function", "hole": "uses `core::ptr::from_ref`", "count": 1},
     {"item": "lib::lt", "kind": "function", "hole": "uses `impl core::cmp::PartialOrd for fn()`", "count": 1},
     {"item": "lib::outer", "kind": "function", "hole": "an `unsafe` block", "count": 1},
     {"item": "lib::outer::inner", "kind": "function", "hole": "an `unsafe fn`", "count": 1},

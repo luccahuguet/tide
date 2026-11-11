@@ -66,6 +66,42 @@ still awaits the checker, and a missing one can let a case pass. The `FX`
 marks are the design's expected verdicts, which each slice of the checker is
 run against.
 
+The surface slice enforces `FX0102`, `FX0103`, `FX0201`, `FX0202`, `FX0203`,
+`FX0210` and `FX0301` as errors. `FX0202` covers LIFE-4's unresolved output
+elision in function signatures, bare function types and `Fn` sugar wherever
+they occur; wrong-input elision stays rustc's region error. `FX0203` labels
+capture failures at an actual static object destination or
+`Tasks::spawn_isolated`. E0373 uses rustc's own closure and borrowed-place spans,
+including projections, independently of capture provenance. E0521/E0597 and
+uncoded region errors require both a static destination and a certain capture
+chain; E0515 requires a certain captured borrow at the returned destination.
+Local errors inside the closure body receive no label.
+`FX0210` labels E0505/E0515/E0597 inside a struct literal only when one field
+moves a whole local owner and another stores a reference borrowed from it using `&`, `&mut`, or a
+receiver-tied borrow method. A projected borrow counts when its loan root is
+that moved owner. Copies, reborrows, raw-pointer results and loan paths through
+stored references are omitted. The label
+matches E0505 only at the exact span of the moved owner field's value, and E0515/E0597 only when
+the primary span lies inside the paired borrow field's expression. Other
+fields' errors and errors spanning the entire literal receive no FX0210. The label
+layer prefers precision over recall: every label is a supplementary
+explanation of an error rustc already rejects and must never be false. When
+provenance is uncertain, the label may be absent; rustc's error and rejection
+remain. For FX0203 errors other than E0373, every step must be a whole binding with
+one certain initializer or assignment, `&local`, `&mut local`, or a method on a
+whole local whose signature returns a borrow tied to that receiver. An owned
+local's storage terminates the chain; its factory's arguments are not traced.
+A field, index, subslice, destructuring pattern, reassignment or unsupported
+step anywhere discards the entire chain. Deferred assignments are followed
+only as a single direct statement before capture in the declaring body;
+multiple or conditional assignments are omitted. These are known limits on
+labels, not admission exceptions. The rules
+sourced only from the reference/decision record use `REF-<FX digits>` IDs in
+`rules.md`. FX0902's comment rule (pending the unsafe/modules slice)
+applies only to unsafe blocks, with or without the grant: a `// SAFETY:` line
+in the comment lines directly above the block or its statement, never a
+trailing same-line comment or a requirement on unsafe impls.
+
 ## Case format
 
 One `.rs` file per case, under `cases/<area>/`: `memory` (02), `authority`

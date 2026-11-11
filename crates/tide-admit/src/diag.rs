@@ -2,6 +2,9 @@
 //! and a colon (`FX0520: ...`), at the span in the user's code that caused it, so rustc's own
 //! renderer and `--error-format` apply to it.
 
+mod labels;
+pub use labels::{OwnedClosure, RustcLabels};
+
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::{BytePos, Span};
@@ -10,6 +13,20 @@ use rustc_span::{BytePos, Span};
 pub enum Code {
     /// User macro definitions (D6).
     Fx0101,
+    /// A derive outside the closed set (D6).
+    Fx0102,
+    /// A bang macro outside the fixed built-in forms (D6).
+    Fx0103,
+    /// Lifetime parameters on a trait (LIFE-3).
+    Fx0201,
+    /// An unresolved elided output lifetime (LIFE-4).
+    Fx0202,
+    /// A borrowing closure in an owned position (BORROW-3, SCOPE-3).
+    Fx0203,
+    /// A literal borrows an owner it moves into another field (reference 3.6).
+    Fx0210,
+    /// A lossy `as` cast (D3).
+    Fx0301,
     /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
     Fx0502,
     /// A call of, or other reference to, the binary's `main` (ROOT-5).
@@ -54,9 +71,16 @@ pub enum Code {
 }
 
 impl Code {
-    /// Every code this driver decides, so a caller can tell its verdicts from ones it awaits.
+    /// Every code this driver reports (its own verdicts and its labels on rustc's).
     pub const ALL: &[Code] = &[
         Code::Fx0101,
+        Code::Fx0102,
+        Code::Fx0103,
+        Code::Fx0201,
+        Code::Fx0202,
+        Code::Fx0203,
+        Code::Fx0210,
+        Code::Fx0301,
         Code::Fx0502,
         Code::Fx0506,
         Code::Fx0507,
@@ -81,6 +105,13 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::Fx0101 => "FX0101",
+            Code::Fx0102 => "FX0102",
+            Code::Fx0103 => "FX0103",
+            Code::Fx0201 => "FX0201",
+            Code::Fx0202 => "FX0202",
+            Code::Fx0203 => "FX0203",
+            Code::Fx0210 => "FX0210",
+            Code::Fx0301 => "FX0301",
             Code::Fx0502 => "FX0502",
             Code::Fx0506 => "FX0506",
             Code::Fx0507 => "FX0507",

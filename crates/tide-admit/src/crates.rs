@@ -2,7 +2,7 @@
 //! graph is `core`, `alloc`, Rust's std, and Tide's std, what Tide's std exports, the binary's
 //! `main`, and which expansion generated it.
 
-use rustc_data_structures::fx::FxHashSet;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::ItemKind;
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::{CRATE_DEF_ID, CrateNum, DefId, LOCAL_CRATE};
@@ -12,7 +12,7 @@ use rustc_middle::ty::print::{
 };
 use rustc_session::config::CrateType;
 use rustc_span::hygiene::{AstPass, ExpnId};
-use rustc_span::{ExpnKind, sym};
+use rustc_span::{ExpnKind, Symbol, sym};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -40,6 +40,7 @@ pub struct Crates {
     rust_std_injected: bool,
     /// Items of other crates that Tide's std re-exports publicly.
     exports: FxHashSet<DefId>,
+    macro_names: FxHashMap<DefId, FxHashSet<Symbol>>,
     /// The crate-root `fn main` of an executable crate (`crate_main`).
     main: Option<DefId>,
     /// The expansion that generated `main`, if one did.
@@ -57,6 +58,7 @@ impl Crates {
             rust_std: lang.start_fn().map(|d| d.krate),
             rust_std_injected: false,
             exports: FxHashSet::default(),
+            macro_names: FxHashMap::default(),
             main,
             entry: main
                 .map(|d| tcx.def_span(d))
@@ -76,6 +78,7 @@ impl Crates {
                 krate,
                 &mut FxHashSet::default(),
                 &mut crates.exports,
+                &mut crates.macro_names,
             );
         }
         crates
@@ -115,6 +118,13 @@ impl Crates {
     /// Whether Tide's std re-exports `def_id`, which makes it part of Tide's std's API.
     pub fn exported(&self, def_id: DefId) -> bool {
         self.exports.contains(&def_id)
+    }
+
+    /// Macro identities behind Tide std's public names, including re-export aliases.
+    pub fn macro_exported_as(&self, def: DefId, names: &[&str]) -> bool {
+        self.macro_names
+            .get(&def)
+            .is_some_and(|exports| exports.iter().any(|name| names.contains(&name.as_str())))
     }
 
     /// Whether `expn` generated the crate-root `fn main` of an executable crate, the one place
@@ -203,6 +213,7 @@ fn collect_exports(
     krate: CrateNum,
     visited: &mut FxHashSet<DefId>,
     out: &mut FxHashSet<DefId>,
+    macros: &mut FxHashMap<DefId, FxHashSet<Symbol>>,
 ) {
     if !visited.insert(module) {
         return;
@@ -214,10 +225,13 @@ fn collect_exports(
         if !child.vis.is_public() {
             continue;
         }
+        if matches!(kind, DefKind::Macro(_)) {
+            macros.entry(def_id).or_default().insert(child.ident.name);
+        }
         if def_id.krate != krate {
             out.insert(def_id);
         } else if kind == DefKind::Mod {
-            collect_exports(tcx, def_id, krate, visited, out);
+            collect_exports(tcx, def_id, krate, visited, out, macros);
         }
     }
 }

@@ -25,7 +25,7 @@ use rustc_span::{
     FileName, RemapPathScopeComponents, SourceFileHash, SourceFileHashAlgorithm, sym,
 };
 
-use crate::diag::{Code, Diagnostics};
+use crate::diag::{Code, Diagnostics, RustcLabels};
 use crate::synthesis::{self, Insertions};
 use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
@@ -37,6 +37,7 @@ struct Admission {
     out: PathBuf,
     /// The walk's trust holes, for the trust artifact.
     holes: Holes,
+    labels: RustcLabels,
     /// Whether the operator supplied Tide's std (`--tide-std`), whose `#[tide::main]` every
     /// binary's entry point needs (ROOT-1); the driver's own tests on Rust's std have none.
     tide_std: bool,
@@ -53,6 +54,8 @@ struct Admission {
 impl Callbacks for Admission {
     fn config(&mut self, config: &mut Config) {
         config.file_loader = Some(Box::new(self.sources.clone()));
+        let labels = self.labels.clone();
+        config.psess_created = Some(Box::new(move |psess| labels.install(psess)));
         // The backstop's roots: a metadata check exports nothing, which leaves a library's mono
         // items without roots, so rustc gets the items a build exports.
         config.override_queries = Some(|_, providers| {
@@ -84,6 +87,7 @@ impl Callbacks for Admission {
             self.tide_std,
             !self.backstop_only,
             self.test_library,
+            &self.labels,
         );
         Compilation::Continue
     }
@@ -335,6 +339,7 @@ impl Invocation {
             grants: self.grants,
             out: out.into(),
             holes: Holes::new(),
+            labels: RustcLabels::default(),
             sources,
             tide_std: self.std.is_some(),
             library_artifact: library_artifact.map(Path::to_path_buf),

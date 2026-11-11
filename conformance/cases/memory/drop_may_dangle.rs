@@ -5,7 +5,7 @@
 pub struct Bag<T> {
     pub items: Vec<T>,
 }
-// SAFETY: present, so `FX0902` is not expected.
+// FX0902 requires a SAFETY comment only on unsafe blocks, not unsafe impls.
 unsafe impl<#[may_dangle] T> Drop for Bag<T> { //~ E0658 FX0901
     fn drop(&mut self) {}
 }

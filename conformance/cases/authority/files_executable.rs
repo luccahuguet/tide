@@ -302,7 +302,7 @@ fn main(root: Root) -> io::Result<()> {
             kind(file.read_exact(&mut []), K::Cancelled);
             kind(file.write(b"bad"), K::Cancelled);
             kind(file.write_all(b""), K::Cancelled);
-            kind(file.write_fmt(format_args!("")), K::Cancelled);
+            kind(write!(file, ""), K::Cancelled);
             kind(file.flush(), K::Cancelled);
             kind(read_only.flush(), K::Cancelled);
             kind(file.seek(SeekFrom::Start(0)), K::Cancelled);
