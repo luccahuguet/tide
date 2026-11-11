@@ -376,11 +376,12 @@ fn dropping_unjoined_values_keeps_the_baton_until_their_destructor_finishes() {
 fn simulated_handles_require_their_own_live_simulation() {
     let real = Tasks::real();
     let real_cell = Shared::new(1, &real);
-    let (tasks, cell) = {
+    let real_clock = crate::time::Clock::new(Time::real());
+    let (tasks, cell, clock) = {
         let simulation = Simulation::new(0);
         let tasks = simulation.tasks.clone();
         let cell = Shared::new(5, &tasks);
-        (tasks, cell)
+        (tasks, cell, simulation.clock().clone())
     };
     let fails = || {
         let panic = catch_unwind(|| tasks.checkpoint()).unwrap_err();
@@ -389,12 +390,19 @@ fn simulated_handles_require_their_own_live_simulation() {
             Some("simulation handle used outside its simulation")
         );
         assert!(catch_unwind(|| cell.with(|_| ())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| clock.now())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| clock.system_time())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| clock.sleep(Duration::ZERO))).is_err());
     };
     fails();
     let simulation = Simulation::new(0);
     fails();
     assert_eq!(Shared::new(7, &simulation.tasks).with(|n| *n), Ok(7));
-    let misuses: [&dyn Fn(); 5] = [
+    let misuses: [&dyn Fn(); 9] = [
+        &|| _ = real_clock.now(),
+        &|| _ = real_clock.system_time(),
+        &|| _ = real_clock.sleep(Duration::ZERO),
+        &|| _ = real_clock.sleep_until(real_clock.monotonic_only().now()),
         &|| _ = real.checkpoint(),
         &|| _ = real.yield_now(),
         &|| _ = real.scope::<(), TaskError, _>(|_| Ok(())),
@@ -405,7 +413,7 @@ fn simulated_handles_require_their_own_live_simulation() {
         let panic = catch_unwind(AssertUnwindSafe(misuse)).unwrap_err();
         assert_eq!(
             message(&*panic),
-            Some("real task authority used inside a simulation")
+            Some("real capability used inside a simulation")
         );
     }
     drop(simulation);
@@ -558,6 +566,7 @@ fn poisoned_lock_and_empty_runnable_set_abort_the_process() {
         bounded(move || {
             let simulation = Simulation::new(0);
             let tasks = simulation.tasks.clone();
+            let clock = simulation.clock().clone();
             // Without the guard's own lock, only the adapter path under test can abort.
             std::mem::forget(simulation);
             if mode == "poison" {
@@ -568,10 +577,19 @@ fn poisoned_lock_and_empty_runnable_set_abort_the_process() {
                 })
                 .join();
                 let _ = tasks.checkpoint();
+            } else if mode == "forever" {
+                // A sleep past the last instant never ends, and no other timer is pending.
+                clock.sleep(Duration::from_nanos(1)).unwrap();
+                let _ = clock.sleep(Duration::MAX);
             } else {
                 // Task 0 joining itself leaves no runnable task.
                 let main = Context::current().unwrap();
-                main.wait_for(Operation::Join(0), std::panic::Location::caller());
+                main.wait(
+                    Operation::Join(0),
+                    std::panic::Location::caller(),
+                    None,
+                    false,
+                );
             }
         });
         return;
@@ -580,7 +598,13 @@ fn poisoned_lock_and_empty_runnable_set_abort_the_process() {
         ("poison", "simulator runtime lock poisoned"),
         (
             "stuck",
-            "no runnable task in the simulator\n  task 0 blocked in Join(0) at ",
+            "deadlock: no runnable task in the simulator and no timer pending (virtual time \
+             0ns)\n  task 0 blocked in join(0) at ",
+        ),
+        (
+            "forever",
+            "deadlock: no runnable task in the simulator and no timer pending (virtual time \
+             1ns)\n  task 0 blocked in clock.sleep forever at ",
         ),
     ] {
         let child = rerun(NAME, FATAL, mode);
@@ -592,5 +616,380 @@ fn poisoned_lock_and_empty_runnable_set_abort_the_process() {
             "{stderr}"
         );
         assert!(stderr.contains(report), "{stderr}");
+        if mode != "poison" {
+            let events: Vec<_> = stderr
+                .lines()
+                .filter(|line| line.starts_with('{'))
+                .collect();
+            assert!(!events.is_empty(), "{stderr}");
+            for (step, event) in events.iter().enumerate() {
+                assert!(
+                    event.starts_with(&format!("{{\"step\":{step},")),
+                    "{stderr}"
+                );
+                assert!(event.ends_with('}'), "{stderr}");
+            }
+            let last = events.last().unwrap();
+            assert_eq!(stderr.lines().last(), Some(*last), "{stderr}");
+            assert!(
+                last.contains("\"kind\":\"sched\",\"operation\":\"deadlock\""),
+                "{stderr}"
+            );
+            assert!(
+                last.contains("\"blocked\":[{\"task\":0,\"operation\":"),
+                "{stderr}"
+            );
+        }
     }
+}
+
+const SECOND: Duration = Duration::from_secs(1);
+
+#[test]
+fn a_real_wait_checks_cancellation_then_readiness_before_timeout() {
+    bounded(|| {
+        let mut context = Context::detached();
+        let scope = context.lock().scope(None);
+        context.at = Some(Location { scope, child: None });
+        let operation = Operation::ScopeExit(scope);
+        let span = std::panic::Location::caller();
+        assert!(matches!(
+            context.wait(operation, span, Some(Duration::ZERO), true),
+            Wake::Ready
+        ));
+        context.lock().cancel(scope, Cause::Explicit(scope));
+        assert!(matches!(
+            context.wait(operation, span, Some(Duration::ZERO), true),
+            Wake::Cancelled
+        ));
+        assert!(context.lock().waiting.is_empty());
+    });
+}
+
+#[test]
+fn a_real_wait_rechecks_readiness_after_spurious_and_resource_wakes() {
+    bounded(|| {
+        for cancellable in [false, true] {
+            let mut context = Context::detached();
+            let scope = context.lock().scope(None);
+            let child = context.lock().spawn(scope);
+            context.at = Some(Location { scope, child: None });
+            let waiting = context.clone();
+            let (done, completed) = mpsc::channel();
+            let until = crate::time::monotonic() + 5 * SECOND;
+            let worker = thread::spawn(move || {
+                let wake = waiting.wait(
+                    Operation::ScopeExit(scope),
+                    std::panic::Location::caller(),
+                    Some(until),
+                    cancellable,
+                );
+                done.send(matches!(wake, Wake::Ready)).unwrap();
+            });
+            let waiter = loop {
+                if let Some(waiter) = context.lock().waiting.first().cloned() {
+                    break waiter;
+                }
+                assert!(crate::time::monotonic() < until, "waiter never registered");
+                thread::yield_now();
+            };
+            waiter.unpark();
+            assert!(completed.recv_timeout(Duration::from_millis(20)).is_err());
+            {
+                let mut runtime = context.lock();
+                runtime.finish(child, Outcome::Ok);
+                // The resource changes its condition and notifies under the registration lock.
+                waiter.unpark();
+            }
+            assert!(completed.recv_timeout(SECOND).unwrap());
+            worker.join().unwrap();
+            assert!(context.lock().waiting.is_empty());
+        }
+    });
+}
+
+#[test]
+fn the_last_representable_virtual_instant_is_a_finite_sleep_target() {
+    bounded(|| {
+        let simulation = Simulation::new(0);
+        let clock = simulation.clock();
+        let start = clock.now();
+        clock.sleep(Duration::MAX).unwrap();
+        assert_eq!(simulation.elapsed(), Duration::MAX);
+        assert_eq!(clock.now() - start, Duration::MAX);
+        let trace = simulation.trace();
+        let panic = catch_unwind(AssertUnwindSafe(|| clock.system_time())).unwrap_err();
+        assert_eq!(
+            message(&*panic),
+            Some("`system_time()` exceeds the representable wall-time range")
+        );
+        assert_eq!(simulation.trace(), trace);
+        // The range failure did not poison the runtime or consume a trace step.
+        assert_eq!(clock.now() - start, Duration::MAX);
+        simulation.tasks().checkpoint().unwrap();
+        clock.sleep(Duration::ZERO).unwrap();
+        let after = simulation.trace();
+        assert!(after.starts_with(&trace), "{after}");
+        for (step, line) in after.lines().enumerate() {
+            assert!(line.starts_with(&format!("{{\"step\":{step},")), "{line}");
+            assert!(line.ends_with('}'), "{line}");
+        }
+    });
+}
+
+#[test]
+fn a_sleeper_wakes_at_its_exact_virtual_instant_and_only_blocked_tasks_move_time() {
+    bounded(|| {
+        let started = std::time::Instant::now();
+        let simulation = Simulation::new(3);
+        let (tasks, clock) = (simulation.tasks(), simulation.clock());
+        let wall = |clock: &crate::time::Clock| {
+            let since = clock.system_time().duration_since(crate::time::UNIX_EPOCH);
+            since.unwrap()
+        };
+        let start = clock.now();
+        // 2000-01-01T00:00:00Z.
+        assert_eq!(wall(clock), Duration::from_secs(946_684_800));
+        // Checkpoints, clock readings and sleeps that do not block take no virtual time.
+        for _ in 0..10_000 {
+            tasks.checkpoint().unwrap();
+        }
+        clock.sleep(Duration::ZERO).unwrap();
+        clock.sleep_until(start).unwrap();
+        assert_eq!((clock.now(), simulation.elapsed()), (start, Duration::ZERO));
+        tasks
+            .scope::<_, TaskError, _>(|scope| {
+                scope.spawn(|| {
+                    clock.sleep(5 * SECOND).unwrap();
+                    assert_eq!(clock.now(), start + 5 * SECOND);
+                    Ok(())
+                });
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(simulation.elapsed(), 5 * SECOND);
+        clock
+            .monotonic_only()
+            .sleep_until(start + 7 * SECOND)
+            .unwrap();
+        assert_eq!(simulation.elapsed(), 7 * SECOND);
+        assert_eq!(clock.now() - start, 7 * SECOND);
+        assert_eq!(wall(clock), Duration::from_secs(946_684_807));
+        // Seven virtual seconds pass without waiting for them.
+        assert!(started.elapsed() < 5 * SECOND);
+
+        let trace = simulation.trace();
+        let lines = |a: &str, b: &str| -> Vec<&str> {
+            let matching = trace
+                .lines()
+                .filter(|line| line.contains(a) && line.ends_with(b));
+            matching.collect()
+        };
+        let advances = lines("\"kind\":\"sched\",\"operation\":\"advance\"", "}");
+        assert_eq!(advances.len(), 2, "{trace}");
+        assert!(advances[0].contains("\"time\":0,"), "{trace}");
+        assert!(
+            advances[0].ends_with(",\"from\":0,\"to\":5000000000}"),
+            "{trace}"
+        );
+        assert!(advances[1].contains("\"time\":5000000000,"), "{trace}");
+        assert!(
+            advances[1].ends_with(",\"from\":5000000000,\"to\":7000000000}"),
+            "{trace}"
+        );
+        let sleep = "\"kind\":\"cap\",\"operation\":\"clock.sleep\"";
+        for (operation, end, count) in [
+            (sleep, "\"wait\":\"blocked\",\"until\":5000000000}", 1),
+            (
+                sleep,
+                "\"wait\":\"ready\",\"until\":5000000000,\"action\":\"wake\"}",
+                1,
+            ),
+            (
+                sleep,
+                "\"wait\":null,\"until\":5000000000,\"result\":\"ok\"}",
+                1,
+            ),
+            // The zero sleep is a point, not a wait.
+            (sleep, "\"wait\":\"ready\",\"until\":0}", 1),
+            (
+                "\"operation\":\"clock.sleep_until\"",
+                ",\"result\":\"ok\"}",
+                2,
+            ),
+            (
+                "\"kind\":\"cap\",\"operation\":\"clock.now\"",
+                "\"wait\":\"ready\",\"result\":0}",
+                2,
+            ),
+            ("\"operation\":\"clock.now\"", ",\"result\":7000000000}", 1),
+            (
+                "\"kind\":\"cap\",\"operation\":\"clock.system_time\"",
+                ",\"result\":946684800000000000}",
+                1,
+            ),
+        ] {
+            assert_eq!(
+                lines(operation, end).len(),
+                count,
+                "{operation} {end}\n{trace}"
+            );
+        }
+        let panic = catch_unwind(AssertUnwindSafe(|| clock.monotonic_only().system_time()));
+        assert_eq!(
+            message(&*panic.unwrap_err()),
+            Some(
+                "`system_time()` called on a `Clock` from `monotonic_only()`, which cannot read \
+                 wall time"
+            )
+        );
+    });
+}
+
+fn two_sleepers(seed: u64) -> (Vec<u8>, String) {
+    let simulation = Simulation::new(seed);
+    let (tasks, clock) = (simulation.tasks(), simulation.clock());
+    let order = &Mutex::new(Vec::new());
+    let until = clock.now() + SECOND;
+    tasks
+        .scope::<_, TaskError, _>(|scope| {
+            for id in 0..2 {
+                scope.spawn(move || {
+                    clock.sleep_until(until).unwrap();
+                    order.lock().unwrap().push(id);
+                    Ok(())
+                });
+            }
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(simulation.elapsed(), SECOND);
+    (order.lock().unwrap().clone(), simulation.trace())
+}
+
+#[test]
+fn sleepers_of_one_instant_wake_in_seeded_order_and_replay() {
+    bounded(|| {
+        let orders: BTreeSet<_> = (0..20).map(|seed| two_sleepers(seed).0).collect();
+        assert_eq!(orders.len(), 2, "{orders:?}");
+        let (order, trace) = two_sleepers(7);
+        assert_eq!((order, trace.clone()), two_sleepers(7));
+        // Both timers fire in the one jump, before either sleeper runs.
+        let advance = trace
+            .lines()
+            .position(|line| line.contains("\"operation\":\"advance\""));
+        let after: Vec<_> = trace.lines().skip(advance.unwrap() + 1).take(2).collect();
+        assert!(
+            after
+                .iter()
+                .all(|line| line.contains("\"action\":\"wake\"")),
+            "{trace}"
+        );
+        assert_eq!(
+            trace.matches("\"operation\":\"advance\"").count(),
+            1,
+            "{trace}"
+        );
+    });
+}
+
+#[test]
+fn cancellation_ends_a_sleep_at_once_and_takes_its_timer() {
+    bounded(|| {
+        for seed in 0..20 {
+            for mode in ["sibling", "explicit", "body"] {
+                let simulation = Simulation::new(seed);
+                let (tasks, clock) = (simulation.tasks(), simulation.clock());
+                let start = clock.now();
+                let result = tasks.scope::<(), Ended, _>(|scope| {
+                    scope.spawn(|| {
+                        // Woken by the cancel at one second, not by its own timer at five.
+                        assert_eq!(clock.sleep(5 * SECOND), Err(Cancelled));
+                        assert_eq!(clock.now(), start + SECOND);
+                        // Level-triggered: later sleeps fail at once, whatever their target.
+                        assert_eq!(clock.sleep(Duration::MAX), Err(Cancelled));
+                        assert_eq!(clock.sleep(Duration::ZERO), Err(Cancelled));
+                        assert_eq!(clock.sleep_until(start), Err(Cancelled));
+                        Ok(())
+                    });
+                    if mode == "sibling" {
+                        scope.spawn(|| {
+                            clock.sleep(SECOND).unwrap();
+                            Err::<(), _>(Ended::Child)
+                        });
+                        return Ok(());
+                    }
+                    clock.sleep(SECOND).unwrap();
+                    if mode == "body" {
+                        return Err(Ended::Body);
+                    }
+                    scope.cancel();
+                    assert_eq!(clock.sleep(5 * SECOND), Err(Cancelled));
+                    Ok(())
+                });
+                let expected = match mode {
+                    "sibling" => Err(Ended::Child),
+                    "body" => Err(Ended::Body),
+                    _ => Ok(()),
+                };
+                assert_eq!(result, expected);
+                assert_eq!(simulation.elapsed(), SECOND);
+                // The cancelled sleeper's timer is gone: the next jump is this sleep's own.
+                clock.sleep(2 * SECOND).unwrap();
+                assert_eq!(simulation.elapsed(), 3 * SECOND);
+                let trace = simulation.trace();
+                assert!(!trace.contains("\"to\":5000000000"), "{trace}");
+                assert!(trace.contains(",\"result\":\"cancelled\"}"), "{trace}");
+            }
+        }
+    });
+}
+
+#[test]
+fn polling_while_a_timer_waits_fails_the_seed_with_the_stall_report() {
+    bounded(|| {
+        let simulation = Simulation::new(0);
+        let (tasks, clock) = (simulation.tasks(), simulation.clock());
+        let runtime = tasks.simulation.as_ref().unwrap();
+        runtime
+            .lock()
+            .unwrap()
+            .baton
+            .as_mut()
+            .unwrap()
+            .scheduler
+            .stall_limit = 1000;
+        let panic = catch_unwind(AssertUnwindSafe(|| {
+            let _: Result<(), TaskError> = tasks.scope(|scope| {
+                let deadline = clock.now() + SECOND;
+                scope.spawn(move || {
+                    let slept = clock.sleep_until(deadline);
+                    slept.map_err(|_| TaskError::Cancelled)
+                });
+                // Polling keeps this task runnable, so the deadline never comes.
+                while clock.now() < deadline {
+                    tasks.yield_now().map_err(|_| TaskError::Cancelled)?;
+                }
+                Ok(())
+            });
+        }))
+        .unwrap_err();
+        let report = message(&*panic).unwrap();
+        assert!(
+            report.starts_with(
+                "simulation stalled at virtual time 0ns: 1000 scheduling points passed while a \
+                 timer waited."
+            ),
+            "{report}"
+        );
+        assert!(
+            report.contains("\n  task 0 runnable in ") && report.contains(file!()),
+            "{report}"
+        );
+        assert_eq!(simulation.elapsed(), Duration::ZERO);
+        // Without a pending timer the same loop is no stall.
+        for _ in 0..3000 {
+            tasks.yield_now().unwrap();
+        }
+    });
 }

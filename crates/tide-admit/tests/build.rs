@@ -321,6 +321,42 @@ fn task_failures_and_cancellation_build_and_run_against_production_std() {
     }
 }
 
+/// `Clock`, `Instant`, `SystemTime` and `Duration` (bead fx-o8j) pass the driver and run: clock
+/// readings and their arithmetic, real sleeps of at least their duration, `Cancelled` from a
+/// sleep in a cancelled scope, and the panic of `system_time()` on a `monotonic_only()` clock.
+#[test]
+fn clock_and_time_build_and_run_against_production_std() {
+    let source = include_str!("../../../conformance/cases/authority/clock_time.rs");
+    let dir = package("clock-time", source);
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"TIME_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+    }
+
+    let source = "#[tide::main]\nfn main(root: Root) {\n    \
+                  let clock = root.clock.monotonic_only();\n    \
+                  println!(\"{}\", clock.now() <= clock.now());\n    \
+                  let _ = clock.system_time();\n}\n";
+    let dir = package("clock-monotonic-only", source);
+    checked(&mut driver(&dir));
+    let out = Command::new(dir.join("out/demo"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(101), "{}", stderr(&out));
+    assert_eq!(out.stdout, b"true\n");
+    assert!(
+        stderr(&out).contains(
+            "`system_time()` called on a `Clock` from `monotonic_only()`, which cannot read wall \
+             time"
+        ),
+        "{}",
+        stderr(&out)
+    );
+}
+
 #[test]
 fn checked_hello_builds_without_running_and_ignores_candidate_configuration() {
     let dir = package("hello", HELLO);

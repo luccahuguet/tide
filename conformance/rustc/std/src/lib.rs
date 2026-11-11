@@ -6,7 +6,8 @@
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, and Rust's re-exports), `std::io`'s core (`io/shared.rs`),
-//! its task runtime and scheduler (`task.rs`), and single-cell `Shared` (`sync.rs`). It declares
+//! its task runtime and scheduler (`task.rs`), single-cell `Shared` (`sync.rs`), and
+//! `std::time` (`time.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those types the same definitions and
 //! paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
@@ -148,34 +149,9 @@ pub mod fs {
     }
 }
 
-pub mod time {
-    use crate::task::Cancelled;
-    pub use std::time::Duration;
-
-    crate::capability!(Clock);
-    impl Clock {
-        pub fn now(&self) -> Instant { unimplemented!() }
-        pub fn sleep_until(&self, t: Instant) -> Result<(), Cancelled> { unimplemented!() }
-        pub fn system_time(&self) -> SystemTime { unimplemented!() }
-    }
-
-    /// A distinct type with no `now()` or `elapsed()` (03 CAP-1); otherwise Rust's `Instant` API.
-    /// GUESS: which of Rust's methods the allowlist admits (`checked_add`, `duration_since` here).
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Instant(Duration);
-    impl Instant {
-        pub fn checked_add(&self, d: Duration) -> Option<Instant> { unimplemented!() }
-        pub fn duration_since(&self, earlier: Instant) -> Duration { unimplemented!() }
-    }
-    impl std::ops::Add<Duration> for Instant {
-        type Output = Instant;
-        fn add(self, d: Duration) -> Instant { unimplemented!() }
-    }
-
-    /// A distinct type with no `now()` or `elapsed()` (03 CAP-1).
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct SystemTime(Duration);
-}
+// Production owns `Clock`, `Instant`, `SystemTime`, and their runtime.
+#[path = "../../../../crates/tide-std/src/time.rs"]
+pub mod time;
 
 pub mod net {
     use crate::time::Instant;

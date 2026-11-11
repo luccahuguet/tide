@@ -194,6 +194,23 @@ Notes:
   after yielding a cancellation error. `io::Error::new` and `other` keep
   Rust's signatures, so ADMIT-1's payload rule (`02-memory.md` §9) applies
   to them unchanged.
+- **Clocks.** `Instant` and `SystemTime` keep Rust's arithmetic: adding or
+  subtracting a `Duration` panics when the result is not representable and
+  the `checked_*` methods return `None`, `Instant::duration_since` saturates
+  at zero, and `SystemTime::duration_since` returns a `Result`. An `Instant`
+  is an offset from its clock's origin, so one from before the origin is not
+  representable, and instants of different clocks, such as a real and a
+  simulated one, compare as plain offsets. `sleep(d)` is `sleep_until(now +
+  d)`, and a sum past the last instant never arrives, so an overflowing sleep
+  ends only by cancellation. A sleep whose target is not after now is a
+  checkpoint that does not block. `monotonic_only()` returns a `Clock`
+  without the authority to read wall time: `system_time()` on it panics with
+  a message that names the attenuation, because a `SystemTime` result has no
+  room for an error and any value would be a silent wrong answer.
+  Simulated wall time is an unsigned offset from the Unix epoch: `system_time()`
+  panics when virtual elapsed time exceeds `Duration::MAX -
+  Duration::from_secs(946_684_800)`, before recording a clock event. Monotonic
+  time and sleeps remain usable through `Duration::MAX`.
 - **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
   value. Authority is spent at seeding; drawing from a `Pcg64` is
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
@@ -1752,6 +1769,15 @@ default and `tide sim --test` runs more.
   then jumps to the next timer or delivery. If no task can ever run again,
   the run fails with a global deadlock report: each blocked task, the span of
   its blocking operation, and what it waits for.
+  The report is the trace's last event, and the process then ends with a
+  failure status: every task is a blocked thread, so none can unwind to
+  report it. The runtime writes the human report and complete NDJSON trace
+  to standard error before aborting. All timers of one instant fire before
+  any task runs. A task that polls while it waits for a timer (`yield_now`,
+  `checkpoint`, `now`, a zero sleep) stays runnable and so keeps time still; after 1,000,000
+  scheduling points with a timer pending and no advance, the simulator
+  panics in the task whose scheduling point passes the bound, with a stall
+  report that lists the runnable tasks and their spans.
 - **Scheduling points** are every capability operation, every handle
   operation (`spawn`, `join`, `send`, `recv`, `Shared::with*` acquire and
   release, `reset`, atomics, `Weak::upgrade`), and every checkpoint. Between two points a task

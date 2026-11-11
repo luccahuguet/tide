@@ -168,7 +168,7 @@ pub mod __rt {
             _private: (),
             fs: crate::fs::Fs(()),
             net: crate::net::Net(()),
-            clock: crate::time::Clock(()),
+            clock: crate::time::Clock::new(crate::task::Time::real()),
             rand: crate::rand::Rand(()),
             env: crate::env::Env(()),
             stdin: crate::io::Stdin(()),

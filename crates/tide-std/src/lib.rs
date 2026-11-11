@@ -8,16 +8,24 @@
 //!   process's one `Root` (03 ROOT-1, RUN-1);
 //! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
 //! - `Pure` (reference 6.6), which the admission driver decides;
-//! - the capability types `Root` carries: the identities `Fs`, `Net`, `Clock`, `Rand`, `Env`,
-//!   `Stdin`, and `Proc`, and `Tasks`, which also names its simulation when it has one;
+//! - the capability types `Root` carries: the identities `Fs`, `Net`, `Rand`, `Env`, `Stdin`,
+//!   and `Proc`, and `Tasks` and `Clock`, which also name their simulation when they have one;
+//! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
+//!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
+//!   `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH` with Rust's arithmetic and no `now()` or
+//!   `elapsed()`. A sleep is a checkpoint: it returns `task::Cancelled` in a cancelled scope,
+//!   and a cancel ends one in progress. Instants before a clock's origin and wall times before
+//!   1970 are not representable;
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
 //! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, and single-cell `with`, with FIFO
 //!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
 //!   reserved for the planned multi-cell operations (03 §6.5);
-//! - an internal seeded scheduler for structured tasks and single-cell `Shared`, with
-//!   source-located scheduling and wait records (03 §9.1). The public entry and runner are pending;
+//! - an internal seeded scheduler for structured tasks, single-cell `Shared`, and `Clock`, with
+//!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
+//!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
+//!   when none is left (03 §9.3). The public entry and runner are pending;
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
@@ -43,9 +51,8 @@
 //!
 //! Not provided yet: task limits, deadlines, shields and
 //! isolation; other capability operations and attenuation of reference 6.1 (files, network,
-//! time, random draws, environment, input, processes); `Root`'s `log` field;
+//! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
-//! `time`'s Rust items (`Duration`, ...);
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
 //! `par`, `arena`, `ptr`, and `sim`; `#[sim_test]`, requires-guided generation,
 //! generated contract tests, the contract attributes, and the `Encode` and `Decode` derives. A
@@ -53,8 +60,8 @@
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
-//! `root.rs`, `task.rs` (including its scheduler), and `sync.rs` share their definitions with the
-//! conformance fixture std. The identity-only capability types use `root.rs`'s `capability!` in
+//! `root.rs`, `task.rs` (including its scheduler), `sync.rs`, and `time.rs` share their
+//! definitions with the conformance fixture std. The identity-only capability types use `root.rs`'s `capability!` in
 //! both crates.
 
 include!("root.rs");
@@ -80,12 +87,7 @@ pub mod net {
     );
 }
 
-pub mod time {
-    crate::capability!(
-        /// Authority to read time and sleep. It has no operations yet.
-        Clock
-    );
-}
+pub mod time;
 
 pub mod rand {
     crate::capability!(

@@ -186,7 +186,7 @@ environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-as identities, `Pure`, and the `out` and `err` sinks
+as identities (`Tasks` and `Clock` have operations, below), `Pure`, and the `out` and `err` sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
@@ -213,10 +213,20 @@ handle to that cell returning `LockError::Poisoned` on later `with` calls.
 `LockError::Aliased` is reserved for the planned multi-cell operations.
 `same` and `reset` are also planned.
 
-Production std includes an internal seeded scheduler for structured tasks and
-single-cell `Shared`. It runs one task at a time between scheduling points and
-records decisions and waits with source locations. The public `Root::sim`
-entry, `#[sim_test]` runner, and simulated I/O are still pending.
+`root.clock` reads time and sleeps: `now() -> Instant`, `system_time() ->
+SystemTime`, `sleep(d)`, and `sleep_until(t)`. `std::time` has Rust's
+`Duration`, and `Instant` and `SystemTime` with Rust's arithmetic and no
+`now()` or `elapsed()`. A sleep is a checkpoint: it returns `task::Cancelled`
+in a cancelled scope, and a cancel ends one in progress. A sleep whose target
+is not after now does not block, and a sleep whose target overflows ends only
+by cancellation. `monotonic_only()` gives a `Clock` whose `system_time()` panics.
+
+Production std includes an internal seeded scheduler for structured tasks,
+single-cell `Shared`, and `Clock`. It runs one task at a time between
+scheduling points and records decisions and waits with source locations.
+Virtual time starts at zero and jumps to the next timer only when every task
+is blocked; with no timer left, the run ends in a deadlock report. The public
+`Root::sim` entry, `#[sim_test]` runner, and simulated I/O are still pending.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with

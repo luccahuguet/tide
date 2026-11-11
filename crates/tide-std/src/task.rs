@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::{Arc, Condvar, LockResult, Mutex, MutexGuard, mpsc};
 use std::thread;
+use std::time::Duration;
 
 mod scheduler {
     include!("task/scheduler.rs");
@@ -22,12 +23,24 @@ pub struct Tasks {
 struct Runtime {
     scopes: BTreeMap<usize, ScopeState>,
     next_scope: usize,
+    // Real waiting threads; cancellation and resources unpark them to recheck.
+    waiting: Vec<thread::Thread>,
     baton: Option<Baton>,
 }
 
 struct Baton {
     scheduler: Scheduler,
     parked: Vec<Arc<Condvar>>,
+    // Where each task blocked in a cancellable wait sits, so a cancel there wakes it.
+    cancellable: BTreeMap<TaskId, Location>,
+}
+
+/// How a wait ended. When several hold at once, cancellation is reported first (TASK-4), then
+/// readiness.
+enum Wake {
+    Ready,
+    Timeout,
+    Cancelled,
 }
 
 impl Baton {
@@ -41,40 +54,34 @@ impl Baton {
         match self.scheduler.pick(task, pending) {
             Some(next) if next != task => self.parked[next].notify_one(),
             Some(_) => {}
-            // Supported operations have no way to leave all tasks waiting forever.
+            // Every task is a parked thread with a live stack, so none can report by unwinding.
             None => {
-                let mut report = String::from("no runnable task in the simulator");
-                for (task, pending) in self.scheduler.blocked() {
-                    report.push_str(&format!(
-                        "\n  task {task} blocked in {:?} at {}",
-                        pending.operation, pending.span
-                    ));
-                }
-                fatal_simulation(&report)
+                let report = self.scheduler.deadlock(task, pending);
+                fatal_simulation(&report, &self.scheduler.trace);
             }
         }
     }
 
-    fn wait(mut runtime: MutexGuard<'_, Runtime>, task: TaskId) {
-        let baton = runtime.baton.as_ref().unwrap();
-        if baton.scheduler.current == Some(task) {
-            return;
-        }
-        let parked = baton.parked[task].clone();
+    fn wait(mut runtime: MutexGuard<'_, Runtime>, task: TaskId) -> MutexGuard<'_, Runtime> {
+        let parked = runtime.baton.as_ref().unwrap().parked[task].clone();
         while runtime.baton.as_ref().unwrap().scheduler.current != Some(task) {
             runtime = sim_lock(parked.wait(runtime));
         }
+        runtime
     }
 }
 
-fn fatal_simulation(message: &str) -> ! {
+fn fatal_simulation(message: &str, trace: &str) -> ! {
     use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "{message}");
+    let mut stderr = std::io::stderr().lock();
+    let _ = writeln!(stderr, "{message}");
+    let _ = stderr.write_all(trace.as_bytes());
+    let _ = stderr.flush();
     std::process::abort();
 }
 
 fn sim_lock<T>(result: LockResult<T>) -> T {
-    result.unwrap_or_else(|_| fatal_simulation("simulator runtime lock poisoned"))
+    result.unwrap_or_else(|_| fatal_simulation("simulator runtime lock poisoned", ""))
 }
 
 struct ScopeState {
@@ -148,7 +155,14 @@ impl Runtime {
                 self.scopes.get_mut(&id).unwrap().cause = Some(cause);
             }
         }
+        for thread in &self.waiting {
+            thread.unpark();
+        }
         true
+    }
+
+    fn cancelled(&self, at: Location) -> bool {
+        self.scopes[&at.scope].cause.is_some()
     }
 
     fn observe(&mut self, mut at: Location) -> bool {
@@ -197,14 +211,20 @@ impl Runtime {
         }
     }
 
+    // Simulated tasks whose wait is over: its condition holds, or it is cancellable and its
+    // scope is cancelled. Run it after every change to either.
     fn wake_waiters(&mut self) {
-        let ready: Vec<_> = self
-            .baton
-            .as_ref()
-            .unwrap()
+        let baton = self.baton.as_ref().unwrap();
+        let ready: Vec<_> = baton
             .scheduler
             .blocked()
-            .filter(|&(_, pending)| self.wait_done(pending.operation))
+            .filter(|&(task, pending)| {
+                self.wait_done(pending.operation)
+                    || baton
+                        .cancellable
+                        .get(&task)
+                        .is_some_and(|&at| self.cancelled(at))
+            })
             .collect();
         let scheduler = &mut self.baton.as_mut().unwrap().scheduler;
         for (task, pending) in ready {
@@ -266,9 +286,29 @@ impl Context {
                 slot.borrow()
                     .as_ref()
                     .is_none_or(|context| context.task.is_none()),
-                "real task authority used inside a simulation",
+                "real capability used inside a simulation",
             );
         });
+    }
+
+    // A real thread outside every scope: nothing can cancel it.
+    fn detached() -> Self {
+        Self {
+            runtime: Arc::new(Mutex::new(Runtime::default())),
+            at: None,
+            task: None,
+        }
+    }
+
+    // The caller's context for a handle with this simulation identity.
+    fn of(simulation: &Option<Arc<Mutex<Runtime>>>) -> Option<Self> {
+        match simulation {
+            Some(runtime) => Some(Self::simulated(runtime)),
+            None => {
+                Self::outside_simulation();
+                Self::current()
+            }
+        }
     }
 
     fn simulated(runtime: &Arc<Mutex<Runtime>>) -> Self {
@@ -291,21 +331,91 @@ impl Context {
         let pending = Pending { operation, span };
         let mut runtime = self.lock();
         let baton = runtime.baton.as_mut().unwrap();
-        baton.scheduler.point(task, pending);
+        if let Err(stalled) = baton.scheduler.point(task, pending) {
+            // The caller keeps the baton. Unlock first: a panic must not poison the runtime.
+            drop(runtime);
+            panic!("{stalled}");
+        }
         baton.pass(task, pending);
-        Baton::wait(runtime, task);
+        drop(Baton::wait(runtime, task));
     }
 
-    fn wait_for(&self, operation: Operation, span: Span) {
-        let task = self.task.unwrap();
+    // The one owner of blocking (AP-OWNERSHIP-001). Waits until `operation` is done
+    // (`Runtime::wait_done`), the instant `until` (an offset on the clock in use), or, when
+    // `cancellable`, the cancellation of the caller's scope, which is checked first on entry and
+    // on every wake and marks the echo as a checkpoint does. Later wait kinds need a
+    // caller-supplied readiness check or resource-owned waiter handles; fx-hxw also needs a
+    // Thread-or-eventfd waker. Lock order is runtime, then resource. A resource keeps its own
+    // waiter Thread handles and never takes the runtime lock while holding its own lock.
+    // Release both locks before parking.
+    fn wait(
+        &self,
+        operation: Operation,
+        span: Span,
+        until: Option<Duration>,
+        cancellable: bool,
+    ) -> Wake {
+        let at = self.at.filter(|_| cancellable);
         let mut runtime = self.lock();
-        if !runtime.wait_done(operation) {
-            let pending = Pending { operation, span };
-            let baton = runtime.baton.as_mut().unwrap();
-            baton.scheduler.block(task, pending);
-            baton.pass(task, pending);
-            Baton::wait(runtime, task);
+        let Some(task) = self.task else {
+            // Callers must keep real waits outside simulations: this branch uses host time and parking.
+            let me = thread::current();
+            runtime.waiting.push(me.clone());
+            let wake = loop {
+                if at.is_some_and(|at| runtime.observe(at)) {
+                    break Wake::Cancelled;
+                }
+                if runtime.wait_done(operation) {
+                    break Wake::Ready;
+                }
+                let left = until.map(|until| until.saturating_sub(crate::time::monotonic()));
+                if left == Some(Duration::ZERO) {
+                    break Wake::Timeout;
+                }
+                drop(runtime);
+                match left {
+                    Some(left) => thread::park_timeout(left),
+                    None => thread::park(),
+                }
+                runtime = self.lock();
+            };
+            runtime.waiting.retain(|thread| thread.id() != me.id());
+            return wake;
+        };
+        // Under the simulator no path below reads real time or parks on it.
+        if at.is_some_and(|at| runtime.observe(at)) {
+            return Wake::Cancelled;
         }
+        if runtime.wait_done(operation) {
+            return Wake::Ready;
+        }
+        let baton = runtime.baton.as_mut().unwrap();
+        // A timer never lies in the past: virtual time is set only by a jump to one.
+        if until.is_some_and(|until| until <= baton.scheduler.now) {
+            return Wake::Timeout;
+        }
+        let pending = Pending { operation, span };
+        baton.scheduler.block(task, pending, until);
+        if let Some(at) = at {
+            baton.cancellable.insert(task, at);
+        }
+        baton.pass(task, pending);
+        let mut runtime = Baton::wait(runtime, task);
+        runtime.baton.as_mut().unwrap().cancellable.remove(&task);
+        if at.is_some_and(|at| runtime.observe(at)) {
+            Wake::Cancelled
+        } else if runtime.wait_done(operation) {
+            Wake::Ready
+        } else {
+            Wake::Timeout
+        }
+    }
+
+    // Records a first-cause cancellation made by this simulated task and wakes its waiters.
+    fn record_cancel(&self, runtime: &mut Runtime, scope: usize, span: Span) {
+        let scheduler = &mut runtime.baton.as_mut().unwrap().scheduler;
+        scheduler.cancel(self.task.unwrap(), scope, span);
+        runtime.wake_waiters();
     }
 }
 
@@ -313,6 +423,7 @@ impl Context {
 #[allow(dead_code)]
 pub(crate) struct Simulation {
     tasks: Tasks,
+    clock: crate::time::Clock,
     _main: Enter,
 }
 
@@ -328,6 +439,7 @@ impl Simulation {
             baton: Some(Baton {
                 scheduler: Scheduler::new(seed, std::panic::Location::caller()),
                 parked: vec![Arc::new(Condvar::new())],
+                cancellable: BTreeMap::new(),
             }),
             ..Runtime::default()
         }));
@@ -337,6 +449,9 @@ impl Simulation {
             task: Some(0),
         });
         Self {
+            clock: crate::time::Clock::new(Time {
+                simulation: Some(runtime.clone()),
+            }),
             tasks: Tasks {
                 simulation: Some(runtime),
             },
@@ -346,6 +461,21 @@ impl Simulation {
 
     pub(crate) fn tasks(&self) -> &Tasks {
         &self.tasks
+    }
+
+    pub(crate) fn clock(&self) -> &crate::time::Clock {
+        &self.clock
+    }
+
+    /// Virtual time since the simulation began. Reading it is not a scheduling point.
+    pub(crate) fn elapsed(&self) -> Duration {
+        let runtime = self.tasks.simulation.as_ref().unwrap();
+        sim_lock(runtime.lock())
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .now
     }
 
     pub(crate) fn trace(&self) -> String {
@@ -428,13 +558,7 @@ impl Tasks {
     }
 
     fn context(&self) -> Option<Context> {
-        match &self.simulation {
-            Some(runtime) => Some(Context::simulated(runtime)),
-            None => {
-                Context::outside_simulation();
-                Context::current()
-            }
-        }
+        Context::of(&self.simulation)
     }
 
     /// Runs `body` and joins every child, even with dropped or forgotten handles.
@@ -448,11 +572,7 @@ impl Tasks {
         F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>,
     {
         let span = std::panic::Location::caller();
-        let mut context = self.context().unwrap_or_else(|| Context {
-            runtime: Arc::new(Mutex::new(Runtime::default())),
-            at: None,
-            task: None,
-        });
+        let mut context = self.context().unwrap_or_else(Context::detached);
         let id = context.lock().scope(context.at);
         context.at = Some(Location {
             scope: id,
@@ -479,15 +599,11 @@ impl Tasks {
             if !matches!(result, Ok(Ok(_))) {
                 let mut runtime = context.lock();
                 if runtime.cancel(id, Cause::Failure(id)) && simulated {
-                    runtime.baton.as_mut().unwrap().scheduler.cancel(
-                        context.task.unwrap(),
-                        id,
-                        span,
-                    );
+                    context.record_cancel(&mut runtime, id, span);
                 }
             }
             if simulated {
-                context.wait_for(Operation::ScopeExit(id), span);
+                context.wait(Operation::ScopeExit(id), span, None, false);
             }
             result
         });
@@ -675,11 +791,7 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
             let caller = Context::simulated(self.runtime);
             let mut runtime = caller.lock();
             if runtime.cancel(self.id, Cause::Explicit(self.id)) {
-                runtime.baton.as_mut().unwrap().scheduler.cancel(
-                    caller.task.unwrap(),
-                    self.id,
-                    span,
-                );
+                caller.record_cancel(&mut runtime, self.id, span);
             }
         } else {
             self.runtime
@@ -696,7 +808,7 @@ where
     F: FnOnce() -> Result<U, E>,
 {
     if let Some(task) = context.task {
-        Baton::wait(context.lock(), task);
+        drop(Baton::wait(context.lock(), task));
     }
     let _enter = Enter::new(context.clone());
     let outcome = catch_unwind(AssertUnwindSafe(|| match f() {
@@ -752,7 +864,7 @@ impl<U, E> Task<'_, U, E> {
             let span = std::panic::Location::caller();
             let caller = Context::simulated(runtime);
             caller.point(Operation::Join(*child), span);
-            caller.wait_for(Operation::Join(*child), span);
+            caller.wait(Operation::Join(*child), span, None, false);
         }
         self.result.into_inner().unwrap().recv().map_err(|_| {
             observe_cancellation();
@@ -761,8 +873,88 @@ impl<U, E> Task<'_, U, E> {
     }
 }
 
-/// Cancellation returned by an explicit checkpoint or yield.
-#[derive(Debug)]
+/// Where a `Clock` reads time and sleeps: the real clocks, or its simulation's virtual time.
+#[derive(Clone)]
+pub(crate) struct Time {
+    simulation: Option<Arc<Mutex<Runtime>>>,
+}
+
+impl Time {
+    pub(crate) fn real() -> Self {
+        Self { simulation: None }
+    }
+
+    /// A simulated clock's reading at its scheduling point: virtual time, or with `wall`
+    /// the simulated wall time since the Unix epoch. `None` on the real runtime, where the
+    /// caller reads its own clock.
+    pub(crate) fn read(&self, wall: bool, span: Span) -> Option<Duration> {
+        let Some(runtime) = &self.simulation else {
+            Context::outside_simulation();
+            return None;
+        };
+        let context = Context::simulated(runtime);
+        let reading = {
+            let runtime = context.lock();
+            let scheduler = &runtime.baton.as_ref().unwrap().scheduler;
+            if wall {
+                scheduler.wall()
+            } else {
+                Some(scheduler.now)
+            }
+        }
+        .expect("`system_time()` exceeds the representable wall-time range");
+        let operation = if wall {
+            Operation::ClockSystemTime(reading)
+        } else {
+            Operation::ClockNow
+        };
+        context.point(operation, span);
+        // This task stays runnable at the point, so virtual time cannot advance during it.
+        Some(reading)
+    }
+
+    /// Sleeps until the instant `until` gives for this clock's now, or without end for `None`.
+    /// A target that is not after now is a checkpoint that does not block.
+    pub(crate) fn sleep(
+        &self,
+        name: &'static str,
+        until: impl FnOnce(Duration) -> Option<Duration>,
+        span: Span,
+    ) -> Result<(), Cancelled> {
+        let context = Context::of(&self.simulation).unwrap_or_else(Context::detached);
+        let Some(task) = context.task else {
+            let until = until(crate::time::monotonic());
+            let operation = Operation::Sleep { name, until };
+            return match context.wait(operation, span, until, true) {
+                Wake::Cancelled => Err(Cancelled),
+                Wake::Ready | Wake::Timeout => Ok(()),
+            };
+        };
+        let now = context.lock().baton.as_ref().unwrap().scheduler.now;
+        let until = until(now);
+        let operation = Operation::Sleep { name, until };
+        let result = if until.is_some_and(|until| until <= now) {
+            check_cancellation().and_then(|()| {
+                context.point(operation, span);
+                check_cancellation()
+            })
+        } else {
+            match context.wait(operation, span, until, true) {
+                Wake::Cancelled => Err(Cancelled),
+                Wake::Ready | Wake::Timeout => Ok(()),
+            }
+        };
+        let pending = Pending { operation, span };
+        let mut runtime = context.lock();
+        let scheduler = &mut runtime.baton.as_mut().unwrap().scheduler;
+        scheduler.result(task, pending, result.is_ok());
+        result
+    }
+}
+
+/// Cancellation returned by a checkpoint: `Tasks::checkpoint`, `Tasks::yield_now`,
+/// `Clock::sleep` and `Clock::sleep_until`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cancelled;
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
