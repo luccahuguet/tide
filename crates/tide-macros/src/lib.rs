@@ -1,10 +1,11 @@
-//! Tide's toolchain macros, which Tide's std re-exports: `#[tide::main]` (`std::tide`), and the
-//! sink and panic macros (`print!` and its kin, `panic!`), and the `Error` derive. The admission driver
+//! Tide's toolchain macros, which Tide's std re-exports: `#[tide::main]` (`std::tide`),
+//! `#[test]`, the sink and panic macros (`print!` and its kin, `panic!`), and the `Error` derive. The admission driver
 //! recognizes `#[tide::main]` as the macro named `main` that Tide's std exports, and treats the
 //! entry point it generates as the toolchain's own code only when it is the crate-root `main` of
 //! an executable crate.
 
 mod error;
+mod test;
 
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
 
@@ -13,6 +14,14 @@ use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
 pub fn derive_error(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     error::expand(input)
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
+
+/// Keeps ordinary libtest entries and lowers parameterized tests to Tide's property runner.
+#[proc_macro_attribute]
+pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
+    test::expand(attr.into(), syn::parse_macro_input!(item as syn::ItemFn))
         .unwrap_or_else(|e| e.into_compile_error())
         .into()
 }

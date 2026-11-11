@@ -283,8 +283,14 @@ fn main() {
 #[test]
 fn collections_cannot_draw_ambient_keys_through_a_generic_hasher() {
     for (name, expression) in [
-        ("map", "std::collections::HashMap::<u8, u8, std::hash::RandomState>::default()"),
-        ("set", "std::collections::HashSet::<u8, std::hash::RandomState>::default()"),
+        (
+            "map",
+            "std::collections::HashMap::<u8, u8, std::hash::RandomState>::default()",
+        ),
+        (
+            "set",
+            "std::collections::HashSet::<u8, std::hash::RandomState>::default()",
+        ),
     ] {
         let dir = package(
             &format!("ambient-collection-{name}"),
@@ -293,8 +299,11 @@ fn collections_cannot_draw_ambient_keys_through_a_generic_hasher() {
         let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
         assert!(
-            stderr(&out).contains("FX0520: `impl core::default::Default for std::hash::random::RandomState`"),
-            "{}", stderr(&out)
+            stderr(&out).contains(
+                "FX0520: `impl core::default::Default for std::hash::random::RandomState`"
+            ),
+            "{}",
+            stderr(&out)
         );
         assert!(!dir.join("out/demo").exists());
     }
@@ -401,6 +410,511 @@ fn executable_tests_use_the_production_prelude_and_do_not_run_main() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
     assert!(String::from_utf8_lossy(&out.stdout).contains("TEST_RAN"));
     assert!(!String::from_utf8_lossy(&out.stdout).contains("HELLO_RAN"));
+}
+
+#[test]
+fn property_test_harness_generates_shrinks_and_replays() {
+    let dir = package(
+        "property",
+        r#"
+use std::test::{Arbitrary, Gen};
+
+#[allow(non_upper_case_globals)]
+const error: u8 = 0;
+
+#[test]
+fn ordinary() {}
+
+#[test]
+fn sum(a: u8, b: u8) {
+    assert!(a as u16 + b as u16 <= 300);
+}
+
+#[test]
+fn vector(xs: Vec<i64>) {
+    assert!(xs.iter().map(|x| *x as i128).sum::<i128>() < 100);
+}
+
+#[derive(Debug)]
+struct Even(u8);
+impl Arbitrary for Even {
+    fn arbitrary(g: &mut Gen) -> Self { Self(u8::arbitrary(g) & !1) }
+}
+
+#[test]
+fn even(x: Even) {
+    assert!(x.0 < 10);
+}
+
+#[test]
+fn same_failure(x: u8) {
+    if x == 0 { panic!("zero is a different failure"); }
+    assert!(x < 10);
+}
+
+#[derive(Debug)]
+struct Positive(u8);
+impl Arbitrary for Positive {
+    fn arbitrary(g: &mut Gen) -> Self {
+        loop {
+            let n = u8::arbitrary(g);
+            if n != 0 { return Self(n); }
+        }
+    }
+}
+#[test]
+fn positive(p: Positive) { assert_eq!(p.0, 0); }
+
+#[test]
+fn returned_error(x: u8) -> Result<(), String> {
+    if x > 3 { Err(String::from("limit")) } else { Ok(()) }
+}
+
+type NestedResult = Result<Result<(), String>, String>;
+#[test]
+fn nested_error(x: u8) -> NestedResult {
+    Ok(if x > 3 { Err(String::from("nested limit")) } else { Ok(()) })
+}
+
+#[derive(Debug)]
+struct Wrap<T>(T);
+impl<T: Arbitrary> Arbitrary for Wrap<T> {
+    fn arbitrary(g: &mut Gen) -> Self { Self(T::arbitrary(g)) }
+}
+#[derive(Debug)]
+struct Leaf(u8);
+#[test]
+fn wrapped(x: Wrap<Leaf>) { assert!(x.0.0 < 3); }
+
+#[derive(Debug)]
+struct Many([u8; 512]);
+impl Arbitrary for Many {
+    fn arbitrary(g: &mut Gen) -> Self { Self(std::array::from_fn(|_| g.index(16) as u8)) }
+}
+
+#[test]
+fn budget(values: Many) {
+    // Seed 4 draws a sum of 3958. Lowering any draw makes this case pass.
+    assert!(values.0.iter().map(|n| *n as u32).sum::<u32>() < 3958);
+}
+
+mod outer {
+    mod inner {
+        use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+
+        #[derive(Debug)]
+        struct Private<T, const N: usize> where T: Copy {
+            field: [T; N],
+        }
+        #[derive(Debug)]
+        enum Shape { None, Tuple(Private<u16, 2>), Named { on: bool } }
+
+        type Input = Option<Shape>;
+        type Bytes = [u8];
+
+        #[derive(Debug)]
+        struct Node { children: Vec<Node> }
+
+        #[derive(Debug)]
+        struct A<T> { b: Vec<B<T>>, c: Vec<C<T>> }
+        #[derive(Debug)]
+        struct B<T> { a: Vec<A<T>>, value: T }
+        #[derive(Debug)]
+        struct C<T> { b: Vec<B<T>> }
+
+        type Text<'a> = &'a str;
+        type MutText<'a> = &'a mut str;
+        type Counter<'a> = &'a mut u32;
+        type Shared<'a> = &'a Private<u8, 2>;
+        type Slice<'a> = &'a [u8];
+        type MutSlice<'a> = &'a mut [u8];
+
+        #[test]
+        pub fn aliases(text: Text<'_>, mutable_text: MutText<'_>, counter: Counter<'_>,
+                   shared: Shared<'_>, grouped: (&str), slice: Slice<'_>, mutable_slice: MutSlice<'_>) {
+            *counter = 0;
+            mutable_text.make_ascii_uppercase();
+            mutable_slice.fill(0);
+            assert_eq!(shared.field.len(), 2);
+            let _ = (text, grouped, slice);
+        }
+
+        #[test] fn recursive(value: A<u8>) { let _ = value; }
+        #[test] fn variants(value: Shape) { assert!(!matches!(value, Shape::Named { .. })); }
+        #[test] fn structs(value: Private<u8, 2>) { assert_eq!(value.field, [0, 0]); }
+        #[test] fn options(value: Option<u8>) { assert!(value.is_none()); }
+        #[test] fn errors(value: Result<u8, u8>) { assert!(value.is_ok()); }
+        #[test] fn flags(value: bool) { assert!(!value); }
+        #[test] fn characters(value: char) { assert!(value.is_ascii()); }
+        #[test] fn strings(value: String) { assert!(value.is_empty()); }
+        #[test] fn arrays(value: [u8; 2]) { assert_eq!(value, [0, 0]); }
+        #[test] fn tuples(value: (u8, bool)) { assert_eq!(value, (0, false)); }
+        #[test] fn floats(value: (f32, f64)) { assert!(value.0 == 0.0 && value.1 == 0.0); }
+        #[test] fn maps(value: HashMap<u8, u8>) { assert!(value.is_empty()); }
+        #[test] fn sets(value: HashSet<u8>) { assert!(value.is_empty()); }
+        #[test] fn ordered_maps(value: BTreeMap<u8, u8>) { assert!(value.is_empty()); }
+        #[test] fn ordered_sets(value: BTreeSet<u8>) { assert!(value.is_empty()); }
+
+        #[test]
+        fn all(
+            value: Input, flag: bool, character: char, owned: String, text: &str,
+            vector: Vec<(i8, i16, i32, i64, i128, isize)>, bytes: &mut Bytes,
+            integers: [u128; 2], reference: &usize, mutable: &mut u32,
+            number: Result<(f32, f64), (u16, u64)>,
+            map: HashMap<u8, String>, set: HashSet<u8>,
+            ordered: (BTreeMap<char, u8>, BTreeSet<u8>), node: Node,
+        ) {
+            if let Some(shape) = value {
+                match shape {
+                    Shape::None => {}
+                    Shape::Tuple(item) => assert_eq!(item.field.len(), 2),
+                    Shape::Named { on } => { let _ = on; }
+                }
+            }
+            bytes.fill(0);
+            *mutable = 0;
+            assert!(map.keys().all(|key| map.contains_key(key)));
+            assert!(set.iter().all(|key| set.contains(key)));
+            assert!(node.children.len() <= 32);
+            let _ = (flag, character, owned, text, vector, integers, reference, number, ordered);
+        }
+    }
+}
+
+mod separate;
+"#,
+    );
+    std::fs::write(
+        dir.join("package/src/separate.rs"),
+        "#[derive(Debug)] struct Value(u8);\n#[test] fn separate(v: Value) { let _ = v.0; }",
+    )
+    .unwrap();
+    for _ in 0..2 {
+        checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    }
+    let executable = dir.join("out/demo-test");
+    let listing = checked(Command::new(&executable).args(["--list", "--format=terse"]));
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    for name in [
+        "ordinary",
+        "outer::inner::all",
+        "separate::separate",
+        "sum",
+        "vector",
+        "even",
+    ] {
+        assert!(
+            listing.lines().any(|line| line == format!("{name}: test")),
+            "{listing}"
+        );
+    }
+    checked(Command::new(&executable).args(["--exact", "ordinary"]));
+    checked(Command::new(&executable).args(["--exact", "separate::separate"]));
+    checked(Command::new(&executable).args(["--exact", "outer::inner::aliases"]));
+    checked(Command::new(&executable).args(["--exact", "outer::inner::recursive"]));
+    for seed in [None, Some("27")] {
+        let mut run = Command::new(&executable);
+        run.args([
+            "--exact",
+            "outer::inner::all",
+            "--test-threads=1",
+            "--nocapture",
+        ]);
+        run.env_remove("TIDE_TEST_SEED");
+        if let Some(seed) = seed {
+            run.env("TIDE_TEST_SEED", seed);
+        }
+        let out = checked(&mut run);
+        assert!(stderr(&out).contains(if seed.is_some() { "1/1" } else { "100/100" }));
+    }
+
+    let failure = |name: &str, seed: Option<&str>| {
+        let mut run = Command::new(&executable);
+        run.args(["--exact", name, "--test-threads=1"])
+            .env_remove("TIDE_TEST_SEED")
+            .stdin(Stdio::null());
+        if let Some(seed) = seed {
+            run.env("TIDE_TEST_SEED", seed);
+        }
+        let out = run.output().unwrap();
+        assert!(!out.status.success(), "{out:?}");
+        let output = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+        let read = |prefix| {
+            output
+                .lines()
+                .find_map(|line| line.trim().strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix} in {output}"))
+                .to_owned()
+        };
+        let seed = read("seed: ");
+        assert!(seed.parse::<u64>().is_ok());
+        assert!(output.contains(&format!("tide test {name} --seed {seed}")));
+        assert!(
+            output.contains(&format!(
+                "TIDE_TEST_SEED={seed} '{}' --exact {name}",
+                executable.display()
+            )),
+            "{output}"
+        );
+        if name == "returned_error" || name == "nested_error" {
+            assert!(!output.contains("Error:"), "{output}");
+            assert_eq!(output.matches("cause: ").count(), 1, "{output}");
+            assert!(
+                output.contains(if name == "returned_error" {
+                    "cause: \"limit\""
+                } else {
+                    "cause: \"nested limit\""
+                }),
+                "{output}"
+            );
+        }
+        let budget = output.contains("shrink budget reached");
+        (seed, read("input: "), budget)
+    };
+    let sum = failure("sum", None);
+    assert_eq!(sum, failure("sum", None));
+    assert_eq!(sum, failure("sum", Some(&sum.0)));
+    let (a, b) = sum.1.split_once(", b = ").unwrap();
+    let a: u16 = a.strip_prefix("a = ").unwrap().parse().unwrap();
+    let b: u16 = b.parse().unwrap();
+    assert_eq!(a + b, 301);
+    assert_eq!(failure("vector", None).1, "xs = [100]");
+    assert_eq!(failure("even", None).1, "x = Even(10)");
+    assert_eq!(failure("same_failure", Some("4")).1, "x = 10");
+    assert!(failure("budget", Some("4")).2);
+    assert_eq!(failure("positive", Some("4")).1, "p = Positive(1)");
+    assert_eq!(failure("returned_error", None).1, "x = 4");
+    assert_eq!(failure("nested_error", None).1, "x = 4");
+    assert_eq!(failure("wrapped", None).1, "x = Wrap(Leaf(3))");
+    for family in [
+        "variants",
+        "structs",
+        "options",
+        "errors",
+        "flags",
+        "characters",
+        "strings",
+        "arrays",
+        "tuples",
+        "floats",
+        "maps",
+        "sets",
+        "ordered_maps",
+        "ordered_sets",
+    ] {
+        failure(&format!("outer::inner::{family}"), None);
+    }
+}
+
+#[test]
+fn property_callbacks_cannot_capture_caller_state() {
+    let dir = package(
+        "property-capture",
+        r#"
+#[tide::main]
+fn main() {
+    let mut partial = 0;
+    std::test::run("capture", |g| {
+        let _ = g.index(2);
+        partial += 1;
+        Ok(())
+    });
+}
+"#,
+    );
+    let output = driver(&dir).stdin(Stdio::null()).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let errors = stderr(&output);
+    assert!(
+        errors.contains("expected fn pointer") && errors.contains("found closure"),
+        "{errors}"
+    );
+    assert!(!dir.join("out/demo").exists());
+}
+
+#[test]
+fn property_generation_diagnoses_unsupported_fields_and_attribute_arguments() {
+    for (name, source, diagnostic, line) in [
+        (
+            "field",
+            "#[derive(Debug)] struct Unsupported {\nfield: Box<u8>\n}\n#[test] fn check(missing: Box<u8>, x: Unsupported) {}",
+            "field `field` of `Unsupported` has type `tide_std::boxed::Box<u8>`, which cannot be generated",
+            "demo.rs:2:",
+        ),
+        (
+            "slice",
+            "#[derive(Debug)] struct Tail {\nfield: [u8]\n}\n#[test] fn check(x: &Tail) {}",
+            "field `field` of `Tail` has type `[u8]`, which cannot be generated",
+            "demo.rs:2:",
+        ),
+        (
+            "requirements",
+            "use std::test::{Arbitrary, Gen};\n\
+             #[derive(Debug)] struct Forever<T>(T);\n\
+             impl<T> Arbitrary for Forever<T> where Forever<Vec<T>>: Arbitrary {\n\
+             fn arbitrary(_: &mut Gen) -> Self { panic!(\"no finite generator\"); } }\n\
+             #[test] fn check(x: Forever<u8>) {}",
+            "property generation requirements nest too deeply",
+            "demo.rs:",
+        ),
+        (
+            "attr",
+            "#[test(args)] fn check() {}",
+            "property tests take no attribute arguments",
+            "demo.rs:1:",
+        ),
+        (
+            "admission",
+            "#[derive(Debug)] struct Value(u8); #[test] fn check(v: Value) { unsafe { let _ = v; } }",
+            "FX0901",
+            "demo.rs:1:",
+        ),
+    ] {
+        let dir = package(&format!("property-invalid-{name}"), source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--test"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1));
+        let errors = stderr(&out);
+        let diagnosed =
+            errors.contains(diagnostic) || (name == "requirements" && errors.contains("E0275"));
+        assert!(diagnosed && errors.contains(line), "{errors}");
+    }
+}
+
+#[test]
+fn separate_library_properties_generate_suite_types_and_library_implemented_types() {
+    let suite = r#"
+use tide_candidate::{Level, Marker, Opaque, Wrap};
+
+#[derive(Debug)]
+struct Reading { level: Level, raw: u8 }
+
+#[test]
+fn levels_stay_in_range(reading: Reading) {
+    assert!(reading.level.get() < 4, "{}", reading.raw);
+}
+
+#[test]
+fn levels_are_low(reading: Reading) {
+    assert!(reading.level.get() < 3);
+}
+
+#[test]
+fn unused_type_argument(value: Marker<Opaque>) { let _ = value; }
+
+#[derive(Debug)]
+struct Leaf(u8);
+
+#[test]
+fn indirect_requirement(value: Wrap<Leaf>) { let _ = value.0.0; }
+"#;
+    let dir = package("separate-library-properties", suite);
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    std::fs::write(
+        &candidate,
+        r#"
+use std::test::{Arbitrary, Gen};
+
+#[derive(Debug)]
+pub struct Level(u8);
+impl Level {
+    pub fn get(&self) -> u8 { self.0 }
+}
+impl Arbitrary for Level {
+    fn arbitrary(g: &mut Gen) -> Self { Level(g.index(4) as u8) }
+}
+
+#[derive(Debug)]
+pub struct Opaque(pub u8);
+
+#[derive(Debug)]
+pub struct Marker<T>(std::marker::PhantomData<T>);
+impl<T> Arbitrary for Marker<T> {
+    fn arbitrary(_: &mut Gen) -> Self { Self(std::marker::PhantomData) }
+}
+
+pub trait Generate: Sized { fn generate(g: &mut Gen) -> Self; }
+impl<T: Arbitrary> Generate for T {
+    fn generate(g: &mut Gen) -> Self { T::arbitrary(g) }
+}
+
+#[derive(Debug)]
+pub struct Wrap<T>(pub T);
+impl<T: Generate> Arbitrary for Wrap<T> {
+    fn arbitrary(g: &mut Gen) -> Self { Self(T::generate(g)) }
+}
+"#,
+    )
+    .unwrap();
+    checked(&mut paired_test_driver(&dir));
+    let test = dir.join("out/demo-test");
+    let run = checked(Command::new(&test).args(["--exact", "levels_stay_in_range"]));
+    assert!(String::from_utf8_lossy(&run.stdout).contains("1 passed"));
+    checked(Command::new(&test).args(["--exact", "unused_type_argument"]));
+    let run = checked(Command::new(&test).args(["--exact", "indirect_requirement"]));
+    assert!(String::from_utf8_lossy(&run.stdout).contains("1 passed"));
+    let run = Command::new(&test)
+        .args(["--exact", "levels_are_low"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!run.status.success());
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(report.contains("level: Level(3)"), "{report}");
+
+    std::fs::write(
+        dir.join("package/src/demo.rs"),
+        "use tide_candidate::Opaque;\n\
+         #[derive(Debug)] struct Wrapper { inner: Opaque }\n\
+         #[test] fn wrapped(w: Wrapper) { let _ = w.inner; }\n",
+    )
+    .unwrap();
+    let out = paired_test_driver(&dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let diagnostic = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{diagnostic}");
+    assert!(
+        diagnostic.contains(
+            "this property generates `tide_candidate::Opaque`, which the paired library defines \
+             without implementing `std::test::Arbitrary`"
+        ) && diagnostic.contains("demo.rs:3:"),
+        "{diagnostic}"
+    );
+    assert!(!test.exists());
+}
+
+#[test]
+fn property_synthesis_preserves_diagnostic_lines() {
+    let source = "mod outer {\n\
+                  mod inner {\n\
+                  #[derive(Debug)] struct Private<T> { n: std::collections::BTreeMap<u8, (T, Vec<T>, Option<T>, Result<Vec<T>, (T, T)>, [T; 12])> }\n\
+                  #[test] fn check(v: Private<u8>) { let _ = v.n; }\n\
+                  }\n\
+                  fn broken() { let _: u8 = \"wrong type\"; }\n\
+                  }\n";
+    let dir = package("property-diagnostic", source);
+    let output = driver(&dir)
+        .args(["--crate-type=lib", "--test"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let errors = stderr(&output);
+    assert!(
+        errors.contains("demo.rs:6:") && errors.contains("mismatched types"),
+        "{errors}"
+    );
+    assert!(!errors.contains("Arbitrary"), "{errors}");
 }
 
 #[test]

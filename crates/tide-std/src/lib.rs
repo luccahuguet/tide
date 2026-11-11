@@ -21,10 +21,13 @@
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
-//!   prelude's `Error` trait and derive and parameterless Rust `#[test]`;
+//!   prelude's `Error` trait and derive;
 //!   the derive excludes `error(fmt = ..)`, backtrace detection/`#[backtrace]`, and
 //!   `Error::provide`, and requires a message on every variant if any has one (including
 //!   transparent variants), even with a manual Display;
+//! - the prelude's `#[test]`: ordinary libtest entries for parameterless tests and
+//!   deterministic generation and shrinking for tests with parameters. Replay a
+//!   failing case with `TIDE_TEST_SEED` set to the reported seed;
 //! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
 //!   and fixed default keys, capability-seeded `RandomState`, and
 //!   Rust's ordered collections, queue, and heap (see `collections`);
@@ -44,8 +47,8 @@
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! `time`'s Rust items (`Duration`, ...);
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
-//! `par`, `arena`, `ptr`, and `sim`; property tests and
-//! `#[sim_test]`; the contract attributes and the `Encode` and `Decode` derives. A
+//! `par`, `arena`, `ptr`, and `sim`; `#[sim_test]`, requires-guided generation,
+//! generated contract tests, the contract attributes, and the `Encode` and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
@@ -57,8 +60,10 @@
 include!("root.rs");
 
 crate::declare_prelude! {
-    pub use core::prelude::v1::test;
+    pub use crate::test::test;
 }
+
+pub mod test;
 
 pub mod fs {
     crate::capability!(

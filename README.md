@@ -153,9 +153,18 @@ In Bash, `TIDE_LIBRARIES` collects every library filename from Cargo's
 `TIDE_DEP_ARGS` passes each library's directory (including macros and libm)
 with `--tide-dep-dir`, independent of Cargo's build layout.
 
-Execution is a separate trusted caller action. `--test` builds Rust's ordinary
-harness for parameterless `#[test]` functions, without property generation,
-simulated capabilities or Tide's structured test results; this is not `tide test`.
+Execution is a separate trusted caller action. `--test` builds a libtest
+binary with ordinary and parameterized `#[test]` entries. A parameterized
+test generates 100 cases by default and reports the seed and shrunk input
+when a case fails. Its parameters need `Debug`; a user-defined generator
+implements `std::test::Arbitrary`. List tests with `--list`. To replay a case,
+set `TIDE_TEST_SEED` to the reported seed and run the test binary with
+`--exact <test-name>`.
+Structural generators are inserted into the defining modules before the final
+admitted compilation. Insertion preserves original line numbers; columns of
+following tokens on an insertion's physical line can shift.
+The `tide test` command, simulated capabilities, requires-guided generation
+and generated contract tests are planned.
 
 Add `--tide-test-library path/to/library/src/lib.rs` to `--test` to check a
 separate test crate against a library. Pass the test crate's source as the
@@ -164,6 +173,9 @@ and it imports the library as `tide_candidate` under Rust's crate visibility
 rules. The driver admits both crates without grants and builds a fresh library
 archive in private staging. Metadata mode checks the suite and `--emit=link`
 publishes the test executable. The pair publishes no library or trust artifact.
+A suite's property tests generate the suite's own types and any library type
+for which the library implements `std::test::Arbitrary`. A property over
+another library type is an error.
 A killed build can leave a private `.tide-test-*` directory. Later invocations
 create fresh staging and never read those leftovers.
 
@@ -175,7 +187,7 @@ for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 as identities, `Pure`, and the `out` and `err` sinks
-(`print!`, `println!`, `eprint!`, `eprintln!`), parameterless Rust `#[test]`,
+(`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
 unannotated enum variants with manual Display are also unsupported),
@@ -219,8 +231,9 @@ every supported target; non-SSE2 x86 is rejected because x87 native arithmetic
 does not meet D3. The functions document their deterministic compositions.
 The crate docs list what it does not provide yet.
 The conformance runner injects
-a stub std, sharing those definitions except its oracle `#[test]` attribute,
-whose supported parameterless form has a shared conformance/production fixture. The
+a stub std that shares these definitions, including the production `#[test]`
+macro and property generation/shrinking runtime. Requires-guided generation,
+simulation tests and generated contract tests remain planned in production. The
 installed pinned toolchain is trusted and treated as immutable, as are the host
 C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
 and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.

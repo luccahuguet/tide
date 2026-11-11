@@ -105,7 +105,7 @@ struct Rejection {
 
 /// Obligations are followed through impl where-clauses at most this deep; a deeper chain is
 /// rejected, since what it would select is unchecked.
-const MAX_OBLIGATION_DEPTH: usize = 64;
+pub(crate) const MAX_OBLIGATION_DEPTH: usize = 64;
 
 const GRANT: &str = "needs the package's `unsafe` grant";
 
@@ -1603,7 +1603,7 @@ fn path_args<'tcx>(
 }
 
 /// The trait refs among `def_id`'s where-clauses (a trait's include its supertraits), at `args`.
-fn where_clauses<'tcx>(
+pub(crate) fn where_clauses<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
     args: GenericArgsRef<'tcx>,
@@ -1617,7 +1617,7 @@ fn where_clauses<'tcx>(
         .collect()
 }
 
-enum Selected<'tcx> {
+pub(crate) enum Selected<'tcx> {
     /// A user-written impl, at its args.
     Impl(DefId, GenericArgsRef<'tcx>),
     /// A builtin impl's obligations on the type's parts: a tuple's or a closure's `Clone`
@@ -1627,7 +1627,7 @@ enum Selected<'tcx> {
 
 /// What satisfies `tr`, if selection finds exactly one impl. An auto trait's builtin impl is
 /// not followed: it runs no code, and its obligations reach the private fields of std's types.
-fn select<'tcx>(
+pub(crate) fn select<'tcx>(
     tcx: TyCtxt<'tcx>,
     env: TypingEnv<'tcx>,
     tr: ty::TraitRef<'tcx>,

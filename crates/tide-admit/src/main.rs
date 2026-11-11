@@ -30,8 +30,9 @@
 //! This is a partial build path for reviewed/trusted demo code only: the operator must review
 //! source, grants and dependencies before building/running, including granted assembly and native
 //! link inputs. There is no assembler/linker OS sandbox, simulated test Root, test-process
-//! isolation, snapshot execution gate, or RUN-5 coverage verdict. Raw Rust `#[test]` is a temporary
-//! executable-test path, not `tide test`/`tide sim` or the RUN-1 unreviewed-branch guarantee.
+//! isolation, snapshot execution gate, or RUN-5 coverage verdict. The Tide std prelude supplies
+//! plain and property `#[test]` entries in libtest. The `tide test` and `tide sim` commands
+//! are planned.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --test --tide-test-library SOURCE.rs [options] <suite.rs>
@@ -46,6 +47,7 @@ extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_hir;
+extern crate rustc_hir_pretty;
 extern crate rustc_hir_typeck;
 extern crate rustc_infer;
 extern crate rustc_interface;
@@ -62,6 +64,7 @@ mod interface;
 mod invocation;
 mod policy;
 mod pure;
+mod synthesis;
 mod walk;
 
 use std::process::ExitCode;

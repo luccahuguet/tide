@@ -42,7 +42,8 @@ crate::declare_prelude! {
     pub use crate::dbg;
     pub use crate::Secret;
     pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
-    pub use oracle_macros::{sim_test, test};
+    pub use crate::test::test;
+    pub use oracle_macros::sim_test;
     pub use conformance_macros::{pure, trusted_pure};
     pub use spike_macros::{ensures, invariant, invariants, requires};
 }
@@ -52,6 +53,9 @@ crate::declare_prelude! {
 pub mod float;
 #[path = "../../../../crates/tide-std/src/math.rs"]
 pub mod math;
+
+#[path = "../../../../crates/tide-std/src/test/mod.rs"]
+pub mod test;
 
 pub mod process {
     pub use std::process::{ExitCode, Termination};

@@ -569,6 +569,11 @@ values such as views and `Seq`.
 
 ### 2.4 `test`
 
+Driver-built libtest binaries support explicit property tests written as
+`#[test]` functions with parameters (reference §10.2). The `tide test`
+command, clause-guided generation, the vacuity floor, and generated contract
+tests are planned.
+
 `test` adds three things.
 
 **Sampled clauses.** At function boundaries, `sampled` clauses are evaluated

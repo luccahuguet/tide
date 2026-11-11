@@ -26,6 +26,7 @@ use rustc_span::{
 };
 
 use crate::diag::{Code, Diagnostics};
+use crate::synthesis::{self, Insertions};
 use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
 const TEST_LIBRARY_NAME: &str = "tide_candidate";
@@ -45,6 +46,8 @@ struct Admission {
     write_interface: bool,
     backstop_only: bool,
     test_ice: bool,
+    synthesize: bool,
+    insertions: Insertions,
 }
 
 impl Callbacks for Admission {
@@ -68,6 +71,13 @@ impl Callbacks for Admission {
                     .any(|loaded| loaded == path)
             })
         });
+        if self.synthesize && tcx.dcx().has_errors().is_none() {
+            self.insertions = synthesis::plan(tcx, self.test_library);
+            tcx.dcx().abort_if_errors();
+            if !self.insertions.is_empty() {
+                return Compilation::Stop;
+            }
+        }
         self.holes = check_crate(
             tcx,
             self.grants,
@@ -332,9 +342,19 @@ impl Invocation {
             write_interface,
             backstop_only: self.backstop_only,
             test_ice: self.test_ice,
+            synthesize: self.test && self.std.is_some(),
+            insertions: Insertions::default(),
         };
         rustc_driver::catch_with_exit_code(|| {
-            rustc_driver::run_compiler(&rustc_args, &mut admission)
+            rustc_driver::run_compiler(&rustc_args, &mut admission);
+            if !admission.insertions.is_empty() {
+                // The edits depend only on the snapshot, compiler, std and paired library.
+                // Reuse the snapshot and run all checks on the final compilation.
+                admission.sources.insertions = Arc::new(std::mem::take(&mut admission.insertions));
+                admission.sources.intent = Arc::default();
+                admission.synthesize = false;
+                rustc_driver::run_compiler(&rustc_args, &mut admission);
+            }
         })
     }
 
@@ -569,6 +589,7 @@ fn destination(path: &Path) -> io::Result<PathBuf> {
 struct Sources {
     files: Arc<BTreeMap<PathBuf, String>>,
     intent: Arc<Mutex<SourceIntent>>,
+    insertions: Arc<Insertions>,
 }
 
 #[derive(Default)]
@@ -630,6 +651,7 @@ impl Sources {
         Ok(Self {
             files: Arc::new(files),
             intent: Arc::default(),
+            insertions: Arc::default(),
         })
     }
 
@@ -699,7 +721,10 @@ impl FileLoader for Sources {
                         .guarded
                         .insert(canonical.clone());
                 }
-                return Ok(source.clone());
+                return Ok(self
+                    .insertions
+                    .apply(path, source)
+                    .unwrap_or_else(|| source.clone()));
             }
         }
         if foreign {

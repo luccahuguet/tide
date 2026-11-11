@@ -138,11 +138,14 @@ files directly, with the same pinned software `libm` dependency. Their shared
 fixture, `authority/float_math.rs`, also executes against production through the
 driver in debug and release, including recorded bit-exact math vectors.
 The admission driver's rules (`policy.rs`, `pure.rs`) key the shared items
-alike. Production's parameterless Rust `#[test]` and the stub's oracle
-attribute share a compile-time fixture,
+alike. Production and the stub share the `#[test]` macro and property
+generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile-time fixture,
 `authority/root_executable.rs`, also built and run against production std by
-the driver's `tests/build.rs`; property generation remains unavailable in
-production. A case that uses only the shared items is checked against Tide's
+the driver's `tests/build.rs`; parameterized property tests also execute through
+that driver suite. Requires-guided generation, simulation tests and generated
+contract tests remain planned in production. Structural generator insertion
+preserves original source lines, but columns of following tokens on an insertion's
+physical line can shift. A case that uses only the shared items is checked against Tide's
 std's own definitions. Every other item is the stub's own, a signature for an
 item Tide's std does not provide yet. `Pure` is
 a blanket impl, so rustc accepts every `Pure` bound and every `Pure` verdict
