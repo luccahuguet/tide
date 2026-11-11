@@ -1,10 +1,10 @@
 //@ rules: CLAUSE-1
-// An unbounded quantifier is FX0807. A signed binder needs a lower bound: the D18
-// spike assumes 0 and accepts it. A quantifier with no recognized guard is the
-// spike's `compile_error!`. A v1 form such as `#[decreases]` is not in v0's std
+// An unbounded quantifier is FX0807. A signed binder needs a lower bound.
+// The production macro rejects either with a compile error.
+// A v1 form such as `#[decreases]` is not in v0's std
 // prelude (04 §1.1), so rustc rejects the unresolved attribute; 04 gives it no FX
 // code.
-#[requires(forall |d: i64| d < 3 ==> x + d > 0)] //~ FX0807
+#[requires(forall |d: i64| d < 3 ==> x + d > 0)] //~ error FX0807
 pub fn shift(x: i64) -> i64 {
     x
 }

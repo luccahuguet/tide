@@ -4,6 +4,11 @@
 //!
 //! This partial std provides:
 //!
+//! - executable contract attributes (`requires`, `ensures`, `invariants`) and loop
+//!   `invariant!`, with `old`, `result`, implication and bounded quantifiers (04 §1.8).
+//!   Checked clauses run in debug/test builds, sampled clauses only in the crate under test;
+//!   release type-checks but executes no clauses or snapshots. Hidden `__contract` helpers
+//!   own violations and unchecked records for runners (limits below);
 //! - the entry: `#[tide::main]`, `Root`, and the runtime entry it calls, which mints the
 //!   process's one `Root` (03 ROOT-1, RUN-1);
 //! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
@@ -67,6 +72,29 @@
 //!   faults are not modeled. Real files reject use in simulation; simulated handles reject
 //!   use outside their own simulation. Simulated `Rand` rejects Rand-backed hashing.
 //!
+//! # Contract implementation limits
+//!
+//! Mutable-reference aliases named bare in ensures require explicit `&mut T` spelling;
+//! parenthesized reference types work. `old(&T)` requires the referent to be Clone/Copy.
+//! Const checked clauses run during const evaluation and at runtime in debug/test builds,
+//! and are erased in release. Const ensures supports receiver-free functions with identifier
+//! parameters and Copy entry values, retaining enclosing generics and Self. Const old and
+//! sampled const contracts in debug tests have explicit unsupported diagnostics; sampled
+//! const clauses are type-checked but skipped in const evaluation/non-test builds.
+//! Const violations use literal panics naming the clause's location: a const requires
+//! violation names that location rather than the caller's, with no structured metadata
+//! or clause-panic wrapping.
+//! On a runtime function with ensures, a user-written `#[track_caller]` does not
+//! propagate to the body; requires-only functions preserve explicit caller tracking.
+//! In a user-tracked requires-only function, a failed requires in a function it calls
+//! is blamed on the outer caller.
+//! Runtime violation/unchecked records are local to the current OS thread; child-task
+//! panic propagation does not transport them. Runners must treat missing child metadata
+//! as an ordinary failure, never a requires rejection.
+//! Clause classification is syntactic until admission refines it; unknown or unparsed
+//! builtin macros remain untouched and classify as sampled. Unchecked-record printing,
+//! requires-guided generation and generated contract tests remain planned.
+//!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
 //! receiver thread depending on timing, so a destructor panic is attributed to the thread that
@@ -80,7 +108,7 @@
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
 //! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests, generated simulation
 //! parameters, requires-guided generation,
-//! generated contract tests, and the contract attributes. A
+//! and generated contract tests. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
 //! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's
@@ -95,6 +123,7 @@ include!("root.rs");
 
 crate::declare_prelude! {
     pub use crate::test::{test, sim_test};
+    pub use tide_macros::{requires, ensures, invariants, invariant};
 }
 
 pub mod test;
@@ -145,3 +174,8 @@ pub mod task;
 pub mod sync;
 
 pub mod sim;
+
+/// Executable clause runtime; reserved for toolchain macros and test runners.
+#[doc(hidden)]
+#[path = "contract.rs"]
+pub mod __contract;

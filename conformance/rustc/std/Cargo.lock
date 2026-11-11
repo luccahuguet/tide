@@ -92,15 +92,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tide_macros"
-version = "0.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "tide_std_stub"
 version = "0.0.0"
 dependencies = [
@@ -108,7 +99,6 @@ dependencies = [
  "libm",
  "rustix",
  "tide-macros",
- "tide_macros",
 ]
 
 [[package]]

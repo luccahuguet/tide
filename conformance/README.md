@@ -200,10 +200,17 @@ in the simulator, or in the sandbox are outside it (`rules.md` lists them).
 `rustc/std` originated in `trials/e1-dialect/rustc/std`, whose copy stays
 frozen as the trial's record, and uses Tide's std's macros (`crates/tide-macros`);
 `rustc/macros` adds `#[pure]` and
-`#[trusted_pure]`, which leave their item unchanged. The trial's contract
-macros are the D18 spike's (`spikes/d18/macros`), so a contract case's rustc
-marks record that lowering's errors, and the case's comment says where they
-differ from the design's (04 §1.8, CLAUSE-7, lists the spike's known gaps).
+`#[trusted_pure]`, which leave their item unchanged. Contract macros also come
+from `crates/tide-macros`; the hidden clause runtime includes production's
+`contract.rs`. `contracts/executable.rs` checks the shared surface and executes
+against production through the driver's `tests/build.rs` in debug/release binaries
+and test harnesses. Macro syntax errors carry uncoded rustc errors with an FX
+identifier in their text; placement and purity diagnostics remain the admission
+driver's responsibility.
+`contracts/scoped_clauses.rs` and `contracts/clause_expressions.rs` also execute
+scoped entry values, builtin expressions, loop scopes, snapshots and const contracts
+through the production driver in both profiles. The
+[std crate docs](../crates/tide-std/src/lib.rs) own current contract implementation limits.
 Add an item to the stub when a case needs it and Tide's std does not provide
 it, with the signature the design gives, and mark `GUESS` on a signature no
 design document fixes. When Tide's std comes to provide one of the stub's

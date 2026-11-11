@@ -1,7 +1,7 @@
 //@ rules: FORM-4
 // Loop clauses open the loop body, in a function carrying `#[invariants]` or a
 // contract attribute, which rewrites each loop in the body. No case has a `loop`:
-// the D18 spike leaves its `invariant!` unrewritten (04 CLAUSE-7).
+// production lowering rewrites its head checks too (04 CLAUSE-7).
 #[invariants]
 pub fn sum(xs: &[u32]) -> u64 {
     let mut t = 0u64;

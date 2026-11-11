@@ -9,7 +9,7 @@
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
 //! (`task.rs`), single-cell `Shared` (`sync.rs`), seeded simulations and their runner
-//! (`sim.rs`), and `std::time` (`time.rs`). It declares
+//! (`sim.rs`), `std::time` (`time.rs`), and executable contracts (`contract.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
 //! types the same definitions and paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
@@ -48,7 +48,7 @@ crate::declare_prelude! {
     pub use crate::test::test;
     pub use crate::test::sim_test;
     pub use conformance_macros::{pure, trusted_pure};
-    pub use spike_macros::{ensures, invariant, invariants, requires};
+    pub use tide_macros::{ensures, invariant, invariants, requires};
 }
 
 // Production owns float/math behavior and signatures in both std surfaces.
@@ -447,3 +447,7 @@ impl<T> Secret<T> {
 pub mod ptr {
     pub fn eq<T: ?Sized>(a: &T, b: &T) -> bool { unimplemented!() }
 }
+
+#[doc(hidden)]
+#[path = "../../../../crates/tide-std/src/contract.rs"]
+pub mod __contract;

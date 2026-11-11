@@ -61,6 +61,11 @@ pub enum Code {
     Fx0611,
     /// Elements of a parallel slice method that are not `Pure` (PAR-4).
     Fx0612,
+    /// Clause syntax, contextual result, loop placement, and bounds (toolchain macros).
+    Fx0804,
+    Fx0805,
+    Fx0806,
+    Fx0807,
     /// Unsafe code, an unsafe attribute, or `#[trusted_pure]` without the `unsafe` grant
     /// (UNSAFE-1).
     Fx0901,
@@ -71,7 +76,8 @@ pub enum Code {
 }
 
 impl Code {
-    /// Every code this driver reports (its own verdicts and its labels on rustc's).
+    /// Every code this driver reports (its own verdicts, its labels on rustc's,
+    /// and toolchain-macro errors it passes through).
     pub const ALL: &[Code] = &[
         Code::Fx0101,
         Code::Fx0102,
@@ -97,6 +103,10 @@ impl Code {
         Code::Fx0610,
         Code::Fx0611,
         Code::Fx0612,
+        Code::Fx0804,
+        Code::Fx0805,
+        Code::Fx0806,
+        Code::Fx0807,
         Code::Fx0901,
         Code::Fx0911,
         Code::Fx0915,
@@ -128,6 +138,10 @@ impl Code {
             Code::Fx0610 => "FX0610",
             Code::Fx0611 => "FX0611",
             Code::Fx0612 => "FX0612",
+            Code::Fx0804 => "FX0804",
+            Code::Fx0805 => "FX0805",
+            Code::Fx0806 => "FX0806",
+            Code::Fx0807 => "FX0807",
             Code::Fx0901 => "FX0901",
             Code::Fx0911 => "FX0911",
             Code::Fx0915 => "FX0915",

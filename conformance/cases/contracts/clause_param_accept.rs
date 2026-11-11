@@ -3,9 +3,8 @@
 // parameter whose outer lifetime appears nowhere else may be named bare, and a
 // prophetic one through `old`. A `Copy` parameter means its entry value even where
 // the body reassigns it, and a parameter the body leaves alone is read in place. A
-// `Clone + Pure + Sync` one is cloned at entry, so the body may mutate it. The D18
-// spike reads by-value parameters at return (04 CLAUSE-7), so for `inc` and `grow`
-// only the verdict holds there.
+// `Clone + Pure + Sync` one is cloned at entry, so the body may mutate it.
+// The executable fixture also checks entry-value behavior at run time.
 pub struct Token(pub u32);
 
 #[ensures(*x == *y)]

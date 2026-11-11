@@ -1,11 +1,13 @@
 //! Tide's toolchain macros, which Tide's std re-exports: `#[tide::main]` (`std::tide`),
-//! `#[test]`, the sink and panic macros (`print!` and its kin, `panic!`), and the `Error`, `Encode`, and `Decode`
+//! `#[test]`, executable contracts (`requires`, `ensures`, `invariants`, `invariant!`),
+//! the sink and panic macros (`print!` and its kin, `panic!`), and the `Error`, `Encode`, and `Decode`
 //! derives. The admission driver
 //! recognizes `#[tide::main]` as the macro named `main` that Tide's std exports, and treats the
 //! entry point it generates as the toolchain's own code only when it is the crate-root `main` of
 //! an executable crate.
 
 mod codec;
+mod contract;
 mod error;
 mod sim_test;
 mod test;
@@ -158,4 +160,37 @@ fn error(span: Span, message: &str) -> TokenStream {
             t
         })
         .collect()
+}
+
+/// Checks a precondition at entry, before any snapshots; const fns use literal checks.
+#[proc_macro_attribute]
+pub fn requires(attr: TokenStream, item: TokenStream) -> TokenStream {
+    contract::expand("requires", attr.into(), item.into())
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
+/// Checks a postcondition at every normal return (support/limits: tide-std crate docs).
+#[proc_macro_attribute]
+pub fn ensures(attr: TokenStream, item: TokenStream) -> TokenStream {
+    contract::expand("ensures", attr.into(), item.into())
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
+/// Rewrites loop invariants without adding function-boundary clauses.
+#[proc_macro_attribute]
+pub fn invariants(attr: TokenStream, item: TokenStream) -> TokenStream {
+    contract::expand("invariants", attr.into(), item.into())
+        .unwrap_or_else(|e| e.into_compile_error())
+        .into()
+}
+/// Reports an invariant that no enclosing contract attribute rewrote.
+#[proc_macro]
+pub fn invariant(input: TokenStream) -> TokenStream {
+    error(
+        input
+            .into_iter()
+            .next()
+            .map_or(Span::call_site(), |t| t.span()),
+        "FX0806: invariant!(..) must open a loop body in a function with #[invariants], #[requires], or #[ensures]",
+    )
 }

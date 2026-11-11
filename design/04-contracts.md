@@ -490,25 +490,24 @@ rule CLAUSE-*n*.
    `#[should_panic(expected = "requires violated")]`. Each evaluation of a
    `sampled` clause has a step budget, and one that exceeds it is
    reported as unchecked, not as failed. The report
-   lists every clause a build or test run did not evaluate. Where the D18
-   spike differs: it checks every head of a `for` over `a..b` in debug
-   builds, and its message names the function but not the blamed span and
-   prints the clause's tokens rather than its source text. Not yet
-   implemented in the D18 spike: clause classes (it evaluates every clause
-   in debug builds), generated tests, reporting a panic inside a clause as
-   a violation, step budgets, invariants in a `loop` (it leaves their
-   `invariant!` unrewritten), the lower bound of a signed binder (it
-   assumes `0 <= x` where item 1 gives `FX0807`), entry values of
-   by-value parameters in `ensures` (item 4), and a `&mut` parameter the body reassigns, which its
-   closure lowering rejects with E0521 (`research/15-rust-dialect.md`,
-   Spike results). The lowering item 4 describes also needs a generic
-   helper call when the body returns a borrow of the reborrowed parameter,
-   a renamed `self`, which cannot be a closure parameter, and the checker's
-   `Pure` decision to choose snapshots, since rustc accepts every `Pure`
-   bound (`03-authority-concurrency.md` §3.1). It must also erase the
-   outer reference's named lifetime in the closure parameter's type, and
-   only that one: `|x: &'r mut i32|` is rejected (E0503) where
-   `|x: &mut i32|` compiles, while a pointee's lifetime must stay.
+   lists every clause a build or test run did not evaluate. Production
+   lowering is in `crates/tide-macros`, with runtime behavior owned by
+   `crates/tide-std/src/contract.rs`; generated tests and admission's
+   placement/purity checks remain separate work.
+
+   Implementation choices recorded on fx-mhd (research/18):
+
+   - Test builds mean `cfg!(test)` in the clause's defining crate; sampled clauses in dependencies are recorded as unchecked when encountered.
+   - The fixed v0 budget is 10,000 quantifier binder values per evaluation, including nested quantifiers; manifest configuration is planned.
+   - Std owns structured violation and unchecked records; runner integration and printing of unchecked clauses are planned.
+   - Sampled invariants use §2.4's heads 1–64, 128, 256, and so on.
+   - Inclusive ranges (`a..=b`) follow the other-iterator rule, with no next-index binding in their invariant.
+   - Quantifier guards accept only item 1's shapes, excluding `x <= hi`.
+   - Snapshots are eager after all requires checks, so a snapshot panic violates its clause at entry even if the value would not be read later.
+   - The String panic puts the source after the kind's violation prefix, then `(in ...)` with the backtick-quoted function and `at file:line:column`, optionally followed by `(clause panicked: <cause>)`.
+   - Classification is syntactic; an operator/Clone impl requiring types to identify runs as checked until admission refines it.
+   - The conformance fixture uses production's macros and runtime verbatim.
+
 8. **CLAUSE-8. Approval.** A contract's hash covers the bodies of every
    function its clauses call, transitively (D11, §11).
 
@@ -581,7 +580,8 @@ on every call in a test run, so a clause's outcome depends only on its inputs
 and the build mode, never on how often the function has been called. Each
 evaluation has a step budget, and one that runs out is reported as
 unchecked, never as checked or failed (D10). Packages can change the
-budget. The D18 spike does not yet implement budgets.
+budget in the planned manifest surface; production fixes it at 10,000 binder
+values (§1.8).
 
 **Loop invariants and measures.** Executable loop invariants are evaluated
 at every loop head (CLAUSE-6): before the first iteration, after every
@@ -598,8 +598,8 @@ non-negative and strictly decrease. In `for x in a..b`, an invariant sees
 the first iteration, even when the range is empty, and with
 `x == max(a, b)` at exit. This is Dafny's rule, and `max_index` needs it to
 conclude `best < xs.len()`. The function attribute's loop rewrite binds the
-next index of an integer range (CLAUSE-6); the D18 spike does so for `a..b`,
-not yet for `a..=b`, and it does not yet rewrite `loop {}`.
+next index of a half-open range (CLAUSE-6); `a..=b` follows the other-iterator
+rule. Production also rewrites `loop {}` head checks.
 
 **Generated tests.** Every function with an `ensures`, and every law (§5),
 gets a property test.

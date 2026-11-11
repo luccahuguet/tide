@@ -9,6 +9,423 @@ mod support;
 
 const HELLO: &str = include_str!("../../../conformance/cases/authority/root_executable.rs");
 
+#[test]
+fn executable_contracts_run_in_debug_test_and_erase_in_release() {
+    for (name, source, count, marker) in [
+        (
+            "executable-contracts",
+            include_str!("../../../conformance/cases/contracts/executable.rs"),
+            16,
+            "CONTRACTS_RAN\n",
+        ),
+        (
+            "scoped-clauses",
+            include_str!("../../../conformance/cases/contracts/scoped_clauses.rs"),
+            5,
+            "SCOPED_CLAUSES_RAN\n",
+        ),
+        (
+            "clause-expressions",
+            include_str!("../../../conformance/cases/contracts/clause_expressions.rs"),
+            3,
+            "CLAUSE_EXPRESSIONS_RAN\n",
+        ),
+    ] {
+        let dir = package(name, source);
+        for profile in ["debug", "release"] {
+            for test in [false, true] {
+                let mut build = driver(&dir);
+                build.arg(format!("--tide-profile={profile}"));
+                if test {
+                    build.arg("--test");
+                }
+                checked(&mut build);
+                let out = checked(&mut Command::new(dir.join(if test {
+                    "out/demo-test"
+                } else {
+                    "out/demo"
+                })));
+                if test {
+                    assert!(
+                        String::from_utf8_lossy(&out.stdout).contains(&format!("{count} passed")),
+                        "{}",
+                        String::from_utf8_lossy(&out.stdout)
+                    );
+                } else {
+                    assert_eq!(out.stdout, marker.as_bytes());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn contract_requires_body_keeps_direct_call_and_panic_locations() {
+    for (name, attr, body, blamed_line, expected) in [
+        ("nested", "", "f(y)", "f(y)", "requires violated: x > 0"),
+        ("panic", "", "xs[i]", "xs[i]", "index out of bounds"),
+        (
+            "tracked-panic",
+            "#[track_caller]",
+            "xs[i]",
+            "fn main() { g(0, &[], 0); }",
+            "index out of bounds",
+        ),
+    ] {
+        let source = format!(
+            r#"
+#[requires(x > 0)]
+fn f(x: i32) -> i32 {{ x }}
+#[requires(y >= 0)]
+{attr}
+fn g(y: i32, xs: &[i32], i: usize) -> i32 {{
+    {body}
+}}
+#[tide::main]
+fn main() {{ g(0, &[], 0); }}
+"#
+        );
+        let dir = package(&format!("contract-body-{name}"), &source);
+        let build = checked(&mut driver(&dir));
+        assert!(
+            !stderr(&build).contains("unnecessary braces"),
+            "{}",
+            stderr(&build)
+        );
+        let out = Command::new(dir.join("out/demo"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(101));
+        let line = source
+            .lines()
+            .position(|line| line.trim() == blamed_line)
+            .unwrap()
+            + 1;
+        let message = stderr(&out);
+        assert!(message.contains(expected), "{message}");
+        assert!(message.contains(&format!("demo.rs:{line}:")), "{message}");
+        if name == "nested" {
+            assert!(message.contains(&format!("demo.rs:{line}:5")), "{message}");
+        }
+    }
+}
+
+#[test]
+fn contract_requires_keeps_body_items_out_of_clause_scope() {
+    for (name, qualifier, attr) in [("const", "const", ""), ("tracked", "", "#[track_caller]")] {
+        for (local_limit, argument, exit) in [(1, 50, 0), (1000, 150, 101)] {
+            let source = format!(
+                r#"
+#![deny(unused_braces)]
+const LIMIT: i32 = 100;
+#[requires(x < LIMIT)]
+{attr}
+{qualifier} fn value(x: i32) -> i32 {{
+    const LIMIT: i32 = {local_limit};
+    x + LIMIT - LIMIT
+}}
+#[tide::main]
+fn main() {{ assert_eq!(value({argument}), {argument}); }}
+"#
+            );
+            let dir = package(
+                &format!("contract-item-scope-{name}-{local_limit}"),
+                &source,
+            );
+            checked(driver(&dir).arg("--tide-profile=debug"));
+            let out = Command::new(dir.join("out/demo"))
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(exit), "{}", stderr(&out));
+            if exit != 0 {
+                assert!(
+                    stderr(&out).contains("requires violated: x < LIMIT"),
+                    "{}",
+                    stderr(&out)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn contract_requires_never_and_const_bodies_do_not_warn() {
+    let dir = package(
+        "contract-requires-warnings",
+        r#"
+#![deny(unreachable_code, unused_braces)]
+#[requires(code != 0)]
+fn die(code: i32) -> ! { panic!("die {code}") }
+#[requires(code != 0)]
+#[ensures(true)]
+fn die_with_ensures(code: i32) -> ! { panic!("die {code}") }
+#[requires(x > 0)]
+const fn identity(x: i32) -> i32 { x }
+const VALUE: i32 = identity(1);
+#[tide::main]
+fn main() {
+    assert_eq!(VALUE + identity(2), 3);
+    let _ = die as fn(i32) -> !;
+    let _ = die_with_ensures as fn(i32) -> !;
+}
+"#,
+    );
+    for profile in ["debug", "release"] {
+        let out = checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        assert!(!stderr(&out).contains("warning:"), "{}", stderr(&out));
+        checked(&mut Command::new(dir.join("out/demo")));
+    }
+}
+
+#[test]
+fn contract_rejects_colliding_generated_operator_spans() {
+    let dir = package("contract-generated-spans", "collision::clause!();");
+    let generator = dir.join("generator.rs");
+    std::fs::write(
+        &generator,
+        r##"
+extern crate proc_macro;
+#[proc_macro]
+pub fn clause(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[tide_macros::requires({ let p = true; p ==> true })] fn probe() {}".parse().unwrap()
+}
+"##,
+    )
+    .unwrap();
+    let library = dir.join(format!(
+        "{}collision{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX
+    ));
+    let rustc = std::env::var_os("RUSTC").unwrap_or("rustc".into());
+    checked(
+        Command::new(&rustc)
+            .args([
+                "--edition=2024",
+                "--crate-name=collision",
+                "--crate-type=proc-macro",
+            ])
+            .arg(&generator)
+            .arg("-o")
+            .arg(&library),
+    );
+    let macros = std::fs::read_dir(std_dir())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("libtide_macros-")
+        })
+        .unwrap();
+    let output = Command::new(&rustc)
+        .args(["--edition=2024", "--crate-type=lib", "--extern"])
+        .arg(format!("collision={}", library.display()))
+        .arg("--extern")
+        .arg(format!("tide_macros={}", macros.display()))
+        .arg(dir.join("package/src/demo.rs"))
+        .arg("--out-dir")
+        .arg(dir.join("out"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("ambiguous clause spans"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn contract_preserves_source_conjunct_and_caller_blame() {
+    let source = r#"
+struct Probe;
+impl Drop for Probe {
+    fn drop(&mut self) {
+        if let Some(v) = std::__contract::take_violation() {
+            println!("RECORD {:?} {} {} {} {}:{}:{}", v.clause.kind, v.clause.index,
+                v.clause.conjunct, v.clause.function, v.file, v.line, v.column);
+        }
+    }
+}
+
+#[requires(
+    a > 0 && "é".len() == 2 &&
+    b   >  0
+)]
+fn pair(a: u32, b: u32) {}
+#[tide::main]
+fn main() {
+    let _probe = Probe;
+    pair(1, 0);
+}
+"#;
+    let dir = package("contract-blame", source);
+    checked(&mut driver(&dir));
+    let out = Command::new(dir.join("out/demo"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(101));
+    let message = stderr(&out);
+    let line = source
+        .lines()
+        .position(|line| line.trim() == "pair(1, 0);")
+        .unwrap()
+        + 1;
+    let blamed = format!("demo.rs:{line}:5");
+    assert!(message.contains("requires violated: b   >  0"), "{message}");
+    assert!(message.contains(&blamed), "{message}");
+    let record = String::from_utf8_lossy(&out.stdout);
+    assert!(record.contains("RECORD Requires 0 2 pair"), "{record}");
+    assert!(record.contains(&blamed), "{record}");
+}
+
+#[test]
+fn erased_contracts_still_resolve_type_and_borrow_check() {
+    for (name, clause, expected) in [
+        (
+            "type",
+            "#[ensures(result == true)] fn invalid() -> u32 { 1 }",
+            "E0308",
+        ),
+        (
+            "name",
+            "#[ensures(result == missing)] fn invalid() -> u32 { 1 }",
+            "E0425",
+        ),
+        (
+            "move",
+            "#[ensures(drop(result) == ())] fn invalid() -> Vec<u32> { vec![1] }",
+            "E0382",
+        ),
+        (
+            "nested-old",
+            "#[ensures(old(old(n)) == result)] fn invalid(n: u32) -> u32 { n }",
+            "nested old",
+        ),
+        (
+            "bound-old",
+            "#[ensures(forall |i: usize| i < 2 ==> old(i) == i)] fn invalid(i: usize) {}",
+            "bound variable",
+        ),
+        (
+            "shared-old",
+            "struct Token(u32); #[ensures(old(t).0 == result)] fn invalid(t: &Token) -> u32 { t.0 }",
+            "Clone",
+        ),
+        (
+            "alias-mut",
+            "type Mut<'a> = &'a mut u32; #[ensures(*x == 4)] fn invalid(x: Mut<'_>) { *x = 4; }",
+            "mutable-reference alias in ensures is not supported",
+        ),
+        (
+            "const-old",
+            "#[ensures(result == old(n))] const fn invalid(n: u32) -> u32 { n }",
+            "old snapshots on const fn are not supported",
+        ),
+        (
+            "const-bad",
+            "#[requires(n > 0)] const fn invalid(n: u32) -> u32 { n } const BAD: u32 = invalid(0);",
+            "requires violated",
+        ),
+        (
+            "pattern-old",
+            "#[ensures(matches!(result, Some(n) if old(n) == n))] fn invalid(n: u8) -> Option<u8> { Some(n) }",
+            "bound variable",
+        ),
+        (
+            "const-method",
+            "struct S; impl S { #[ensures(true)] const fn invalid(&self) {} }",
+            "ensures on a const method is not supported",
+        ),
+        (
+            "const-pattern",
+            "#[ensures(result == n)] const fn invalid((n,): (u8,)) -> u8 { n }",
+            "const ensures needs identifier parameters",
+        ),
+        (
+            "const-entry",
+            "struct S(u32); #[ensures(result == s.0)] const fn invalid(s: S) -> u32 { s.0 }",
+            "const ensures needs Copy entry parameters",
+        ),
+        (
+            "for-old",
+            "#[ensures(matches!({ let mut s = 0; for n in 0..2 { s += old(n); } s }, 1))] fn invalid(n: u8) {}",
+            "bound variable",
+        ),
+        (
+            "while-old",
+            "#[ensures(matches!({ let mut it = Some(1); let mut s = 0; while let Some(n) = it { s += old(n); it = None; } s }, 1))] fn invalid(n: u8) {}",
+            "bound variable",
+        ),
+        (
+            "format-unused-implication",
+            "#[ensures(format!(\"{p}\", p ==> result) == \"true\")] fn invalid(p: bool) -> bool { false }",
+            "argument never used",
+        ),
+        (
+            "format-leading-space",
+            "#[ensures(result == format!(\"{ n}\"))] fn invalid(n: u8) -> String { String::new() }",
+            "invalid format string",
+        ),
+        (
+            "format-raw-capture",
+            "#[ensures(result == format!(\"{r#n}\"))] fn invalid(n: u8) -> String { String::new() }",
+            "invalid format string",
+        ),
+    ] {
+        let dir = package(
+            &format!("contract-reject-{name}"),
+            &format!("{clause}\n#[tide::main] fn main() {{}}"),
+        );
+        for profile in ["debug", "release"] {
+            let out = driver(&dir)
+                .arg(format!("--tide-profile={profile}"))
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            if name == "const-bad" && profile == "release" {
+                assert!(out.status.success(), "{}", stderr(&out));
+                continue;
+            }
+            assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+            assert!(stderr(&out).contains(expected), "{}", stderr(&out));
+            if name == "alias-mut" {
+                assert!(!stderr(&out).contains("E0500"), "{}", stderr(&out));
+            }
+            assert!(!dir.join("out/demo").exists());
+        }
+    }
+}
+
+#[test]
+fn contract_const_sampled_test_has_an_explicit_limit() {
+    let dir = package(
+        "const-sampled-limit",
+        "fn positive(n: u32) -> bool { n > 0 } #[requires(positive(n))] const fn sample(n: u32) -> u32 { n } #[invariants] const fn looped(mut n: u32) { while n > 0 { invariant!(positive(n)); n -= 1; } }",
+    );
+    let output = driver(&dir)
+        .args(["--crate-type=lib", "--test"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("sampled contracts on const fn are not supported in test builds"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!stderr(&output).contains("E0015"), "{}", stderr(&output));
+    checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-profile=release"]));
+    checked(&mut Command::new(dir.join("out/demo-test")));
+}
+
 fn checked(command: &mut Command) -> Output {
     let output = command.stdin(Stdio::null()).output().unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
