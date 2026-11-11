@@ -3,14 +3,15 @@
 Every v0-core normative rule in `design/02-memory.md`,
 `design/03-authority-concurrency.md`, and `design/04-contracts.md` that makes
 rustc or the Tide checker accept, reject, or warn on a program at compile time, taken
-at `a3b0177`. The chapters own the rules; this file lists them so cases can
-name them, and `run.sh` reads the IDs from the first column. `run.sh --trace`
-gives each ID's cases.
+at `a3b0177`, plus runtime rules exercised by cases that also run against
+production std. The chapters own the rules. `run.sh` reads IDs from the first
+column, and `run.sh --trace` gives each ID's cases.
 
 Columns: **ID** is the rule's ID, `none yet`, or `= ID` for a row that
 restates a rule whose ID another chapter defines. **Decided by** is `rustc`
 (plain rustc rejects it against Tide's std), `checker` (it needs the Tide
-checker, the admission driver, or the contract macros), or `both`. **Codes**
+checker, the admission driver, or the contract macros), `both`, or `runtime`
+(a driver test executes the case against production std). **Codes**
 are the FX codes the design gives (`ref` is `design/reference.md`, `comp`
 its companion) and the rustc errors expected; a rustc code the design does
 not cite is a best mapping that a case must confirm.
@@ -111,6 +112,7 @@ not cite is a best mapping that a case must confirm.
 | = SEND-3 | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
 | CHANNEL-1 | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker | FX0608 (lint) |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
+| LOCK-3 | §6.5, 03:1494 | Single-cell acquisition proceeds in a cancelled scope | runtime | — |
 | LOCK-4 | §6.5, 03:1317 | `f` must be `Pure`; printing inside it is a lint | checker | FX0603; FX0607 (lint) |
 | LOCK-5 | §6.5, 03:1323 | `with`/`with2`/`with_all` return `Result<R, LockError>` | rustc | type errors (ignoring the result is FX0702, ref:803) |
 | = SEND-3 | §6.6, 03:1343 | `Send`/`Sync` are checked at task boundaries only | rustc | E0277 |
@@ -168,7 +170,7 @@ one-file case cannot hold; their cases wait for the admission driver.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
 - LOCK-2 (03:1309): runtime `Aliased` check.
-- LOCK-3 (03:1312): runtime acquisition order.
+- LOCK-3 (03:1494): multi-cell acquisition in cell ID order and deterministic simulator IDs await fx-ugm.
 - LOCK-6 (03:1325): runtime poisoning.
 - PAR-1 (03:1445): runtime determinism.
 - PAR-2 (03:1453): runtime panic order.

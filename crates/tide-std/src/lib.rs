@@ -13,6 +13,9 @@
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
+//! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, and single-cell `with`, with FIFO
+//!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
+//!   reserved for the planned multi-cell operations (03 §6.5);
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
@@ -38,13 +41,14 @@
 //! time, random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! `time`'s Rust items (`Duration`, ...);
-//! `sync`, `par`, `arena`, `ptr`, and `sim`; property tests and
+//! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
+//! `par`, `arena`, `ptr`, and `sim`; property tests and
 //! `#[sim_test]`; the contract attributes and the `Encode` and `Decode` derives. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
-//! `root.rs` and `task.rs` share their definitions with the conformance fixture std; each
+//! `root.rs`, `task.rs`, and `sync.rs` share their definitions with the conformance fixture std; each
 //! module below declares its capability type with `root.rs`'s `capability!`, as the fixture's
 //! modules of the same names do.
 
@@ -108,3 +112,4 @@ pub mod process {
 }
 
 pub mod task;
+pub mod sync;

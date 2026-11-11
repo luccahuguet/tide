@@ -10,3 +10,10 @@ pub fn bump(tasks: &Tasks) -> Result<u64, LockError> {
         *n
     })
 }
+
+pub fn aliased(result: Result<u64, LockError>) -> bool {
+    match result {
+        Ok(_) | Err(LockError::Poisoned) => false,
+        Err(LockError::Aliased) => true,
+    }
+}

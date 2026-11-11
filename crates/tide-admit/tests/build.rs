@@ -65,6 +65,14 @@ fn task_lifecycle_builds_and_runs_against_production_std() {
 }
 
 #[test]
+fn shared_counter_runs_against_production_std() {
+    let source = include_str!("../../../conformance/cases/tasks/shared_counter.rs");
+    let dir = package("shared-counter", source);
+    checked(&mut driver(&dir));
+    checked(&mut Command::new(dir.join("out/demo")));
+}
+
+#[test]
 fn collections_execute_with_fixed_and_capability_seeded_keys() {
     let dir = package(
         "collections",

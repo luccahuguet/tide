@@ -183,6 +183,14 @@ values drop on the child or receiver thread depending on timing, so a destructor
 is attributed to the thread that runs it. Suppressed payload drops on the panic
 path follow PANIC-2 and can abort; on the non-panic path, a drop panic surfaces
 in the scope's caller.
+
+`std::sync::Shared::new(v, &tasks)` creates a cell with a `Send + Pure` payload.
+Clones refer to the same cell. `with` serializes `Pure` callbacks in FIFO order,
+including in cancelled scopes. A callback panic propagates and leaves every
+handle to that cell returning `LockError::Poisoned` on later `with` calls.
+`LockError::Aliased` is reserved for the planned multi-cell operations.
+`same` and `reset` are also planned.
+
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.

@@ -130,6 +130,9 @@ definition at the same paths. Its I/O core also includes
 buffered types with production. The supported I/O API follows Rust with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+The stub includes the production `sync.rs` for `Shared::new`, `clone`, `with`,
+and `LockError`. `tasks/shared_counter.rs` also executes against production
+through the driver.
 The float observers and math functions use the production `float.rs` and `math.rs`
 files directly, with the same pinned software `libm` dependency. Their shared
 fixture, `authority/float_math.rs`, also executes against production through the

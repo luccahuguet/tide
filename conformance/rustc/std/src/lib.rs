@@ -6,8 +6,9 @@
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, and Rust's re-exports), `std::io`'s core (`io/shared.rs`),
-//! and its task runtime (`task.rs`), and declares the capability types with
-//! its `capability!`, so those have one definition and the same paths in both.
+//! its task runtime (`task.rs`), and single-cell `Shared` (`sync.rs`). It declares
+//! capability types with `capability!`, giving those types the same definitions and
+//! paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
 //! the cases use, with every field, variant, derive, and `Error` impl the
 //! reference gives them (other impls as needed), with the signatures
@@ -241,20 +242,12 @@ pub mod task {
 }
 
 pub mod sync {
-    use crate::marker::Pure;
-    use crate::task::Tasks;
     use std::marker::PhantomData;
 
-    /// `Send + Sync`, invariant in `T` (reference 3.3, 7.4).
-    pub struct Shared<T> {
-        _p: PhantomData<std::sync::Mutex<T>>,
-    }
-    impl<T> Clone for Shared<T> {
-        fn clone(&self) -> Self { unimplemented!() }
-    }
+    include!("../../../../crates/tide-std/src/sync.rs");
+
+    // Later Shared APIs remain compile-time fixtures only.
     impl<T: Send + Pure> Shared<T> {
-        pub fn new(v: T, tasks: &Tasks) -> Shared<T> { unimplemented!() }
-        pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError> { unimplemented!() }
         pub fn with2<U: Send + Pure, R>(
             a: &Shared<T>,
             b: &Shared<U>,
@@ -266,16 +259,6 @@ pub mod sync {
         pub fn with_all<R>(cells: &[Shared<T>], f: impl FnOnce(&mut [&mut T]) -> R + Pure)
             -> Result<R, LockError> { unimplemented!() }
     }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum LockError {
-        Aliased,
-        Poisoned,
-    }
-    impl std::fmt::Display for LockError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for LockError {}
 
     /// Rust's `Arc` without `strong_count`, `weak_count`, `get_mut`,
     /// `try_unwrap`, and `into_inner`; creation takes `&Tasks` (03 §1.2, GLOBAL-6).

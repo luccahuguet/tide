@@ -1467,6 +1467,11 @@ outrank the failure that dropped its peer.
 
 ### 6.5 `Shared::with`
 
+The thread runtime provides `Shared::new`, `clone`, and single-cell `with`,
+with FIFO acquisition and `LockError::Poisoned` as the sole error from `with`.
+`LockError::Aliased` is reserved for the planned multi-cell operations.
+`same` and `reset` are also planned. The API and rules below describe the v0 design.
+
 ```rust
 impl<T: Send + Pure> Shared<T> {
     pub fn new(v: T, tasks: &Tasks) -> Shared<T>;
