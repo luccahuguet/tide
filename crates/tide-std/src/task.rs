@@ -3,19 +3,78 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Condvar, LockResult, Mutex, MutexGuard, mpsc};
 use std::thread;
 
-crate::capability!(
-    /// Authority to spawn structured tasks on the thread runtime.
-    Tasks
-);
+mod scheduler {
+    include!("task/scheduler.rs");
+}
+use scheduler::{Operation, Pending, Scheduler, Span, TaskId};
+
+/// Authority to spawn structured tasks on the thread runtime.
+#[derive(Clone)]
+pub struct Tasks {
+    simulation: Option<Arc<Mutex<Runtime>>>,
+}
 
 // Runtime owns all lifecycle/failure transitions. Payloads below only holds typed error data.
 #[derive(Default)]
 struct Runtime {
     scopes: BTreeMap<usize, ScopeState>,
     next_scope: usize,
+    baton: Option<Baton>,
+}
+
+struct Baton {
+    scheduler: Scheduler,
+    parked: Vec<Arc<Condvar>>,
+}
+
+impl Baton {
+    fn register(&mut self, span: Span) -> TaskId {
+        let task = self.scheduler.register(span);
+        self.parked.push(Arc::new(Condvar::new()));
+        task
+    }
+
+    fn pass(&mut self, task: TaskId, pending: Pending) {
+        match self.scheduler.pick(task, pending) {
+            Some(next) if next != task => self.parked[next].notify_one(),
+            Some(_) => {}
+            // Supported operations have no way to leave all tasks waiting forever.
+            None => {
+                let mut report = String::from("no runnable task in the simulator");
+                for (task, pending) in self.scheduler.blocked() {
+                    report.push_str(&format!(
+                        "\n  task {task} blocked in {:?} at {}",
+                        pending.operation, pending.span
+                    ));
+                }
+                fatal_simulation(&report)
+            }
+        }
+    }
+
+    fn wait(mut runtime: MutexGuard<'_, Runtime>, task: TaskId) {
+        let baton = runtime.baton.as_ref().unwrap();
+        if baton.scheduler.current == Some(task) {
+            return;
+        }
+        let parked = baton.parked[task].clone();
+        while runtime.baton.as_ref().unwrap().scheduler.current != Some(task) {
+            runtime = sim_lock(parked.wait(runtime));
+        }
+    }
+}
+
+fn fatal_simulation(message: &str) -> ! {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "{message}");
+    std::process::abort();
+}
+
+fn sim_lock<T>(result: LockResult<T>) -> T {
+    result.unwrap_or_else(|_| fatal_simulation("simulator runtime lock poisoned"))
 }
 
 struct ScopeState {
@@ -76,9 +135,9 @@ impl Runtime {
         }
     }
 
-    fn cancel(&mut self, scope: usize, cause: Cause) {
+    fn cancel(&mut self, scope: usize, cause: Cause) -> bool {
         if self.scopes[&scope].cause.is_some() {
-            return;
+            return false;
         }
         self.scopes.get_mut(&scope).unwrap().cause = Some(cause);
         // Parents precede descendants; a nested scope's own first cause stops propagation.
@@ -89,6 +148,7 @@ impl Runtime {
                 self.scopes.get_mut(&id).unwrap().cause = Some(cause);
             }
         }
+        true
     }
 
     fn observe(&mut self, mut at: Location) -> bool {
@@ -115,14 +175,40 @@ impl Runtime {
         true
     }
 
-    fn finish(&mut self, at: Location, mut outcome: Outcome) {
+    fn finish(&mut self, at: Location, mut outcome: Outcome) -> (Outcome, bool) {
         let child = &mut self.scopes.get_mut(&at.scope).unwrap().children[at.child.unwrap()];
         if outcome == Outcome::Error && child.echo {
             outcome = Outcome::Echo;
         }
         child.outcome = Some(outcome);
-        if matches!(outcome, Outcome::Error | Outcome::Panic) {
-            self.cancel(at.scope, Cause::Failure(at.scope));
+        let cancelled = matches!(outcome, Outcome::Error | Outcome::Panic)
+            && self.cancel(at.scope, Cause::Failure(at.scope));
+        (outcome, cancelled)
+    }
+
+    fn wait_done(&self, operation: Operation) -> bool {
+        match operation {
+            Operation::Join(child) => self.baton.as_ref().unwrap().scheduler.finished(child),
+            Operation::ScopeExit(scope) => self.scopes[&scope]
+                .children
+                .iter()
+                .all(|child| child.outcome.is_some()),
+            _ => false,
+        }
+    }
+
+    fn wake_waiters(&mut self) {
+        let ready: Vec<_> = self
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .blocked()
+            .filter(|&(_, pending)| self.wait_done(pending.operation))
+            .collect();
+        let scheduler = &mut self.baton.as_mut().unwrap().scheduler;
+        for (task, pending) in ready {
+            scheduler.wake(task, pending);
         }
     }
 
@@ -141,7 +227,8 @@ impl Runtime {
 #[derive(Clone)]
 struct Context {
     runtime: Arc<Mutex<Runtime>>,
-    at: Location,
+    at: Option<Location>,
+    task: Option<TaskId>,
 }
 
 std::thread_local! {
@@ -149,10 +236,13 @@ std::thread_local! {
     static CURRENT: RefCell<Option<Context>> = const { RefCell::new(None) };
 }
 
-struct Enter(Option<Context>);
+struct Enter(Option<Context>, PhantomData<std::rc::Rc<()>>);
 impl Enter {
     fn new(context: Context) -> Self {
-        Self(CURRENT.with(|slot| slot.replace(Some(context))))
+        Self(
+            CURRENT.with(|slot| slot.replace(Some(context))),
+            PhantomData,
+        )
     }
 }
 impl Drop for Enter {
@@ -163,55 +253,245 @@ impl Drop for Enter {
     }
 }
 
+impl Context {
+    fn current() -> Option<Self> {
+        CURRENT.with(|slot| slot.borrow().clone())
+    }
+
+    // The one check that real authority stays outside simulations. Inside one, its
+    // operations would drop out of the schedule.
+    fn outside_simulation() {
+        CURRENT.with(|slot| {
+            assert!(
+                slot.borrow()
+                    .as_ref()
+                    .is_none_or(|context| context.task.is_none()),
+                "real task authority used inside a simulation",
+            );
+        });
+    }
+
+    fn simulated(runtime: &Arc<Mutex<Runtime>>) -> Self {
+        Self::current()
+            .filter(|context| context.task.is_some() && Arc::ptr_eq(runtime, &context.runtime))
+            .expect("simulation handle used outside its simulation")
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Runtime> {
+        let result = self.runtime.lock();
+        if self.task.is_some() {
+            sim_lock(result)
+        } else {
+            result.unwrap()
+        }
+    }
+
+    fn point(&self, operation: Operation, span: Span) {
+        let task = self.task.unwrap();
+        let pending = Pending { operation, span };
+        let mut runtime = self.lock();
+        let baton = runtime.baton.as_mut().unwrap();
+        baton.scheduler.point(task, pending);
+        baton.pass(task, pending);
+        Baton::wait(runtime, task);
+    }
+
+    fn wait_for(&self, operation: Operation, span: Span) {
+        let task = self.task.unwrap();
+        let mut runtime = self.lock();
+        if !runtime.wait_done(operation) {
+            let pending = Pending { operation, span };
+            let baton = runtime.baton.as_mut().unwrap();
+            baton.scheduler.block(task, pending);
+            baton.pass(task, pending);
+            Baton::wait(runtime, task);
+        }
+    }
+}
+
+// fx-nkv.6 owns the public SimRoot and uses this guard for its main task.
+#[allow(dead_code)]
+pub(crate) struct Simulation {
+    tasks: Tasks,
+    _main: Enter,
+}
+
+#[allow(dead_code)]
+impl Simulation {
+    #[track_caller]
+    pub(crate) fn new(seed: u64) -> Self {
+        assert!(
+            Context::current().is_none(),
+            "a task runtime is already active"
+        );
+        let runtime = Arc::new(Mutex::new(Runtime {
+            baton: Some(Baton {
+                scheduler: Scheduler::new(seed, std::panic::Location::caller()),
+                parked: vec![Arc::new(Condvar::new())],
+            }),
+            ..Runtime::default()
+        }));
+        let main = Enter::new(Context {
+            runtime: runtime.clone(),
+            at: None,
+            task: Some(0),
+        });
+        Self {
+            tasks: Tasks {
+                simulation: Some(runtime),
+            },
+            _main: main,
+        }
+    }
+
+    pub(crate) fn tasks(&self) -> &Tasks {
+        &self.tasks
+    }
+
+    pub(crate) fn trace(&self) -> String {
+        let runtime = self.tasks.simulation.as_ref().unwrap();
+        sim_lock(runtime.lock())
+            .baton
+            .as_ref()
+            .unwrap()
+            .scheduler
+            .trace
+            .clone()
+    }
+}
+
+impl Drop for Simulation {
+    fn drop(&mut self) {
+        let runtime = sim_lock(self.tasks.simulation.as_ref().unwrap().lock());
+        let ended = runtime.baton.as_ref().unwrap().scheduler.current == Some(0)
+            && runtime.scopes.is_empty();
+        // Assert unlocked: a failure must not poison the lock or abort an unwind in progress.
+        drop(runtime);
+        assert!(
+            ended || thread::panicking(),
+            "simulation ended with live tasks"
+        );
+    }
+}
+
+/// Rejects a real cell used inside a simulation.
+pub(crate) fn outside_simulation() {
+    Context::outside_simulation();
+}
+
+pub(crate) struct SimCell {
+    runtime: Arc<Mutex<Runtime>>,
+    id: usize,
+}
+
+impl SimCell {
+    pub(crate) fn acquire(&self, span: Span) {
+        Context::simulated(&self.runtime).point(Operation::CellAcquire(self.id), span);
+    }
+
+    pub(crate) fn release(&self, span: Span) {
+        Context::simulated(&self.runtime).point(Operation::CellRelease(self.id), span);
+    }
+}
+
 fn observe_cancellation() -> bool {
     CURRENT.with(|slot| {
         slot.borrow()
             .as_ref()
-            .is_some_and(|context| context.runtime.lock().unwrap().observe(context.at))
+            .is_some_and(|context| context.at.is_some_and(|at| context.lock().observe(at)))
     })
 }
 
 impl Tasks {
+    pub(crate) fn real() -> Self {
+        Self { simulation: None }
+    }
+
+    pub(crate) fn sim_cell(&self, span: Span) -> Option<SimCell> {
+        let Some(runtime) = &self.simulation else {
+            Context::outside_simulation();
+            return None;
+        };
+        let context = Context::simulated(runtime);
+        let id = context
+            .lock()
+            .baton
+            .as_mut()
+            .unwrap()
+            .scheduler
+            .allocate_cell();
+        context.point(Operation::CellNew(id), span);
+        Some(SimCell {
+            runtime: runtime.clone(),
+            id,
+        })
+    }
+
+    fn context(&self) -> Option<Context> {
+        match &self.simulation {
+            Some(runtime) => Some(Context::simulated(runtime)),
+            None => {
+                Context::outside_simulation();
+                Context::current()
+            }
+        }
+    }
+
     /// Runs `body` and joins every child, even with dropped or forgotten handles.
     /// Body panics continue after joining. Otherwise TASK-2 selects the earliest-spawned
     /// child panic, then independent child error, then the body's result. Checkpoints
     /// observe cancellation persistently; limits, deadlines, shields and isolation are absent.
+    #[track_caller]
     pub fn scope<'env, T, E, F>(&'env self, body: F) -> Result<T, E>
     where
         E: From<TaskError> + Send,
         F: FnOnce(Scope<'_, 'env, E>) -> Result<T, E>,
     {
-        let parent = CURRENT.with(|slot| slot.borrow().clone());
-        let runtime = parent.as_ref().map_or_else(
-            || Arc::new(Mutex::new(Runtime::default())),
-            |p| p.runtime.clone(),
-        );
-        let id = runtime.lock().unwrap().scope(parent.map(|p| p.at));
+        let span = std::panic::Location::caller();
+        let mut context = self.context().unwrap_or_else(|| Context {
+            runtime: Arc::new(Mutex::new(Runtime::default())),
+            at: None,
+            task: None,
+        });
+        let id = context.lock().scope(context.at);
+        context.at = Some(Location {
+            scope: id,
+            child: None,
+        });
+        let simulated = context.task.is_some();
+        if simulated {
+            context.point(Operation::Scope(id), span);
+        }
         let payloads = Mutex::new(Vec::<(usize, thread::Result<E>)>::new());
         let result = thread::scope(|threads| {
-            let _enter = Enter::new(Context {
-                runtime: runtime.clone(),
-                at: Location {
-                    scope: id,
-                    child: None,
-                },
-            });
+            let _enter = Enter::new(context.clone());
             let result = catch_unwind(AssertUnwindSafe(|| {
                 body(Scope {
                     threads,
                     payloads: Payloads(std::ptr::from_ref(&payloads).cast()),
-                    runtime: &runtime,
+                    runtime: &context.runtime,
                     id,
+                    simulated,
                     cancelled: || E::from(TaskError::Cancelled),
                     _marker: PhantomData,
                 })
             }));
             if !matches!(result, Ok(Ok(_))) {
-                runtime.lock().unwrap().cancel(id, Cause::Failure(id));
+                let mut runtime = context.lock();
+                if runtime.cancel(id, Cause::Failure(id)) && simulated {
+                    runtime.baton.as_mut().unwrap().scheduler.cancel(
+                        context.task.unwrap(),
+                        id,
+                        span,
+                    );
+                }
+            }
+            if simulated {
+                context.wait_for(Operation::ScopeExit(id), span);
             }
             result
         });
-        let winner = runtime.lock().unwrap().finish_scope(id);
+        let winner = context.lock().finish_scope(id);
         let mut payloads = payloads.into_inner().unwrap();
         let selected = if result.is_err() {
             None
@@ -237,19 +517,38 @@ impl Tasks {
 
     /// An explicit checkpoint. Outside a scope it succeeds; inside a cancelled scope every
     /// call returns `Cancelled`, including calls made through another clone of `Tasks`.
+    #[track_caller]
     pub fn checkpoint(&self) -> Result<(), Cancelled> {
-        if observe_cancellation() {
-            Err(Cancelled)
-        } else {
-            Ok(())
+        match &self.simulation {
+            Some(runtime) => Context::simulated(runtime)
+                .point(Operation::Checkpoint, std::panic::Location::caller()),
+            None => Context::outside_simulation(),
         }
+        check_cancellation()
     }
 
     /// Yields the thread, checking cancellation before yielding and again before returning.
+    #[track_caller]
     pub fn yield_now(&self) -> Result<(), Cancelled> {
-        self.checkpoint()?;
-        thread::yield_now();
-        self.checkpoint()
+        let simulation = self.simulation.as_ref().map(Context::simulated);
+        if simulation.is_none() {
+            Context::outside_simulation();
+        }
+        check_cancellation()?;
+        if let Some(context) = simulation {
+            context.point(Operation::Yield, std::panic::Location::caller());
+        } else {
+            thread::yield_now();
+        }
+        check_cancellation()
+    }
+}
+
+fn check_cancellation() -> Result<(), Cancelled> {
+    if observe_cancellation() {
+        Err(Cancelled)
+    } else {
+        Ok(())
     }
 }
 
@@ -260,6 +559,7 @@ pub struct Scope<'s, 'env: 's, E> {
     payloads: Payloads,
     runtime: &'s Arc<Mutex<Runtime>>,
     id: usize,
+    simulated: bool,
     cancelled: fn() -> E,
     _marker: PhantomData<(&'s mut &'s (), &'env mut &'env (), fn(E) -> E)>,
 }
@@ -296,38 +596,97 @@ impl<E> Copy for Scope<'_, '_, E> {}
 impl<'s, 'env, E> Scope<'s, 'env, E> {
     /// Starts a child that cannot outlive this scope. Dropping its handle does not detach it.
     /// Unlimited spawn is not a checkpoint and still starts a child in a cancelled scope.
+    #[track_caller]
     pub fn spawn<U: Send + 's, F>(self, f: F) -> Task<'s, U, E>
     where
         F: FnOnce() -> Result<U, E> + Send + 's,
     {
+        let span = std::panic::Location::caller();
+        let caller = self.simulated.then(|| Context::simulated(self.runtime));
         let (tx, rx) = mpsc::sync_channel(1);
-        let at = self.runtime.lock().unwrap().spawn(self.id);
+        let (at, task) = {
+            let mut runtime = if let Some(caller) = &caller {
+                caller.lock()
+            } else {
+                self.runtime.lock().unwrap()
+            };
+            let at = runtime.spawn(self.id);
+            let task = runtime.baton.as_mut().map(|baton| baton.register(span));
+            (at, task)
+        };
         let context = Context {
             runtime: self.runtime.clone(),
-            at,
+            at: Some(at),
+            task,
         };
         // Erase E from the job's captures without adding E: 's to the public signature.
         let run_job: unsafe fn(F, mpsc::SyncSender<U>, Payloads, Context) = run::<F, U, E>;
         let payloads = self.payloads;
-        self.threads.spawn(Box::new(move || {
+        #[cfg(test)]
+        let delay = simulation_tests::START_DELAY.with(std::cell::Cell::get);
+        let job = Box::new(move || {
+            #[cfg(test)]
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
             // SAFETY: Scope's invariant E matches the mutex allocated by Tasks::scope, and its
             // invariant 's keeps this job within the native scope, even on unwind.
             unsafe { run_job(f, tx, payloads, context) };
-        }));
+        });
+        let simulation = if let Some(caller) = caller {
+            let task = task.unwrap();
+            // Native spawn can unwind before the thread starts. A starting task cannot win
+            // the baton, even if dropping the rejected job reaches a scheduling point.
+            let started = catch_unwind(AssertUnwindSafe(|| self.threads.spawn(job)));
+            let mut runtime = caller.lock();
+            let scheduler = &mut runtime.baton.as_mut().unwrap().scheduler;
+            match started {
+                Ok(()) => scheduler.start(task),
+                Err(panic) => {
+                    scheduler.abandon(task);
+                    runtime.finish(at, Outcome::Ok);
+                    runtime.wake_waiters();
+                    drop(runtime);
+                    resume_unwind(panic);
+                }
+            }
+            drop(runtime);
+            caller.point(Operation::Spawn(task), span);
+            Some((self.runtime.clone(), task))
+        } else {
+            self.threads.spawn(job);
+            None
+        };
         Task {
             result: Mutex::new(rx),
             cancelled: self.cancelled,
+            simulation,
             _marker: PhantomData,
         }
     }
 
     /// Cancels this scope and its descendants. Cancellation alone is not failure, and a child
     /// returning Err after explicit cancellation remains an independent failure.
+    /// Cancel is not a scheduling point: the caller's next checkpoint observes it.
+    #[track_caller]
     pub fn cancel(self) {
-        self.runtime
-            .lock()
-            .unwrap()
-            .cancel(self.id, Cause::Explicit(self.id));
+        if self.simulated {
+            let span = std::panic::Location::caller();
+            let caller = Context::simulated(self.runtime);
+            let mut runtime = caller.lock();
+            if runtime.cancel(self.id, Cause::Explicit(self.id)) {
+                runtime.baton.as_mut().unwrap().scheduler.cancel(
+                    caller.task.unwrap(),
+                    self.id,
+                    span,
+                );
+            }
+        } else {
+            self.runtime
+                .lock()
+                .unwrap()
+                .cancel(self.id, Cause::Explicit(self.id));
+        }
     }
 }
 
@@ -336,6 +695,9 @@ unsafe fn run<F, U, E>(f: F, tx: mpsc::SyncSender<U>, payloads: Payloads, contex
 where
     F: FnOnce() -> Result<U, E>,
 {
+    if let Some(task) = context.task {
+        Baton::wait(context.lock(), task);
+    }
     let _enter = Enter::new(context.clone());
     let outcome = catch_unwind(AssertUnwindSafe(|| match f() {
         Ok(value) => {
@@ -351,29 +713,47 @@ where
         Err(panic) => (Outcome::Panic, Some(Err(panic))),
         Ok(None) => (Outcome::Ok, None),
     };
+    let at = context.at.unwrap();
     if let Some(failure) = failure {
         // SAFETY: the caller supplied matching E; scope exit joins before dropping this mutex.
         let payloads = unsafe { &*payloads.0.cast::<Mutex<Vec<(usize, thread::Result<E>)>>>() };
-        payloads
-            .lock()
-            .unwrap()
-            .push((context.at.child.unwrap(), failure));
+        payloads.lock().unwrap().push((at.child.unwrap(), failure));
     }
-    context.runtime.lock().unwrap().finish(context.at, kind);
-    // tx drops only after the failure and its cancellation are recorded, before join returns.
+    let mut runtime = context.lock();
+    let (kind, cancelled) = runtime.finish(at, kind);
+    if let Some(task) = context.task {
+        // Publish cancellation before closing the result channel, and close it before handoff.
+        drop(tx);
+        let scheduler = &mut runtime.baton.as_mut().unwrap().scheduler;
+        let pending = scheduler.finish(task, kind);
+        if cancelled {
+            scheduler.cancel(task, at.scope, pending.span);
+        }
+        runtime.wake_waiters();
+        runtime.baton.as_mut().unwrap().pass(task, pending);
+    }
+    // In the real runtime tx drops after cancellation is recorded, before join returns.
 }
 
 /// A child's join handle; `Send + Sync` when `U, E: Send` (02 §8.1).
 pub struct Task<'s, U, E> {
     result: Mutex<mpsc::Receiver<U>>,
     cancelled: fn() -> E,
+    simulation: Option<(Arc<Mutex<Runtime>>, TaskId)>,
     _marker: PhantomData<(&'s mut &'s (), Mutex<E>)>,
 }
 
 impl<U, E> Task<'_, U, E> {
     /// Waits shielded, returning the child's value or `Cancelled` on failure/panic. A failed
     /// join marks the caller's echo bit exactly as a checkpoint there would (TASK-2).
+    #[track_caller]
     pub fn join(self) -> Result<U, E> {
+        if let Some((runtime, child)) = &self.simulation {
+            let span = std::panic::Location::caller();
+            let caller = Context::simulated(runtime);
+            caller.point(Operation::Join(*child), span);
+            caller.wait_for(Operation::Join(*child), span);
+        }
         self.result.into_inner().unwrap().recv().map_err(|_| {
             observe_cancellation();
             (self.cancelled)()
@@ -432,7 +812,7 @@ mod tests {
 
     #[test]
     fn task_borrows_results_and_non_send_local_values() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let mut count = 0;
         let text = String::from("borrowed");
         let result: Result<_, TaskError> = tasks.scope(|s| {
@@ -465,7 +845,7 @@ mod tests {
 
     #[test]
     fn task_scope_joins_dropped_and_forgotten_handles_and_grandchildren() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let borrowed = Borrowed {
             finished: AtomicBool::new(false),
         };
@@ -489,7 +869,7 @@ mod tests {
 
     #[test]
     fn task_child_panic_survives_join_drop_and_forget() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         for mode in 0..3 {
             let borrowed = Borrowed {
                 finished: AtomicBool::new(false),
@@ -517,7 +897,7 @@ mod tests {
 
     #[test]
     fn task_body_panic_joins_children_before_resuming() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let borrowed = Borrowed {
             finished: AtomicBool::new(false),
         };
@@ -547,7 +927,7 @@ mod tests {
                 panic_any(29u32);
             }
         }
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let panic = catch_unwind(AssertUnwindSafe(|| {
             let _: Result<(), TaskError> = tasks.scope(|s| {
                 let (tx, rx) = mpsc::channel();
@@ -578,7 +958,7 @@ mod tests {
 
     #[test]
     fn task_join_reports_cancelled_but_scope_keeps_the_single_child_error() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         for joined in [false, true] {
             let result: Result<(), Failure> = tasks.scope(|s| {
                 let child = s.spawn(|| -> Result<(), Failure> { Err(Failure::Child) });
@@ -620,7 +1000,7 @@ mod tests {
                 Self::Task(e)
             }
         }
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let message = String::from("local error");
         let result: Result<(), _> = tasks.scope(|s| {
             s.spawn(|| Err::<(), _>(BorrowedError::Message(&message)));
@@ -631,7 +1011,7 @@ mod tests {
 
     #[test]
     fn cancellation_is_level_triggered_and_does_not_cancel_joins_or_spawn() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         tasks.checkpoint().unwrap();
         tasks.yield_now().unwrap();
         let result: Result<_, TaskError> = tasks.scope(|s| {
@@ -664,7 +1044,7 @@ mod tests {
 
     #[test]
     fn earliest_spawned_independent_error_beats_completion_order_and_body() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let result: Result<(), Failure> = tasks.scope(|s| {
             let (tx, rx) = mpsc::channel();
             let first = s.spawn(move || {
@@ -682,7 +1062,7 @@ mod tests {
 
     #[test]
     fn independent_failure_survives_earlier_checkpoint_and_join_echoes() {
-        let authority = Tasks(());
+        let authority = Tasks::real();
         let tasks = &authority;
         for checkpoint in [false, true] {
             let result: Result<(), Failure> = tasks.scope(|s| {
@@ -712,7 +1092,7 @@ mod tests {
 
     #[test]
     fn successful_join_under_failure_cancellation_does_not_make_an_echo() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let result: Result<(), Failure> = tasks.scope(|s| {
             let ready = s.spawn(|| Ok(7));
             let (tx, rx) = mpsc::channel();
@@ -731,7 +1111,7 @@ mod tests {
 
     #[test]
     fn body_error_cancels_children_and_body_panic_wins_after_cleanup() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let result: Result<(), Failure> = tasks.scope(|s| {
             s.spawn(|| {
                 while tasks.checkpoint().is_ok() {
@@ -763,7 +1143,7 @@ mod tests {
 
     #[test]
     fn earliest_spawned_panic_beats_other_panics_and_errors() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let panic = catch_unwind(AssertUnwindSafe(|| {
             let _: Result<(), Failure> = tasks.scope(|s| {
                 let (tx, rx) = mpsc::channel();
@@ -787,7 +1167,7 @@ mod tests {
 
     #[test]
     fn nested_cancellation_preserves_first_cause_and_echo_ancestry() {
-        let authority = Tasks(());
+        let authority = Tasks::real();
         let tasks = &authority;
         for inner_cancels_first in 0..3 {
             let result: Result<(), Failure> = tasks.scope(|outer| {
@@ -836,7 +1216,7 @@ mod tests {
 
     #[test]
     fn explicit_cancel_does_not_mark_errors_as_echoes() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let result: Result<(), Failure> = tasks.scope(|s| {
             s.cancel();
             s.spawn(|| {
@@ -847,4 +1227,9 @@ mod tests {
         });
         assert_eq!(result, Err(Failure::Child));
     }
+}
+
+#[cfg(test)]
+mod simulation_tests {
+    include!("task/simulation_tests.rs");
 }

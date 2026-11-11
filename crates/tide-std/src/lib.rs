@@ -8,14 +8,16 @@
 //!   process's one `Root` (03 ROOT-1, RUN-1);
 //! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
 //! - `Pure` (reference 6.6), which the admission driver decides;
-//! - the capability types `Root` carries, as identities: `Fs`, `Net`, `Clock`, `Rand`, `Env`,
-//!   `Stdin`, `Proc`, and `Tasks`;
+//! - the capability types `Root` carries: the identities `Fs`, `Net`, `Clock`, `Rand`, `Env`,
+//!   `Stdin`, and `Proc`, and `Tasks`, which also names its simulation when it has one;
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
 //! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, and single-cell `with`, with FIFO
 //!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
 //!   reserved for the planned multi-cell operations (03 §6.5);
+//! - an internal seeded scheduler for structured tasks and single-cell `Shared`, with
+//!   source-located scheduling and wait records (03 §9.1). The public entry and runner are pending;
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
@@ -48,9 +50,9 @@
 //! Executable tests use rustc's ordinary harness, without simulated capabilities or process
 //! isolation. They are for reviewed/trusted demos only, not RUN-5's unreviewed-branch guarantee.
 //!
-//! `root.rs`, `task.rs`, and `sync.rs` share their definitions with the conformance fixture std; each
-//! module below declares its capability type with `root.rs`'s `capability!`, as the fixture's
-//! modules of the same names do.
+//! `root.rs`, `task.rs` (including its scheduler), and `sync.rs` share their definitions with the
+//! conformance fixture std. The identity-only capability types use `root.rs`'s `capability!` in
+//! both crates.
 
 include!("root.rs");
 

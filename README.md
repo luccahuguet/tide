@@ -201,6 +201,11 @@ handle to that cell returning `LockError::Poisoned` on later `with` calls.
 `LockError::Aliased` is reserved for the planned multi-cell operations.
 `same` and `reset` are also planned.
 
+Production std includes an internal seeded scheduler for structured tasks and
+single-cell `Shared`. It runs one task at a time between scheduling points and
+records decisions and waits with source locations. The public `Root::sim`
+entry, `#[sim_test]` runner, and simulated I/O are still pending.
+
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.

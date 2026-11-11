@@ -173,7 +173,7 @@ pub mod __rt {
             env: crate::env::Env(()),
             stdin: crate::io::Stdin(()),
             proc: crate::process::Proc(()),
-            tasks: crate::task::Tasks(()),
+            tasks: crate::task::Tasks::real(),
         };
         main(root).report()
     }

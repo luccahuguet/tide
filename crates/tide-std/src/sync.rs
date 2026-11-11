@@ -1,14 +1,15 @@
 use crate::marker::Pure;
-use crate::task::Tasks;
+use crate::task::{SimCell, Tasks};
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc as RustArc, Condvar, Mutex, PoisonError};
+use std::sync::{Arc as RustArc, Condvar, Mutex, PoisonError, TryLockError};
 
 /// A shared cell. Cloning the handle keeps the same cell.
 pub struct Shared<T>(RustArc<SharedCell<T>>);
 
 struct SharedCell<T> {
+    simulation: Option<SimCell>,
     next: AtomicUsize,
     state: Mutex<State<T>>,
     ready: Condvar,
@@ -28,8 +29,10 @@ impl<T> Clone for Shared<T> {
 
 impl<T: Send + Pure> Shared<T> {
     /// Creates a cell using the caller's task authority.
-    pub fn new(v: T, _tasks: &Tasks) -> Shared<T> {
+    #[track_caller]
+    pub fn new(v: T, tasks: &Tasks) -> Shared<T> {
         Self(RustArc::new(SharedCell {
+            simulation: tasks.sim_cell(std::panic::Location::caller()),
             next: AtomicUsize::new(0),
             state: Mutex::new(State {
                 serving: 0,
@@ -42,20 +45,36 @@ impl<T: Send + Pure> Shared<T> {
 
     /// Runs `f` with exclusive access, in FIFO acquisition order, even in a cancelled scope.
     /// A panic propagates and poisons the cell. Later calls skip `f` and return `Poisoned`.
+    #[track_caller]
     pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R + Pure) -> Result<R, LockError> {
         let cell = &self.0;
-        // Take a ticket before waiting for the mutex so new arrivals cannot overtake waiters.
-        // Multi-cell operations (fx-ugm) reserve each ticket after acquiring the previous cell
-        // in ID order. In fx-nkv.5 the scheduling point precedes reservation, or the wait
-        // hands off the baton.
-        let ticket = cell.next.fetch_add(1, Ordering::Relaxed);
-        let mut state = cell.state.lock().unwrap_or_else(PoisonError::into_inner);
-        while state.serving != ticket {
-            state = cell
-                .ready
-                .wait(state)
-                .unwrap_or_else(PoisonError::into_inner);
-        }
+        let span = std::panic::Location::caller();
+        let mut state = if let Some(simulation) = &cell.simulation {
+            // A Pure callback cannot suspend. Keep the whole ticket lifetime under one baton.
+            simulation.acquire(span);
+            let state = match cell.state.try_lock() {
+                Ok(state) => state,
+                Err(TryLockError::Poisoned(error)) => error.into_inner(),
+                Err(TryLockError::WouldBlock) => panic!("contended cell under the simulator"),
+            };
+            let ticket = cell.next.fetch_add(1, Ordering::Relaxed);
+            assert_eq!(state.serving, ticket, "contended cell under the simulator");
+            state
+        } else {
+            crate::task::outside_simulation();
+            // Take a ticket before waiting for the mutex so new arrivals cannot overtake waiters.
+            // Multi-cell operations (fx-ugm) reserve each ticket after acquiring the previous
+            // cell in ID order.
+            let ticket = cell.next.fetch_add(1, Ordering::Relaxed);
+            let mut state = cell.state.lock().unwrap_or_else(PoisonError::into_inner);
+            while state.serving != ticket {
+                state = cell
+                    .ready
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            state
+        };
         let outcome = if state.poisoned {
             Ok(Err(LockError::Poisoned))
         } else {
@@ -67,6 +86,9 @@ impl<T: Send + Pure> Shared<T> {
         drop(state);
         // Any waiter can wake first, but only the next ticket can proceed.
         cell.ready.notify_all();
+        if let Some(simulation) = &cell.simulation {
+            simulation.release(span);
+        }
         match outcome {
             Ok(result) => result,
             Err(panic) => resume_unwind(panic),
@@ -116,7 +138,7 @@ mod tests {
 
     #[test]
     fn shared_serializes_cloned_handles_in_fifo_order() {
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let order = Shared::new(Vec::new(), &tasks);
         let result: Result<(), TaskError> = tasks.scope(|scope| {
             let (entered, in_cell) = mpsc::channel();
@@ -154,7 +176,7 @@ mod tests {
     #[test]
     fn shared_propagates_panics_and_wakes_poisoned_waiters() {
         const WAITERS: usize = 3;
-        let tasks = Tasks(());
+        let tasks = Tasks::real();
         let cell = Shared::new(0, &tasks);
         let (release, held) = mpsc::channel();
         let (completed, results) = mpsc::channel();

@@ -6,8 +6,8 @@
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
 //! runtime entry, and Rust's re-exports), `std::io`'s core (`io/shared.rs`),
-//! its task runtime (`task.rs`), and single-cell `Shared` (`sync.rs`). It declares
-//! capability types with `capability!`, giving those types the same definitions and
+//! its task runtime and scheduler (`task.rs`), and single-cell `Shared` (`sync.rs`). It declares
+//! identity-only capabilities with `capability!`, giving those types the same definitions and
 //! paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
 //! the cases use, with every field, variant, derive, and `Error` impl the
