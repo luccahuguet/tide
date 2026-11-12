@@ -40,11 +40,9 @@ fn executable_contracts_run_in_debug_test_and_erase_in_release() {
                     build.arg("--test");
                 }
                 checked(&mut build);
-                let out = checked(&mut Command::new(dir.join(if test {
-                    "out/demo-test"
-                } else {
-                    "out/demo"
-                })));
+                let mut run = Command::new(dir.join(if test { "out/demo-test" } else { "out/demo" }));
+                if test { run.args(["--skip", "__tide_contract_tests::"]); }
+                let out = checked(&mut run);
                 if test {
                     assert!(
                         String::from_utf8_lossy(&out.stdout).contains(&format!("{count} passed")),
@@ -1232,6 +1230,126 @@ mod separate;
     }
 }
 
+/// fx-m72.3: generated entries exercise contracts, skips, private-state sequences and vacuity.
+#[test]
+fn generated_contract_tests_execute_and_report_unchecked() {
+    let dir = package(
+        "generated-contracts",
+        include_str!("../../../conformance/cases/contracts/generated_tests.rs"),
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test", "--crate-name=meter"]));
+    let binary = dir.join("out/meter-test");
+    let listing = checked(Command::new(&binary).args(["--list", "--format=terse"]));
+    let listing = String::from_utf8(listing.stdout).unwrap();
+    let names: Vec<_> = listing
+        .lines()
+        .filter_map(|line| line.strip_suffix(": test"))
+        .collect();
+    assert!(names.contains(&"plain"), "{listing}");
+    let run = |prefix: &str| {
+        let name = names
+            .iter()
+            .find(|name| {
+                name.rsplit("::")
+                    .next()
+                    .unwrap()
+                    .starts_with(&format!("{prefix}_"))
+            })
+            .unwrap();
+        let output = Command::new(&binary)
+            .args(["--exact", name, "--nocapture"])
+            .env_remove("TIDE_TEST_SEED")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            stderr(&output)
+        );
+        (output.status.success(), text)
+    };
+    for name in [
+        "select",
+        "identity",
+        "string_bound",
+        "capabilities",
+        "unchanged",
+        "constant",
+        "paired_bounds",
+        "repeated_caps",
+        "public_nested",
+        "seed_argument",
+        "guided_custom",
+        "custom_option",
+        "custom_slice",
+        "comment_clause",
+        "multiline_literal",
+        "capability_scope",
+        "local_borrow",
+        "projected_number",
+        "argument_impl",
+        "crate_substrings",
+        "forged_const",
+        "forged_runtime",
+        "invariant_clause",
+        "concrete_consts",
+    ] {
+        let (ok, text) = run(name);
+        assert!(
+            ok && text.contains("100/100 cases passed"),
+            "{name}: {text}"
+        );
+    }
+    for (name, message) in [
+        ("rebound", "ensures violated:"),
+        ("phase", "ensures violated:"),
+        ("ordinary_panic", "body fault"),
+        ("forbidden", "vacuous:"),
+        ("from_broken", "ensures violated:"),
+        ("deeper_constructor", "requires violated:"),
+        ("capability_vacuous", "vacuous:"),
+    ] {
+        let (ok, text) = run(name);
+        assert!(!ok && text.contains(message), "{name}: {text}");
+    }
+    for (name, reason) in [
+        ("allowed", "empty domain for this probe"),
+        ("sealed", "constructor rejects every input"),
+        ("cfg_allowed", "cfg attribute reason"),
+    ] {
+        let (ok, text) = run(name);
+        assert!(
+            ok && text.contains(&format!("unchecked (vacuous, allowed: {reason})")),
+            "{name}: {text}"
+        );
+    }
+    let (ok, text) = run("shrinking_seed");
+    assert!(!ok && text.contains("input: seed = 1"), "{text}");
+    for name in ["unmet", "closure_arg", "dynamic_arg", "handle_arg", "unavailable_constructor", "const_constructor"] {
+        let (ok, text) = run(name);
+        assert!(ok && text.contains("ignored, unchecked:"), "{name}: {text}");
+    }
+    for name in ["static_text", "static_alias", "bound_static", "transitive_static", "related_borrows", "nested_borrow", "trait_lifetime", "projected_borrow"] {
+        let (ok, text) = run(name);
+        assert!(ok && text.contains("ignored, unchecked:") && text.contains("lifetime"), "{name}: {text}");
+    }
+    for (name, reason) in [
+        ("whole_root", "Root parameter"),
+        ("reexported", "type not nameable from the generated module"),
+        ("local_method", "body-local function"),
+        ("default_law", "trait method"),
+    ] {
+        let (ok, text) = run(name);
+        assert!(ok && text.contains(&format!("ignored, unchecked: {reason}")), "{name}: {text}");
+    }
+    let entry = package("generated-entry", "#[ensures(true)] #[tide::main] fn main() {}");
+    checked(driver(&entry).arg("--test"));
+    let out = checked(Command::new(entry.join("out/demo-test")).arg("--nocapture"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("ignored, unchecked: entry point"), "{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+
+}
+
 /// fx-m72.2: shared fixture executes guidance, rejection blame, and fixed-seed shrinking.
 #[test]
 fn guided_properties_filter_report_vacuity_and_shrink_simulation_parameters() {
@@ -1500,6 +1618,30 @@ fn property_generation_diagnoses_unsupported_fields_and_attribute_arguments() {
             "FX0901",
             "demo.rs:1:",
         ),
+        (
+            "generated-vacuity-reason",
+            "#[ensures(result)]\n#[allow(vacuous)]\nfn check() -> bool { true }",
+            "allow(vacuous) needs a nonempty reason",
+            "demo.rs:2:1",
+        ),
+        (
+            "contract-admission",
+            "#[requires({ let p = 0usize as *const u8; let _ = unsafe { *p }; true })]\n#[ensures(result == n)]\nfn identity(n: u8) -> u8 { n }",
+            "FX0901",
+            "demo.rs:1:",
+        ),
+        (
+            "reserved-generator",
+            "#[test]\n#[doc = \"__tide_draw:0:unsafe { 0u8 }\"]\nfn forged(n: u8) { let _ = n; }",
+            "reserved property metadata is supplied only by tide-admit",
+            "demo.rs:2:",
+        ),
+        (
+            "reserved-capabilities",
+            "#[test]\n#[doc = \"__tide_capabilities:\"]\nfn forged(n: u8) { let _ = n; }",
+            "reserved property metadata is supplied only by tide-admit",
+            "demo.rs:2:",
+        ),
     ] {
         let dir = package(&format!("property-invalid-{name}"), source);
         let out = driver(&dir)
@@ -1512,6 +1654,9 @@ fn property_generation_diagnoses_unsupported_fields_and_attribute_arguments() {
         let diagnosed =
             errors.contains(diagnostic) || (name == "requirements" && errors.contains("E0275"));
         assert!(diagnosed && errors.contains(line), "{errors}");
+        if name == "generated-vacuity-reason" {
+            assert!(errors.lines().any(|text| text.contains(&format!("{line}: error: {diagnostic}"))), "{errors}");
+        }
     }
 }
 

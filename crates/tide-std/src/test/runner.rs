@@ -47,6 +47,7 @@ pub struct Config {
     pub should_panic: bool,
     pub simulation: bool,
     pub fixed_seed: bool,
+    pub allow_vacuous: Option<&'static str>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -58,6 +59,7 @@ impl Default for Config {
             should_panic: false,
             simulation: false,
             fixed_seed: false,
+            allow_vacuous: None,
         }
     }
 }
@@ -86,6 +88,41 @@ fn install_hook() {
             }
         }));
     });
+}
+
+struct GenerationRejected(Clause);
+
+/// A public constructor/mutator may reject its arguments before entering its body.
+#[doc(hidden)]
+pub fn attempt<T>(function: &str, call: Source, body: impl FnOnce() -> T) -> Option<T> {
+    __contract::take_violation();
+    match panic::catch_unwind(AssertUnwindSafe(body)) {
+        Ok(value) => Some(value),
+        Err(payload) => {
+            let violation = __contract::take_violation();
+            if let Some(v) = violation
+                && v.clause.kind == ContractKind::Requires
+                && v.clause.function == function
+                && call.contains(&v)
+                && payload
+                    .downcast_ref::<String>()
+                    .is_some_and(|s| s.starts_with("requires violated:"))
+            {
+                REJECTION.with(|r| *r.borrow_mut() = Some(v.clause));
+                None
+            } else {
+                panic::resume_unwind(payload)
+            }
+        }
+    }
+}
+thread_local! { static REJECTION: RefCell<Option<Clause>> = const { RefCell::new(None) }; }
+#[doc(hidden)]
+pub fn reject_generation() -> ! {
+    let clause = REJECTION
+        .with(|r| r.borrow_mut().take())
+        .expect("generation rejection needs a requires clause");
+    panic::panic_any(GenerationRejected(clause))
 }
 
 enum Failure {
@@ -209,6 +246,9 @@ fn evaluate(
                 choices: generator.choices,
                 failure: Failure::Exit(message),
             }),
+            Err(payload) if payload.is::<GenerationRejected>() => {
+                Outcome::Rejected(payload.downcast::<GenerationRejected>().unwrap().0)
+            }
             Err(payload) => {
                 // A caught earlier clause must not turn a later, unrelated panic into a discard.
                 let rejected = violation.as_ref().filter(|v| {
@@ -393,6 +433,12 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
         });
         if config.simulation {
             eprintln!("simulation {name}: vacuous ({generated} seeds)");
+        }
+        if let Some(reason) = config.allow_vacuous {
+            eprintln!(
+                "unchecked (vacuous, allowed: {reason}): {name}; {accepted}/{generated} accepted/generated; most rejected by `{text}` ({count})"
+            );
+            return;
         }
         panic!(
             "vacuous: {accepted} of {generated} generated cases satisfied requires; most rejected by `{text}` ({count})"

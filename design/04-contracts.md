@@ -570,8 +570,12 @@ values such as views and `Seq`.
 
 Driver-built libtest binaries support explicit property tests written as
 `#[test]` functions with parameters (reference §10.2). The `tide test`
-command and generated contract tests are planned. Explicit properties support
-requires-guided generation, the vacuity floor, and generated simulation parameters.
+command is planned. Driver test builds also generate a property entry for each
+ensures-bearing function. Explicit and generated properties share requires-guided
+generation and the vacuity floor; explicit simulation properties also generate parameters.
+Ungeneratable functions are ignored as unchecked. Allowed vacuity passes with an
+unchecked report. Generated capabilities use a fault-free simulator; laws and
+fault injection remain planned.
 A property's own requires remains a generation filter in release test binaries;
 this does not retain ordinary functions' erased contract checks.
 The std crate docs own current implementation limits.

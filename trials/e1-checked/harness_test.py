@@ -336,13 +336,63 @@ pub mod acceptance { #[test] fn case1() {} }
             with patch.object(h, "run", return_value=green) as driver, \
                  patch.object(h, "test_command", return_value=[green]) as tests:
                 results = h.executable_tests(config, root, root, acceptance=False)
-                self.assertTrue(any(r["code"] and "fx-nkv.6 and fx-m72" in r["stderr"] for r in results))
+                self.assertTrue(all(r["code"] == 0 for r in results))
                 self.assertIn("--emit=link", driver.call_args.args[0])
                 self.assertEqual(tests.call_args.args[0], [str(root / "output/test-writer/solution-test")])
                 with patch.object(h, "run_binary_cases", return_value=[green]) as cases:
                     results = h.binary_cases(dict(config, task="B1"), root, root)
                     self.assertTrue(all(r["code"] == 0 for r in results))
                     self.assertEqual(cases.call_args.args[0], root / "output/bin/solution")
+
+    def test_generated_module_segment_is_filtered_only_from_acceptance(self):
+        green = {"code": 0, "stdout": "", "stderr": ""}
+        generated = "nested::__tide_contract_tests::generated"
+        for acceptance in [False, True]:
+            with self.subTest(acceptance=acceptance), tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
+                listing = dict(green, stdout="case1: test\ncase2: test\n" + generated + ": test\n")
+                seen = []
+                def run(cmd, *_args, **_kwargs):
+                    if "--list" in cmd: return listing
+                    test = cmd[cmd.index("--exact") + 1]
+                    seen.append(test)
+                    Path(cmd[cmd.index("--logfile") + 1]).write_text("ok " + test + "\n")
+                    return dict(green)
+                with patch.object(h, "run", side_effect=run):
+                    result = h.test_command(["/binary"], {"task": "C10"}, Path(tmp), acceptance=acceptance)
+                self.assertTrue(all(r["code"] == 0 for r in result), result)
+                self.assertEqual(seen, ["case1", "case2"] + ([] if acceptance else [generated]))
+        # A substring is not the reserved module segment.
+        with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
+            listing = dict(green, stdout="case1: test\ncase2: test\n__tide_contract_tests_extra::case: test\n")
+            with patch.object(h, "run", return_value=listing):
+                result = h.test_command(["/binary"], {"task": "C10"}, Path(tmp), acceptance=True)
+            self.assertEqual(result[0]["code"], 1)
+
+    def test_tide_writer_runs_every_test_form_and_reports_unchecked(self):
+        with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
+            root = Path(tmp)
+            config = dict(h.base_config("tide", local=True), task="A2")
+            independent = (h.ROOT / "conformance/cases/contracts/generated_tests.rs").read_text()
+            independent += """
+#[test] fn property(n: u8) { assert!(n <= u8::MAX); }
+#[sim_test(seeds = 2)] fn simulation(sim: std::sim::SimRoot) { let _ = sim.clock.now(); }
+"""
+            pkg = h.package(root, config, independent)
+            results = h.executable_tests(config, root, pkg, acceptance=False)
+            self.assertEqual(results[0]["code"], 0, results[0]["stderr"])
+            executions = {r["command"][r["command"].index("--exact") + 1]: r
+                          for r in results if "--exact" in r.get("command", [])}
+            for name in ["plain", "property", "simulation"]:
+                self.assertEqual(executions[name]["code"], 0, executions[name])
+            rebound = next(r for name, r in executions.items() if name.startswith("__tide_contract_tests::rebound_"))
+            self.assertNotEqual(rebound["code"], 0)
+            self.assertIn("ensures violated:", rebound["stdout"] + rebound["stderr"])
+            allowed = next(r for name, r in executions.items() if name.startswith("__tide_contract_tests::allowed_"))
+            self.assertEqual(allowed["code"], 0, allowed)
+            self.assertIn("unchecked (vacuous, allowed:", allowed["stdout"] + allowed["stderr"])
+            skipped = next(r for name, r in executions.items() if name.startswith("__tide_contract_tests::handle_arg_"))
+            self.assertEqual(skipped["code"], 0, skipped)
+            self.assertIn("unchecked:", skipped["test_log"])
 
     def test_tide_library_boundary_compiles_separate_sources_before_execution(self):
         for first, code in [(True, 0), (False, 0), (False, 1)]:

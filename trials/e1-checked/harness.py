@@ -292,8 +292,6 @@ def executable_tests(config, work, pkg, *, acceptance):
         results = [built]
         if built["code"] == 0:
             results += test_command([str(out / "solution-test")], config, work)
-        results.append({"code": 2, "stdout": "", "stderr": "tide test runner unavailable: property, simulation "
-                        "and generated contract tests and the vacuity floor need fx-nkv.6 and fx-m72; plain #[test] only\n"})
         return results
     cmd = [config["sysroot"] + "/bin/cargo", "test", "--offline", "--locked", "--no-run", "--message-format=json"]
     cmd += ["--test", "acceptance"] if acceptance else (["--bin", "solution"] if config["task"] in BINS else ["--lib"])
@@ -334,6 +332,7 @@ def test_command(cmd, config, work, *, acceptance=False):
         if listing["code"]: return results
         tests = [line.removesuffix(": test") for line in listing["stdout"].splitlines() if line.endswith(": test")]
         if acceptance:
+            tests = [test for test in tests if "__tide_contract_tests" not in test.split("::")]
             expected = acceptance_tests(config["task"])
             listing["expected_tests"], listing["observed_tests"] = expected, tests
             if tests != expected:
@@ -344,7 +343,7 @@ def test_command(cmd, config, work, *, acceptance=False):
         for test in tests:
             # Keep the original inode open: candidate path replacement must not redirect the host read.
             with tempfile.NamedTemporaryFile(dir=execution, prefix="libtest-", delete=False) as logfile:
-                result = run(cmd + ["--exact", test, "--test-threads=1", "--logfile", logfile.name],
+                result = run(cmd + ["--exact", test, "--test-threads=1", "--show-output", "--logfile", logfile.name],
                              config, execution, timeout=10, read_only=[cmd[0]])
                 logfile.seek(0)
                 record = logfile.read()

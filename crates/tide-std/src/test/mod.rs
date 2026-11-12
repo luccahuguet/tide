@@ -12,8 +12,8 @@ mod runner;
 
 pub use arbitrary::{Arbitrary, Borrowed};
 #[doc(hidden)]
-pub use guided::{range, sequence};
-pub use runner::{Config, Source, property_result, run_config};
+pub use guided::{range, sequence, sequence_with};
+pub use runner::{Config, Source, attempt, reject_generation, property_result, run_config};
 pub use tide_macros::{sim_test, test};
 
 use std::collections::VecDeque;
@@ -146,12 +146,17 @@ impl Gen {
     }
 
     fn collection<T: Arbitrary>(&mut self) -> Vec<T> {
+        self.collection_with(T::arbitrary)
+    }
+
+    #[doc(hidden)]
+    pub fn collection_with<T>(&mut self, mut draw: impl FnMut(&mut Self) -> T) -> Vec<T> {
         let mut values = Vec::new();
         // Bound recursive values such as a struct containing Vec<Self>.
         if self.collection_depth < 4 {
             self.collection_depth += 1;
             while values.len() < 32 && self.draw(Kind::More, |g| (g.next() % 4 != 0) as u128) != 0 {
-                values.push(T::arbitrary(self));
+                values.push(draw(self));
             }
             self.collection_depth -= 1;
         }

@@ -32,7 +32,11 @@ pub(super) fn expand(mut f: ItemFn, clauses: Vec<Clause>) -> syn::Result<TS> {
     let mut requires: Vec<_> = expressions
         .iter()
         .filter(|(c, _)| c.kind == "requires")
-        .map(|(c, e)| check(c, quote!(#e), &function, quote!(true)))
+        .map(|(c, e)| {
+            let text = &c.text;
+            let checked = check(c, quote!(#e), &function, quote!(true));
+            quote!(::std::__contract::const_requires_marker(#text); #checked)
+        })
         .collect();
     if loop_sampled || clauses.iter().any(|c| c.sampled) {
         requires.insert(0, quote!(#[cfg(all(test, debug_assertions))] ::core::compile_error!("sampled contracts on const fn are not supported in test builds; use a runtime wrapper");));

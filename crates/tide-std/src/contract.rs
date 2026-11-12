@@ -190,6 +190,9 @@ pub fn requires(clause: Clause, predicate: impl FnOnce() -> bool) {
 pub fn ensures(clause: Clause, predicate: impl FnOnce() -> bool) {
     evaluate(clause, predicate);
 }
+/// Const requires text for the driver's generation guidance, with no runtime effect.
+pub const fn const_requires_marker(_: &str) {}
+
 /// Definition-identifiable ensures marker for const bodies, which cannot call `ensures`.
 pub const fn const_ensures_marker() {}
 

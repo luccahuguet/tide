@@ -71,7 +71,18 @@
 //!   Passing properties report accepted/generated; shrink attempts do not count.
 //!   Extra `#[sim_test]` parameters use the same runner with `seeds = N` accepted cases
 //!   within `100*N` generations, a fresh simulator per evaluation, and an unshrunk seed.
-//!   A plain test's parameter spelled `seed: u64` receives that unshrunk case seed;
+//!   An explicit plain test's parameter spelled `seed: u64` receives that unshrunk case seed.
+//!   Ordinary arguments of generated contract tests keep guidance and shrinking even when named seed;
+//! - driver-generated tests for ensures-bearing functions, in `__tide_contract_tests`.
+//!   They share guidance, requires filtering, the floor and shrinking. Generic type arguments
+//!   use i64 when its bounds hold, otherwise String. Private-field values use public
+//!   receiver-free constructors returning Self and zero to eight public mutable-receiver calls;
+//!   rejected calls are skipped. Individual capabilities come from a fresh, fault-free simulator;
+//!   Root parameters and the crate entry point are unchecked.
+//!   Unsupported signatures are ignored with `unchecked: <reason>`. A vacuous entry under
+//!   `#[allow(vacuous, reason = "..")]` passes and reports
+//!   `unchecked (vacuous, allowed: ...)`. Successful reports are visible with libtest's
+//!   `--show-output` or `--nocapture`; the E1 writer harness uses `--show-output`;
 //! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
 //!   and fixed default keys, capability-seeded `RandomState`, and
 //!   Rust's ordered collections, queue, and heap (see `collections`);
@@ -112,8 +123,8 @@
 //! panic propagation does not transport them. Runners must treat missing child metadata
 //! as an ordinary failure, never a requires rejection.
 //! Clause classification is syntactic until admission refines it; unknown or unparsed
-//! builtin macros remain untouched and classify as sampled. Unchecked-record printing
-//! and generated contract tests remain planned.
+//! builtin macros remain untouched and classify as sampled. Sampled-clause unchecked-record
+//! printing remains planned.
 //!
 //! # Property implementation limits
 //!
@@ -132,9 +143,25 @@
 //! byte lengths. Contains guidance needs a clonable primitive/String input; arbitrary
 //! element types only filter. Float sorting may still reject NaNs through the full clause.
 //! Ordinary collection generation allows 32 elements and four nesting levels; tuples
-//! support twelve elements. Inputs need Debug. Shrinking budgets 1,000 evaluations,
+//! support twelve elements. Explicit property inputs need Debug. Shrinking budgets 1,000 evaluations,
 //! stopping after 128 without improvement. Replay selects one generated case; a rejected
 //! replay fails as vacuous. A should_panic property never discards requires failures.
+//! Generated tests do not require Debug on custom inputs; such values are omitted from
+//! the printed input, while the case seed still replays them. Recursive types without an
+//! Arbitrary implementation, const generics, body-local functions, destructured parameters,
+//! unsafe functions, trait methods, unions, function/closure/dyn/handle inputs, unmet bounds,
+//! and types not nameable from the generated module are unchecked.
+//! Generated-test draws and explicit-property synthesis (`Properties`/`Arbitrary`) are separate
+//! generators: generated tests draw custom values locally without inserting trait implementations
+//! that would change explicit-property synthesis. Their recursion and structural policies can differ.
+//! Generic instantiation tries at most 4,096 i64/String combinations, preferring i64.
+//! Temporary inputs support unconstrained function-bound outer borrows. Static/early-bound
+//! input borrows, nested input lifetimes and projections resolving to borrows are unchecked.
+//! Private constructors must return Self directly; Option/Result constructors and generic
+//! mutator methods are not used. Const constructors/mutators with requires lack runtime
+//! rejection metadata and are excluded; without another constructor the test is unchecked.
+//! Capabilities whose simulator operations are not implemented
+//! still panic normally. Generated tests retain the build profile's ordinary contract checks.
 //! Source-boundary classification uses current-thread runtime violation records; const
 //! requires and child-task violations lack those records and fail normally.
 //!
@@ -150,7 +177,7 @@
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! other `sync` items,
 //! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
-//! and generated contract tests. A
+//! and laws. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
 //! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's

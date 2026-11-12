@@ -558,6 +558,55 @@ impl VisitMut for Receiver<'_> {
         mac.tokens = args.tokens();
     }
 }
+/// Driver wrappers are free functions with concrete types; keep one scoped clause traversal.
+pub(super) fn instantiate_requires(tokens: TS, types: &[(String, Type)]) -> syn::Result<TS> {
+    let mut value = expr::parse(tokens)?;
+    Receiver(&Ident::new("__tide_self", Span::call_site())).visit_expr_mut(&mut value);
+    struct Types<'a>(&'a [(String, Type)]);
+    impl Types<'_> {
+        fn concrete(&self, path: &syn::Path) -> Option<TS> {
+            let first = path.segments.first()?;
+            let (_, ty) = self.0.iter().find(|(name, _)| first.ident == name)?;
+            let tail: syn::punctuated::Punctuated<syn::PathSegment, syn::Token![::]> =
+                path.segments.iter().skip(1).cloned().collect();
+            Some(if tail.is_empty() {
+                quote!(#ty)
+            } else {
+                quote!(<#ty>::#tail)
+            })
+        }
+    }
+    impl VisitMut for Types<'_> {
+        fn visit_item_mut(&mut self, _: &mut syn::Item) {}
+        fn visit_expr_path_mut(&mut self, path: &mut syn::ExprPath) {
+            if path.qself.is_none()
+                && let Some(concrete) = self.concrete(&path.path)
+            {
+                if let Ok(replacement) = syn::parse2(concrete) {
+                    *path = replacement;
+                }
+            } else {
+                visit_mut::visit_expr_path_mut(self, path);
+            }
+        }
+        fn visit_type_mut(&mut self, ty: &mut Type) {
+            if let Type::Path(path) = ty
+                && path.qself.is_none()
+                && let Some(concrete) = self.concrete(&path.path)
+            {
+                *ty = syn::parse2(concrete).unwrap();
+            } else {
+                visit_mut::visit_type_mut(self, ty);
+            }
+        }
+        fn visit_macro_mut(&mut self, mac: &mut syn::Macro) {
+            expr::visit_macro(self, mac);
+        }
+    }
+    Types(types).visit_expr_mut(&mut value);
+    Ok(quote!(#value))
+}
+
 fn references(expr: &Expr, name: &str) -> bool {
     let mut replace = Replace {
         replacements: &[(name.to_owned(), quote!(()))],

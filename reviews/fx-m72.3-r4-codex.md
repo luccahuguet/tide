@@ -1,0 +1,26 @@
+Model: gpt-6.1-sol · Effort: high · Date: 2026-11-12
+Verdict: request_changes
+
+Scoped review of `21d2ba7..b45ac302feb176fe21ff817a30fd929e78a4fe42`, parent main unchanged at `d02ccf539f699785b4f5beb2592f2f706e74d8e6`. Interdiff SHA-256: `0fd64b07fd58cb663d28f6572adbd5e3cc5a354c3e6a2dd75c50d68f645972e8`. Full candidate diff against main SHA-256: `39d0481117315f8245a259b3d20ab1a6df64a3b71be375751c7f9b833bb9f031`. This review covers marker extraction provenance, path-printing regressions and other changes in this interdiff; it does not reopen the earlier tree.
+
+1. **Blocking — const-argument printing introduces an unused_braces build failure.** Evidence: `crates/tide-admit/src/synthesis/contracts.rs:265`. The replacement type printer wraps every const generic argument in braces, including scalar literals: `Tag<7>` becomes `Tag<{ 7 }>`. Rustc reports `unused_braces` on that generated type. A valid caller using the admitted `#![deny(unused_braces)]` therefore fails its test build solely because synthesis introduced a warning. For example:
+
+   ```rust
+   #![deny(unused_braces)]
+   pub struct Bytes<const N: usize> { pub bytes: [u8; N] }
+   #[ensures(result)]
+   pub fn check(value: Bytes<7>) -> bool { let _ = value; true }
+   ```
+
+   This function has no const generic parameters; its concrete structural input is otherwise generatable. The independent `r4-probes/paths.log` records the new warning at `probe.rs:8:359`, in appended driver code, for a concrete `Tag<7>` input. That probe successfully compiled and ran its generated entry for 100 cases. Promoting this observed lint with `deny(unused_braces)` makes it a build error; I did not run that additional variant after the quiet gate closed. The prior printer used rustc's type syntax rather than unconditionally adding these braces.
+
+   **Fix wanted:** emit scalar literal const arguments without unnecessary braces, retaining braces only where Rust's const-argument grammar requires them, or narrowly suppress this lint on the generated syntax. Add a driver regression with `deny(unused_braces)` and a concrete const-generic structural input. Do not relax the user's crate-wide lint policy. Confidence: high; this is a build regression, not a style objection.
+
+Marker-provenance assessment: no further blocking bypass found in the reviewed interdiff. `Clauses::read` now requires both the resolved helper identity and `contract_expansion` on the call expression (`contracts.rs:66-71`, `:117-144`). A direct user helper call retains its source-token span and cannot supply clause text merely by naming the helper or constructing its Clause record. The macro-generated requires calls supply their own Clause records; the user predicate is preserved as a separate expression with original spans and still undergoes ordinary admission. The scan covers requires and both ensures markers through the same guard. I inspected the contract macro's AST transformations and marker producers for another path that manufactures an eligible call from arbitrary user string data; none was found. The guard accepts exported trusted attribute expansions generally, rather than checking contract names, but I found no exported producer that turns arbitrary marker strings into such calls.
+
+The new `forged_const` and `forged_runtime` regressions assert successful 100-case generated runs while their unsafe-looking strings remain inert data. The `contract-admission` negative still requires FX0901 for a real unsafe clause, and `invariant_clause` checks a legitimate alternate contract attribute. The author's final generated and metadata logs report these tests passing. The reserved capability metadata negative is also present. Escaped metadata transport and the insertion exemption were not broadened by this interdiff.
+
+Other interdiff checks: the structural path printer removes substring replacement; public external ADT paths are indexed from real std exports, and inaccessible local definition paths are explicitly unchecked. APIT synthetic parameters are omitted from the explicit turbofish. The new body-local/trait/entry checks and Root helper removal are consistent with their callers and tests. Parsed vacuity transport retains missing-reason rejection and handles cfg_attr without copying arbitrary source snippets. I found no additional blocker in these changes. My independent raw-identifier and const-generic path probe built successfully and ran all three generated entries at 100/100 cases; it exposed finding 1's warning.
+
+Verification and limits: reviewed the author report's Fix round 3 section, Opus r3 findings, changed producers/consumers and final focused logs. `git diff --check 21d2ba7 b45ac30` passed. Independent probes used the existing candidate driver/std artifacts, nice 19, CARGO_BUILD_JOBS=4, timeout 300 and closed stdin after load, free-memory and live schedule gates, and finished before the 06:50 UTC window. The first wrapped-marker probe failed on its own invalid explicit-test return type (E0277), so it provides no marker-provenance evidence. A corrected probe was gated out before any compilation or execution; it was not rerun during the active quiet window. No full suites, heavy.sh, restricted E1 reads, candidate edits, Beads writes or history changes occurred. The worktree remains clean at b45ac30. Full-suite proof remains with the coordinator.
+DONE

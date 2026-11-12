@@ -86,11 +86,7 @@ pub trait Sequence: Arbitrary {
 }
 impl<T: Arbitrary> Sequence for Vec<T> {
     fn with_bounds(g: &mut Gen, lo: usize, hi: usize) -> Self {
-        let mut values: Vec<T> = (0..lo).map(|_| T::arbitrary(g)).collect();
-        while values.len() < hi && g.draw(Kind::More, |g| (g.next() % 4 != 0) as u128) != 0 {
-            values.push(T::arbitrary(g));
-        }
-        values
+        bounded_vec(g, lo, hi, &mut T::arbitrary)
     }
 }
 impl Sequence for String {
@@ -105,26 +101,47 @@ impl Sequence for String {
 }
 #[doc(hidden)]
 pub fn sequence<T: Sequence>(g: &mut Gen, lower: &[(usize, bool)], upper: &[(usize, bool)]) -> T {
+    match sequence_bounds(lower, upper) {
+        Some((lo, hi)) => T::with_bounds(g, lo, hi),
+        None => T::arbitrary(g),
+    }
+}
+
+#[doc(hidden)]
+pub fn sequence_with<T>(
+    g: &mut Gen,
+    lower: &[(usize, bool)],
+    upper: &[(usize, bool)],
+    mut draw: impl FnMut(&mut Gen) -> T,
+) -> Vec<T> {
+    match sequence_bounds(lower, upper) {
+        Some((lo, hi)) => bounded_vec(g, lo, hi, &mut draw),
+        None => g.collection_with(draw),
+    }
+}
+fn bounded_vec<T>(
+    g: &mut Gen,
+    lo: usize,
+    hi: usize,
+    draw: &mut impl FnMut(&mut Gen) -> T,
+) -> Vec<T> {
+    let mut values: Vec<T> = (0..lo).map(|_| draw(g)).collect();
+    while values.len() < hi && g.draw(Kind::More, |g| (g.next() % 4 != 0) as u128) != 0 {
+        values.push(draw(g));
+    }
+    values
+}
+fn sequence_bounds(lower: &[(usize, bool)], upper: &[(usize, bool)]) -> Option<(usize, usize)> {
     let mut lo = 0;
     let mut hi = usize::MAX;
     for &(value, inclusive) in lower {
-        let Some(value) = value.checked_add(usize::from(!inclusive)) else {
-            return T::arbitrary(g);
-        };
-        lo = lo.max(value);
+        lo = lo.max(value.checked_add(usize::from(!inclusive))?);
     }
     for &(value, inclusive) in upper {
-        let Some(value) = value.checked_sub(usize::from(!inclusive)) else {
-            return T::arbitrary(g);
-        };
-        hi = hi.min(value);
+        hi = hi.min(value.checked_sub(usize::from(!inclusive))?);
     }
     // Keep constructive allocation bounded even for hostile or contradictory clauses.
-    if lo > hi || lo > 4096 {
-        return T::arbitrary(g);
-    }
-    let hi = hi.min(lo.max(32));
-    T::with_bounds(g, lo, hi)
+    (lo <= hi && lo <= 4096).then_some((lo, hi.min(lo.max(32))))
 }
 
 #[cfg(test)]

@@ -331,6 +331,7 @@ impl Guidance {
         g: &Ident,
         target: &Ident,
         mutable: bool,
+        custom: Option<(TokenStream, Option<TokenStream>)>,
     ) -> TokenStream {
         let plan = &self.plans[index];
         let lower = plan.lower.iter().map(|(v, i)| {
@@ -341,10 +342,24 @@ impl Guidance {
             let v = self.expression(v);
             quote!((#v, #i))
         });
-        let ordinary = quote!(<#owned as ::std::test::Arbitrary>::arbitrary(#g));
+        let is_custom = custom.is_some();
+        let (ordinary, element) = custom.unwrap_or_else(|| {
+            (
+                quote!(<#owned as ::std::test::Arbitrary>::arbitrary(#g)),
+                None,
+            )
+        });
+        if is_custom && element.is_none() {
+            let mutable = mutable.then(|| quote!(mut));
+            return quote!(let #mutable #target: #owned = #ordinary;);
+        }
         let initial = if !plan.lower.is_empty() || !plan.upper.is_empty() {
             if sequence(ty) {
-                quote!(::std::test::sequence::<#owned>(#g, &[#(#lower),*], &[#(#upper),*]))
+                if let Some(element) = &element {
+                    quote!(::std::test::sequence_with(#g, &[#(#lower),*], &[#(#upper),*], |#g| #element))
+                } else {
+                    quote!(::std::test::sequence::<#owned>(#g, &[#(#lower),*], &[#(#upper),*]))
+                }
             } else {
                 quote!(::std::test::range::<#owned>(#g, &[#(#lower),*], &[#(#upper),*]))
             }
@@ -352,6 +367,9 @@ impl Guidance {
             let first = self.expression(first);
             let fixed = plan.fixed.iter().map(|v| self.expression(v));
             quote!(if true #(&& (#first == #fixed))* { #first } else { #ordinary })
+        } else if plan.some && element.is_some() {
+            let element = element.as_ref().unwrap();
+            quote!(::core::option::Option::Some(#element))
         } else if plan.some {
             let segment = type_name(ty).unwrap();
             let PathArguments::AngleBracketed(arguments) = &segment.arguments else {

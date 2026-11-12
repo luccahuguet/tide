@@ -230,8 +230,12 @@ that driver suite. The fixture includes production's `sim.rs` and runner and use
 covering seeded scopes, the split-update bug and ordered sink traces. Later world/fault/node
 operations remain fixture stubs. `contracts/guided_properties.rs` reaches the same
 requires guidance, vacuity floor, fixed case seed and simulation-parameter shrinking items;
-the driver suite executes its passing and failing entries and checks replay. Generated
-contract tests remain planned in production. Structural generator insertion
+the driver suite executes its passing and failing entries and checks replay.
+`contracts/generated_tests.rs` independently exercises generated contracts, private-state
+construction, explicit unchecked skips and allowed vacuity through the same production
+macro/runtime. The driver's synthesis pass adds these entries in `__tide_contract_tests`;
+E1 excludes that exact module segment only from acceptance listings and runs all entries
+in the writer stage. Structural generator insertion
 preserves original source lines, but columns of following tokens on an insertion's
 physical line can shift. A case that uses only the shared items is checked against Tide's
 std's own definitions. Every other item is the stub's own, a signature for an

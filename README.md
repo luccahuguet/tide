@@ -183,8 +183,13 @@ following tokens on an insertion's physical line can shift.
 Executable `#[requires]`, `#[ensures]`, and loop `invariant!` clauses lower through
 production macros and std. Checked clauses run in debug/test builds; sampled clauses
 run in the crate under test, with a 10,000-binder-value budget. Release builds
-type-check clauses but execute neither checks nor snapshots. The `tide test` command,
-remaining simulated capabilities and generated contract tests are planned.
+type-check clauses but execute neither checks nor snapshots. The `tide test` command and
+remaining simulated capabilities are planned. Driver test builds generate one contract test
+per ensures-bearing function, under `__tide_contract_tests`. They use the property
+runner's guidance, filtering and vacuity floor. Ungeneratable signatures are
+ignored with `unchecked: <reason>`; `#[allow(vacuous, reason = "..")]` passes
+a vacuous entry and reports `unchecked (vacuous, allowed: ...)`. Use
+`--show-output` or `--nocapture` to see successful entries' captured reports.
 
 Const requires violations name the clause's location rather than the caller's.
 The [std crate docs](crates/tide-std/src/lib.rs) own the supported contract forms
@@ -328,7 +333,7 @@ The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std that shares these definitions, including the production `#[test]`
 macro, property generation/shrinking runtime, and executable contract lowering/runtime.
-Generated contract tests remain planned. The
+The generated-test synthesis pass also operates against this shared std. The
 installed pinned toolchain is trusted and treated as immutable, as are the host
 C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
 and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.

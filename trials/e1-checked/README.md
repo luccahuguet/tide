@@ -184,9 +184,9 @@ acceptance suite as a second crate that imports its public API. First-check
 grading uses metadata mode. Full grading builds `acceptance-test` and runs
 each listed test with the same time and result checks as Rust. Binary cases
 run the driver's linked `solution` through the shared process-case loop.
-A plain libtest pass still leaves an explicit writer-test failure while
-property and simulation tests, generated contract tests, and the vacuity
-floor depend on fx-nkv.6 and fx-m72.
+Writer tests run plain, property, simulation and generated contract entries,
+with the vacuity floor and visible allowed-vacuity reports. Acceptance listings
+exclude the exact reserved `__tide_contract_tests` module segment; writer listings include it.
 
 This is not the agent-session runner: `fx-ic2` must restrict writer tools and
 reads, terminate the agent session at 40 minutes even when no command is run,

@@ -1,4 +1,5 @@
 //! Test-build additions planned from resolved HIR and compiled through ordinary admission.
+mod contracts;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -136,6 +137,39 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
         if !property {
             continue;
         }
+        // This pass sees only original source; driver metadata arrives in the second compile.
+        let forged = tcx.hir_attrs(id.hir_id()).iter().any(|attr| {
+            let Some(text) = attr.doc_str() else {
+                return false;
+            };
+            if [
+                "__tide_property_parameters:",
+                "__tide_generated_contract:",
+                "__tide_capabilities:",
+                "__tide_draw:",
+                "__tide_storage_draw:",
+                "__tide_storage_type:",
+                "__tide_element:",
+                "__tide_opaque:",
+                "__tide_type:",
+                "__tide_requires:",
+                "__tide_allow:",
+            ]
+            .iter()
+            .any(|prefix| text.as_str().starts_with(prefix))
+            {
+                tcx.dcx().span_err(
+                    attr.span(),
+                    "reserved property metadata is supplied only by tide-admit",
+                );
+                true
+            } else {
+                false
+            }
+        });
+        if forged {
+            continue;
+        }
         let sig = tcx.fn_sig(def).instantiate_identity().skip_normalization();
         let sig = tcx.instantiate_bound_regions_with_erased(sig);
         properties.property = tcx.def_span(def);
@@ -172,6 +206,7 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
             );
         }
     }
+    contracts::plan(tcx, &crates, arbitrary, &mut edits);
     for &adt in &properties.adts {
         let module = LocalModId::new_unchecked(tcx.local_parent(adt.did().expect_local()));
         edits.append(tcx, module, &properties.implementation(adt));
