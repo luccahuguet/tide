@@ -87,6 +87,7 @@ impl Callbacks for Admission {
             self.tide_std,
             !self.backstop_only,
             self.test_library,
+            self.library_artifact.is_some(),
             &self.labels,
             &self.sources.insertions,
         );

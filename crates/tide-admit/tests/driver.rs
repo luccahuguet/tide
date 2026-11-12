@@ -982,3 +982,37 @@ fn trait_recursion_distinguishes_constructors_projections_and_selected_impl_args
         "{err}"
     );
 }
+
+#[test]
+fn ambient_operations_use_the_closed_policy_code() {
+    let source = r#"pub fn inspect(start: std::time::Instant, rx: &std::sync::mpsc::Receiver<u8>) {
+    let _ = std::fs::read("settings");
+    let _ = std::fs::File::open("settings");
+    let _ = std::env::args();
+    let _ = std::env::var("MODE");
+    let _ = std::time::Instant::now();
+    let _ = start.elapsed();
+    std::thread::sleep(std::time::Duration::ZERO);
+    let _ = std::process::exit;
+    let _ = std::process::abort;
+    let _ = std::process::Command::new("tool");
+    let _ = std::io::stdin();
+    let _ = std::net::TcpStream::connect("127.0.0.1:1");
+    let _ = std::net::TcpListener::bind("127.0.0.1:1");
+    let _ = std::net::UdpSocket::bind("127.0.0.1:1");
+    let _ = rx.recv_timeout(std::time::Duration::ZERO);
+    std::thread::park_timeout(std::time::Duration::ZERO);
+    std::thread::park_timeout_ms(0);
+    std::thread::sleep_ms(0);
+}"#;
+    let (code, stderr) = admit("ambient-policy", source, &[]);
+    assert_eq!(code, 1, "{stderr}");
+    for line in 2..=19 {
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|d| d.starts_with(&format!("lib.rs:{line}:")) && d.contains("FX0501:")),
+            "line {line}: {stderr}"
+        );
+    }
+}

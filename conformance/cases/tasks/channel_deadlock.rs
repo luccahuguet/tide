@@ -2,8 +2,8 @@
 use std::sync::mpsc::sync_channel;
 use std::task::TaskError;
 
-#[tide::main]
-fn main() -> Result<(), TaskError> {
+#[test]
+fn deadlock() -> Result<(), TaskError> {
     let sim = Root::sim(17);
     let (sender, receiver) = sync_channel::<u8>(0, &sim.tasks);
     let (blocked, unread) = sync_channel(0, &sim.tasks);

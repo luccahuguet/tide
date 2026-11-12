@@ -5,13 +5,15 @@
 //! A key is an item's canonical path in its defining crate as rustc prints it
 //! (`core::f64::<impl f64>::sin`, not a re-export's path), an impl's
 //! `impl <Trait> for <SelfTy>` (`impl <Trait> for fn()` when it is selected for a function
-//! pointer), or one of the pseudo-items `*const T`, `*mut T`, and `fn() as integer`. Items of
+//! pointer), or the pseudo-items `*const T`, `*mut T`, `fn() as integer`, and `thread_rng`. Items of
 //! Tide's std print under `tide_std::`, whichever crate is injected as `std`: `crates/tide-std`
 //! for a program, or the conformance corpus's fixture std (`conformance/rustc/std`), which
 //! includes Tide's std's crate-root items and capability types, so both key them alike. `*` in
 //! a pattern matches any run of characters, `::` included, except a leading `*`, which is
 //! literal: `*mut T` matches only the pseudo-item, not `impl core::fmt::Debug for &mut T`. The
 //! first rule whose pattern matches decides; `walk.rs` decides keys no rule matches.
+
+use crate::diag::Code;
 
 /// What a rule decides for the keys it matches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +30,8 @@ pub enum Verdict {
 pub struct Rule {
     pub pattern: &'static str,
     pub verdict: Verdict,
+    /// The rule-specific rejection; ordinary admission rules use FX0520.
+    pub code: Code,
     /// The replacement std offers, shown with the rejection.
     pub help: Option<&'static str>,
 }
@@ -36,6 +40,7 @@ const fn rule(verdict: Verdict, pattern: &'static str, help: Option<&'static str
     Rule {
         pattern,
         verdict,
+        code: Code::Fx0520,
         help,
     }
 }
@@ -47,6 +52,16 @@ const fn granted(pattern: &'static str) -> Rule {
 }
 const fn deny(pattern: &'static str, help: &'static str) -> Rule {
     rule(Verdict::Deny, pattern, Some(help))
+}
+
+const fn ambient(pattern: &'static str) -> Rule {
+    Rule {
+        code: Code::Fx0501,
+        ..deny(
+            pattern,
+            "use a capability in scope, or thread that capability through the parameters",
+        )
+    }
 }
 
 const GRANT: &str = "this needs the package's `unsafe` grant";
@@ -72,6 +87,64 @@ pub const RULES: &[Rule] = &[
     // ---- TCP's plain address/shutdown data (fx-hxw); no resolver or socket constructor.
     allow("core::net::*"),
     allow("std::net::Shutdown::*"),
+    // ---- ambient world operations (CAP-1, reference 6.9); Rust items only.
+    ambient("std::fs::read"),
+    ambient("std::fs::read_to_string"),
+    ambient("std::fs::write"),
+    ambient("std::fs::copy"),
+    ambient("std::fs::rename"),
+    ambient("std::fs::hard_link"),
+    ambient("std::fs::soft_link"),
+    ambient("std::fs::canonicalize"),
+    ambient("std::fs::metadata"),
+    ambient("std::fs::symlink_metadata"),
+    ambient("std::fs::read_link"),
+    ambient("std::fs::read_dir"),
+    ambient("std::fs::create_dir"),
+    ambient("std::fs::create_dir_all"),
+    ambient("std::fs::remove_file"),
+    ambient("std::fs::remove_dir"),
+    ambient("std::fs::remove_dir_all"),
+    ambient("std::fs::set_permissions"),
+    ambient("std::fs::exists"),
+    ambient("std::fs::File::open"),
+    ambient("std::fs::File::create"),
+    ambient("std::fs::File::create_new"),
+    ambient("std::fs::File::open_buffered"),
+    ambient("std::fs::File::create_buffered"),
+    ambient("std::fs::OpenOptions::open"),
+    ambient("std::fs::DirBuilder::create"),
+    ambient("std::env::args"),
+    ambient("std::env::args_os"),
+    ambient("std::env::var"),
+    ambient("std::env::var_os"),
+    ambient("std::env::vars"),
+    ambient("std::env::vars_os"),
+    ambient("std::env::current_dir"),
+    ambient("std::env::current_exe"),
+    ambient("std::env::home_dir"),
+    ambient("std::env::temp_dir"),
+    ambient("std::time::Instant::now"),
+    ambient("std::time::Instant::elapsed"),
+    ambient("std::time::SystemTime::now"),
+    ambient("std::time::SystemTime::elapsed"),
+    ambient("std::thread::functions::sleep"),
+    ambient("std::thread::functions::sleep_until"),
+    ambient("std::thread::functions::sleep_ms"),
+    ambient("std::thread::functions::park_timeout"),
+    ambient("std::thread::functions::park_timeout_ms"),
+    ambient("std::process::exit"),
+    ambient("std::process::abort"),
+    ambient("std::process::Command::new"),
+    ambient("std::io::stdio::stdin"),
+    ambient("std::sync::mpsc::Receiver::<T>::recv_timeout"),
+    ambient("std::sync::mpmc::Receiver::<T>::recv_timeout"),
+    ambient("std::net::tcp::TcpListener::bind"),
+    ambient("std::net::tcp::TcpStream::connect"),
+    ambient("std::net::tcp::TcpStream::connect_timeout"),
+    ambient("std::net::udp::UdpSocket::bind"),
+    // thread_rng is external to std; the walk uses this pseudo-key for that name.
+    ambient("thread_rng"),
     // ---- address observers and raw pointers (GLOBAL-4)
     granted("*const T"),
     granted("*mut T"),
@@ -93,6 +166,8 @@ pub const RULES: &[Rule] = &[
     deny("core::core_arch::*", "hardware intrinsics are not admitted"),
     // ---- synchronization without `Tasks` (CAP-3, 02 §9)
     granted("tide_std::sync::raw::*"),
+    // Unresolved paths name the final item: type denials must be module globs
+    // (e.g. std::sync::lazy_lock::*); an exact type deny misses Type::assoc.
     deny("core::sync::*", ATOMIC),
     deny(
         "alloc::sync::*",
@@ -298,6 +373,34 @@ mod tests {
     }
 
     #[test]
+    fn ambient_rules_leave_existing_owners_and_capability_methods_alone() {
+        assert_eq!(lookup("std::fs::read").unwrap().code, Code::Fx0501);
+        assert_eq!(
+            lookup("std::time::Instant::elapsed").unwrap().code,
+            Code::Fx0501
+        );
+        assert_eq!(
+            lookup("std::net::tcp::TcpStream::connect").unwrap().code,
+            Code::Fx0501
+        );
+        for key in [
+            "std::path::Path::exists",
+            "tide_std::io::Error::last_os_error",
+            "core::sync::atomic::AtomicU64",
+        ] {
+            assert_eq!(lookup(key).unwrap().code, Code::Fx0520);
+        }
+        for key in [
+            "tide_std::net::Net::bind",
+            "tide_std::net::Net::connect",
+            "tide_std::fs::Fs::read",
+            "tide_std::time::Clock::now",
+        ] {
+            assert!(lookup(key).is_none());
+        }
+    }
+
+    #[test]
     fn first_matching_rule_decides() {
         let verdict = |key| lookup(key).map(|r| r.verdict);
         // A narrow rule carves out of a broad one in either direction.
@@ -341,6 +444,6 @@ mod tests {
             Some(Verdict::Allow)
         );
         assert_eq!(verdict("std::sync::mpsc::channel"), None);
-        assert_eq!(verdict("std::fs::read"), None);
+        assert_eq!(verdict("std::fs::read"), Some(Verdict::Deny));
     }
 }

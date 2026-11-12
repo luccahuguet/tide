@@ -133,6 +133,33 @@ and property-test impls inserted by this driver run are not candidate
 definitions. Insertion provenance is tracked by exact byte ranges; adjacent
 user code remains checked. `#[allow]` does not silence these errors.
 
+The authority slice enforces `FX0501`, `FX0503`, `FX0504` and `FX0505` as errors.
+`policy.rs` owns a closed table of ambient Rust operations; missing Tide std
+items are looked up at the corresponding Rust std path, including inherent
+methods. Unresolved imports retain their source identity through renames and
+re-exports (named or globbed) in their lexical scope; recovery requires one
+source identity and respects shadowing. Same-spelled user methods and Tide capability methods are unaffected.
+Unresolved paths apply each matching deny rule's code, including `FX0520`
+for aliases of unavailable std items.
+`Path` I/O observers and `io::Error::last_os_error` retain `FX0520`.
+`Root` may be named in the entry signature, in field patterns destructuring
+`root` (including `main`'s parameter), or as `Root::sim`. A helper's signature
+cannot name `Root`, even with a field pattern. Field destructuring moves or borrows
+fields and is accepted; whole-root binding, passing and capture are rejected.
+Guarded field-pattern matches may have non-binding wildcard fallback arms;
+matches without a field pattern and whole-root binding arms remain rejected.
+Individual field moves, borrows and disjoint closure captures pass. Simulation names and
+operations require a test-only cfg ancestor, a plain/property/simulation test,
+or the separate suite supplied with `--tide-test-library`. Merely compiling
+ordinary production helpers with `--test` does not exempt them. The paired
+candidate library remains production code. A test-only cfg becomes false when
+`test` is disabled in the current target configuration;
+`any(test, not(test))` is not test-only. `FX0505` uses the resolved Tide std
+callee's final `&Tasks` parameter and missing-argument count, so constructors
+need no separate registry. `#[allow]` does not silence these errors.
+The deadlock fixtures run as tests; generated-contract fixtures use capability
+parameters rather than whole `Root` parameters.
+
 ## Case format
 
 One `.rs` file per case, under `cases/<area>/`: `memory` (02), `authority`
@@ -370,9 +397,11 @@ through tide-admit on real Linux `127.0.0.1:0` and `sim.net` in debug/release,
 including listener/stream operations, owned/borrowed I/O, attenuation, cancellation,
 addresses, EOF/half-close and a 1 MiB transfer. It compares values/ErrorKinds,
 excluding ports/timing, and asserts allowed sets for timing-dependent post-close
-outcomes. Seed reruns compare traces; simulation-specific checks cover port reuse,
+outcomes. Simulation runs in tests; the trusted harness compares each seed's
+observations with the real binary's output. Seed reruns compare traces;
+simulation-specific checks cover port reuse,
 bounded backlog/backpressure, wildcard binding and cancelled connect/read/write.
-`authority/tcp_deadlock.rs` executes a full socket with no reader and must report
+`authority/tcp_deadlock.rs` executes a test with a full socket and no reader and must report
 `net.write(conn)` with the call site. These execute in the ordinary trusted harness,
 not RUN-3's planned socket-denying sandbox. The TCP model's capacities and delays
 remain provisional; other real hostnames use inline uncancellable Rust resolution,

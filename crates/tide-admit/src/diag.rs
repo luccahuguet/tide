@@ -43,8 +43,16 @@ pub enum Code {
     Fx0407,
     /// Duplicate inherent method names (D3).
     Fx0408,
+    /// An ambient world operation (CAP-1).
+    Fx0501,
     /// A non-`Pure` `static`, a `static mut`, a lazy static, or a thread-local (GLOBAL-1 to 3).
     Fx0502,
+    /// Naming or using the whole Root outside the entry parameter (ROOT-1, ROOT-2).
+    Fx0503,
+    /// Simulation outside test code (ROOT-3).
+    Fx0504,
+    /// A handle constructor missing its final &Tasks (CAP-2).
+    Fx0505,
     /// A call of, or other reference to, the binary's `main` (ROOT-5).
     Fx0506,
     /// `dbg!` in a release build (SINK-8).
@@ -111,7 +119,11 @@ impl Code {
         Code::Fx0406,
         Code::Fx0407,
         Code::Fx0408,
+        Code::Fx0501,
         Code::Fx0502,
+        Code::Fx0503,
+        Code::Fx0504,
+        Code::Fx0505,
         Code::Fx0506,
         Code::Fx0507,
         Code::Fx0508,
@@ -154,7 +166,11 @@ impl Code {
             Code::Fx0406 => "FX0406",
             Code::Fx0407 => "FX0407",
             Code::Fx0408 => "FX0408",
+            Code::Fx0501 => "FX0501",
             Code::Fx0502 => "FX0502",
+            Code::Fx0503 => "FX0503",
+            Code::Fx0504 => "FX0504",
+            Code::Fx0505 => "FX0505",
             Code::Fx0506 => "FX0506",
             Code::Fx0507 => "FX0507",
             Code::Fx0508 => "FX0508",

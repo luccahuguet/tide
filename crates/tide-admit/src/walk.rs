@@ -46,6 +46,7 @@ use crate::diag::{Code, Diagnostics, RustcLabels};
 use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
+mod authority;
 mod mono;
 mod sinks;
 mod surface;
@@ -74,11 +75,13 @@ pub fn check_crate(
     tide_std: bool,
     obligations: bool,
     test_library: Option<CrateNum>,
+    test_suite: bool,
     labels: &RustcLabels,
     insertions: &crate::synthesis::Insertions,
 ) -> Holes {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants, test_library);
+    walk.test_suite = test_suite;
     walk.labels = labels.clone();
     walk.insertions = Some(insertions);
     walk.obligations = obligations;
@@ -108,6 +111,7 @@ enum Admitted {
 #[derive(Clone)]
 struct Rejection {
     key: String,
+    code: Code,
     help: Option<&'static str>,
 }
 
@@ -142,6 +146,8 @@ struct Walk<'a, 'tcx> {
     obligations: bool,
     /// The exact artifact this driver just admitted for a separate test crate.
     test_library: Option<CrateNum>,
+    /// The separate suite is test code even if it never loads the candidate artifact.
+    test_suite: bool,
     /// The item being visited, which holds the trust holes found outside bodies.
     item: Option<LocalDefId>,
     /// Trust holes: (holding item, what, the site's span, or none for a use counted once).
@@ -171,6 +177,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             item_env: None,
             obligations: true,
             test_library,
+            test_suite: false,
             item: None,
             holes: FxHashSet::default(),
         }
@@ -255,6 +262,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             None if unlisted_admitted => Ok(Admitted::Free),
             _ => Err(Rejection {
                 key,
+                code: rule.map_or(Code::Fx0520, |r| r.code),
                 help: rule.and_then(|r| r.help),
             }),
         }
@@ -277,7 +285,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
         let key = self.key(def_id);
         match role {
-            Role::Other => Err(Rejection { key, help: None }),
+            Role::Other => Err(Rejection {
+                key,
+                code: Code::Fx0520,
+                help: None,
+            }),
             _ => self.decide(key.clone(), policy::lookup(&key), role == Role::TideStd),
         }
     }
@@ -311,7 +323,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if role == Role::TideStd || (self.admit_def(used_as.def_id).is_ok() && head.is_ok()) {
             Ok(Admitted::Free)
         } else {
-            Err(Rejection { key, help: None })
+            Err(Rejection {
+                key,
+                code: Code::Fx0520,
+                help: None,
+            })
         }
     }
 
@@ -397,7 +413,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let span = span.source_callsite();
         let message = format!("`{}` is not admitted{note}", rejection.key);
         self.diags
-            .report(self.tcx, span, Code::Fx0520, message, rejection.help);
+            .report(self.tcx, span, rejection.code, message, rejection.help);
     }
 
     fn check(&mut self, span: Span, verdict: Result<Admitted, Rejection>) {
@@ -1296,7 +1312,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             let key = with_no_visible_paths!(with_no_trimmed_paths!(with_resolve_crate_name!(
                 format!("{}: {}", tr.self_ty(), tr.print_only_trait_path())
             )));
-            let rejection = Rejection { key, help: None };
+            let rejection = Rejection {
+                key,
+                code: Code::Fx0520,
+                help: None,
+            };
             self.reject(span, rejection, " (its obligations nest too deep to check)");
             return;
         }
@@ -1422,63 +1442,6 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 }
                 _ => {}
             }
-        }
-    }
-
-    /// A path that did not resolve because Tide's std does not export it, such as
-    /// `std::sync::LazyLock`, is reported when the rules deny the item Rust's std has there.
-    fn unresolved(&mut self, path: &hir::Path<'tcx>) {
-        let tcx = self.tcx;
-        let (Some(rust_std), Some(tide_std)) = (self.crates.rust_std(), self.crates.tide_std())
-        else {
-            return;
-        };
-        let mut names = path
-            .segments
-            .iter()
-            .map(|s| s.ident.name)
-            .skip_while(|n| *n == kw::PathRoot);
-        if names.next() != Some(sym::std) {
-            return;
-        }
-        // The same module in both crates, while Tide's std has it.
-        let (mut rust, mut tide) = (rust_std.as_def_id(), Some(tide_std.as_def_id()));
-        for name in names {
-            let children = move |m: DefId| {
-                tcx.module_children(m)
-                    .iter()
-                    .filter(move |c| c.ident.name == name)
-            };
-            if tide.is_some_and(|m| children(m).next().is_none()) {
-                tide = None;
-            }
-            let mut next = None;
-            for child in children(rust) {
-                match child.res {
-                    Res::Def(DefKind::Mod, def_id) => next = Some(def_id),
-                    Res::Def(_, def_id) if tide.is_none() => {
-                        let key = self.key(def_id);
-                        if let Some(rule) =
-                            policy::lookup(&key).filter(|r| r.verdict == Verdict::Deny)
-                        {
-                            let rejection = Rejection {
-                                key,
-                                help: rule.help,
-                            };
-                            self.reject(path.span, rejection, " (Tide's std does not export it)");
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            let Some(next) = next else { return };
-            rust = next;
-            tide = tide.and_then(|m| {
-                children(m).find_map(|c| match c.res {
-                    Res::Def(DefKind::Mod, def_id) => Some(def_id),
-                    _ => None,
-                })
-            });
         }
     }
 }
@@ -1852,6 +1815,8 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     fn visit_path(&mut self, path: &hir::Path<'tcx>, id: HirId) {
         match path.res {
             Res::Def(_, def_id) => {
+                self.authority_use(def_id, path.span);
+                self.root_name(def_id, path, id);
                 self.use_def(def_id, path.span);
                 self.main_named(def_id, path.span);
                 // Typeck records no args for the lang-item calls that `?` and `for` desugar to
@@ -1871,7 +1836,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
                     self.named(args.types(), path.span);
                 }
             }
-            Res::Err => self.unresolved(path),
+            Res::Err => self.authority_unresolved(path, id),
             _ => {}
         }
         intravisit::walk_path(self, path)
@@ -1881,22 +1846,26 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         if let (hir::QPath::TypeRelative(..), Some(t)) = (qpath, self.typeck_of(id)) {
             if let Some(def_id) = t.type_dependent_def_id(id) {
                 let span = qpath.span();
+                self.authority_use(def_id, span);
                 self.use_def(def_id, span);
                 let args = path_args(self.tcx, t, def_id, id);
                 self.use_generic(def_id, args, span, true);
                 self.named(args.types(), span);
             }
         }
+        self.authority_qpath(qpath, id);
         intravisit::walk_qpath(self, qpath, id)
     }
 
     fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
         if let Some(t) = self.typeck_of(e.hir_id) {
+            self.authority_expr(e, t);
             self.surface_expr(e, t);
             self.ceiling_call(e, t);
             self.lint_sink_expr(e, t);
             // Method calls, overloaded operators, and indexing.
             if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
+                self.authority_use(def_id, e.span);
                 self.use_def(def_id, e.span);
                 let args = path_args(self.tcx, t, def_id, e.hir_id);
                 self.use_generic(def_id, args, e.span, true);

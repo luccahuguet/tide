@@ -1,6 +1,5 @@
 //@ rules: CHANNEL-1
 // An unbounded channel is accepted in a binary, also under --test.
-use std::Root;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::task::Tasks;
 

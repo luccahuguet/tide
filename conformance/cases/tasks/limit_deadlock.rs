@@ -2,8 +2,8 @@
 // The driver executes this in a subprocess and checks the global deadlock report.
 use std::task::TaskError;
 
-#[tide::main]
-fn main() {
+#[test]
+fn deadlock() {
     let sim = Root::sim(3);
     let tasks = sim.tasks.limit(1);
     let _: Result<(), TaskError> = tasks.scope(|s| {

@@ -696,26 +696,53 @@ fn parallel_panics_keep_only_the_sequential_sink_prefix() {
         ),
     ] {
         for simulated in [false, true] {
-            let setup = if simulated {
-                "let _sim = Root::sim(7);"
+            let source = if simulated {
+                format!(
+                    r#"#[test] fn run() {{
+                    let sim = Root::sim(7);
+                    let panic = sim.tasks.spawn_isolated(|| {{ {body} }}).unwrap_err();
+                    assert!(panic.message.contains("winner"));
+                    let output: String = sim.records().iter().map(|r| format!("{{}}\n", r.message)).collect();
+                    assert_eq!(output, {expected:?});
+                }}"#
+                )
             } else {
-                ""
+                format!("#[tide::main] fn main() {{ {body} }}")
             };
-            let dir = package(
-                &format!("parallel-panic-{name}-{simulated}"),
-                &format!("#[tide::main] fn main() {{ {setup} {body} }}"),
-            );
+            let dir = package(&format!("parallel-panic-{name}-{simulated}"), &source);
             for profile in ["debug", "release"] {
-                checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+                let mut build = driver(&dir);
+                build.arg(format!("--tide-profile={profile}"));
+                if simulated {
+                    build.args(["--crate-type=lib", "--test"]);
+                }
+                checked(&mut build);
                 let out = Command::new("timeout")
                     .arg("30")
-                    .arg(dir.join("out/demo"))
+                    .arg(dir.join(if simulated {
+                        "out/demo-test"
+                    } else {
+                        "out/demo"
+                    }))
                     .stdin(Stdio::null())
                     .output()
                     .unwrap();
-                assert_eq!(out.status.code(), Some(101), "{}", stderr(&out));
-                assert_eq!(out.stdout, if simulated { "" } else { expected }.as_bytes());
-                assert!(stderr(&out).contains("winner"), "{}", stderr(&out));
+                assert_eq!(
+                    out.status.code(),
+                    Some(if simulated { 0 } else { 101 }),
+                    "{}",
+                    stderr(&out)
+                );
+                if simulated {
+                    assert!(
+                        String::from_utf8_lossy(&out.stdout).contains("1 passed"),
+                        "{}",
+                        stderr(&out)
+                    );
+                } else {
+                    assert_eq!(out.stdout, expected.as_bytes());
+                    assert!(stderr(&out).contains("winner"), "{}", stderr(&out));
+                }
             }
         }
     }
@@ -921,8 +948,13 @@ fn admitted_channel_deadlock_lists_senders_receivers_and_call_sites() {
         include_str!("../../../conformance/cases/tasks/channel_deadlock.rs"),
     );
     for profile in ["debug", "release"] {
-        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
-        let out = Command::new(dir.join("out/demo"))
+        checked(
+            driver(&dir)
+                .args(["--crate-type=lib", "--test"])
+                .arg(format!("--tide-profile={profile}")),
+        );
+        let out = Command::new(dir.join("out/demo-test"))
+            .args(["--exact", "deadlock", "--nocapture"])
             .stdin(Stdio::null())
             .output()
             .unwrap();
@@ -956,8 +988,9 @@ fn admitted_limit_deadlock_lists_every_waiter_and_call_site() {
         "limit-deadlock",
         include_str!("../../../conformance/cases/tasks/limit_deadlock.rs"),
     );
-    checked(&mut driver(&dir));
-    let out = Command::new(dir.join("out/demo"))
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = Command::new(dir.join("out/demo-test"))
+        .args(["--exact", "deadlock", "--nocapture"])
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -1508,7 +1541,6 @@ fn generated_contract_tests_execute_and_report_unchecked() {
         assert!(ok && text.contains("ignored, unchecked:") && text.contains("lifetime"), "{name}: {text}");
     }
     for (name, reason) in [
-        ("whole_root", "Root parameter"),
         ("reexported", "type not nameable from the generated module"),
         ("local_method", "body-local function"),
         ("default_law", "trait method"),
@@ -3333,20 +3365,33 @@ fn tcp_builds_and_runs_against_production_std() {
                 .args(["45"])
                 .arg(dir.join("out/demo")),
         );
-        assert_eq!(out.stdout, b"TCP_RAN\n");
+        let real = String::from_utf8(out.stdout.clone()).unwrap();
+        let real = real.strip_prefix("TCP_VALUES:").unwrap();
+        let real = real.strip_suffix("\nTCP_RAN\n").unwrap();
         // Isolated unwinds are contained; their host panic hooks still run.
         let hooks = stderr(&out);
-        assert_eq!(hooks.matches("tcp listener unwind").count(), 9, "{hooks}");
-        assert_eq!(hooks.matches("tcp stream unwind").count(), 9, "{hooks}");
-        assert_eq!(hooks.matches("tcp rebind unwind").count(), 4, "{hooks}");
+        assert_eq!(hooks.matches("tcp listener unwind").count(), 1, "{hooks}");
+        assert_eq!(hooks.matches("tcp stream unwind").count(), 1, "{hooks}");
+        assert_eq!(hooks.matches("tcp rebind unwind").count(), 0, "{hooks}");
         checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
         let out = checked(
             Command::new("timeout")
                 .args(["45"])
                 .arg(dir.join("out/demo-test"))
-                .args(["--exact", "simulated_tcp"]),
+                .args(["--exact", "simulated_tcp", "--nocapture"]),
         );
-        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+        let simulated = String::from_utf8_lossy(&out.stdout);
+        assert!(simulated.contains("1 passed"));
+        let values: Vec<_> = simulated
+            .split("TCP_VALUES:")
+            .skip(1)
+            .map(|text| text.lines().next().unwrap())
+            .collect();
+        assert_eq!(values, vec![real; 4], "{simulated}");
+        let hooks = stderr(&out);
+        assert_eq!(hooks.matches("tcp listener unwind").count(), 10, "{hooks}");
+        assert_eq!(hooks.matches("tcp stream unwind").count(), 10, "{hooks}");
+        assert_eq!(hooks.matches("tcp rebind unwind").count(), 5, "{hooks}");
     }
 }
 
@@ -3356,10 +3401,11 @@ fn tcp_backpressure_deadlock_names_the_connection() {
         "tcp-deadlock",
         include_str!("../../../conformance/cases/authority/tcp_deadlock.rs"),
     );
-    checked(&mut driver(&dir));
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
     let out = Command::new("timeout")
         .arg("15")
-        .arg(dir.join("out/demo"))
+        .arg(dir.join("out/demo-test"))
+        .args(["--exact", "deadlock", "--nocapture"])
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -3450,4 +3496,169 @@ fn tcp_incoming_carries_network_authority() {
         artifact.contains(r##""authority": {"#0": ["net"]}"##),
         "{artifact}"
     );
+}
+
+#[test]
+fn authority_rules_reject_at_error_severity_against_production_std() {
+    for (name, source, code) in [
+        (
+            "ambient",
+            "pub fn inspect() { let _ = std::time::Instant::now(); }",
+            "FX0501",
+        ),
+        (
+            "root",
+            "#[tide::main] fn main(root: Root) { let _all = root; }",
+            "FX0503",
+        ),
+        (
+            "simulation",
+            "pub fn setup() { let _ = Root::sim(1); }",
+            "FX0504",
+        ),
+        (
+            "handle",
+            "pub fn setup() { let _ = std::sync::Shared::new(1u64); }",
+            "FX0505",
+        ),
+    ] {
+        let dir = package(&format!("authority-{name}"), source);
+        for test in [false, true] {
+            let mut command = driver(&dir);
+            command.args([
+                "--crate-type=lib",
+                "--emit=metadata",
+                "--error-format=short",
+            ]);
+            if test {
+                command.arg("--test");
+            }
+            let out = command.output().unwrap();
+            assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+            assert!(
+                stderr(&out).contains(&format!("error: {code}:")),
+                "{}",
+                stderr(&out)
+            );
+            assert!(
+                !stderr(&out).contains(&format!("warning: {code}:")),
+                "{}",
+                stderr(&out)
+            );
+        }
+    }
+}
+
+#[test]
+fn authority_simulation_is_available_to_separate_suites_but_not_the_candidate() {
+    let dir = package(
+        "authority-paired-simulation",
+        "fn setup() { let _ = Root::sim(1); }\n#[test] fn uses_it() { setup(); }",
+    );
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    std::fs::write(
+        &candidate,
+        "pub fn value() -> u64 { 1 } pub fn thread_rng() -> u64 { 4 }",
+    )
+    .unwrap();
+    checked(paired_test_driver(&dir).arg("--emit=metadata"));
+    std::fs::write(
+        dir.join("package/src/demo.rs"),
+        "#[test] fn draw() { assert_eq!(tide_candidate::thread_rng(), 4); }",
+    )
+    .unwrap();
+    checked(paired_test_driver(&dir).arg("--emit=metadata"));
+    std::fs::write(&candidate, "pub fn setup() { let _ = Root::sim(1); }").unwrap();
+    let out = paired_test_driver(&dir)
+        .arg("--emit=metadata")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("FX0504"), "{}", stderr(&out));
+}
+
+#[test]
+fn authority_field_patterns_and_import_sources_use_production_std() {
+    for (name, source, kind, rejected) in [
+        (
+            "root-destructure",
+            include_str!("../../../conformance/cases/authority/root_destructure_accept.rs"),
+            "bin",
+            None,
+        ),
+        (
+            "root-parameter-pattern",
+            include_str!("../../../conformance/cases/authority/root_parameter_pattern_accept.rs"),
+            "bin",
+            None,
+        ),
+        (
+            "root-helper-pattern",
+            include_str!("../../../conformance/cases/authority/root_parameter_pattern_reject.rs"),
+            "lib",
+            Some("FX0503"),
+        ),
+        (
+            "local-rng",
+            include_str!("../../../conformance/cases/authority/cap_ambient_accept.rs"),
+            "lib",
+            None,
+        ),
+        (
+            "aliased-denial",
+            include_str!("../../../conformance/cases/authority/admit_std_alias_reject.rs"),
+            "lib",
+            Some("FX0520"),
+        ),
+        (
+            "thread-timers",
+            include_str!("../../../conformance/cases/authority/cap_thread_timers_reject.rs"),
+            "lib",
+            Some("FX0501"),
+        ),
+        (
+            "root-match-binding",
+            include_str!("../../../conformance/cases/authority/root_match_binding_reject.rs"),
+            "bin",
+            Some("FX0503"),
+        ),
+        (
+            "root-pattern-capture",
+            include_str!("../../../conformance/cases/authority/root_pattern_capture_accept.rs"),
+            "bin",
+            None,
+        ),
+        (
+            "local-command",
+            include_str!("../../../conformance/cases/authority/cap_ambient_import_accept.rs"),
+            "lib",
+            None,
+        ),
+        (
+            "ambient-command",
+            include_str!("../../../conformance/cases/authority/cap_ambient_import_reject.rs"),
+            "lib",
+            Some("FX0501"),
+        ),
+    ] {
+        let dir = package(&format!("authority-{name}"), source);
+        for test in [false, true] {
+            let mut command = driver(&dir);
+            command.args([&format!("--crate-type={kind}"), "--emit=metadata"]);
+            if test {
+                command.arg("--test");
+            }
+            let out = command.output().unwrap();
+            assert_eq!(
+                out.status.code(),
+                Some(if rejected.is_some() { 1 } else { 0 }),
+                "{}",
+                stderr(&out)
+            );
+            if let Some(code) = rejected {
+                assert!(stderr(&out).contains(code), "{}", stderr(&out));
+            }
+        }
+    }
 }

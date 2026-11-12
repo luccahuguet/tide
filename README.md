@@ -66,6 +66,12 @@ bounds, polymorphic recursion and duplicate inherent method names. Definition
 checks reject expanding cycles between function type parameters, including
 selected local trait impls. Unresolved dispatch retains rustc's checks;
 instance-depth failures alone do not receive `FX0407`.
+The authority checks reject ambient operations from a closed policy table (`FX0501`),
+forbidden naming or whole-value use of `Root` (`FX0503`), simulation outside
+test code (`FX0504`), and handle creation missing the final `&Tasks` (`FX0505`).
+Field moves, borrows and patterns are allowed. Test code includes test-only cfg ancestors,
+plain/property/simulation tests and the separate test suite; ordinary helpers
+in a `--test` build and the separate candidate library remain production code.
 It also rejects `#![no_std]` (`FX0520`) and package build scripts
 (`FX0915`), and caches successful checks/builds by source and trusted-input
 content. A crate it admits against Tide's std also gets a trust artifact beside its metadata,

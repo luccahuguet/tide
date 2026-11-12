@@ -76,7 +76,7 @@ not cite is a best mapping that a case must confirm.
 | = UNSAFE-1 | §9, 02:793 | `#[trusted_pure]` only in a package granted `unsafe` | checker | FX0901 (03:609) |
 | PURE-2 | §9, 02:807 | A missing auto or marker trait never makes two impls disjoint | both | FX0402 (ref:307); E0119 (rustc agrees, for `Pure` via the blanket impl) |
 | = ADMIT-1 | §9, 02:857 | `OnceLock` and `LazyLock` are not admitted | checker | FX0520 |
-| = GLOBAL-6 | §9, 02:870 | `Arc` omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, and `into_inner` | rustc | E0599 |
+| = GLOBAL-6 | §9, 02:870 | `Arc` omits `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, and `into_inner` | both | E0599 / FX0520 |
 | = ADMIT-1 | §9, 02:886 | `io::Error::new`/`other` conversions must reach one of alloc's four `From` impls (no user `From`/`Into`, no reflexive impl) | checker | FX0517 (02:889) |
 | = ADMIT-1 | §9, 02:893 | Generic code that wraps those constructors bounds its parameter by `Error + Send + Sync + Pure + 'static`, checked at the definition | checker | FX0517 |
 | = ADMIT-1 | §9, 02:898 | `Waker` is not admitted | checker | FX0520 |
@@ -87,13 +87,13 @@ not cite is a best mapping that a case must confirm.
 
 | ID | Section (file:line of the definition) | Rule, one line | Decided by | FX code(s) / rustc |
 | --- | --- | --- | --- | --- |
-| CAP-1 | §0, 03:41 | World and nondeterminism operations exist only as capability methods; ambient std calls are rejected | both | FX0501 (ref:549); rustc E0425 / E0599 (unresolved) |
+| CAP-1 | §0, 03:41 | World and nondeterminism operations exist only as capability methods; ambient std calls in the closed policy table are rejected | both | FX0501 (ref:549); rustc E0425 / E0599 / E0433 / E0432 (unresolved) |
 | TCP-1 | 03 §1.1, reference §6.1/§6.7; research/21 §§1.9–1.13 | `Net::bind/connect`, attenuations, TCP addresses, accept/incoming, owned/borrowed I/O, half-close and cancellation have the same tested values/ErrorKinds on real Linux loopback and seeded simulation | rustc and driver; execution in tide-admit build tests | `authority/tcp.rs`; excludes ports/timing; post-close writes assert the allowed set |
-| CAP-2 | §1.2, 03:215 | Every synchronization-handle constructor takes `&Tasks` | both | FX0505 (ref:725); E0061 |
+| CAP-2 | §1.2, 03:215 | Every synchronization-handle constructor takes a final `&Tasks`; missing-argument checks use its resolved std signature | both | FX0505 (ref:725); E0061 |
 | CAP-3 | §1.2, 03:220 | `std::sync::raw` (`Mutex`, `RwLock`, weaker orderings) needs the `unsafe` grant | checker | FX0520 (via ADMIT-1) |
-| ROOT-1 | §2.1, 03:268 | `Root` may be named only as the parameter of `#[tide::main] fn main` and in the path `Root::sim`; every binary's `main` carries the attribute | both | FX0503 for naming `Root` elsewhere; FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |
-| ROOT-2 | §2.1, 03:273 | `root` cannot be passed, borrowed into a call, stored, returned, or captured | checker | FX0503 |
-| ROOT-3 | §2.1, 03:277 | `Root::sim`, `SimRoot`, `NodeRoot`, and `std::sim` compile only in test code | checker | FX0504 |
+| ROOT-1 | §2.1, 03:268 | `Root` may be named in `main`'s signature, field patterns destructuring `root` (including `main`'s parameter), and `Root::sim`; every binary's `main` carries the attribute | both | FX0503 for naming `Root` elsewhere; FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |
+| ROOT-2 | §2.1, 03:273 | `root` cannot be passed, borrowed into a call, stored, returned, or captured whole; field moves, borrows and field patterns destructuring `root` (including `main`'s parameter) pass | checker | FX0503 |
+| ROOT-3 | §2.1, 03:277 | `Root::sim`, `SimRoot`, `NodeRoot`, and `std::sim` compile only in test code (test-only cfg ancestors, test functions, separate suites) | checker | FX0504 |
 | ROOT-4 | §2.1, 03:283 | Capabilities and handles cannot be built from data (private field, no `Default`/`Decode`); Tide's std bounds what `mem::zeroed`, `transmute`, raw-pointer reads, and union field reads produce by `Pure` | both | E0423 / E0599; `Pure` part FX0517; no own code |
 | ROOT-5 | §2.1, 03:294 | No code calls `main` or uses it as a value | checker | FX0506 |
 | GLOBAL-1 | §2.2, 03:299 | A `static` must be `Sync + Pure + 'static`; no `static mut` in safe code | both | FX0502; E0277 for `Sync` |

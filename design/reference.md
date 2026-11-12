@@ -358,8 +358,8 @@ do, in every dependency.
 ```rust
 #[tide::main]
 fn main(root: Root) -> Result<(), AppError> {
-    let data = root.fs.dir("/var/lib/app", Mode::ReadWrite)?;   // Fs below one directory
-    let net = root.net.only(["db.internal:5432"]);               // Net to one host
+    let data = root.fs.dir("/var/lib/app", Mode::ReadWrite)?;
+    let net = root.net.only(["db.internal:5432"]);
     app::run(&data, &net, &root.clock)?;
     Ok(())
 }
@@ -367,17 +367,16 @@ fn main(root: Root) -> Result<(), AppError> {
 
 - `Root` has public fields `fs`, `net`, `clock`, `rand`, `env`, `stdin`,
   `proc`, `tasks`, and `log` (sink configuration, 6.5).
-- The attribute mints `root` through Rust's parameterless entry; every
-  binary needs it (`FX0512`, safe fix). `main` takes
-  `root: Root` or nothing and returns Rust's `Termination` (taught forms:
-  `()`, `Result<(), E: Debug>`, `ExitCode`): `Err(e)` prints `Error: {e:?}` and exits with 1
-  (to print `Display` and the `source()` chain, return `ExitCode` and log
-  the error yourself). A panic exits with 101.
-- `Root` can be named only in `main`'s signature and as `Root::sim`. `root`
-  cannot be passed, borrowed into a call, stored, returned, or captured
-  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). Code cannot
-  call `main` (`FX0506`), so tests call functions that take
-  capabilities.
+- Every binary needs the attribute (`FX0512`, safe fix); it mints `root`
+  via Rust's parameterless entry. `main` takes `root: Root` or nothing,
+  returning Rust's `Termination` (taught: `()`, `Result<(), E: Debug>`,
+  `ExitCode`). `Err(e)` prints `Error: {e:?}` and exits 1; for `Display`
+  and the `source()` chain, log it and return `ExitCode`. Panics exit 101.
+- Name `Root` only in `main`'s signature or as `Root::sim`.
+  Field patterns may destructure `root`, including `main`'s parameter.
+  `root` cannot be passed, borrowed into calls, stored, returned, or captured
+  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). Calling
+  `main` is `FX0506`; tests call functions taking capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
   (`FX0504`, 6.8).
 

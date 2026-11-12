@@ -86,9 +86,6 @@ fn repeated_caps(a: &mut std::fs::Fs, b: &mut std::fs::Fs) -> bool {
     true
 }
 
-#[ensures(result)]
-fn whole_root(root: std::Root) -> bool { assert!(root.fs.read("absent").is_err()); true }
-
 #[derive(PartialEq, PartialOrd)]
 pub struct PublicValue { pub number: u8 }
 #[ensures(result)]

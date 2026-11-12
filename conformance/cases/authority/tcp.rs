@@ -208,12 +208,14 @@ fn suite(net: &Net, tasks: &Tasks, clock: &Clock) -> Vec<ErrorKind> {
     observations
 }
 
+#[cfg(test)]
 fn simulated(seed: u64) -> (Vec<ErrorKind>, String) {
     let sim = Root::sim(seed);
     let values = suite(&sim.net, &sim.tasks, &sim.clock);
     (values, sim.trace())
 }
 
+#[cfg(test)]
 fn simulation_model(seed: u64) {
     let sim = Root::sim(seed);
     let listener = sim.net.bind("0.0.0.0:0").unwrap();
@@ -314,20 +316,22 @@ fn simulation_model(seed: u64) {
 #[tide::main]
 fn main(root: Root) {
     let real = suite(&root.net, &root.tasks, &root.clock);
+    println!("TCP_VALUES:{real:?}");
+    println!("TCP_RAN");
+}
+
+#[test]
+fn simulated_tcp() {
     for seed in 0..4 {
         let (values, trace) = simulated(seed);
-        assert_eq!(real, values);
+        // The trusted harness compares each seed's observations with the real run.
+        println!("TCP_VALUES:{values:?}");
         assert_eq!(trace, simulated(seed).1);
         assert!(trace.contains("net.connect"));
         assert!(trace.contains("net.read"));
         assert!(!trace.contains("done"));
         simulation_model(seed);
     }
-    println!("TCP_RAN");
-}
-
-#[test]
-fn simulated_tcp() {
     assert_eq!(simulated(7), simulated(7));
     simulation_model(7);
 }

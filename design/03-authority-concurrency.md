@@ -422,15 +422,16 @@ N1). Test builds add the simulator behind one predictable branch.
 ### 2.1 `Root`
 
 - **ROOT-1.** `Root` may be named only as the parameter of the binary's
-  `main`, written `#[tide::main] fn main(root: Root)`, and in the path
+  `main`, written `#[tide::main] fn main(root: Root)`, in field patterns
+  destructuring `root` (including `main`'s parameter), and in the path
   `Root::sim`, which ROOT-3 confines to test code; any other use is
   `FX0503`. rustc rejects parameters on a plain `main` (E0580); the
   attribute generates Rust's entry point, which mints the `Root`. Every
   binary's `main` carries it, with or without `root`; a `main` without it
   is `FX0512`, whose safe fix adds it.
 - **ROOT-2.** `root` cannot be passed, borrowed into a call, stored,
-  returned, or captured (`FX0503`). Its fields can be moved or borrowed out
-  one by one. Attenuation and wiring therefore happen in `main`, where review
+  returned, or captured (`FX0503`). Its fields can be moved or borrowed out,
+  directly or through field patterns. Attenuation and wiring happen in `main`, where review
   shows them (§4.3). The fix passes the fields the callee exercises.
 - **ROOT-3.** `Root::sim`, `SimRoot`, `NodeRoot`, and everything in
   `std::sim` compile only in test code: `#[cfg(test)]` items, `#[test]` and
