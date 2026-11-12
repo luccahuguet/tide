@@ -171,7 +171,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && !lossless_cast(self.tcx, from, to)
         {
             self.report(e.span, Code::Fx0301, format!(
-                "`{from} as {to}` can lose information; use try_from, truncate, cast_signed/cast_unsigned or explicit rounding"));
+                "`{from} as {to}` can lose information; use try_from, T::try_from_float(f.trunc()), truncate (same signedness, fixed widths), cast_signed/cast_unsigned, or round_from"));
         }
         if let hir::ExprKind::Struct(_, fields, _) = e.kind {
             self.record_self_borrows(fields, t);

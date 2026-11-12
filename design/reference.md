@@ -255,24 +255,24 @@ Rust's `wrapping_*`, `checked_*`, `saturating_*`, `overflowing_*`,
 
 ### 4.2 `as` is lossless only
 
-Allowed: integer to a wider integer of the same signedness, unsigned to a
-strictly wider signed, `bool` to any integer, `u8` to `char`, `char` to
+Allowed: same-signed integer widening, unsigned to wider signed,
+`bool` to integer, `u8` to `char`, `char` to
 `u32` and wider, integer to float when exact (`u16 as f32`, `u32 as f64`),
-`f32 as f64`, and a fieldless enum to an integer holding every
-discriminant. `usize`/`isize` count as 32 to 64 bits: `u32 as usize` and
-`usize as u64`, not `u64 as usize` (provisional). An address (11) counts
-as a `usize`. Lossy `as` is `FX0301`:
+`f32 as f64`, fieldless enum to integer holding every discriminant.
+`usize`/`isize` count as 32 to 64 bits: `u32 as usize` and `usize as u64`,
+not `u64 as usize` (provisional). Addresses (11) count as `usize`.
+Lossy `as`: `FX0301`:
 
 | Rust | Tide |
 | --- | --- |
-| `x as u8` (may not fit) | `u8::try_from(x)?`; keep the low bits: `let b: u8 = x.truncate();` |
+| `x as u8` (may not fit) | `u8::try_from(x)?`; keep low bits (same signedness): `let b: u8 = x.truncate();` |
 | `i32 as u32` (reinterpret) | `x.cast_unsigned()`; back with `cast_signed()` |
 | `n as f64` (`usize`, `u64`, `i64`) | `f64::round_from(n)` (nearest, ties to even) |
-| `f as i64` | `i64::try_from(f.trunc())?` (errors on NaN, infinity, out of range) |
+| `f as i64` | `i64::try_from_float(f.trunc())?` (errors on NaN, infinity, out of range) |
 | `x as f32` (`x: f64`) | `f32::round_from(x)` |
 
-`truncate()` takes no arguments and gets its target type from context.
-`round_from` and float `TryFrom` are provisional names.
+`truncate()` takes no arguments; context or `::<T>()` sets its target.
+`round_from`/`try_from_float`: provisional names.
 
 ### 4.3 Floats
 

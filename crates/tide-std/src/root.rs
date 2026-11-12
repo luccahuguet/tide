@@ -8,9 +8,12 @@
 // Shared with the conformance std, like the crate-root items below.
 pub mod collections;
 
+/// Explicit numeric conversions and Rust's conversion traits (reference §4.2).
+pub mod convert;
+
 // Rust's std modules and macros whose API Tide keeps (reference 1, 2.1).
 pub use std::{
-    any, array, borrow, boxed, cell, char, clone, cmp, convert, default, error, f32, f64, fmt,
+    any, array, borrow, boxed, cell, char, clone, cmp, default, error, f32, f64, fmt,
     hash, iter, mem, num, ops, option, path, rc, result, slice, str, string, vec,
 };
 pub use std::{
@@ -174,6 +177,7 @@ macro_rules! declare_prelude {
                 pub use std::error::Error;
                 pub use crate::Root;
                 pub use crate::marker::Pure;
+                pub use crate::convert::{RoundFrom, Truncate, TryFromFloat};
                 pub use crate::par::ParSlice;
                 pub use crate::tide;
                 $($extra)*

@@ -2439,6 +2439,41 @@ fn main() -> io::Result<()> {
 }
 
 #[test]
+fn numeric_conversions_build_and_execute_against_production_std() {
+    let source = include_str!("../../../conformance/cases/authority/numeric_conversions.rs");
+    let dir = package("numeric-conversions", source);
+    for profile in ["debug", "release"] {
+        let build = checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        assert!(!stderr(&build).contains("warning:"), "{}", stderr(&build));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"NUMERIC_CONVERSIONS_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+        checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
+        let out = checked(&mut Command::new(dir.join("out/demo-test")));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn numeric_conversion_traits_keep_the_recorded_pair_sets() {
+    for (name, statement) in [
+        ("cross-sign", "let _: u8 = (-1i16).truncate();"),
+        ("to-pointer", "let _: usize = 1u64.truncate();"),
+        ("from-pointer", "let _: u32 = 1usize.truncate();"),
+        ("exact-round", "let _ = f64::round_from(1u8);"),
+    ] {
+        let dir = package(
+            &format!("numeric-conversions-reject-{name}"),
+            &format!("#[tide::main] fn main() {{ {statement} }}"),
+        );
+        let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(stderr(&out).contains("E0277"), "{}", stderr(&out));
+        assert!(!dir.join("out/demo").exists());
+    }
+}
+
+#[test]
 fn float_math_builds_and_executes_against_production_std() {
     let source = include_str!("../../../conformance/cases/authority/float_math.rs");
     let dir = package("float-math", source);

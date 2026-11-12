@@ -306,6 +306,10 @@ impl Invocation {
             args.push("--test".into());
         }
         if let Some(std) = &self.std {
+            // Tide pins its prelude's Truncate alongside core's unstable inherent truncate.
+            // At a pin bump, delete Truncate if core's truncate has stabilized; rebuild the
+            // conformance corpus without -Aunstable-name-collisions to expose other collisions.
+            args.push("-Aunstable-name-collisions".into());
             args.extend(["--extern".into(), format!("std={}", std.display())]);
         }
         if let Some(library) = library_artifact {

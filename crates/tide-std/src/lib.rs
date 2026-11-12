@@ -91,6 +91,9 @@
 //!   Signal/timeout or a missing summary names the last seed started; ordinary failures name
 //!   the failing seeds. `TIDE_SIM_SEED` selects one fresh decimal u64 seed through the internal
 //!   runner hook, without source/build identity checks;
+//! - the prelude's sealed `convert::{Truncate, RoundFrom, TryFromFloat}` traits: same-signedness
+//!   low bits, nearest/ties-to-even float conversion (overflow can yield infinity), and exact
+//!   finite/in-range float-to-integer conversion, with `TryFromFloatError` on failure;
 //! - canonical float observers (`float`) and deterministic math (`math`), generic over
 //!   `f32`/`f64`, shared verbatim with conformance (bead `fx-yg5.2`);
 //! - Rust's std modules and macros whose API Tide keeps, as listed in `root.rs`, and the
@@ -220,7 +223,7 @@
 //! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's
 //! unreviewed-branch guarantee.
 //!
-//! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
+//! `root.rs` (with `convert.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
 //! scheduler and channel adapter), `par.rs`, `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
 //! runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
 //! share their definitions with the conformance fixture std. The identity-only capability

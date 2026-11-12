@@ -5,8 +5,8 @@
 //! std=`), as spikes/d18 does. It is a compile-time fixture: Tide's std
 //! (`crates/tide-std`) owns runtime behavior, and this crate includes its
 //! crate-root items (`root.rs`: `Root`, `Pure`, `tide::main`, the sinks, the
-//! runtime entry, Rust's re-exports, and the codec engine and `std::json`,
-//! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
+//! runtime entry, Rust's re-exports, numeric conversions (`convert.rs`), and the codec engine
+//! and `std::json` (`codec.rs` and `json.rs`)), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
 //! (`task.rs`), `Shared` (`sync.rs`), seeded simulations and their runner
 //! (`sim.rs`), parallel regions (`par.rs`), `std::time` (`time.rs`), and executable

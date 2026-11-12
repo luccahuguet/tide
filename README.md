@@ -385,6 +385,14 @@ and order -0.0 below +0.0. `std::math` replaces the banned inherent math methods
 for `f32` and `f64`, using pinned `libm` 0.2.16 with `force-soft-floats` on
 every supported target; non-SSE2 x86 is rejected because x87 native arithmetic
 does not meet D3. The functions document their deterministic compositions.
+The prelude's sealed `std::convert` traits provide `x.truncate()` (same-signedness
+low bits), `f64::round_from(n)` / `f32::round_from(x)` (nearest, ties to even), and
+`i64::try_from_float(f.trunc())?`. Float-to-integer conversion rejects non-finite,
+fractional, and out-of-range inputs; `-0.0` becomes zero. Float conversions can
+produce infinity, including `f32::round_from(u128::MAX)` and `f32::round_from(1e39_f64)`.
+Rust's bit-preserving `cast_signed()` / `cast_unsigned()` remain admitted. With Tide's
+std injected, the driver allows `unstable_name_collisions`: the pinned prelude's
+`Truncate` deliberately shares core's unstable inherent method name.
 The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std that shares these definitions, including the production `#[test]`

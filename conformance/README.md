@@ -261,6 +261,10 @@ The float observers and math functions use the production `float.rs` and `math.r
 files directly, with the same pinned software `libm` dependency. Their shared
 fixture, `authority/float_math.rs`, also executes against production through the
 driver in debug and release, including recorded bit-exact math vectors.
+Through `root.rs`, both std surfaces also use production's `convert.rs` and prelude
+traits `Truncate`, `RoundFrom`, and `TryFromFloat`. `authority/numeric_conversions.rs`
+checks every replacement spelling and executes against production in debug and release;
+std unit tests cover low bits, rounding ties, overflow, and exact float-to-integer bounds.
 The admission driver's rules (`policy.rs`, `pure.rs`) key the shared items
 alike. Production and the stub share the `#[test]` macro and property
 generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile-time fixture,

@@ -316,7 +316,13 @@ borrow-related error (provisional: one writer, eleven tasks).
   same build or still checked at run time; a `pub` precondition that a deleted
   check depends on stays checked at function entry.
 - `as` is accepted only where it is lossless; lossy conversions use
-  `TryFrom`, `truncate()`, or explicit float rounding methods. Under the
+  `TryFrom`, `truncate()`, or explicit float conversion methods. The prelude's
+  sealed traits in `std::convert` supply `truncate` (same-signedness low bits),
+  `round_from` (nearest, ties to even; overflow may yield infinity), and
+  `try_from_float` (finite, integral, in-range only; `-0.0` becomes zero).
+  Write `i64::try_from_float(f.trunc())?` to discard the fractional part
+  explicitly (reference §4.2;
+  [adopted mechanism](../research/25-casts-arena-allowlist.md#1-fx-yg53-cast-replacements)). Under the
   `unsafe` grant an address, a raw or function pointer's, counts as a
   `usize` (03 GLOBAL-4), so `p as u64` is lossless and `p as u32` is not:
   the grant admits unsafe code, not silent truncation, and a truncated
