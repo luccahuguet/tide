@@ -87,7 +87,7 @@ pub(crate) fn monotonic() -> Duration {
 /// `checked_*` methods return `None`: an instant before the origin is not representable.
 /// Instants of different clocks compare as plain offsets; nothing detects the mix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Instant(Duration);
+pub struct Instant(pub(crate) Duration);
 
 impl Instant {
     /// The time from `earlier` to `self`, or zero when `earlier` is later.

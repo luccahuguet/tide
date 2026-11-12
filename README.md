@@ -225,8 +225,19 @@ failure precedence and cancellation echoes, and level-triggered
 convertible to `io::Error` with `ErrorKind::Cancelled`; map explicitly to
 `TaskError::Cancelled` when needed.
 Unlimited spawn and joins are not checkpoints; in-memory I/O does not suspend
-and ignores cancellation. Limits, deadlines, shields and isolation remain
-unavailable. Suppressed failures/echoes/panics emit nothing at the default log
+and ignores cancellation. `tasks.limit(n)` shares a FIFO concurrency bound
+across its scopes and clones; nested limits take all their slots together.
+A limited spawn is a checkpoint and starts nothing when cancelled; spawning
+under a zero count panics. `Scope::set_deadline(t)` only lowers the deadline:
+expiry cancels, successful partial results remain `Ok`, and a child error
+after its own scope deadline becomes `TaskError::DeadlineExceeded`.
+Real deadlines are detected lazily at checkpoints and bound cancellable waits;
+a late wake returns `Cancelled`. `tasks.shield` hides enclosing cancellation,
+while inner scopes keep their own deadlines. `tasks.spawn_isolated` runs an
+owned closure in a new task, waits shielded without taking a limit slot,
+and returns `Panicked { message }` for an unwinding panic. The process panic
+hook still runs; aborts and stack overflows are not contained.
+Suppressed failures/echoes/panics emit nothing at the default log
 level; their debug record is deferred until the log sink exists. Discarded task
 values drop on the child or receiver thread depending on timing, so a destructor panic
 is attributed to the thread that runs it. Suppressed payload drops on the panic

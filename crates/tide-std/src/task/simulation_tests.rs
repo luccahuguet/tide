@@ -10,7 +10,7 @@ std::thread_local! {
     pub(super) static START_DELAY: Cell<Duration> = const { Cell::new(Duration::ZERO) };
 }
 
-fn bounded(f: impl FnOnce() + Send + 'static) {
+pub(super) fn bounded(f: impl FnOnce() + Send + 'static) {
     let (done, completed) = mpsc::channel();
     let worker = thread::spawn(move || {
         let result = catch_unwind(AssertUnwindSafe(f));

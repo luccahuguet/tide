@@ -187,7 +187,8 @@ line or for an incidental reason, which a single verdict would let pass.
 
 The stub is a compile-time fixture of Tide's std (`crates/tide-std`), which
 owns runtime behavior. It includes the production task runtime (`task.rs`:
-`Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, scope/spawn/join/cancel, and
+`Tasks`, `Scope`, `Task`, `TaskError`, `Cancelled`, `Panicked`,
+scope/spawn/join/cancel, limit/set_deadline, shield/spawn_isolated, and
 checkpoint/yield_now) and Tide's std's crate-root items
 (`crates/tide-std/src/root.rs`: `Root`, `Pure`, `tide::main`, the sinks and
 `panic!`, the runtime entry, and Rust's re-exports) and declares the
@@ -204,6 +205,11 @@ production through the driver. The latter covers overlapping sets on real thread
 and under `Root::sim`/`#[sim_test]`, aliases, caller-order payloads, poisoning, and
 recovery. Runtime tests in `sync.rs` additionally check lazy FIFO tickets, ordered
 simulation events, domain rejection, and reset's payload drop after release.
+`tasks/task_controls.rs` executes limits, deadline failure/partial results, level-triggered
+checkpoints, shields and isolation through the driver on both runtimes in debug and release.
+`tasks/limit_deadlock.rs` also executes against production: its simulated recursive limit
+waits abort after reporting every blocked task's wait kind and source span. These use the
+same global report as sleeps and joins; channel waits can extend it.
 The stub's `std::time` is the production `time.rs`: `Clock`, `Duration`,
 `Instant`, `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH`.
 `authority/clock_time.rs` also executes against production through the driver.

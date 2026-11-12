@@ -1,4 +1,4 @@
-use super::Outcome;
+use super::{Cause, Outcome};
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::time::Duration;
@@ -13,6 +13,11 @@ pub(super) enum Operation {
     Join(TaskId),
     ScopeExit(usize),
     Cancel(usize),
+    Failure(usize),
+    Deadline(usize, Duration),
+    SetDeadline(usize, Duration),
+    Limit(usize),
+    Isolated(TaskId),
     Checkpoint,
     Yield,
     CellNew(usize),
@@ -72,6 +77,7 @@ pub(super) struct Scheduler {
     tasks: Vec<TaskState>,
     pub(super) current: Option<TaskId>,
     next_cell: usize,
+    next_limit: usize,
     rng: u64,
     fs_rng: u64,
     step: usize,
@@ -96,6 +102,7 @@ impl Scheduler {
             }],
             current: Some(0),
             next_cell: 0,
+            next_limit: 0,
             rng: seed ^ 0x7469_6465_7363_6864,    // "tideschd"
             fs_rng: seed ^ 0x7469_6465_6669_6c65, // "tidefile"
             step: 0,
@@ -176,7 +183,7 @@ impl Scheduler {
         self.tasks[task].state = State::Ready(Some(pending));
         self.event(task, pending, pending.operation.kind(), Some("ready"));
         self.trace.push_str("}\n");
-        if self.timers.is_empty() {
+        if !self.has_operation_timer() {
             return Ok(());
         }
         self.stalled += 1;
@@ -233,7 +240,7 @@ impl Scheduler {
         // wakes nobody.
         if let Some(key) = self.tasks[task].timer.take() {
             self.timers.remove(&key);
-            if self.timers.is_empty() {
+            if !self.has_operation_timer() {
                 self.stalled = 0;
             }
         }
@@ -242,9 +249,13 @@ impl Scheduler {
         self.trace.push_str(",\"action\":\"wake\"}\n");
     }
 
-    pub(super) fn cancel(&mut self, task: TaskId, scope: usize, span: Span) {
+    pub(super) fn cancel(&mut self, task: TaskId, scope: usize, span: Span, cause: Cause) {
         let pending = Pending {
-            operation: Operation::Cancel(scope),
+            operation: match cause {
+                Cause::Failure(_) => Operation::Failure(scope),
+                Cause::Explicit(_) => Operation::Cancel(scope),
+                Cause::Deadline(_) => unreachable!("deadline events include their instant"),
+            },
             span,
         };
         self.event(task, pending, "cancel", None);
@@ -262,9 +273,26 @@ impl Scheduler {
             Outcome::Ok => "ok",
             Outcome::Error => "error",
             Outcome::Echo => "echo",
+            Outcome::Deadline => "deadline",
             Outcome::Panic => "panic",
         };
         writeln!(self.trace, ",\"outcome\":\"{outcome}\"}}").unwrap();
+        pending
+    }
+
+    pub(super) fn finish_isolated(&mut self, task: TaskId, outcome: Outcome) -> Pending {
+        self.tasks[task].state = State::Finished;
+        let pending = Pending {
+            operation: Operation::Exit,
+            span: self.tasks[task].spawn_span,
+        };
+        self.event(task, pending, "exit", None);
+        let result = if outcome == Outcome::Ok {
+            "ok"
+        } else {
+            "panicked"
+        };
+        writeln!(self.trace, ",\"isolated\":true,\"result\":\"{result}\"}}").unwrap();
         pending
     }
 
@@ -337,50 +365,14 @@ impl Scheduler {
     }
 
     pub(super) fn pick(&mut self, task: TaskId, pending: Pending) -> Option<TaskId> {
-        let runnable = loop {
-            let runnable: Vec<_> = self
-                .tasks
-                .iter()
-                .enumerate()
-                .filter_map(|(id, task)| matches!(task.state, State::Ready(_)).then_some(id))
-                .collect();
-            if !runnable.is_empty() {
-                break runnable;
-            }
-            // Every task is blocked: jump to the earliest timer and fire all of its instant, in
-            // key order, before any task runs. Without a timer nothing can run again.
-            let Some((&(to, _, _), _)) = self.timers.first_key_value() else {
-                self.current = None;
-                return None;
-            };
-            assert!(to > self.now, "a timer was registered in the past");
-            let advance = Pending {
-                operation: Operation::Advance,
-                span: pending.span,
-            };
-            self.event(task, advance, "sched", None);
-            writeln!(
-                self.trace,
-                ",\"from\":{},\"to\":{}}}",
-                self.now.as_nanos(),
-                to.as_nanos()
-            )
-            .unwrap();
-            self.now = to;
-            self.stalled = 0;
-            while let Some(timer) = self
-                .timers
-                .first_entry()
-                .filter(|timer| timer.key().0 == to)
-            {
-                let woken = *timer.get();
-                let State::Blocked(wait) = self.tasks[woken].state else {
-                    unreachable!("a timer outlived its wait")
-                };
-                self.wake(woken, wait);
-            }
-        };
+        let runnable: Vec<_> = self
+            .tasks
+            .iter()
+            .enumerate()
+            .filter_map(|(id, task)| matches!(task.state, State::Ready(_)).then_some(id))
+            .collect();
         self.current = match runnable.as_slice() {
+            [] => None,
             [only] => Some(*only),
             _ => {
                 let chosen = runnable[self.index(runnable.len() as u64) as usize];
@@ -400,6 +392,75 @@ impl Scheduler {
             }
         };
         self.current
+    }
+
+    pub(super) fn allocate_limit(&mut self) -> usize {
+        let id = self.next_limit;
+        self.next_limit += 1;
+        id
+    }
+
+    pub(super) fn has_operation_timer(&self) -> bool {
+        self.timers.keys().any(|key| key.1 == OPERATION_TIMER)
+    }
+
+    pub(super) fn deadline(&mut self, scope: usize, old: Option<Duration>, at: Option<Duration>) {
+        if let Some(old) = old {
+            self.timers.remove(&(old, 0, scope));
+        }
+        if let Some(at) = at {
+            self.timers.insert((at, 0, scope), scope);
+        }
+    }
+
+    // Runtime fires the timers in key order before choosing a runnable task.
+    pub(super) fn advance(&mut self, task: TaskId, pending: Pending) -> bool {
+        let Some((&(to, _, _), _)) = self.timers.first_key_value() else {
+            return false;
+        };
+        assert!(to > self.now, "a timer was registered in the past");
+        self.event(
+            task,
+            Pending {
+                operation: Operation::Advance,
+                span: pending.span,
+            },
+            "sched",
+            None,
+        );
+        writeln!(
+            self.trace,
+            ",\"from\":{},\"to\":{}}}",
+            self.now.as_nanos(),
+            to.as_nanos()
+        )
+        .unwrap();
+        self.now = to;
+        self.stalled = 0;
+        true
+    }
+
+    pub(super) fn fire_timer(&mut self) -> Option<(u8, usize)> {
+        let (&key, &id) = self
+            .timers
+            .first_key_value()
+            .filter(|(key, _)| key.0 == self.now)?;
+        if key.1 == 0 {
+            self.timers.remove(&key);
+        } else {
+            let State::Blocked(wait) = self.tasks[id].state else {
+                unreachable!("a timer outlived its wait")
+            };
+            self.wake(id, wait);
+        }
+        Some((key.1, id))
+    }
+
+    pub(super) fn event_result(&mut self, task: TaskId, pending: Pending, result: &str) {
+        self.event(task, pending, pending.operation.kind(), None);
+        self.trace.push_str(",\"result\":");
+        quoted(&mut self.trace, result);
+        self.trace.push_str("}\n");
     }
 
     fn index(&mut self, bound: u64) -> u64 {
@@ -450,6 +511,12 @@ impl Scheduler {
         match wait {
             Some(wait) => write!(self.trace, ",\"wait\":\"{wait}\"").unwrap(),
             None => self.trace.push_str(",\"wait\":null"),
+        }
+        if let Operation::Deadline(_, at) | Operation::SetDeadline(_, at) = pending.operation {
+            write!(self.trace, ",\"until\":{}", at.as_nanos()).unwrap();
+        }
+        if matches!(pending.operation, Operation::Isolated(_)) {
+            self.trace.push_str(",\"isolated\":true");
         }
         if kind == "cap" {
             let extra = match pending.operation {
@@ -524,7 +591,12 @@ impl Operation {
             Self::Spawn(id) => ("spawn", Some(id)),
             Self::Join(id) => ("join", Some(id)),
             Self::ScopeExit(id) => ("scope_exit", Some(id)),
-            Self::Cancel(id) => ("cancel", Some(id)),
+            Self::Cancel(id) => ("explicit", Some(id)),
+            Self::Failure(id) => ("failure", Some(id)),
+            Self::Deadline(id, _) => ("deadline", Some(id)),
+            Self::SetDeadline(id, _) => ("set_deadline", Some(id)),
+            Self::Limit(id) => ("limit", Some(id)),
+            Self::Isolated(id) => ("isolated", Some(id)),
             Self::Checkpoint => ("checkpoint", None),
             Self::Yield => ("yield_now", None),
             Self::CellNew(id) => ("cell_new", Some(id)),
@@ -553,6 +625,11 @@ impl Operation {
             | Self::CellsRelease => "cell",
             Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } => "cap",
             Self::File(_) => "io_wait",
+            Self::Cancel(_) | Self::Failure(_) | Self::Deadline(..) | Self::SetDeadline(..) => {
+                "cancel"
+            }
+            Self::Limit(_) => "spawn",
+            Self::Isolated(_) => "spawn",
             _ => self.name().0,
         }
     }
@@ -603,7 +680,7 @@ mod tests {
         for _ in 0..scheduler.stall_limit {
             scheduler.point(0, polling).unwrap();
         }
-        scheduler.cancel(0, 0, span);
+        scheduler.cancel(0, 0, span, Cause::Explicit(0));
         scheduler.wake(first, sleeping);
         // No point observes the empty timer map before the next sleeper registers.
         let second = scheduler.register(span);

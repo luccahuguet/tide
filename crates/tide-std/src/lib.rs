@@ -25,6 +25,15 @@
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
+//!   `Tasks::limit` shares FIFO counts across scopes and clones, with atomic acquisition of
+//!   nested counts. A limited spawn is a checkpoint; cancellation starts nothing and a zero
+//!   count panics on spawn. `Scope::set_deadline` lowers a soft deadline: expiry cancels,
+//!   partial `Ok` results survive, and a subsequent child error under its own scope deadline
+//!   becomes `TaskError::DeadlineExceeded`. Real deadlines are checked lazily and bound
+//!   cancellable waits; a late wake reports `Cancelled`. `Tasks::shield` hides enclosing
+//!   causes while inner scopes keep their own deadlines. `Tasks::spawn_isolated` waits
+//!   shielded for a new owned task without taking a slot and returns `Panicked { message }`
+//!   for an unwinding panic, with the process hook unchanged; aborts are not contained;
 //! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, `same`, `with`, `with2`, `with_all`,
 //!   and `reset`. Multi-cell calls acquire in global cell-id order with FIFO arrival per
 //!   cell; aliases return `LockError::Aliased` before acquiring. Callbacks get payloads in
@@ -134,9 +143,9 @@
 //! receiver thread depending on timing, so a destructor panic is attributed to the thread that
 //! runs it. Suppressed payload drops on the panic path follow PANIC-2 and can abort; on the
 //! non-panic path, a drop panic surfaces in the scope's caller.
+//! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
-//! Not provided yet: task limits, deadlines, shields and
-//! isolation; other capability operations and attenuation of reference 6.1 (network,
+//! Not provided yet: other capability operations and attenuation of reference 6.1 (network,
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! other `sync` items,

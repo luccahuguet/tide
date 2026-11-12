@@ -193,12 +193,12 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - RUN-4 (03:604): hole list. Only hole 1's grant requirement is compile-time, and it is a row above.
 - RUN-5 (03:644): `tide review` coverage.
 - RUN-6 (03:666): result channel and output escaping.
-- TASK-1 (03:1127): runtime failure and panic propagation. Its `Owned` closure typing is the 02:692 row.
+- TASK-1 (03 §6.2): runtime failure, panic propagation and isolation; `tasks/task_controls.rs` executes isolation through the driver. Its `Owned` closure typing is the SCOPE-3 row.
 - TASK-2 (03:1135): runtime scope-outcome precedence.
-- TASK-3 (03:1177): runtime level-triggered cancellation.
-- TASK-4 (03:1209): runtime deadlines.
+- TASK-3 (03 §6.2): runtime level-triggered cancellation; `tasks/task_controls.rs` executes checkpoints and cancelled limited spawns.
+- TASK-4 (03 §6.2): runtime deadlines; `tasks/task_controls.rs` executes deadline errors and partial Ok results.
 - TASK-5 (03:1223): runtime list of what cancellation cannot interrupt.
-- TASK-6 (03:1231): runtime shielding.
+- TASK-6 (03 §6.2): runtime shielding; `tasks/task_controls.rs` executes outer-cause hiding and an inner deadline.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
 - PAR-1 (03:1445): runtime determinism.

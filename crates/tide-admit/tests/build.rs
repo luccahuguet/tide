@@ -755,6 +755,62 @@ fn task_failures_and_cancellation_build_and_run_against_production_std() {
     }
 }
 
+/// Limits, deadlines, shielding and isolation execute through the admitted std on both runtimes.
+#[test]
+fn task_controls_build_and_run_against_production_std() {
+    let dir = package(
+        "task-controls",
+        include_str!("../../../conformance/cases/tasks/task_controls.rs"),
+    );
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"TASK_CONTROLS_RAN\n");
+        assert!(
+            stderr(&out).contains("contained task panic"),
+            "{}",
+            stderr(&out)
+        );
+        checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
+        let out = checked(
+            Command::new(dir.join("out/demo-test")).args(["--exact", "simulated_controls"]),
+        );
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn admitted_limit_deadlock_lists_every_waiter_and_call_site() {
+    let dir = package(
+        "limit-deadlock",
+        include_str!("../../../conformance/cases/tasks/limit_deadlock.rs"),
+    );
+    checked(&mut driver(&dir));
+    let out = Command::new(dir.join("out/demo"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let report = stderr(&out);
+    for task in 0..2 {
+        assert!(
+            report.contains(&format!("task {task} blocked in limit(0) at ")),
+            "{report}"
+        );
+    }
+    let last = report.lines().last().unwrap();
+    assert!(last.contains("\"operation\":\"deadlock\""), "{report}");
+    assert!(
+        last.contains("\"blocked\":[{\"task\":0,\"operation\":\"limit\""),
+        "{report}"
+    );
+    assert!(
+        last.contains("{\"task\":1,\"operation\":\"limit\""),
+        "{report}"
+    );
+    assert!(last.contains("demo.rs"), "{report}");
+}
+
 /// `Clock`, `Instant`, `SystemTime` and `Duration` (bead fx-o8j) pass the driver and run: clock
 /// readings and their arithmetic, real sleeps of at least their duration, `Cancelled` from a
 /// sleep in a cancelled scope, and the panic of `system_time()` on a `monotonic_only()` clock.

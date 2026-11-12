@@ -144,27 +144,6 @@ pub mod net {
 pub mod task {
     // Production owns the exposed task items and their compile-time verdicts.
     include!("../../../../crates/tide-std/src/task.rs");
-
-    // Later task APIs remain compile-time fixtures only.
-    impl Tasks {
-        pub fn spawn_isolated<T: Send, F>(&self, f: F) -> Result<T, Panicked>
-        where
-            F: FnOnce() -> T + Send + 'static,
-        {
-            unimplemented!()
-        }
-        pub fn limit(&self, n: usize) -> Tasks { unimplemented!() }
-    }
-
-    /// Reference 7.1 (provisional); an `Error` (reference 2.2).
-    #[derive(Debug)]
-    pub struct Panicked {
-        pub message: String,
-    }
-    impl std::fmt::Display for Panicked {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for Panicked {}
 }
 
 pub mod sync {

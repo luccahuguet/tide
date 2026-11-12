@@ -1252,6 +1252,7 @@ impl Tasks {
     pub fn spawn_isolated<T: Send>(&self, f: impl FnOnce() -> T + Send + 'static)
         -> Result<T, Panicked>;
     pub fn shield<T>(&self, body: impl FnOnce() -> T) -> T;
+    pub fn limit(&self, n: usize) -> Tasks;
     pub fn checkpoint(&self) -> Result<(), Cancelled>;
     pub fn yield_now(&self) -> Result<(), Cancelled>;
 }
@@ -1320,8 +1321,20 @@ count panics, as `chunks(0)` does, since it could only wait until
 cancelled. It panics in a cancelled scope and under `shield` too, so the
 misuse shows on every run.
 
+Slot waiters are FIFO per count. A release grants slots only to a ticket
+that heads every count it queued in, reserving them before its task becomes
+runnable, so later spawns cannot take them; a ticket waiting on a full
+inner count also holds back later tickets of the outer count. A request
+queues in every count and takes all its slots together; it holds none while
+waiting.
+
 `spawn_isolated` takes no slot: its caller, which may hold one, waits for
-the isolated task, so no more children run at once.
+the isolated task, so no more children run at once. The thread runtime
+starts a new thread, inherits the caller's scope context, and waits
+shielded. `Panicked.message` is the panic's `&str` or `String`, or
+`"Box<dyn Any>"` for another payload; the process panic hook is unchanged.
+Thread creation failure panics in the caller. Aborts and stack overflows
+remain process failures (PANIC-1).
 
 ### 6.2 Failure, cancellation, and deadlines
 
@@ -1437,6 +1450,14 @@ the isolated task, so no more children run at once.
   failing child's own error is reported. When a scope deadline and an
   operation's own deadline fall on the same instant, the scope's
   cancellation is observed.
+
+  On the thread runtime, deadlines are detected lazily when checking or
+  recording a scope's cancellation state. Cancellable blocking waits park
+  only until the earliest visible scope or operation deadline and recheck
+  cancellation before readiness or timeout; a late wake reports
+  `Cancelled`. No timer thread interrupts running computation or a
+  shielded wait. `set_deadline`, `cancel`, and `shield` are not scheduling
+  points.
 - **TASK-5. What cancellation cannot interrupt.** Authority-free
   computation, `Shared::with` acquisition and closures, foreign calls,
   joins, a running system call the kernel cannot cancel (TASK-3), the wait
@@ -1855,9 +1876,13 @@ The child has no RUN-3 sandbox.
   to standard error before aborting. All timers of one instant fire before
   any task runs. A task that polls while it waits for a timer (`yield_now`,
   `checkpoint`, `now`, a zero sleep) stays runnable and so keeps time still; after 1,000,000
-  scheduling points with a timer pending and no advance, the simulator
+  scheduling points with an operation timer pending and no advance, the simulator
   panics in the task whose scheduling point passes the bound, with a stall
-  report that lists the runnable tasks and their spans.
+  report that lists the runnable tasks and their spans. Scope deadline
+  timers alone do not trigger this guard. Timers are ordered by instant,
+  then scope deadlines before operation timers, then scope id (ancestors
+  first) or operation registration order. Deadline cancellation reaches
+  the runtime and wakes its waiters before a task at that instant runs.
 - **Scheduling points** are every capability operation, every handle
   operation (`spawn`, `join`, `send`, `recv`, `Shared::with*` acquire and
   release, `reset`, atomics, `Weak::upgrade`), and every checkpoint. Between two points a task
