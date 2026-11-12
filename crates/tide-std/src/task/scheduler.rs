@@ -38,6 +38,7 @@ pub(super) enum Operation {
     Sink,
     File(&'static str),
     WorldFile,
+    Net(&'static str, usize),
     Input(&'static str),
     Channel(&'static str, usize),
 }
@@ -96,6 +97,7 @@ pub(super) struct Scheduler {
     next_channel: usize,
     rng: u64,
     fs_rng: u64,
+    net_rng: u64,
     step: usize,
     pub(super) trace: String,
     sink_events: Vec<(&'static str, Vec<u8>, Duration)>,
@@ -120,8 +122,9 @@ impl Scheduler {
             next_cell: 0,
             next_limit: 0,
             next_channel: 0,
-            rng: seed ^ 0x7469_6465_7363_6864,    // "tideschd"
-            fs_rng: seed ^ 0x7469_6465_6669_6c65, // "tidefile"
+            rng: seed ^ 0x7469_6465_7363_6864,     // "tideschd"
+            fs_rng: seed ^ 0x7469_6465_6669_6c65,  // "tidefile"
+            net_rng: seed ^ 0x7469_6465_6e65_7421, // "tidenet!"
             step: 0,
             trace: String::new(),
             sink_events: Vec::new(),
@@ -570,6 +573,32 @@ impl Scheduler {
         index(&mut self.rng, bound)
     }
 
+    pub(super) fn net_draw(&mut self, bound: u64) -> u64 {
+        index(&mut self.net_rng, bound)
+    }
+
+    pub(super) fn net_event(
+        &mut self,
+        task: TaskId,
+        name: &'static str,
+        id: usize,
+        span: Span,
+        detail: &str,
+    ) {
+        self.event(
+            task,
+            Pending {
+                operation: Operation::Net(name, id),
+                span,
+            },
+            "cap",
+            None,
+        );
+        self.trace.push_str(",\"net\":");
+        quoted(&mut self.trace, detail);
+        self.trace.push_str("}\n");
+    }
+
     pub(super) fn file_latency(&mut self) -> Duration {
         Duration::from_nanos(index(&mut self.fs_rng, 1_000_001))
     }
@@ -716,6 +745,7 @@ impl Operation {
             Self::Sink => ("sink", None),
             Self::File(name) => (name, None),
             Self::WorldFile => ("world.file", None),
+            Self::Net(name, id) => (name, Some(id)),
             Self::Input(name) => (name, None),
             Self::Channel(name, id) => (name, Some(id)),
         }
@@ -728,7 +758,11 @@ impl Operation {
             | Self::CellRelease(_)
             | Self::CellsAcquire
             | Self::CellsRelease => "cell",
-            Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } | Self::Input(_) => "cap",
+            Self::ClockNow
+            | Self::ClockSystemTime(_)
+            | Self::Sleep { .. }
+            | Self::Input(_)
+            | Self::Net(..) => "cap",
             Self::File(_) => "io_wait",
             Self::Channel(..) => "chan",
             Self::Cancel(_) | Self::Failure(_) | Self::Deadline(..) | Self::SetDeadline(..) => {
@@ -749,6 +783,13 @@ impl std::fmt::Display for Operation {
         if let Some(target) = target {
             if matches!(self, Self::Channel(..)) {
                 write!(f, "(chan {target})")?;
+            } else if let Self::Net(name, _) = self {
+                let resource = if matches!(*name, "net.accept" | "net.connect") {
+                    "port"
+                } else {
+                    "conn"
+                };
+                write!(f, "({resource} {target})")?;
             } else {
                 write!(f, "({target})")?;
             }

@@ -1,4 +1,4 @@
-// Seeded simulation for tests (03 §9). Tasks, Shared, channels, files, process inputs, clocks and sinks are modeled.
+// Seeded simulation for tests (03 §9). Tasks, Shared, channels, files, TCP loopback, process inputs, clocks and sinks are modeled.
 // Other capability operations/setup, faults, nodes and replay manifests are pending.
 
 use crate::task::{Simulation, Tasks};
@@ -34,7 +34,7 @@ impl SimRoot {
         let fs = crate::fs::Fs::simulated(&tasks);
         Self {
             fs: fs.clone(),
-            net: crate::net::Net(Some(tasks.clone())),
+            net: crate::net::Net::new(Some(tasks.clone())),
             clock: simulation.clock().clone(),
             rand: crate::rand::Rand(Some(tasks.clone())),
             env: crate::env::Env::new(Some(tasks.clone())),

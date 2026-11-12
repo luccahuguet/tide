@@ -215,7 +215,7 @@ environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-(`Net`, `Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
+(`Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`, `error!` through `trace!`), ordinary and property `#[test]`, `#[sim_test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
@@ -320,13 +320,13 @@ always format before filtering. Text is `level: message`; JSON has fixed
 `log::`/`tracing::`-prefixed log macros, and `release-max-level` remain unimplemented.
 
 Production std includes a seeded scheduler for structured tasks,
-`Shared`, channels, and `Clock`. It runs one task at a time between
+`Shared`, channels, TCP loopback, and `Clock`. It runs one task at a time between
 scheduling points and records decisions and waits with source locations.
 Virtual time starts at zero and jumps to the next timer only when every task
 is blocked; with no timer left, the run ends in a deadlock report.
 `Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
 task 0 until the root drops. `sim.tasks`, `Shared`, channels, `sim.fs`, and
-`sim.clock`, `sim.env`, and `sim.stdin` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
+`sim.clock`, `sim.net`, `sim.env`, and `sim.stdin` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
 ordered sink records, and provisional NDJSON events without scheduling. `out`, `err`, and every log level append raw sink events under simulation and do not write to host streams.
 `sim.world.file(path, contents)` creates or replaces a file and its parents
 immediately, from simulated `/`, without scheduling or virtual time. Invalid
@@ -348,7 +348,7 @@ by libtest; seed-start records stay internal. Signal/timeout or a missing summar
 names the last started seed; ordinary failures name the failing seeds. The
 internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
 the test binary; it does no build/source identity validation. Replay manifests
-and their identity checks, simulated network/randomness, other world setup,
+and their identity checks, simulated HTTP/randomness, other world setup,
 and faults remain planned. Extra parameters, such as
 `#[sim_test] fn t(sim: SimRoot, sizes: Vec<u16>)`, use the property runner's
 guidance, filtering, vacuity floor and shrinking. Each case and shrink attempt
@@ -361,6 +361,23 @@ The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes and warns with their count.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+`std::net` provides `Net::bind/connect`, `TcpListener::accept/incoming/local_addr`,
+`TcpStream` with owned/borrowed `io::Read` and `io::Write`, address accessors and
+`shutdown`. Real Linux sockets are nonblocking; socket waits observe cancellation and
+scope deadlines. `incoming()` yields `Cancelled` once, then ends. `only(hosts)`
+intersects literal case-insensitive host/port grants without lookup, affects only
+outgoing connections, and `no_bind()` denies binding with `PermissionDenied`.
+Address arguments are sealed data; IP literals and `localhost` work on both backends.
+Other real names use Rust's inline resolver, which cannot yet be abandoned on
+cancellation; simulation rejects them. `sim.net` models `127.0.0.1` (including
+wildcard listeners), deterministic ephemeral ports, bounded streams, half-close and
+EOF. Its 128-connection backlog, 65,536-byte directional capacity, 49152–65535
+port range and 1–10 ms packet delays are provisional. One admitted suite compares
+values/ErrorKinds on real `127.0.0.1:0` and simulated loopback, excluding ports and
+timing; timing-dependent post-close errors use allowed sets. The model and
+limits follow [the TCP research](research/21-channels-tcp.md#19-net-shape-addresses-and-attenuation).
+HTTP, UDP, `Net::resolve`, owned I/O, socket options, clone and timeouts remain planned.
+
 `std::fs` provides real and simulated files through the same `Fs`: path reads
 and writes, `OpenOptions`, `File` with `Read`/`Write`/`Seek`, directory mutation
 and listings, type/length metadata, and explicit sync and close.

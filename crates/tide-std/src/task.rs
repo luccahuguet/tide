@@ -20,6 +20,24 @@ mod channel {
     include!("task/channel.rs");
 }
 pub(crate) use channel::Channel;
+mod net {
+    include!("task/net.rs");
+}
+pub(crate) use net::{NetContext, Network};
+
+#[derive(Clone)]
+struct Waiter {
+    thread: thread::Thread,
+    event: Option<Arc<std::os::fd::OwnedFd>>,
+}
+impl Waiter {
+    fn unpark(&self) {
+        self.thread.unpark();
+        if let Some(event) = &self.event {
+            let _ = rustix::io::write(event, &1_u64.to_ne_bytes());
+        }
+    }
+}
 
 /// Authority to spawn structured tasks on the thread runtime.
 #[derive(Clone)]
@@ -34,7 +52,7 @@ struct Runtime {
     scopes: BTreeMap<usize, ScopeState>,
     next_scope: usize,
     // Real waiting threads; cancellation and resources unpark them to recheck.
-    waiting: Vec<thread::Thread>,
+    waiting: Vec<Waiter>,
     baton: Option<Baton>,
     simulation_ended: bool,
     inputs: crate::env::Inputs,
@@ -528,7 +546,7 @@ impl Context {
     // A blocking resource passes one fresh Signal per waiting task to wait_for and wakes it
     // on hand-off. A resource with
     // several waiters, such as a channel, keeps one Signal per waiter; Signals are one-shot
-    // and hold one Thread handle. fx-hxw also needs a Thread-or-eventfd waker. Lock order is
+    // and hold one Thread handle. Socket waits use a per-thread eventfd waker. Lock order is
     // runtime, then resource; a resource never takes the runtime lock while holding its own
     // lock. Release both locks before parking.
     fn wait(
@@ -559,6 +577,23 @@ impl Context {
         cancellation: Cancellation,
         resource: Option<Arc<Signal>>,
     ) -> Wake {
+        self.wait_with_socket(operation, span, until, cancellation, resource, None)
+            .expect("a wait without a socket cannot return an I/O error")
+    }
+
+    fn wait_with_socket(
+        &self,
+        operation: Operation,
+        span: Span,
+        until: Option<Duration>,
+        cancellation: Cancellation,
+        resource: Option<Arc<Signal>>,
+        socket: Option<(
+            std::os::fd::BorrowedFd<'_>,
+            rustix::event::PollFlags,
+            Arc<std::os::fd::OwnedFd>,
+        )>,
+    ) -> crate::io::Result<Wake> {
         let at = self.at.filter(|_| cancellation != Cancellation::Shielded);
         let mut runtime = self.lock();
         if let Some(resource) = &resource {
@@ -566,16 +601,20 @@ impl Context {
         }
         let Some(task) = self.task else {
             // Callers must keep real waits outside simulations: this branch uses host time and parking.
+            let event = socket.as_ref().map(|(_, _, event)| event.clone());
             let me = thread::current();
-            runtime.waiting.push(me.clone());
+            runtime.waiting.push(Waiter {
+                thread: me.clone(),
+                event: event.clone(),
+            });
             let wake = loop {
                 if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
-                    break Wake::Cancelled;
+                    break Ok(Wake::Cancelled);
                 }
                 if resource.as_ref().is_some_and(|signal| signal.ready())
                     || runtime.wait_done(operation)
                 {
-                    break Wake::Ready;
+                    break Ok(Wake::Ready);
                 }
                 let deadline = at.and_then(|at| runtime.effective_deadline(at));
                 let target = match (until, deadline) {
@@ -586,31 +625,43 @@ impl Context {
                 if left == Some(Duration::ZERO) {
                     runtime.refresh_deadlines();
                     if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
-                        break Wake::Cancelled;
+                        break Ok(Wake::Cancelled);
                     }
-                    break Wake::Timeout;
+                    break Ok(Wake::Timeout);
                 }
                 drop(runtime);
+                if let Some((fd, flags, event)) = &socket {
+                    let ready = net::poll(*fd, *flags, event, left);
+                    runtime = self.lock();
+                    let ready = match ready {
+                        Ok(ready) => ready,
+                        Err(error) => break Err(error),
+                    };
+                    if ready && !at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
+                        break Ok(Wake::Ready);
+                    }
+                    continue;
+                }
                 match left {
                     Some(left) => thread::park_timeout(left),
                     None => thread::park(),
                 }
                 runtime = self.lock();
             };
-            runtime.waiting.retain(|thread| thread.id() != me.id());
+            runtime.waiting.retain(|thread| thread.thread.id() != me.id());
             return wake;
         };
         // Under the simulator no path below reads real time or parks on it.
         if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
-            return Wake::Cancelled;
+            return Ok(Wake::Cancelled);
         }
         if resource.as_ref().is_some_and(|signal| signal.ready()) || runtime.wait_done(operation) {
-            return Wake::Ready;
+            return Ok(Wake::Ready);
         }
         let baton = runtime.baton.as_mut().unwrap();
         // A timer never lies in the past: virtual time is set only by a jump to one.
         if until.is_some_and(|until| until <= baton.scheduler.now) {
-            return Wake::Timeout;
+            return Ok(Wake::Timeout);
         }
         let pending = Pending { operation, span };
         baton.scheduler.block(task, pending, until);
@@ -624,7 +675,7 @@ impl Context {
         let mut runtime = Baton::wait(runtime, task);
         runtime.baton.as_mut().unwrap().cancellable.remove(&task);
         runtime.baton.as_mut().unwrap().resources.remove(&task);
-        if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
+        Ok(if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
             Wake::Cancelled
         } else if resource.as_ref().is_some_and(|signal| signal.ready())
             || runtime.wait_done(operation)
@@ -632,7 +683,7 @@ impl Context {
             Wake::Ready
         } else {
             Wake::Timeout
-        }
+        })
     }
 
     // Records a first-cause cancellation made by this simulated task and wakes its waiters.

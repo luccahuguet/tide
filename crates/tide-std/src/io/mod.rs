@@ -18,7 +18,8 @@
 //! Owned and borrowed `Stdin` implement `Read`. `lines()` pulls one line
 //! per fill under the global input lock. `stdout()`/`stderr()` share the print sinks, always
 //! return `Ok`, and provide no `lock()`; use `BufWriter::new(stdout())` for batching.
-//! Not provided here: socket handles (their own bead), vectored I/O, `LineWriter`, `copy`, `empty`,
+//! `net::TcpStream` implements these `Read`/`Write` traits, owned and borrowed.
+//! Not provided here: vectored I/O, `LineWriter`, `copy`, `empty`,
 //! `sink`, `repeat`, `io::read_to_string`, `BufWriter::into_parts`, and `BufError`.
 
 include!("shared.rs");

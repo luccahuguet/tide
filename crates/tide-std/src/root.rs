@@ -259,7 +259,7 @@ pub mod __rt {
         let root = crate::Root {
             _private: (),
             fs: crate::fs::Fs::root(),
-            net: crate::net::Net(None),
+            net: crate::net::Net::new(None),
             clock: crate::time::Clock::new(crate::task::Time::real()),
             rand: crate::rand::Rand(None),
             env: crate::env::Env::new(None),

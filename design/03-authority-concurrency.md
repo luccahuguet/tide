@@ -198,6 +198,21 @@ Notes:
   is unused (`FX0913`, safe fix). Like `io::Lines`, `lines()` ends after
   yielding a cancellation error, so `stdin.lines().flatten()` cannot spin
   in a cancelled scope.
+- **TCP through `Net`.** `bind`/`connect` accept sealed address data in Rust's
+  common forms. `TcpListener` provides `accept`, `incoming`, `local_addr`;
+  `TcpStream` provides owned/borrowed `Read`/`Write`, `local_addr`, `peer_addr`,
+  `shutdown`, and no-op `flush`. Bind, connect, accept, read, write and shutdown
+  are checkpoints with `io::ErrorKind::Cancelled`; address accessors and flush
+  are not. `incoming` yields cancellation once then ends, like `stdin.lines`.
+  `no_bind` denies bind with `PermissionDenied`. `only` intersects literal
+  case-insensitive host/exact-port grants (IPs compare parsed), without lookup;
+  it limits connect, not bind or accepted peers. IP literals and `localhost`
+  resolve on both backends. Other real names currently use Rust's inline resolver
+  and cannot be abandoned on cancellation; simulation rejects them. This is a
+  partial implementation limit until `Net::resolve` owns resolution. HTTP, UDP,
+  owned I/O, options and timeouts remain planned. The adopted mechanisms and
+  limits are recorded in [research/21](../research/21-channels-tcp.md) §§1.9–1.13
+  and §4 items 5–14; the node-tier `":7000"` shorthand is not a TCP address here.
 - **Network errors.** `NetError` has `Timeout`, `Cancelled`, `Denied` (a
   host outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
   response), and `Io(io::Error)`. `is_transient()` is true for `Timeout`,
@@ -1940,7 +1955,7 @@ summary names the last started seed. Ordinary failures name the failing seeds;
 success emits at most one libtest-captured summary, with seed-start records kept
 internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
 REPLAY-2 identity validation. Tasks, `Shared`, files, file setup,
-clocks, process inputs and sinks are modeled; other capabilities carry simulated identities but
+clocks, TCP loopback, process inputs and sinks are modeled; other capabilities carry simulated identities but
 their operations, other world setup, faults, nodes, manifests and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,
 requires guidance and filtering, and shrinking with the simulator seed kept fixed.
@@ -1968,6 +1983,21 @@ The child has no RUN-3 sandbox.
   name resolution are inside that round trip. An address with no peer gives
   `Refused` after one round trip, and a host that no peer or node names
   gives `Dns` at once.
+- Implemented TCP loopback (`sim.net`) has one host, `127.0.0.1`; a `0.0.0.0`
+  bind listens there too and reports the wildcard address. Port zero draws an
+  unused port in 49152–65535 from a separate net sub-stream. Bind/accept take
+  a point without latency; connect takes a cancellable round trip and creates
+  the connection atomically on wake, or returns `ConnectionRefused`. The
+  provisional backlog is 128 and each direction holds 65,536 bytes, in flight
+  or unread. Writes can be short. Packet delays draw uniform whole nanoseconds
+  in 1–10 ms, preserving send order; reads deliver arrived bytes lazily and wait
+  on the next arrival. Shutdown/drop produce ordered EOF; shutdown of one write
+  side leaves the reverse direction usable. Dropped listeners release the port
+  and reset unaccepted connections. Network waits observe cancellation.
+  Post-close resets and read-shutdown discard behavior follow research/21 §1.12
+  provisionally; Linux equivalence tests exclude timing/port identities and use
+  allowed sets for timing-dependent results. Trace fields remain provisional,
+  recording addresses/connection ids, byte counts and delays, never payloads.
 - Virtual time advances only when every task on every node is blocked, and
   then jumps to the next timer or delivery. If no task can ever run again,
   the run fails with a global deadlock report: each blocked task, the span of

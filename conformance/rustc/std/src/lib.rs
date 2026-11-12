@@ -82,11 +82,9 @@ pub mod fs;
 pub mod time;
 
 pub mod net {
-    use crate::time::Instant;
-
-    crate::capability!(Net);
+    include!("../../../../crates/tide-std/src/net.rs");
     impl Net {
-        pub fn get(&self, url: &Url, deadline: Instant) -> Result<Vec<u8>, NetError> { unimplemented!() }
+        pub fn get(&self, url: &Url, deadline: crate::time::Instant) -> Result<Vec<u8>, NetError> { unimplemented!() }
         /// Simulation only (reference 6.8).
         pub fn drop_all(&self) -> Net { unimplemented!() }
     }

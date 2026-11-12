@@ -28,8 +28,8 @@
 //! - `arena::{Arena, Id}`: generational graph handles, checked disjoint mutable access,
 //!   stale-handle rejection, and provisional slot-order iteration (reference §3.6).
 //!   Handles have no cross-arena identity check; `Id<T>` is `Pure` for every `T`;
-//! - the capability types `Root` carries: the identities `Net`, `Rand`,
-//!   and `Proc`; `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
+//! - the capability types `Root` carries: the identities `Rand` and `Proc`;
+//!   `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
 //!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
@@ -79,7 +79,7 @@
 //!   Disconnect ends iteration. Both runtimes share the FIFO queue and wait primitive;
 //!   simulation records payload-free `chan` events and reports channel deadlocks;
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   `Shared`, channels, files, `Env`, `Stdin`, and `Clock`, with
+//!   `Shared`, channels, files, TCP, `Env`, `Stdin`, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
@@ -216,8 +216,8 @@
 //! non-panic path, a drop panic surfaces in the scope's caller.
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
-//! Not provided yet: other capability operations and attenuation of reference 6.1 (network,
-//! random draws, processes); the `dbg` and `trace` sinks;
+//! Not provided yet: other capability operations and attenuation of reference 6.1 (HTTP/UDP,
+//! explicit name resolution, random draws, processes); the `dbg` and `trace` sinks;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! other `sync` items,
 //! `ptr`; other world setup, faults, nodes, replay manifests,
@@ -228,7 +228,8 @@
 //! unreviewed-branch guarantee.
 //!
 //! `root.rs` (with `convert.rs`, `arena.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`,
-//! `task.rs` (including its scheduler and channel adapter), `par.rs`, `sync.rs` (with
+//! `task.rs` (including its scheduler, channel and network adapters), `net.rs` (with its
+//! backends), `par.rs`, `sync.rs` (with
 //! `sync/mpsc.rs`), `sim.rs` (with its runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
 //! share their definitions with the conformance fixture std. The prelude's `#[pure]` export
 //! also comes from `root.rs`. The identity-only capability types use `root.rs`'s `capability!`
@@ -244,13 +245,16 @@ crate::declare_prelude! {
 pub mod test;
 pub mod fs;
 
-pub mod net {
-    crate::capability!(
-        /// Network authority. It has no operations yet: a program can declare that it holds
-        /// `Net`, but cannot use it.
-        Net
-    );
-}
+/// TCP authority and handles on real Linux and simulated loopback. See
+/// `research/21-channels-tcp.md` §§1.9–1.13 for the adopted model.
+/// `bind`, `connect`, `accept`, reads, writes and `shutdown` are cancellable checkpoints;
+/// address accessors and no-op `flush` are not. `incoming` yields cancellation once then ends.
+/// `only` matches literal hosts/ports without lookup and intersects; it does not limit binds
+/// or accepted peers. `no_bind` denies binding. Simulated capacities/backlog/latencies are
+/// provisional: 65,536 bytes per direction, 128 connections, 1–10 ms per packet.
+/// Real nonliteral/non-localhost names use inline Rust resolution that is not yet cancellable;
+/// simulation rejects them. HTTP, UDP, resolver APIs, options and owned I/O remain planned.
+pub mod net;
 
 pub mod time;
 

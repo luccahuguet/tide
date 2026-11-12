@@ -86,6 +86,7 @@ const NOT_PURE: &[(&str, Carries)] = &[
     ("tide_std::fs::DirEntry", FS_READ),
     ("tide_std::net::TcpStream", NET),
     ("tide_std::net::TcpListener", NET),
+    ("tide_std::net::Incoming", NET),
     ("tide_std::net::UdpSocket", NET),
     ("tide_std::process::Command", PROC),
     ("tide_std::process::Child", PROC),

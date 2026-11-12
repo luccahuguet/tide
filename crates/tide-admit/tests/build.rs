@@ -3318,3 +3318,136 @@ fn pure_attribute_rejects_arguments_and_non_functions() {
         assert!(stderr(&out).contains("demo.rs:1:"), "{}", stderr(&out));
     }
 }
+
+/// TCP's one equivalence suite executes through tide-admit, including borrowed I/O and cancellation.
+#[test]
+fn tcp_builds_and_runs_against_production_std() {
+    let dir = package(
+        "tcp",
+        include_str!("../../../conformance/cases/authority/tcp.rs"),
+    );
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(
+            Command::new("timeout")
+                .args(["45"])
+                .arg(dir.join("out/demo")),
+        );
+        assert_eq!(out.stdout, b"TCP_RAN\n");
+        // Isolated unwinds are contained; their host panic hooks still run.
+        let hooks = stderr(&out);
+        assert_eq!(hooks.matches("tcp listener unwind").count(), 9, "{hooks}");
+        assert_eq!(hooks.matches("tcp stream unwind").count(), 9, "{hooks}");
+        assert_eq!(hooks.matches("tcp rebind unwind").count(), 4, "{hooks}");
+        checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
+        let out = checked(
+            Command::new("timeout")
+                .args(["45"])
+                .arg(dir.join("out/demo-test"))
+                .args(["--exact", "simulated_tcp"]),
+        );
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn tcp_backpressure_deadlock_names_the_connection() {
+    let dir = package(
+        "tcp-deadlock",
+        include_str!("../../../conformance/cases/authority/tcp_deadlock.rs"),
+    );
+    checked(&mut driver(&dir));
+    let out = Command::new("timeout")
+        .arg("15")
+        .arg(dir.join("out/demo"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert_ne!(
+        out.status.code(),
+        Some(124),
+        "TCP wait stalled instead of reporting deadlock"
+    );
+    assert!(
+        stderr(&out).contains("net.write(conn 0)"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("tcp-deadlock/package/src/demo.rs"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn tcp_has_no_ambient_constructors_or_resolution() {
+    for (name, source, diagnostic) in [
+        (
+            "listener",
+            "fn run() { let _ = std::net::TcpListener::bind(\"127.0.0.1:0\"); }",
+            "E0599",
+        ),
+        (
+            "stream",
+            "fn run() { let _ = std::net::TcpStream::connect(\"127.0.0.1:1\"); }",
+            "E0599",
+        ),
+        (
+            "resolve",
+            "fn run(a: impl std::net::ToSocketAddrs) { let _ = a.address().unwrap().resolve(false); }",
+            "E0624",
+        ),
+    ] {
+        let dir = package(&format!("tcp-no-ambient-{name}"), source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        assert!(stderr(&out).contains(diagnostic), "{}", stderr(&out));
+    }
+}
+
+#[test]
+fn tcp_incoming_carries_network_authority() {
+    for (name, source, code) in [
+        (
+            "pure",
+            "fn pure_value(_: impl Pure) {}\npub fn run(i: std::net::Incoming<'_>) { pure_value(i); }",
+            "FX0517",
+        ),
+        (
+            "shared",
+            "pub fn run(i: std::net::Incoming<'_>, tasks: &std::task::Tasks) { let _ = std::sync::Shared::new(i, tasks); }",
+            "FX0606",
+        ),
+        (
+            "pure-function",
+            "#[pure]\npub fn run(mut i: std::net::Incoming<'_>) { let _ = i.next(); }",
+            "FX0511",
+        ),
+    ] {
+        let dir = package(&format!("tcp-incoming-{name}"), source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "Incoming admitted as Pure: {name}");
+        assert!(stderr(&out).contains(code), "{}", stderr(&out));
+        assert!(stderr(&out).contains("Incoming"), "{}", stderr(&out));
+    }
+    let dir = package(
+        "tcp-incoming-authority",
+        "pub fn incoming(_: std::net::Incoming<'_>) {}",
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--emit=metadata"]));
+    let artifact = std::fs::read_to_string(dir.join("out/demo.interface.json")).unwrap();
+    assert!(
+        artifact.contains(r##""authority": {"#0": ["net"]}"##),
+        "{artifact}"
+    );
+}

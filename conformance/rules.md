@@ -88,6 +88,7 @@ not cite is a best mapping that a case must confirm.
 | ID | Section (file:line of the definition) | Rule, one line | Decided by | FX code(s) / rustc |
 | --- | --- | --- | --- | --- |
 | CAP-1 | §0, 03:41 | World and nondeterminism operations exist only as capability methods; ambient std calls are rejected | both | FX0501 (ref:549); rustc E0425 / E0599 (unresolved) |
+| TCP-1 | 03 §1.1, reference §6.1/§6.7; research/21 §§1.9–1.13 | `Net::bind/connect`, attenuations, TCP addresses, accept/incoming, owned/borrowed I/O, half-close and cancellation have the same tested values/ErrorKinds on real Linux loopback and seeded simulation | rustc and driver; execution in tide-admit build tests | `authority/tcp.rs`; excludes ports/timing; post-close writes assert the allowed set |
 | CAP-2 | §1.2, 03:215 | Every synchronization-handle constructor takes `&Tasks` | both | FX0505 (ref:725); E0061 |
 | CAP-3 | §1.2, 03:220 | `std::sync::raw` (`Mutex`, `RwLock`, weaker orderings) needs the `unsafe` grant | checker | FX0520 (via ADMIT-1) |
 | ROOT-1 | §2.1, 03:268 | `Root` may be named only as the parameter of `#[tide::main] fn main` and in the path `Root::sim`; every binary's `main` carries the attribute | both | FX0503 for naming `Root` elsewhere; FX0512; rustc E0580 for `fn main(root: Root)` without the attribute |

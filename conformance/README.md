@@ -363,3 +363,18 @@ ID in its section:
 (`README.md`); 03 §3.1 then cites it rather than restating it. 02 §8.5
 restates 03 §8.1's `join` and parallel-closure rules, so they take `PAR`
 IDs and 02 cites them.
+
+The stub includes production `net.rs` and its TCP backends; no TCP runtime is
+reimplemented in the stub. `authority/tcp.rs` is one equivalence suite executed
+through tide-admit on real Linux `127.0.0.1:0` and `sim.net` in debug/release,
+including listener/stream operations, owned/borrowed I/O, attenuation, cancellation,
+addresses, EOF/half-close and a 1 MiB transfer. It compares values/ErrorKinds,
+excluding ports/timing, and asserts allowed sets for timing-dependent post-close
+outcomes. Seed reruns compare traces; simulation-specific checks cover port reuse,
+bounded backlog/backpressure, wildcard binding and cancelled connect/read/write.
+`authority/tcp_deadlock.rs` executes a full socket with no reader and must report
+`net.write(conn)` with the call site. These execute in the ordinary trusted harness,
+not RUN-3's planned socket-denying sandbox. The TCP model's capacities and delays
+remain provisional; other real hostnames use inline uncancellable Rust resolution,
+while simulation supports only IP literals and `localhost`. HTTP remains a stub; UDP is absent.
+See `research/21-channels-tcp.md` §§1.9–1.13 and §4 items 5–14 for the adopted limits.

@@ -69,6 +69,9 @@ const BUILD_READ: &str = "a crate cannot read files or the build environment at 
 pub const RULES: &[Rule] = &[
     // ---- Tide's std's internal runtime entry points (ADMIT-1, RUN-1)
     deny("tide_std::__rt::*", ENTRY),
+    // ---- TCP's plain address/shutdown data (fx-hxw); no resolver or socket constructor.
+    allow("core::net::*"),
+    allow("std::net::Shutdown::*"),
     // ---- address observers and raw pointers (GLOBAL-4)
     granted("*const T"),
     granted("*mut T"),
