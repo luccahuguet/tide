@@ -42,6 +42,17 @@ fn fx_lines(stderr: &str) -> Vec<&str> {
         .collect()
 }
 
+mod reference_allowlist {
+    include!("support/reference_allowlist.rs");
+}
+
+#[test]
+fn reference_kept_families_pass_the_allowlist_without_reexport_bypasses() {
+    let (code, stderr) = admit("reference-allowlist", &reference_allowlist::source(), &[]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(fx_lines(&stderr).is_empty(), "{stderr}");
+}
+
 #[test]
 fn the_backstop_keeps_exported_library_roots_in_every_profile() {
     for (name, source) in [
@@ -99,6 +110,138 @@ mod sub;
         ],
         "{stderr}"
     );
+
+    // Reference §6.9's closed denials (and §2.1's compile-time reads). Keep each
+    // use on its own line: unrelated diagnostics must not satisfy another row.
+    let mut mismatches = Vec::new();
+    for (name, statement, key) in [
+        (
+            "atomic",
+            "let _ = core::sync::atomic::AtomicU64::new(0);",
+            "core::sync::atomic::AtomicU64",
+        ),
+        (
+            "once-lock",
+            "let _ = std::sync::OnceLock::<u8>::new();",
+            "std::sync::once_lock::OnceLock::<T>::new",
+        ),
+        (
+            "lazy-lock",
+            "let _ = std::sync::LazyLock::new(|| 1u8);",
+            "std::sync::lazy_lock::LazyLock::<T, F>::new",
+        ),
+        ("raw-pointer", "let _: *const u8 = &0u8;", "*const T"),
+        (
+            "pointer-address",
+            "let _ = <*const u8>::addr;",
+            "core::ptr::const_ptr::<impl *const T>::addr",
+        ),
+        (
+            "pointer-format",
+            "let _ = format!(\"{:p}\", &0u8);",
+            "core::fmt::rt::Argument::<'_>::new_pointer",
+        ),
+        ("fn-address", "let _ = run as usize;", "fn() as integer"),
+        (
+            "last-os-error",
+            "let _ = std::io::Error::last_os_error;",
+            // The type prefix is also unlisted; build.rs checks Tide's own method key.
+            "core::io::error::Error",
+        ),
+        (
+            "waker",
+            "let _: Option<core::task::Waker> = None;",
+            "core::task::wake::Waker",
+        ),
+        (
+            "include-str",
+            "let _ = core::include_str!(\"lib.rs\");",
+            "core::macros::builtin::include_str",
+        ),
+        (
+            "env",
+            "let _ = core::env!(\"RUSTC_ICE\");",
+            "core::macros::builtin::env",
+        ),
+        (
+            "option-env",
+            "let _ = core::option_env!(\"RUSTC_ICE\");",
+            "core::macros::builtin::option_env",
+        ),
+    ] {
+        let (code, stderr) = admit(
+            &format!("reference-deny-{name}"),
+            &format!("pub fn run() {{\n    {statement}\n}}\n"),
+            &[],
+        );
+        if code != 1
+            || !fx_lines(&stderr).iter().any(|line| {
+                line.starts_with("lib.rs:2:")
+                    && line.contains(&format!("error: FX0520: `{key}` is not admitted"))
+            })
+        {
+            mismatches.push(format!("{name} (exit {code}): {stderr}"));
+        }
+    }
+    for method in [
+        "exists",
+        "try_exists",
+        "metadata",
+        "symlink_metadata",
+        "canonicalize",
+        "read_link",
+        "read_dir",
+        "is_file",
+        "is_dir",
+        "is_symlink",
+    ] {
+        // A function-item use isolates the method from Rust's unlisted io::Error
+        // return type, whose rejection would otherwise win at the same call span.
+        let (code, stderr) = admit(
+            &format!("reference-deny-path-{method}"),
+            &format!("pub fn run() {{\n    let _ = std::path::Path::{method};\n}}\n"),
+            &[],
+        );
+        assert_eq!(code, 1, "{method}: {stderr}");
+        assert_eq!(
+            fx_lines(&stderr),
+            [format!(
+                "lib.rs:2:13: error: FX0520: `std::path::Path::{method}` is not admitted"
+            )],
+            "{stderr}"
+        );
+    }
+    for ty in ["f32", "f64"] {
+        for (method, args, owner) in [
+            ("to_bits", "", "core"),
+            ("is_sign_positive", "", "core"),
+            ("is_sign_negative", "", "core"),
+            ("copysign", "x", "core"),
+            ("signum", "", "core"),
+            ("total_cmp", "&x", "core"),
+            ("min", "x", "core"),
+            ("max", "x", "core"),
+            ("sin", "", "std"),
+            ("exp", "", "std"),
+            ("powf", "x", "std"),
+            ("ln", "", "std"),
+        ] {
+            let (code, stderr) = admit(
+                &format!("reference-deny-{ty}-{method}"),
+                &format!("pub fn run(x: {ty}) {{\n    let _ = x.{method}({args});\n}}\n"),
+                &[],
+            );
+            assert_eq!(code, 1, "{ty}::{method}: {stderr}");
+            assert_eq!(
+                fx_lines(&stderr),
+                [format!(
+                    "lib.rs:2:13: error: FX0520: `{owner}::{ty}::<impl {ty}>::{method}` is not admitted"
+                )],
+                "{stderr}"
+            );
+        }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }
 
 /// Safe hardware intrinsics read the host's processor (D18). `core::arch` has one module per
@@ -113,6 +256,17 @@ fn hardware_queries_are_rejected() {
     assert_eq!(
         fx_lines(&stderr),
         ["lib.rs:2:5: error: FX0520: `core::core_arch::x86::cpuid::__cpuid` is not admitted"],
+        "{stderr}"
+    );
+    let (code, stderr) = admit(
+        "reference-deny-asm",
+        "pub fn run() {\n    // SAFETY: the empty asm block touches no memory or stack.\n    unsafe { core::arch::asm!(\"\", options(nomem, nostack)); }\n}\n",
+        &[],
+    );
+    assert_eq!(code, 1, "{stderr}");
+    assert!(
+        fx_lines(&stderr)
+            .contains(&"lib.rs:3:14: error: FX0520: `core::arch::asm` is not admitted"),
         "{stderr}"
     );
 }

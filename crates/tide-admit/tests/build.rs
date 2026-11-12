@@ -9,6 +9,74 @@ mod support;
 
 const HELLO: &str = include_str!("../../../conformance/cases/authority/root_executable.rs");
 
+mod reference_allowlist {
+    include!("support/reference_allowlist.rs");
+}
+
+#[test]
+fn reference_kept_families_build_and_execute_against_production_std() {
+    let mut source = reference_allowlist::source();
+    source.push_str(
+        r#"
+#[tide::main]
+fn main(root: Root) {
+    run();
+    // §1's replacements are Tide-owned rather than core/alloc allowlist entries.
+    let mut map = std::collections::HashMap::new(); map.insert("a", 1);
+    let mut set = std::collections::HashSet::new(); set.insert("a");
+    assert_eq!(map["a"], 1); assert!(set.contains("a"));
+    let now = root.clock.now(); let wall = root.clock.system_time();
+    assert_eq!(now.duration_since(now), std::time::Duration::ZERO);
+    assert_eq!(wall.duration_since(wall).unwrap(), std::time::Duration::ZERO);
+    {
+        use std::io::{Read, Write, Seek, BufRead};
+        let mut c = std::io::Cursor::new(vec![0; 3]);
+        c.write_all(b"abc").unwrap(); c.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let mut r = std::io::BufReader::new(c);
+        assert_eq!(r.fill_buf().unwrap(), b"abc");
+        let mut s = String::new(); r.read_to_string(&mut s).unwrap(); assert_eq!(s, "abc");
+        let mut w = std::io::BufWriter::new(Vec::new());
+        w.write_all(b"abc").unwrap(); w.flush().unwrap();
+        assert_eq!(w.into_inner().unwrap(), b"abc");
+        let e: std::io::Result<()> = Err(std::io::ErrorKind::NotFound.into());
+        assert_eq!(e.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    }
+    println!("REFERENCE_ALLOWLIST_RAN");
+}
+"#,
+    );
+    let dir = package("reference-allowlist", &source);
+    let build = checked(&mut driver(&dir));
+    assert!(!stderr(&build).contains("FX0520:"), "{}", stderr(&build));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"REFERENCE_ALLOWLIST_RAN\n");
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+}
+
+#[test]
+fn reference_io_error_last_os_error_stays_denied() {
+    // Rust's io::Error has a different key and is not Tide's retained error type.
+    let dir = package(
+        "reference-deny-last-os-error",
+        r#"
+#[tide::main]
+fn main() { let _ = std::io::Error::last_os_error(); }
+"#,
+    );
+    let out = driver(&dir)
+        .arg("--emit=metadata")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out)
+            .contains("error: FX0520: `tide_std::io::Error::last_os_error` is not admitted"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 #[test]
 fn executable_contracts_run_in_debug_test_and_erase_in_release() {
     for (name, source, count, marker) in [

@@ -219,13 +219,18 @@ pub const RULES: &[Rule] = &[
     // ---- std::io: Tide's std owns `io::Error`, `ErrorKind`, and the traits (03 §1.1), which
     // are admitted as its own items, and re-exports Rust's `Cursor` and `SeekFrom`.
     deny("tide_std::io::Error::last_os_error", OS_ERROR),
+    // The Cursor and SeekFrom type keys and std::macros::panic serve the Rust-std checks;
+    // Tide re-exports or replaces them in programs. The method globs matter in programs.
+    allow("core::io::cursor::Cursor"),
     allow("core::io::cursor::Cursor::*"),
+    allow("core::io::seek::SeekFrom"),
     allow("core::io::seek::SeekFrom::*"),
     // ---- core
     allow("core::alloc::Allocator"),
     allow("core::any::*"),
     allow("<(dyn core::any::Any*)>::*"), // `is` and `downcast_ref` on `dyn Any`
     allow("core::array::*"),
+    allow("core::ascii::*"),
     allow("core::bool::*"),
     allow("core::borrow::*"),
     allow("core::cell::*"),
@@ -272,6 +277,8 @@ pub const RULES: &[Rule] = &[
     allow("alloc::str::*"),
     allow("alloc::string::*"),
     allow("alloc::vec::*"),
+    // Rust's `panic!` entry expands to core's panicking support (reference §2.1).
+    allow("std::macros::panic"),
     // ---- Rust's std: inherent methods of the types Tide's std re-exports
     // Channel try-errors are data-only Rust enums retained by Tide's mpsc API.
     allow("std::sync::mpsc::TryRecvError::*"),
@@ -344,6 +351,25 @@ pub fn lookup(key: &str) -> Option<&'static Rule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[allow(dead_code)] // This consumer checks the keys; integration tests use source().
+    mod reference_allowlist {
+        include!("../tests/support/reference_allowlist.rs");
+    }
+
+    #[test]
+    fn reference_kept_families_have_allow_rules() {
+        for (family, keys, _) in reference_allowlist::ITEMS {
+            assert!(!keys.is_empty(), "{family} has no allowlist witness");
+            for key in *keys {
+                assert_eq!(
+                    lookup(key).map(|rule| rule.verdict),
+                    Some(Verdict::Allow),
+                    "{family}: {key}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn glob_spans_path_separators_and_anchors_both_ends() {
@@ -445,5 +471,9 @@ mod tests {
         );
         assert_eq!(verdict("std::sync::mpsc::channel"), None);
         assert_eq!(verdict("std::fs::read"), Some(Verdict::Deny));
+        assert_eq!(verdict("std::macros::panic"), Some(Verdict::Allow));
+        assert_eq!(verdict("core::io::cursor::Cursor"), Some(Verdict::Allow));
+        assert_eq!(verdict("core::io::seek::SeekFrom"), Some(Verdict::Allow));
+        assert_eq!(verdict("core::ascii::EscapeDefault"), Some(Verdict::Allow));
     }
 }
