@@ -83,7 +83,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     .type_of(def)
                     .instantiate_identity()
                     .skip_normalization();
-                let type_module = match self_ty.kind() {
+                let mut base_ty = self_ty;
+                loop {
+                    base_ty = match *base_ty.kind() {
+                        ty::Ref(_, inner, _) => inner,
+                        ty::Adt(adt, args) if adt.is_box() => args.type_at(0),
+                        _ => break,
+                    };
+                }
+                let type_module = match base_ty.kind() {
                     ty::Adt(adt, _) if adt.did().is_local() => {
                         Some(self.tcx.parent_module_from_def_id(adt.did().expect_local()))
                     }

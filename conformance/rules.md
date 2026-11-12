@@ -167,7 +167,7 @@ already implements them; `--tide-print-codes` names the enforced subset.
 | REF-0103 | D6; ref §2.1 | Only the fixed bang forms are admitted; named carve-outs retain their own codes | checker | FX0103 |
 | REF-0210 | D2; ref §3.6 | When a literal moves a whole owner and borrows it in another field, label E0505 at the owner value or E0515/E0597 inside the paired borrow expression (E0515 also via its secondary borrowed-here span); omit uncertain evidence | both | FX0210 |
 | REF-0301 | D3; ref §4.2 | Only lossless numeric as casts; pointer-sized integers and addresses count as 32 to 64 bits | checker | FX0301 |
-| REF-0401 | D4; ref §5.2 | Impls live in the exact module of their local ADT or trait; non-local self types use the trait module | checker | FX0401 |
+| REF-0401 | D4; ref §5.2 | Impls live in the exact module of their local ADT (through nested `&T`, `&mut T`, and `Box<T>` wrappers) or trait; other non-local self types use the trait module | checker | FX0401 |
 | REF-0402 | D4; ref §5.1 | No specialization or overlapping impls | both | FX0402; E0119 for overlap |
 | REF-0405 | D4; ref §5.1 | No negative impls or user auto traits | both | FX0405 |
 | REF-0406 | D4; ref §5.1 | Impl bounds use parameters, their projections, concrete types, or strict subterms of self/trait arguments | checker | FX0406 |

@@ -1112,6 +1112,25 @@ fn trait_ceiling_rejects_definitions_and_accepts_their_rewrites() {
 }
 
 #[test]
+fn trait_placement_follows_fundamental_wrappers_to_the_exact_type_module() {
+    let accepted = include_str!("../../../conformance/cases/memory/trait_placement_accept.rs");
+    let rejected = include_str!("../../../conformance/cases/memory/trait_placement_reject.rs");
+    let (exit, err) = admit("trait-placement-wrappers-accept", accepted, &[]);
+    assert_eq!(exit, 0, "{err}");
+    let (exit, err) = admit("trait-placement-wrappers-reject", rejected, &[]);
+    assert_eq!(exit, 1, "{err}");
+    let count = rejected.matches("//~ FX0401").count();
+    assert_eq!(fx_lines(&err).len(), count, "{err}");
+    assert_eq!(err.matches("error: FX0401:").count(), count, "{err}");
+    assert_eq!(err.matches("move the impl").count(), count - 1, "{err}");
+    assert_eq!(
+        err.matches("no module can hold this impl").count(),
+        1,
+        "{err}"
+    );
+}
+
+#[test]
 fn trait_placement_explains_when_no_module_can_hold_the_impl() {
     let source = "pub struct Local; impl From<Local> for u16 { fn from(_: Local) -> u16 { 0 } }";
     let (exit, err) = admit("trait-placement-no-module", source, &[]);
