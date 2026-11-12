@@ -1,4 +1,4 @@
-// Seeded simulation for tests (03 §9). Tasks, Shared, channels, files, TCP loopback, process inputs, clocks and sinks are modeled.
+// Seeded simulation for tests (03 §9). Tasks, Arc/Weak, Shared, channels, files, TCP loopback, process inputs, clocks and sinks are modeled.
 // Other capability operations/setup, faults, nodes and replay manifests are pending.
 
 use crate::task::{Simulation, Tasks};

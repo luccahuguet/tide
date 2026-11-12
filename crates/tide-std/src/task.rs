@@ -797,6 +797,44 @@ pub(crate) fn outside_simulation() {
     Context::outside_simulation();
 }
 
+/// Simulation identity and trace family for the public Arc/Weak wrappers.
+#[derive(Clone)]
+pub(crate) struct ArcHandle {
+    simulation: Option<Arc<Mutex<Runtime>>>,
+    id: usize,
+}
+
+impl ArcHandle {
+    pub(crate) fn new(tasks: &Tasks, span: Span) -> Self {
+        let context = tasks.context();
+        let id = context
+            .as_ref()
+            .filter(|c| c.task.is_some())
+            .map_or(0, |c| {
+                c.lock().baton.as_mut().unwrap().scheduler.allocate_arc()
+            });
+        let handle = Self {
+            simulation: tasks.simulation.clone(),
+            id,
+        };
+        handle.begin("arc.new", span);
+        handle
+    }
+
+    pub(crate) fn begin(&self, name: &'static str, span: Span) {
+        if let Some(context) = Context::of(&self.simulation).filter(|c| c.task.is_some()) {
+            context.point(Operation::Arc(name, self.id), span);
+        }
+    }
+
+    pub(crate) fn downgrade(&self, tasks: &Tasks, span: Span) -> Self {
+        // Both validations use the current context, so neither real nor foreign Tasks can mix.
+        tasks.context();
+        self.begin("arc.downgrade", span);
+        self.clone()
+    }
+}
+
 pub(crate) struct SimCell {
     runtime: Arc<Mutex<Runtime>>,
     id: usize,

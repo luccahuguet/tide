@@ -142,6 +142,45 @@ pub fn eprintln(input: TokenStream) -> TokenStream {
     sink("err", input, true)
 }
 
+/// Prints Rust-style source locations and debug values to stderr, returning the values.
+/// The admission driver rejects this macro in release builds (SINK-8).
+#[proc_macro]
+pub fn dbg(input: TokenStream) -> TokenStream {
+    use syn::parse::Parser;
+    let values = match syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated
+        .parse(input)
+    {
+        Ok(values) => values,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    if values.is_empty() {
+        return quote::quote! {
+            ::std::__sink::dbg(::core::format_args!("[{}:{}:{}]",
+                ::core::file!(), ::core::line!(), ::core::column!()), true)
+        }
+        .into();
+    }
+    let value = proc_macro2::Ident::new("__tide_dbg_value", proc_macro2::Span::mixed_site());
+    let mut expressions = values.iter().map(|expr| {
+        quote::quote! {
+            // Match keeps Rust dbg!'s temporary lifetimes and evaluates the argument once.
+            match (#expr) {
+                #value => {
+                    ::std::__sink::dbg(::core::format_args!("[{}:{}:{}] {} = {:#?}",
+                        ::core::file!(), ::core::line!(), ::core::column!(),
+                        ::core::stringify!(#expr), &&#value as &dyn ::std::fmt::Debug), true);
+                    #value
+                }
+            }
+        }
+    });
+    if values.len() == 1 {
+        expressions.next().unwrap().into()
+    } else {
+        quote::quote! { (#(#expressions,)*) }.into()
+    }
+}
+
 /// Writes an error-level log record, formatting even when disabled.
 #[proc_macro]
 pub fn error(input: TokenStream) -> TokenStream { log_sink("Error", input) }

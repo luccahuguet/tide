@@ -676,6 +676,388 @@ fn check_clause() { tide_candidate::require_pure::<std::time::Clock>(); }
 }
 
 #[test]
+fn arc_and_weak_build_and_execute_against_production_std() {
+    let source = format!(
+        "{}\n{}",
+        include_str!("../../../conformance/cases/authority/global_arc_accept.rs"),
+        r#"
+#[tide::main]
+fn main(root: Root) {
+    use std::hash::{Hash, Hasher};
+    use std::sync::Weak;
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<Arc<u32>>();
+    send_sync::<Weak<u32>>();
+    {
+        let (_arc, _weak);
+        let value = String::from("borrowed payload");
+        _arc = Arc::new(&value, &root.tasks);
+        _weak = Arc::downgrade(&_arc, &root.tasks);
+    }
+    struct Value;
+    let opaque = Arc::new(Value, &root.tasks);
+    let cloned = opaque.clone();
+    let weak = Arc::downgrade(&opaque, &root.tasks).clone();
+    assert_eq!(format!("{:?}", weak), "(Weak)");
+    drop(opaque);
+    assert!(weak.upgrade().is_some());
+    drop(cloned);
+    assert!(weak.upgrade().is_none());
+    assert_eq!(edit(&root.tasks), Some(3));
+    let mut a = Arc::new(String::from("old"), &root.tasks);
+    let b = a.clone();
+    Arc::make_mut(&mut a).push_str(" new");
+    assert_eq!(&*a, "old new");
+    assert_eq!(&*b, "old");
+    let weak: Weak<String> = Arc::downgrade(&a, &root.tasks);
+    let other = weak.clone();
+    assert_eq!(weak.upgrade().unwrap(), a);
+    // With only weak observers, make_mut dissociates them without cloning the value.
+    Arc::make_mut(&mut a).push('!');
+    assert!(weak.upgrade().is_none());
+    drop(a);
+    assert!(other.upgrade().is_none());
+    let weak = Arc::downgrade(&b, &root.tasks);
+    assert!(weak.upgrade().is_some());
+    drop(b);
+    assert!(weak.upgrade().is_none());
+    let a = Arc::new(3u32, &root.tasks);
+    let b = Arc::new(4u32, &root.tasks);
+    assert!(a < b && a <= b && b > a && b >= a && a != b);
+    assert_eq!(a.cmp(&b), std::cmp::Ordering::Less);
+    assert_eq!(format!("{} {:?}", a, a), "3 3");
+    assert_eq!(format!("{:?}", Arc::downgrade(&a, &root.tasks)), "(Weak)");
+    let mut wrapped = std::hash::DefaultHasher::new();
+    let mut plain = std::hash::DefaultHasher::new();
+    a.hash(&mut wrapped); 3u32.hash(&mut plain);
+    assert_eq!(wrapped.finish(), plain.finish());
+    let transferred = a.clone();
+    root.tasks.scope::<_, std::task::TaskError, _>(|s| {
+        assert_eq!(s.spawn(move || Ok(*transferred)).join().unwrap(), 3);
+        Ok(())
+    }).unwrap();
+}
+"#,
+    );
+    let dir = package("arc-weak", &source);
+    for profile in ["debug", "release"] {
+        let build = checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        assert!(!stderr(&build).contains("FX0520"), "{}", stderr(&build));
+        checked(&mut Command::new(dir.join("out/demo")));
+    }
+}
+
+#[test]
+fn arc_and_weak_rejections_use_production_std() {
+    for (name, source, code) in [
+        ("count", include_str!("../../../conformance/cases/authority/global_arc_count.rs").to_owned(), "E0599"),
+        ("payload", include_str!("../../../conformance/cases/authority/global_arc_payload.rs").to_owned(), "FX0606"),
+        ("weak-pure", "fn pure(_: impl Pure) {} fn f(a: std::sync::Weak<u32>) { pure(a); }".into(), "FX0517"),
+        ("new-tasks", "fn f() { let _ = std::sync::Arc::new(1u32); }".into(), "FX0505"),
+        ("downgrade-tasks", "fn f(a: &std::sync::Arc<u32>) { let _ = std::sync::Arc::downgrade(a); }".into(), "FX0505"),
+        ("arc-send", "fn send<T: Send>() {} fn f() { send::<std::sync::Arc<std::rc::Rc<u32>>>(); }".into(), "E0277"),
+        ("weak-sync", "fn sync<T: Sync>() {} fn f() { sync::<std::sync::Weak<std::cell::Cell<u32>>>(); }".into(), "E0277"),
+        ("pointer", "fn f(a: std::sync::Arc<u32>) { let _ = format!(\"{:p}\", a); }".into(), "FX0520"),
+    ].into_iter().chain(["weak_count", "get_mut", "try_unwrap", "into_inner"].map(|method| (
+        method,
+        format!("fn f(mut a: std::sync::Arc<u32>) {{ let _ = std::sync::Arc::{method}(&mut a); }}"),
+        "E0599",
+    ))) {
+        let dir = package(&format!("arc-reject-{name}"), &source);
+        let out = driver(&dir).args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", stderr(&out));
+        assert!(stderr(&out).contains(code), "{name}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn dbg_builds_and_executes_against_production_std() {
+    let source = format!(
+        "{}\n{}",
+        include_str!("../../../conformance/cases/authority/sink_dbg_debug.rs"),
+        r#"
+#[tide::main]
+fn main() {
+    assert_eq!(half(8), 4);
+    let __tide_dbg_value = String::from("moved");
+    assert_eq!(dbg!(__tide_dbg_value,), "moved");
+    let mut n = 0;
+    assert_eq!(dbg!({ n += 1; n }, { n += 1; n },), (1, 2));
+    assert_eq!(n, 2);
+    assert_eq!(dbg!((1, 2)), (1, 2));
+    dbg!();
+    #[derive(Debug)]
+    struct Value { n: u32 }
+    assert_eq!(dbg!(Value { n: 3 }).n, 3);
+    let cell = std::cell::RefCell::new(3);
+    if let Some(v) = dbg!(Some(cell.borrow())) { assert_eq!(*v, 3); }
+    *cell.borrow_mut() = 4;
+}
+#[test]
+fn simulated_dbg() {
+    let sim = Root::sim(0);
+    assert_eq!(dbg!(7), 7);
+    assert_eq!(std::par::join(|| dbg!(1), || dbg!(2)), (1, 2));
+    assert_eq!(dbg!((1, 2)), (1, 2));
+    let records = sim.records();
+    assert_eq!(records.len(), 7);
+    assert!(records.iter().all(|r| r.sink == std::sim::Sink::Dbg));
+    assert!(records[0].message.ends_with("7 = 7"));
+    assert!(records[1].message.ends_with("1 = 1"));
+    assert!(records[2].message.ends_with("2 = 2"));
+    assert_eq!(records[4].message, "    1,");
+    assert_eq!(records[5].message, "    2,");
+    assert_eq!(records[6].message, ")");
+}
+"#
+    );
+    let dir = package("dbg", &source);
+    let build = checked(&mut driver(&dir));
+    assert!(!stderr(&build).contains("FX0520"), "{}", stderr(&build));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert!(out.stdout.is_empty());
+    let lines: Vec<_> = stderr(&out).lines().map(str::to_owned).collect();
+    assert!(lines[0].ends_with("/demo.rs:4:5] x = 8"), "{lines:?}");
+    assert!(
+        lines[1].ends_with("__tide_dbg_value = \"moved\""),
+        "{lines:?}"
+    );
+    assert!(
+        lines[2].ends_with("= 1") && lines[3].ends_with("= 2"),
+        "{lines:?}"
+    );
+    assert_eq!(&lines[5..8], ["    1,", "    2,", ")"]);
+    assert!(
+        lines[8].starts_with('[') && lines[8].ends_with(']'),
+        "{lines:?}"
+    );
+    assert!(
+        lines[9].contains("] Value {") && lines[9].ends_with(" = Value {"),
+        "{lines:?}"
+    );
+    assert_eq!(&lines[10..12], ["    n: 3,", "}"]);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    checked(&mut Command::new(dir.join("out/demo-test")));
+
+    let dir = package(
+        "dbg-release",
+        include_str!("../../../conformance/cases/authority/sink_dbg_release.rs"),
+    );
+    let out = driver(&dir)
+        .args([
+            "--crate-type=lib",
+            "--emit=metadata",
+            "--tide-profile=release",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("FX0507"), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("FX0520"), "{}", stderr(&out));
+}
+
+#[test]
+fn arc_weak_simulation_uses_runtime_context() {
+    let dir = package(
+        "arc-simulation",
+        r#"
+use std::sync::Arc;
+
+struct Notify(std::sync::mpsc::Sender<()>);
+impl Drop for Notify {
+    fn drop(&mut self) { self.0.send(()).unwrap(); }
+}
+
+#[cfg(test)]
+fn poll_trace(seed: u64) -> String {
+    let sim = Root::sim(seed);
+    let (notify, notification) = std::sync::mpsc::channel(&sim.tasks);
+    let a = Arc::new(Notify(notify), &sim.tasks);
+    let weak = Arc::downgrade(&a, &sim.tasks);
+    sim.tasks.scope::<_, std::task::TaskError, _>(|s| {
+        let (tx, rx) = std::sync::mpsc::channel::<()>(&sim.tasks);
+        let child = s.spawn(move || {
+            assert!(rx.recv().is_err());
+            drop(a);
+            Ok(())
+        });
+        // Drop wakes the receiver without a scheduling point: the dropper is now runnable.
+        drop(tx);
+        let mut polls = 0;
+        while weak.upgrade().is_some() {
+            polls += 1;
+            assert!(polls < 1000, "weak polling starved the runnable dropper");
+        }
+        // The payload destructor re-enters the runtime; no Arc runtime lock may be held.
+        notification.recv().unwrap();
+        child.join().unwrap();
+        Ok(())
+    }).unwrap();
+    drop(weak);
+    let trace = sim.trace();
+    for op in ["arc.new", "arc.downgrade", "weak.upgrade"] {
+        assert!(trace.contains(op), "missing Arc operation");
+    }
+    trace
+}
+
+#[test]
+fn polling_and_replay() {
+    for seed in 0..8 {
+        assert_eq!(poll_trace(seed), poll_trace(seed));
+    }
+    // Emit outside the simulation so the host can compare two fresh processes.
+    print!("{}", poll_trace(17));
+}
+
+#[test]
+fn completed_simulation_results_can_be_read_and_compared() {
+    #[cfg(test)]
+    fn run(seed: u64) -> Arc<Vec<u32>> {
+        let sim = Root::sim(seed);
+        Arc::new(vec![1, 2, 3], &sim.tasks)
+    }
+    let a = run(1);
+    let b = run(2);
+    assert_eq!(a.len(), 3);
+    assert_eq!(a, b);
+    assert_eq!(a.clone(), b);
+}
+
+#[test]
+fn transient_upgrades_allow_both_cow_outcomes() {
+    struct Value(u32);
+    impl Clone for Value {
+        fn clone(&self) -> Self { Self(self.0 + 1) }
+    }
+    let mut counts = [0usize; 2];
+    for seed in 0..256 {
+        let sim = Root::sim(seed);
+        let mut a = Arc::new(Value(0), &sim.tasks);
+        let weak = Arc::downgrade(&a, &sim.tasks);
+        let value = sim.tasks.scope::<_, std::task::TaskError, _>(|s| {
+            let child = s.spawn(move || {
+                // No intervening operation keeps this temporary alive for the scheduler.
+                drop(weak.upgrade());
+                Ok(())
+            });
+            let value = Arc::make_mut(&mut a).0;
+            child.join().unwrap();
+            Ok(value)
+        }).unwrap();
+        match value {
+            0 => counts[0] += 1,
+            1 => counts[1] += 1,
+            _ => panic!("unexpected COW value"),
+        }
+    }
+    assert!(counts[0] > 0 && counts[1] > 0, "transient upgrade outcomes: {:?}", counts);
+}
+
+#[test]
+fn lifecycle_and_copy_on_write() {
+    let sim = Root::sim(0);
+    let before = sim.trace();
+    let mut a = Arc::new(1, &sim.tasks);
+    assert_ne!(sim.trace(), before);
+    let before = sim.trace();
+    let original = a.clone();
+    assert_eq!(sim.trace(), before);
+    let weak = Arc::downgrade(&a, &sim.tasks);
+    assert_ne!(sim.trace(), before);
+    let before = sim.trace();
+    let other = weak.clone();
+    assert_eq!(sim.trace(), before);
+    *Arc::make_mut(&mut a) = 2;
+    assert!(sim.trace().contains("arc.make_mut"));
+    assert_eq!(*a, 2);
+    assert_eq!(*weak.upgrade().unwrap(), 1);
+    drop(original);
+    assert!(other.upgrade().is_none());
+    let before = sim.trace().len();
+    drop((a, weak, other));
+    assert!(!sim.trace()[before..].contains("\"wait\":\"ready\""));
+}
+
+#[test]
+#[should_panic(expected = "simulation handle used outside its simulation")]
+fn ended_simulation_upgrade() {
+    let weak;
+    {
+        let sim = Root::sim(0);
+        weak = Arc::downgrade(&Arc::new(1, &sim.tasks), &sim.tasks);
+    }
+    weak.upgrade();
+}
+
+#[test]
+#[should_panic(expected = "simulation handle used outside its simulation")]
+fn foreign_simulation_downgrade() {
+    let a;
+    {
+        let sim = Root::sim(0);
+        a = Arc::new(1, &sim.tasks);
+    }
+    let sim = Root::sim(1);
+    Arc::downgrade(&a, &sim.tasks);
+}
+
+#[test]
+fn outliving_handles_drop_in_another_simulation() {
+    let (a, weak);
+    {
+        let sim = Root::sim(0);
+        a = Arc::new(1, &sim.tasks);
+        weak = Arc::downgrade(&a, &sim.tasks);
+    }
+    let sim = Root::sim(1);
+    let before = sim.trace();
+    drop(a);
+    drop(weak);
+    assert_eq!(sim.trace(), before);
+}
+"#,
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let executable = dir.join("out/demo-test");
+    let out = Command::new("timeout")
+        .arg("30")
+        .arg(&executable)
+        .arg("--test-threads=4")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        stderr(&out)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("7 passed"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let replay = || {
+        let out = checked(Command::new("timeout").arg("30").arg(&executable).args([
+            "--exact",
+            "polling_and_replay",
+            "--nocapture",
+        ]));
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|line| line.find('{').map(|start| line[start..].to_owned()))
+            .collect::<Vec<_>>()
+    };
+    let first = replay();
+    assert!(first.iter().any(|line| line.contains("weak.upgrade")));
+    let second = replay();
+    assert_eq!(first, second);
+}
+
+#[test]
 fn task_lifecycle_builds_and_runs_against_production_std() {
     let source = include_str!("../../../conformance/cases/tasks/task_lifecycle.rs");
     let dir = package("task-lifecycle", source);

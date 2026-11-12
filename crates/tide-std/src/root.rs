@@ -31,7 +31,7 @@ pub mod ffi {
 
 // `panic!` alone, since re-exporting `std::panic` would also export the module and
 // `catch_unwind`; `print!` and its kin write to the sinks below.
-pub use tide_macros::{Decode, Encode, Error, debug, eprint, eprintln, error, info, panic, print, println, trace, warn};
+pub use tide_macros::{Decode, Encode, Error, dbg, debug, eprint, eprintln, error, info, panic, print, println, trace, warn};
 
 /// The `Encode` and `Decode` traits, which share their derives' names, and the engine those
 /// derives call; shared by production and conformance.
@@ -108,7 +108,7 @@ pub mod __sink {
             {
                 std::process::exit(141);
             }
-        } else if record.stream == "err" {
+        } else if matches!(record.stream, "err" | "dbg") {
             let _ = write(io::stderr().lock(), &record.message);
         } else {
             crate::log::emit(crate::log::Level::from_name(record.stream), &record.message);
@@ -128,6 +128,15 @@ pub mod __sink {
     pub fn err(args: Arguments<'_>, newline: bool) {
         emit(Record {
             stream: "err",
+            message: format(args, newline).into_bytes(),
+            span: std::panic::Location::caller(),
+        });
+    }
+
+    #[track_caller]
+    pub fn dbg(args: Arguments<'_>, newline: bool) {
+        emit(Record {
+            stream: "dbg",
             message: format(args, newline).into_bytes(),
             span: std::panic::Location::caller(),
         });
@@ -173,7 +182,7 @@ macro_rules! declare_prelude {
                     Unpin, Vec, assert, cfg, derive, drop, format_args, stringify,
                 };
                 pub use crate::{
-                    Decode, Encode, Error, assert_eq, assert_ne, debug, debug_assert, eprint, eprintln, error, format, info, trace, warn,
+                    Decode, Encode, Error, assert_eq, assert_ne, dbg, debug, debug_assert, eprint, eprintln, error, format, info, trace, warn,
                     matches, panic, print, println, todo, unimplemented, unreachable, vec, write,
                     writeln,
                 };

@@ -4,11 +4,137 @@ pub mod mpsc {
 }
 
 use crate::marker::Pure;
-use crate::task::{Context, SimCell, Tasks};
+use crate::task::{ArcHandle, Context, SimCell, Tasks};
 use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc as RustArc, Condvar, Mutex, MutexGuard, PoisonError, TryLockError};
+
+/// A reference-counted synchronization handle, created with task authority (GLOBAL-6).
+/// Unlike Rust's `Arc`, it has no count observers, `get_mut`, `try_unwrap`, or `into_inner`.
+/// Neither this handle nor its weak observers are `Pure`.
+pub struct Arc<T: ?Sized>(RustArc<T>, ArcHandle);
+
+impl<T> Arc<T> {
+    /// Allocates a shared value using the caller's task authority.
+    #[track_caller]
+    pub fn new(value: T, tasks: &Tasks) -> Self {
+        let runtime = ArcHandle::new(tasks, std::panic::Location::caller());
+        Self(RustArc::new(value), runtime)
+    }
+
+    /// Creates a weak observer using the caller's task authority.
+    #[track_caller]
+    pub fn downgrade(this: &Self, tasks: &Tasks) -> Weak<T> {
+        let runtime = this.1.downgrade(tasks, std::panic::Location::caller());
+        Weak(RustArc::downgrade(&this.0), runtime)
+    }
+}
+
+impl<T: Clone> Arc<T> {
+    /// Makes the value unique, cloning if shared and dissociating weak observers otherwise.
+    #[track_caller]
+    pub fn make_mut(this: &mut Self) -> &mut T {
+        this.1.begin("arc.make_mut", std::panic::Location::caller());
+        RustArc::make_mut(&mut this.0)
+    }
+}
+
+impl<T: ?Sized> Clone for Arc<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
+
+impl<T: ?Sized> Deref for Arc<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: ?Sized + PartialEq> PartialEq for Arc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+    fn ne(&self, other: &Self) -> bool {
+        self.0.ne(&other.0)
+    }
+}
+impl<T: ?Sized + Eq> Eq for Arc<T> {}
+
+impl<T: ?Sized + PartialOrd> PartialOrd for Arc<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+    fn lt(&self, other: &Self) -> bool {
+        self.0.lt(&other.0)
+    }
+    fn le(&self, other: &Self) -> bool {
+        self.0.le(&other.0)
+    }
+    fn gt(&self, other: &Self) -> bool {
+        self.0.gt(&other.0)
+    }
+    fn ge(&self, other: &Self) -> bool {
+        self.0.ge(&other.0)
+    }
+}
+impl<T: ?Sized + Ord> Ord for Arc<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+impl<T: ?Sized + Hash> Hash for Arc<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+impl<T: ?Sized + fmt::Debug> fmt::Debug for Arc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+impl<T: ?Sized + fmt::Display> fmt::Display for Arc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+impl<T: ?Sized> fmt::Pointer for Arc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Pointer::fmt(&self.0, f)
+    }
+}
+
+/// A weak observer of an [`Arc`], created by [`Arc::downgrade`].
+pub struct Weak<T: ?Sized>(std::sync::Weak<T>, ArcHandle);
+
+impl<T> Weak<T> {
+    /// Returns a strong handle if the value is still alive.
+    /// Simulation schedules before the attempt and after a successful acquisition.
+    #[track_caller]
+    pub fn upgrade(&self) -> Option<Arc<T>> {
+        let span = std::panic::Location::caller();
+        self.1.begin("weak.upgrade", span);
+        self.0.upgrade().map(|value| {
+            let acquired = Arc(value, self.1.clone());
+            self.1.begin("weak.upgrade_acquired", span);
+            acquired
+        })
+    }
+}
+impl<T: ?Sized> Clone for Weak<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
+impl<T: ?Sized> fmt::Debug for Weak<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
 
 type Span = &'static std::panic::Location<'static>;
 static NEXT_CELL: AtomicU64 = AtomicU64::new(0);
@@ -341,6 +467,45 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const TIMEOUT: Duration = Duration::from_secs(20);
+
+    #[test]
+    fn arc_operations_validate_domains_but_payload_access_does_not() {
+        let real_tasks = Tasks::real();
+        let real = Arc::new(1, &real_tasks);
+        let real_weak = Arc::downgrade(&real, &real_tasks);
+        let (mut old, old_weak);
+        {
+            let sim = crate::Root::sim(0);
+            old = Arc::new(1, &sim.tasks);
+            old_weak = Arc::downgrade(&old, &sim.tasks);
+        }
+        assert!(catch_unwind(AssertUnwindSafe(|| old_weak.upgrade())).is_err());
+        assert_eq!(old.clone(), real);
+        assert_eq!(format!("{:?}", old_weak.clone()), "(Weak)");
+        let sim = crate::Root::sim(1);
+        let before = sim.trace();
+        assert_eq!(*old, 1);
+        assert_eq!(old.clone(), real.clone());
+        assert_eq!(format!("{old} {old:?}"), "1 1");
+        assert_eq!(
+            format!("{:?} {:?}", old_weak.clone(), real_weak.clone()),
+            "(Weak) (Weak)"
+        );
+        assert_eq!(sim.trace(), before);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                Arc::make_mut(&mut old);
+            }))
+            .is_err()
+        );
+        assert!(catch_unwind(AssertUnwindSafe(|| Arc::downgrade(&old, &sim.tasks))).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| real_weak.upgrade())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| Arc::new(1, &real_tasks))).is_err());
+        let before = sim.trace();
+        drop((old, old_weak, real, real_weak));
+        assert_eq!(sim.trace(), before);
+        sim.tasks.checkpoint().unwrap();
+    }
 
     fn wait_until(ready: impl Fn() -> bool, failure: &str) {
         let deadline = Instant::now() + TIMEOUT;

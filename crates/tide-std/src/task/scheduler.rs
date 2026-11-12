@@ -41,6 +41,7 @@ pub(super) enum Operation {
     Net(&'static str, usize),
     Input(&'static str),
     Channel(&'static str, usize),
+    Arc(&'static str, usize),
 }
 
 pub(super) enum ChannelEvent {
@@ -95,6 +96,7 @@ pub(super) struct Scheduler {
     next_cell: usize,
     next_limit: usize,
     next_channel: usize,
+    next_arc: usize,
     rng: u64,
     fs_rng: u64,
     net_rng: u64,
@@ -122,6 +124,7 @@ impl Scheduler {
             next_cell: 0,
             next_limit: 0,
             next_channel: 0,
+            next_arc: 0,
             rng: seed ^ 0x7469_6465_7363_6864,     // "tideschd"
             fs_rng: seed ^ 0x7469_6465_6669_6c65,  // "tidefile"
             net_rng: seed ^ 0x7469_6465_6e65_7421, // "tidenet!"
@@ -186,6 +189,12 @@ impl Scheduler {
     pub(super) fn allocate_cell(&mut self) -> usize {
         let id = self.next_cell;
         self.next_cell += 1;
+        id
+    }
+
+    pub(super) fn allocate_arc(&mut self) -> usize {
+        let id = self.next_arc;
+        self.next_arc += 1;
         id
     }
 
@@ -350,7 +359,7 @@ impl Scheduler {
             let previous_len = buf.len();
             buf.extend(bytes);
             *last_time = *time;
-            if *stream != "out" && *stream != "err" { buf.push(b'\n'); }
+            if !matches!(*stream, "out" | "err" | "dbg") { buf.push(b'\n'); }
             let mut consumed = 0;
             for (offset, byte) in buf[previous_len..].iter().enumerate() {
                 #[cfg(test)]
@@ -360,7 +369,7 @@ impl Scheduler {
                 records.push(Record {
                     node: "main".into(), time: *time,
                     sink: match *stream {
-                        "out" => Sink::Out, "err" => Sink::Err,
+                        "out" => Sink::Out, "err" => Sink::Err, "dbg" => Sink::Dbg,
                         name => Sink::Log(crate::log::Level::from_name(name)),
                     },
                     message: String::from_utf8_lossy(&buf[consumed..end]).into_owned(),
@@ -371,13 +380,13 @@ impl Scheduler {
         }
         #[cfg(test)]
         assert_eq!(scanned, self.sink_events.iter().map(|(stream, bytes, _)| {
-            bytes.len() + usize::from(!matches!(*stream, "out" | "err"))
+            bytes.len() + usize::from(!matches!(*stream, "out" | "err" | "dbg"))
         }).sum::<usize>(), "line assembly must scan each appended byte exactly once");
         for (stream, bytes, time) in pending {
             if !bytes.is_empty() {
                 records.push(Record {
                     node: "main".into(), time,
-                    sink: match stream { "out" => Sink::Out, "err" => Sink::Err, name => Sink::Log(crate::log::Level::from_name(name)) },
+                    sink: match stream { "out" => Sink::Out, "err" => Sink::Err, "dbg" => Sink::Dbg, name => Sink::Log(crate::log::Level::from_name(name)) },
                     message: String::from_utf8_lossy(&bytes).into_owned(),
                 });
             }
@@ -748,6 +757,7 @@ impl Operation {
             Self::Net(name, id) => (name, Some(id)),
             Self::Input(name) => (name, None),
             Self::Channel(name, id) => (name, Some(id)),
+            Self::Arc(name, id) => (name, Some(id)),
         }
     }
 
@@ -765,6 +775,7 @@ impl Operation {
             | Self::Net(..) => "cap",
             Self::File(_) => "io_wait",
             Self::Channel(..) => "chan",
+            Self::Arc(..) => "arc",
             Self::Cancel(_) | Self::Failure(_) | Self::Deadline(..) | Self::SetDeadline(..) => {
                 "cancel"
             }

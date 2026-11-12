@@ -8,7 +8,7 @@
 //! runtime entry, Rust's re-exports, numeric conversions (`convert.rs`), and the codec engine
 //! and `std::json` (`codec.rs` and `json.rs`)), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
-//! (`task.rs`), `Shared` (`sync.rs`), seeded simulations and their runner
+//! (`task.rs`), `Arc`, `Weak`, and `Shared` (`sync.rs`), seeded simulations and their runner
 //! (`sim.rs`), parallel regions (`par.rs`), `std::time` (`time.rs`), and executable
 //! contracts (`contract.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
@@ -29,17 +29,7 @@
 // runtime entry, Rust's re-exports, and the `capability!` and `declare_prelude!` macros.
 include!("../../../../crates/tide-std/src/root.rs");
 
-// The dbg sink (reference 6.5): as Rust's `dbg!`, it formats each argument with `Debug` and
-// returns it.
-#[macro_export]
-macro_rules! dbg {
-    () => { () };
-    ($val:expr $(,)?) => { match $val { tmp => { let _ = ::core::format_args!("{:#?}", &tmp); tmp } } };
-    ($($val:expr),+ $(,)?) => { ($($crate::dbg!($val)),+,) };
-}
-
 crate::declare_prelude! {
-    pub use crate::dbg;
     pub use crate::Secret;
     pub use crate::test::test;
     pub use crate::test::sim_test;
@@ -127,36 +117,7 @@ pub mod task {
 }
 
 pub mod sync {
-    use std::marker::PhantomData;
-
     include!("../../../../crates/tide-std/src/sync.rs");
-
-    /// Rust's `Arc` without `strong_count`, `weak_count`, `get_mut`,
-    /// `try_unwrap`, and `into_inner`; creation takes `&Tasks` (03 §1.2, GLOBAL-6).
-    pub struct Arc<T: ?Sized> {
-        _p: PhantomData<std::sync::Arc<T>>,
-    }
-    impl<T> Arc<T> {
-        pub fn new(v: T, tasks: &Tasks) -> Arc<T> { unimplemented!() }
-        pub fn downgrade(this: &Arc<T>, tasks: &Tasks) -> Weak<T> { unimplemented!() }
-    }
-    impl<T: Clone> Arc<T> {
-        pub fn make_mut(this: &mut Arc<T>) -> &mut T { unimplemented!() }
-    }
-    impl<T: ?Sized> Clone for Arc<T> {
-        fn clone(&self) -> Self { unimplemented!() }
-    }
-    impl<T: ?Sized> std::ops::Deref for Arc<T> {
-        type Target = T;
-        fn deref(&self) -> &T { unimplemented!() }
-    }
-
-    pub struct Weak<T: ?Sized> {
-        _p: PhantomData<std::sync::Weak<T>>,
-    }
-    impl<T> Weak<T> {
-        pub fn upgrade(&self) -> Option<Arc<T>> { unimplemented!() }
-    }
 
     /// Needs the `unsafe` grant (03 §1.2). GUESS: no document gives their API;
     /// only the names are fixed.

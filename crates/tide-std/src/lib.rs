@@ -12,8 +12,9 @@
 //! - the entry: `#[tide::main]`, `Root`, and the runtime entry it calls, which mints the
 //!   process's one `Root` (03 ROOT-1, RUN-1);
 //! - `out`/`err` sinks (`print!`, `println!`, `eprint!`, `eprintln!`, `io::stdout`/`stderr`),
-//!   and `error!`, `warn!`, `info!`, `debug!`, `trace!`. Synchronous writes preserve whole
-//!   records and exit quietly with 141 on closed stdout. `Root::log: log::LogConfig` has
+//!   debug-build `dbg!` (Rust-style stderr output, returning its values), and the log macros
+//!   `error!`, `warn!`, `info!`, `debug!`, `trace!`. Synchronous writes preserve whole records
+//!   and exit quietly with 141 on closed stdout. `Root::log: log::LogConfig` has
 //!   `&self` setters `level`, `format`, `to_file`; default Info/text/stderr. Text is
 //!   `level: message`, JSON has fixed `level`/`message` keys and no timestamp (provisional);
 //! - `env::Env`: real/simulated `args`, `var`, `vars`, `current_dir`, `only`, `args_only`;
@@ -63,6 +64,13 @@
 //!   causes while inner scopes keep their own deadlines. `Tasks::spawn_isolated` waits
 //!   shielded for a new owned task without taking a slot and returns `Panicked { message }`
 //!   for an unwinding panic, with the process hook unchanged; aborts are not contained;
+//! - `std::sync::Arc` and `Weak`: `Arc::new(v, &Tasks)`, `clone`, `Deref`, `make_mut`,
+//!   `Arc::downgrade(&arc, &Tasks)`, and `Weak::upgrade`. Rust's comparison, formatting,
+//!   and hash traits stay; count observers, `get_mut`, `try_unwrap`, and `into_inner` are absent.
+//!   Send/Sync follow the payload's Rust bounds; both handles are not `Pure` (GLOBAL-6);
+//!   simulated handles retain their world identity: new, downgrade, make_mut and upgrade take
+//!   scheduling points. A successful upgrade also schedules while holding its acquired handle.
+//!   Clone and drop take none; outliving handles can be dropped safely;
 //! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, `same`, `with`, `with2`, `with_all`,
 //!   and `reset`. Multi-cell calls acquire in global cell-id order with FIFO arrival per
 //!   cell; aliases return `LockError::Aliased` before acquiring. Callbacks get payloads in
@@ -79,7 +87,7 @@
 //!   Disconnect ends iteration. Both runtimes share the FIFO queue and wait primitive;
 //!   simulation records payload-free `chan` events and reports channel deadlocks;
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   `Shared`, channels, files, TCP, `Env`, `Stdin`, and `Clock`, with
+//!   `Arc`/`Weak`, `Shared`, channels, files, TCP, `Env`, `Stdin`, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
@@ -217,8 +225,9 @@
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
 //! Not provided yet: other capability operations and attenuation of reference 6.1 (HTTP/UDP,
-//! explicit name resolution, random draws, processes); the `dbg` and `trace` sinks;
+//! explicit name resolution, random draws, processes); the `trace` sink;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
+//! unsized Arc/Weak payloads (`Arc<dyn Trait>`, `Arc<str>`, `Arc<[T]>`);
 //! other `sync` items,
 //! `ptr`; other world setup, faults, nodes, replay manifests,
 //! and laws. A
