@@ -23,7 +23,11 @@
 //!   `is_terminal`, and implements `io::Read` owned or borrowed; reads check cancellation
 //!   at entry. A kernel-blocked real read waits for
 //!   input/EOF. `Lines<StdinReader>` takes one line per fill, preserving later lines on drop;
-//! - `Pure` (reference 6.6), which the admission driver decides;
+//! - `Pure` (reference 6.6), which the admission driver decides, and the prelude's
+//!   `#[pure]` function attribute, enforced by the existing FX0511 signature check;
+//! - `arena::{Arena, Id}`: generational graph handles, checked disjoint mutable access,
+//!   stale-handle rejection, and provisional slot-order iteration (reference §3.6).
+//!   Handles have no cross-arena identity check; `Id<T>` is `Pure` for every `T`;
 //! - the capability types `Root` carries: the identities `Net`, `Rand`,
 //!   and `Proc`; `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
@@ -216,18 +220,19 @@
 //! random draws, processes); the `dbg` and `trace` sinks;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! other `sync` items,
-//! `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
+//! `ptr`; other world setup, faults, nodes, replay manifests,
 //! and laws. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
 //! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's
 //! unreviewed-branch guarantee.
 //!
-//! `root.rs` (with `convert.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
-//! scheduler and channel adapter), `par.rs`, `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
-//! runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
-//! share their definitions with the conformance fixture std. The identity-only capability
-//! types use `root.rs`'s `capability!` in both crates.
+//! `root.rs` (with `convert.rs`, `arena.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`,
+//! `task.rs` (including its scheduler and channel adapter), `par.rs`, `sync.rs` (with
+//! `sync/mpsc.rs`), `sim.rs` (with its runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
+//! share their definitions with the conformance fixture std. The prelude's `#[pure]` export
+//! also comes from `root.rs`. The identity-only capability types use `root.rs`'s `capability!`
+//! in both crates.
 
 include!("root.rs");
 

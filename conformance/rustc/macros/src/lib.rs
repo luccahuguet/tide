@@ -1,14 +1,8 @@
-//! Oracle-only shims for the toolchain attributes neither the D18 spike's
-//! macros nor the E1 trial's cover. Each returns its item unchanged, so rustc
-//! checks the item as written; the checker owns what the attribute means
-//! (`#[pure]`: 03 §3.2, AFREE-1; `#[trusted_pure]`: 03 RUN-4, UNSAFE-1).
+//! Oracle-only `#[trusted_pure]` shim (03 RUN-4, UNSAFE-1). It returns its item
+//! unchanged; the admission driver owns its meaning. Production `#[pure]` comes
+//! from tide-macros through the shared std prelude.
 
 use proc_macro::TokenStream;
-
-#[proc_macro_attribute]
-pub fn pure(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    item
-}
 
 #[proc_macro_attribute]
 pub fn trusted_pure(_attr: TokenStream, item: TokenStream) -> TokenStream {

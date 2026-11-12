@@ -19,7 +19,8 @@
 //! `design/reference.md` and 02/03 give, and re-exports Rust's items where the
 //! reference keeps their API. The remaining stub methods use `unimplemented!()`,
 //! so it decides type and borrow verdicts only. Collections share production's
-//! module through `root.rs`. Lines marked `GUESS` fix a signature no design
+//! module through `root.rs`, as do `arena::{Arena, Id}` and the prelude's
+//! production `#[pure]` attribute. Lines marked `GUESS` fix a signature no design
 //! document fixes.
 
 #![allow(unused_variables, dead_code)]
@@ -42,7 +43,7 @@ crate::declare_prelude! {
     pub use crate::Secret;
     pub use crate::test::test;
     pub use crate::test::sim_test;
-    pub use conformance_macros::{pure, trusted_pure};
+    pub use conformance_macros::trusted_pure;
     pub use tide_macros::{ensures, invariant, invariants, requires};
 }
 
@@ -167,56 +168,6 @@ pub mod sync {
         pub struct RwLock<T: ?Sized>(PhantomData<std::sync::RwLock<T>>);
     }
 
-}
-
-pub mod arena {
-    use std::marker::PhantomData;
-
-    pub struct Arena<T> {
-        _p: PhantomData<Vec<T>>,
-    }
-    impl<T> Arena<T> {
-        pub fn new() -> Arena<T> { unimplemented!() }
-        pub fn insert(&mut self, v: T) -> Id<T> { unimplemented!() }
-        pub fn get(&self, id: Id<T>) -> Option<&T> { unimplemented!() }
-        pub fn get_mut(&mut self, id: Id<T>) -> Option<&mut T> { unimplemented!() }
-        pub fn remove(&mut self, id: Id<T>) -> Option<T> { unimplemented!() }
-    }
-    impl<T> std::ops::Index<Id<T>> for Arena<T> {
-        type Output = T;
-        fn index(&self, id: Id<T>) -> &T { unimplemented!() }
-    }
-    impl<T> std::ops::IndexMut<Id<T>> for Arena<T> {
-        fn index_mut(&mut self, id: Id<T>) -> &mut T { unimplemented!() }
-    }
-
-    /// GUESS: the listed traits hold for every `T` (reference 3.6 lists them
-    /// unconditionally; derives would bound `T`).
-    pub struct Id<T> {
-        index: u32,
-        generation: u32,
-        _p: PhantomData<fn() -> T>,
-    }
-    impl<T> Clone for Id<T> {
-        fn clone(&self) -> Self { *self }
-    }
-    impl<T> Copy for Id<T> {}
-    impl<T> PartialEq for Id<T> {
-        fn eq(&self, o: &Self) -> bool { unimplemented!() }
-    }
-    impl<T> Eq for Id<T> {}
-    impl<T> std::hash::Hash for Id<T> {
-        fn hash<H: std::hash::Hasher>(&self, h: &mut H) { unimplemented!() }
-    }
-    impl<T> PartialOrd for Id<T> {
-        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> { unimplemented!() }
-    }
-    impl<T> Ord for Id<T> {
-        fn cmp(&self, o: &Self) -> std::cmp::Ordering { unimplemented!() }
-    }
-    impl<T> std::fmt::Debug for Id<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
 }
 
 // Production owns the signatures and execution of every parallel region.

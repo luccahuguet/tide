@@ -393,6 +393,13 @@ produce infinity, including `f32::round_from(u128::MAX)` and `f32::round_from(1e
 Rust's bit-preserving `cast_signed()` / `cast_unsigned()` remain admitted. With Tide's
 std injected, the driver allows `unstable_name_collisions`: the pinned prelude's
 `Truncate` deliberately shares core's unstable inherent method name.
+`std::arena::{Arena, Id}` supports cyclic graphs with generational handles,
+last-freed-first slot reuse, checked disjoint mutation and stale-index panics.
+`Id<T>` is `Pure` for every `T`; `Arena<T>` is `Pure` when `T` is. Handles must
+stay with their originating arena; no cross-arena check is performed. `iter`
+(slot order), `Id`'s `Ord` and `Debug` remain provisional. The prelude's
+`#[pure]` asserts authority-free function parameters under the existing FX0511
+check; non-functions and nonempty arguments are compile errors.
 The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std that shares these definitions, including the production `#[test]`

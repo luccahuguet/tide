@@ -265,6 +265,13 @@ Through `root.rs`, both std surfaces also use production's `convert.rs` and prel
 traits `Truncate`, `RoundFrom`, and `TryFromFloat`. `authority/numeric_conversions.rs`
 checks every replacement spelling and executes against production in debug and release;
 std unit tests cover low bits, rounding ties, overflow, and exact float-to-integer bounds.
+`std::arena::{Arena, Id}` also shares production's `arena.rs` through `root.rs`.
+`memory/arena_executable.rs` executes cyclic traversal, live access/mutation,
+stale-handle checks, disjoint borrows, reuse, iteration and bound-free handle
+traits through the driver. The build tests also execute stale Index/IndexMut
+panics and check `#[pure]` acceptance/rejection against production.
+`memory/arena_pure_reject.rs` pins `Arena<Fs>` rejection; the executing fixture
+pins `Id<Fs>` acceptance. `afree_pure_*` still exercise the existing FX0511 owner.
 The admission driver's rules (`policy.rs`, `pure.rs`) key the shared items
 alike. Production and the stub share the `#[test]` macro and property
 generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile-time fixture,
@@ -291,8 +298,10 @@ so the corpus decides compile-time verdicts only; rules decided at run time,
 in the simulator, or in the sandbox are outside it (`rules.md` lists them).
 `rustc/std` originated in `trials/e1-dialect/rustc/std`, whose copy stays
 frozen as the trial's record, and uses Tide's std's macros (`crates/tide-macros`);
-`rustc/macros` adds `#[pure]` and
-`#[trusted_pure]`, which leave their item unchanged. Contract macros also come
+`#[pure]` comes from production through the shared prelude; it validates a
+function target and empty arguments, preserving its tokens for FX0511.
+`rustc/macros` adds only the identity `#[trusted_pure]` shim, which production
+does not yet provide. Contract macros also come
 from `crates/tide-macros`; the hidden clause runtime includes production's
 `contract.rs`. `contracts/executable.rs` checks the shared surface and executes
 against production through the driver's `tests/build.rs` in debug/release binaries

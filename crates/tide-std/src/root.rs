@@ -11,6 +11,9 @@ pub mod collections;
 /// Explicit numeric conversions and Rust's conversion traits (reference §4.2).
 pub mod convert;
 
+/// Generational handles for graphs and cycles (reference §3.6).
+pub mod arena;
+
 // Rust's std modules and macros whose API Tide keeps (reference 1, 2.1).
 pub use std::{
     any, array, borrow, boxed, cell, char, clone, cmp, default, error, f32, f64, fmt,
@@ -178,6 +181,7 @@ macro_rules! declare_prelude {
                 pub use crate::Root;
                 pub use crate::marker::Pure;
                 pub use crate::convert::{RoundFrom, Truncate, TryFromFloat};
+                pub use tide_macros::pure;
                 pub use crate::par::ParSlice;
                 pub use crate::tide;
                 $($extra)*

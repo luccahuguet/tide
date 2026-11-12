@@ -1236,6 +1236,25 @@ a key whatever `T` implements, and `Owned` when `T` is. A stale handle
 panics on indexing; `get` returns `None`. Two nodes are mutated
 together with `g.get_disjoint_mut([a, b])`, checked at run time.
 
+**ARENA-1.** `Arena<T>` owns values; `Id<T>` owns no `T`, so it is `Pure`
+for every `T`, while `Arena<T>` is `Pure` exactly when `T` is. `get`,
+`get_mut` and `remove` return `None` for stale handles; `contains` returns
+`false`, and `Index`/`IndexMut` panic. `get_disjoint_mut([Id<T>; N])`
+returns `Option<[&mut T; N]>`, rejecting any stale or repeated handle and
+accepting an empty array. `len` counts live elements; `is_empty`, `new`
+and `Default` do not require a bound on `T`.
+
+Production uses generation-tagged slots with last-freed-first reuse. A slot
+that reaches generation `u32::MAX` is retired, and insertion panics if a new
+slot would exceed `u32::MAX` total slots, including retired ones. A stale
+handle never becomes valid again in its originating arena. Handles from
+another arena of the same `T` are not detected: using one is a logic error
+that can return another element, `None`, or panic, without undefined behavior.
+The provisional `iter()` visits live `(Id<T>, &T)` pairs in slot-index order,
+which differs from insertion order after reuse. Provisional `Ord` compares
+index then generation; `Debug` needs no `T: Debug` bound. These implementation
+decisions follow [the arena research](../research/25-casts-arena-allowlist.md#2-fx-yg54-stdarena-and-pure).
+
 ### 10.10 `Rc<RefCell<T>>`
 
 ```rust

@@ -3210,3 +3210,111 @@ fn finite_trait_dispatch_chain_keeps_rustcs_limit_failure_without_a_growth_label
         }
     }
 }
+
+#[test]
+fn arena_and_pure_build_and_execute_against_production_std() {
+    let dir = package(
+        "arena-executable",
+        include_str!("../../../conformance/cases/memory/arena_executable.rs"),
+    );
+    checked(&mut driver(&dir));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    assert_eq!(out.stdout, b"ARENA_RAN\n");
+    assert!(out.stderr.is_empty(), "{}", stderr(&out));
+
+    for access in ["g[stale]", "{ g[stale] = 9; 0 }"] {
+        let dir = package(
+            "arena-stale",
+            &format!(
+                r#"
+use std::arena::Arena;
+#[tide::main]
+fn main() {{
+    let mut g = Arena::new();
+    let stale = g.insert(7);
+    assert_eq!(g.remove(stale), Some(7));
+    g.insert(8);
+    assert!(g.get(stale).is_none());
+    let _ = {access};
+}}
+"#
+            ),
+        );
+        checked(&mut driver(&dir));
+        let out = Command::new(dir.join("out/demo"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(101), "{}", stderr(&out));
+        assert!(stderr(&out).contains("stale arena id"), "{}", stderr(&out));
+    }
+}
+
+#[test]
+fn arena_and_pure_rejections_use_the_existing_driver_rules() {
+    for (name, source, codes) in [
+        (
+            "arena",
+            include_str!("../../../conformance/cases/memory/arena_pure_reject.rs"),
+            &["FX0517", "FX0511"][..],
+        ),
+        (
+            "capability",
+            include_str!("../../../conformance/cases/authority/afree_pure_capability.rs"),
+            &["FX0511"][..],
+        ),
+        (
+            "generic",
+            include_str!("../../../conformance/cases/authority/afree_pure_generic.rs"),
+            &["FX0511"][..],
+        ),
+        (
+            "nested",
+            include_str!("../../../conformance/cases/authority/afree_pure_nested.rs"),
+            &["FX0511"][..],
+        ),
+    ] {
+        let dir = package(&format!("arena-pure-{name}"), source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", stderr(&out));
+        for code in codes {
+            assert!(stderr(&out).contains(code), "{name}: {}", stderr(&out));
+        }
+        assert!(!dir.join("out/demo").exists());
+    }
+    let dir = package(
+        "arena-pure-accept",
+        include_str!("../../../conformance/cases/authority/afree_pure_accept.rs"),
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--emit=metadata"]));
+}
+
+#[test]
+fn pure_attribute_rejects_arguments_and_non_functions() {
+    for (source, message) in [
+        ("#[pure(wrong)] fn f() {}", "`#[pure]` takes no arguments"),
+        ("#[pure] struct Bad;", "`#[pure]` goes on a function"),
+        (
+            "#[pure] mod bad { fn f() {} }",
+            "`#[pure]` goes on a function",
+        ),
+        (
+            "#[pure] const BAD: fn() = || {};",
+            "`#[pure]` goes on a function",
+        ),
+    ] {
+        let dir = package("pure-attribute-invalid", source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(stderr(&out).contains(message), "{}", stderr(&out));
+        assert!(stderr(&out).contains("demo.rs:1:"), "{}", stderr(&out));
+    }
+}

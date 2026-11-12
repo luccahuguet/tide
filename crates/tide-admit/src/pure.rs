@@ -6,7 +6,8 @@
 //! `Pure` when no authority is reachable from it:
 //!
 //! - std's types (`core`, `alloc`, Rust's std, Tide's std): those [`NOT_PURE`] names are not
-//!   `Pure`; any other is `Pure` exactly when its type arguments are. That is 02 §9's walk with
+//!   `Pure`; `Id<T>` is `Pure` for every `T`; any other is `Pure` exactly when its
+//!   type arguments are. That is 02 §9's walk with
 //!   its raw-pointer rule (std owns or borrows values only of its type arguments or of fixed
 //!   `Pure` types), read off the arguments rather than off fields that change with the pinned
 //!   nightly; an erased payload that is not `Pure` (`fmt::Arguments`), and a type that holds
@@ -56,6 +57,10 @@ const NET: Carries = Carries::Kinds(&["net"]);
 const PROC: Carries = Carries::Kinds(&["proc"]);
 const SYNC: Carries = Carries::Kinds(&["sync"]);
 const HIDDEN: Carries = Carries::Hidden;
+
+/// std's handles with no payload ownership, `Pure` for every type argument (02 §10.9).
+/// Versioned with Tide's std, like `NOT_PURE`.
+const ALWAYS_PURE: &[&str] = &["tide_std::arena::Id"];
 
 /// std's types that are not `Pure` whatever their type arguments (02 §9's table), by
 /// `Crates::key` patterns (`policy.rs`'s glob), with what each carries. It is versioned with
@@ -413,7 +418,11 @@ impl<'a, 'tcx> Pure<'a, 'tcx> {
                 args.types().try_for_each(walk)
             }
             ty::Adt(def, args) if self.crates.is_std(def.did()) => {
-                if carries(&self.crates.key(tcx, def.did())).is_some() {
+                let key = self.crates.key(tcx, def.did());
+                if ALWAYS_PURE.contains(&key.as_str()) {
+                    return Ok(());
+                }
+                if carries(&key).is_some() {
                     return not(Why::Named);
                 }
                 args.types().try_for_each(walk)

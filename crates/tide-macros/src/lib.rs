@@ -1,5 +1,5 @@
 //! Tide's toolchain macros, which Tide's std re-exports: `#[tide::main]` (`std::tide`),
-//! `#[test]`, executable contracts (`requires`, `ensures`, `invariants`, `invariant!`),
+//! `#[test]`, `#[pure]`, executable contracts (`requires`, `ensures`, `invariants`, `invariant!`),
 //! the sink and panic macros (`print!` and its kin, `panic!`), and the `Error`, `Encode`, and `Decode`
 //! derives. The admission driver
 //! recognizes `#[tide::main]` as the macro named `main` that Tide's std exports, and treats the
@@ -14,6 +14,24 @@ mod test;
 mod test_guidance;
 
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
+
+/// Asserts authority-freedom of a function, checked by the driver's existing FX0511 rule.
+/// Arguments and non-function targets are errors. Original tokens retain their spans.
+/// A Rust 2024 `safe fn` foreign declaration gets this macro's generic target error rather
+/// than FX0511 and is still rejected.
+#[proc_macro_attribute]
+pub fn pure(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if let Some(t) = attr.into_iter().next() {
+        return diagnostic(t.span(), "`#[pure]` takes no arguments");
+    }
+    if syn::parse::<syn::ItemFn>(item.clone()).is_err()
+        && syn::parse::<syn::TraitItemFn>(item.clone()).is_err()
+        && syn::parse::<syn::ForeignItemFn>(item.clone()).is_err()
+    {
+        return diagnostic(Span::call_site(), "`#[pure]` goes on a function");
+    }
+    item
+}
 
 /// Derives Display, Error, and field conversions (reference 2.2).
 #[proc_macro_derive(Error, attributes(error, from, source))]

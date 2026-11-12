@@ -3,7 +3,7 @@ name = "conformance_macros"
 version = "0.0.0"
 edition = "2024"
 publish = false
-description = "Conformance rustc oracle: #[pure] and #[trusted_pure] as attributes that change nothing (throwaway)"
+description = "Conformance rustc oracle: #[trusted_pure] identity attribute shim (throwaway)"
 
 [lib]
 proc-macro = true

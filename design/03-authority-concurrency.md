@@ -1023,7 +1023,9 @@ synchronization handle, since that takes `&Tasks` (§1.2).
   in its body, for every instantiation the bounds allow; an edit that breaks
   it is `FX0511`. Every public function's interface records the property
   anyway, and `tide review` reports its loss as an API change, which answers
-  the design's open question 4.
+  the design's open question 4. `#[pure]` takes no arguments and goes only on
+  a function or method, a required trait method included; on anything else,
+  or with arguments, it is a compile error.
 
 ### 3.3 What authority-freedom guarantees
 

@@ -81,6 +81,7 @@ not cite is a best mapping that a case must confirm.
 | = ADMIT-1 | §9, 02:893 | Generic code that wraps those constructors bounds its parameter by `Error + Send + Sync + Pure + 'static`, checked at the definition | checker | FX0517 |
 | = ADMIT-1 | §9, 02:898 | `Waker` is not admitted | checker | FX0520 |
 | = AFREE-2 | §9 table, 02:927 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters | checker | FX0518 |
+| ARENA-1 | §10.9, 02 ARENA-1; ref §3.6 | Generational Arena handles reject stale/repeated access; Id<T> is Pure for every T, Arena<T> only when T is | runtime | stale index panic; FX0517 / FX0511 |
 
 ## 03-authority-concurrency.md
 
