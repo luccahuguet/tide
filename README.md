@@ -259,6 +259,19 @@ on an empty slice too. A callback panic poisons every held cell; later access
 returns `LockError::Poisoned`. `reset(v)` replaces a healthy or poisoned payload
 and clears poison, dropping the old value after release.
 
+`std::sync::mpsc` provides `channel(&tasks)` and `sync_channel(n, &tasks)`
+for unbounded and bounded FIFO channels on both runtimes; zero capacity is a
+rendezvous. Senders clone, bounded senders support `try_send`, and receivers
+support `recv`, `try_recv`, `recv_deadline`, `iter`, `try_iter`, and owned or
+borrowed iteration. `recv`, `recv_deadline`, and every bounded `send` check
+cancellation, even when ready; a cancelled receive preserves buffered values.
+A zero-capacity `try_send` hand-off to a blocked receiver is already accepted
+and is returned despite cancellation.
+The receive/send error enums distinguish `Cancelled` from `Disconnected`,
+with `is_cancelled()` and `SendError::into_inner()`; deadline receives also
+report `Timeout`. Disconnect ends iteration. Simulation records payload-free
+`chan` events and reports blocked channel waits through the shared deadlock report.
+
 `root.clock` reads time and sleeps: `now() -> Instant`, `system_time() ->
 SystemTime`, `sleep(d)`, and `sleep_until(t)`. `std::time` has Rust's
 `Duration`, and `Instant` and `SystemTime` with Rust's arithmetic and no
@@ -268,12 +281,12 @@ is not after now does not block, and a sleep whose target overflows ends only
 by cancellation. `monotonic_only()` gives a `Clock` whose `system_time()` panics.
 
 Production std includes a seeded scheduler for structured tasks,
-`Shared`, and `Clock`. It runs one task at a time between
+`Shared`, channels, and `Clock`. It runs one task at a time between
 scheduling points and records decisions and waits with source locations.
 Virtual time starts at zero and jumps to the next timer only when every task
 is blocked; with no timer left, the run ends in a deadlock report.
 `Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
-task 0 until the root drops. `sim.tasks`, `Shared`, `sim.fs`, and
+task 0 until the root drops. `sim.tasks`, `Shared`, channels, `sim.fs`, and
 `sim.clock` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
 ordered sink records, and provisional NDJSON events without scheduling. `out`
 and `err` append sink events under simulation and do not write to host streams.

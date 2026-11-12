@@ -186,61 +186,6 @@ pub mod sync {
         pub struct RwLock<T: ?Sized>(PhantomData<std::sync::RwLock<T>>);
     }
 
-    /// Rust's `std::sync::mpsc`, except that creation takes `&Tasks` (reference 7.3).
-    pub mod mpsc {
-        use crate::task::Tasks;
-        use std::marker::PhantomData;
-
-        pub fn sync_channel<T: Send>(bound: usize, tasks: &Tasks) -> (SyncSender<T>, Receiver<T>) {
-            unimplemented!()
-        }
-        pub fn channel<T: Send>(tasks: &Tasks) -> (Sender<T>, Receiver<T>) {
-            unimplemented!()
-        }
-
-        pub struct Sender<T>(PhantomData<std::sync::mpsc::Sender<T>>);
-        pub struct SyncSender<T>(PhantomData<std::sync::mpsc::SyncSender<T>>);
-        pub struct Receiver<T>(PhantomData<std::sync::mpsc::Receiver<T>>);
-        impl<T> SyncSender<T> {
-            pub fn send(&self, t: T) -> Result<(), SendError<T>> { unimplemented!() }
-        }
-        impl<T> Receiver<T> {
-            pub fn recv(&self) -> Result<T, RecvError> { unimplemented!() }
-            /// There is no `recv_timeout`, which would read time without a `Clock` (03 CAP-1).
-            pub fn recv_deadline(&self, t: crate::time::Instant) -> Result<T, RecvTimeoutError> { unimplemented!() }
-        }
-
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct SendError<T>(pub T);
-        /// GUESS: reference 7.2's "channel errors whose `is_cancelled()` is
-        /// true"; Rust's `RecvError` is a unit struct with no such method.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct RecvError(());
-        impl RecvError {
-            pub fn is_cancelled(&self) -> bool { unimplemented!() }
-        }
-        impl std::fmt::Display for RecvError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-        }
-        impl std::error::Error for RecvError {}
-        /// 03 §6.4: `Timeout`, `Disconnected`, and `Cancelled`, with Rust's traits.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum RecvTimeoutError {
-            Timeout,
-            Disconnected,
-            Cancelled,
-        }
-        impl RecvTimeoutError {
-            pub fn is_cancelled(&self) -> bool { unimplemented!() }
-        }
-        impl std::fmt::Display for RecvTimeoutError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-        }
-        impl std::error::Error for RecvTimeoutError {}
-        impl From<RecvError> for RecvTimeoutError {
-            fn from(e: RecvError) -> Self { unimplemented!() }
-        }
-    }
 }
 
 pub mod arena {

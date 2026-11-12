@@ -38,6 +38,20 @@ pub(super) enum Operation {
     Sink,
     File(&'static str),
     WorldFile,
+    Channel(&'static str, usize),
+}
+
+pub(super) enum ChannelEvent {
+    New(Option<usize>),
+    Result {
+        name: &'static str,
+        result: &'static str,
+        until: Option<Duration>,
+    },
+    Close {
+        end: &'static str,
+        senders: Option<usize>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +92,7 @@ pub(super) struct Scheduler {
     pub(super) current: Option<TaskId>,
     next_cell: usize,
     next_limit: usize,
+    next_channel: usize,
     rng: u64,
     fs_rng: u64,
     step: usize,
@@ -103,6 +118,7 @@ impl Scheduler {
             current: Some(0),
             next_cell: 0,
             next_limit: 0,
+            next_channel: 0,
             rng: seed ^ 0x7469_6465_7363_6864,    // "tideschd"
             fs_rng: seed ^ 0x7469_6465_6669_6c65, // "tidefile"
             step: 0,
@@ -394,6 +410,50 @@ impl Scheduler {
         self.current
     }
 
+    pub(super) fn allocate_channel(&mut self) -> usize {
+        let id = self.next_channel;
+        self.next_channel += 1;
+        id
+    }
+
+    pub(super) fn channel(&mut self, task: TaskId, id: usize, span: Span, event: ChannelEvent) {
+        let name = match event {
+            ChannelEvent::New(_) => "new",
+            ChannelEvent::Result { name, .. } => name,
+            ChannelEvent::Close { .. } => "close",
+        };
+        self.event(
+            task,
+            Pending {
+                operation: Operation::Channel(name, id),
+                span,
+            },
+            "chan",
+            None,
+        );
+        match event {
+            ChannelEvent::New(bound) => match bound {
+                Some(bound) => write!(self.trace, ",\"bound\":{bound}").unwrap(),
+                None => self.trace.push_str(",\"bound\":null"),
+            },
+            ChannelEvent::Result { result, until, .. } => {
+                if let Some(until) = until {
+                    write!(self.trace, ",\"until\":{}", until.as_nanos()).unwrap();
+                }
+                self.trace.push_str(",\"result\":");
+                quoted(&mut self.trace, result);
+            }
+            ChannelEvent::Close { end, senders } => {
+                self.trace.push_str(",\"end\":");
+                quoted(&mut self.trace, end);
+                if let Some(senders) = senders {
+                    write!(self.trace, ",\"senders\":{senders}").unwrap();
+                }
+            }
+        }
+        self.trace.push_str("}\n");
+    }
+
     pub(super) fn allocate_limit(&mut self) -> usize {
         let id = self.next_limit;
         self.next_limit += 1;
@@ -613,6 +673,7 @@ impl Operation {
             Self::Sink => ("sink", None),
             Self::File(name) => (name, None),
             Self::WorldFile => ("world.file", None),
+            Self::Channel(name, id) => (name, Some(id)),
         }
     }
 
@@ -625,6 +686,7 @@ impl Operation {
             | Self::CellsRelease => "cell",
             Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } => "cap",
             Self::File(_) => "io_wait",
+            Self::Channel(..) => "chan",
             Self::Cancel(_) | Self::Failure(_) | Self::Deadline(..) | Self::SetDeadline(..) => {
                 "cancel"
             }
@@ -641,7 +703,11 @@ impl std::fmt::Display for Operation {
         let (name, target) = self.name();
         f.write_str(name)?;
         if let Some(target) = target {
-            write!(f, "({target})")?;
+            if matches!(self, Self::Channel(..)) {
+                write!(f, "(chan {target})")?;
+            } else {
+                write!(f, "({target})")?;
+            }
         }
         match self {
             Self::Sleep {

@@ -39,8 +39,18 @@
 //!   cell; aliases return `LockError::Aliased` before acquiring. Callbacks get payloads in
 //!   caller order and a panic poisons every held cell. `reset` clears poison and drops the
 //!   old payload after release. These operations work in cancelled scopes (03 §6.5);
+//! - `std::sync::mpsc`: `channel(&Tasks)`, `sync_channel(n, &Tasks)` (zero is a
+//!   rendezvous), cloned senders, `send`, bounded `try_send`, `recv`, `try_recv`,
+//!   `recv_deadline`, `iter`, `try_iter`, and owned/borrowed iteration. Every bounded
+//!   `send`, `recv`, and `recv_deadline` checks cancellation before transfer; a
+//!   cancelled receive preserves buffered values. An already accepted zero-capacity
+//!   `try_send` hand-off is returned despite cancellation. `RecvError`, `RecvTimeoutError`,
+//!   and `SendError<T>` distinguish cancellation from disconnect with `is_cancelled()`;
+//!   `SendError::into_inner()` returns the value. A ready message beats its deadline.
+//!   Disconnect ends iteration. Both runtimes share the FIFO queue and wait primitive;
+//!   simulation records payload-free `chan` events and reports channel deadlocks;
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   `Shared`, files, and `Clock`, with
+//!   `Shared`, channels, files, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
@@ -184,7 +194,8 @@
 //! unreviewed-branch guarantee.
 //!
 //! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
-//! scheduler), `sync.rs`, `sim.rs` (with its runner), and `time.rs`
+//! scheduler and channel adapter), `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
+//! runner), and `time.rs`
 //! share their definitions with the conformance fixture std. The identity-only capability
 //! types use `root.rs`'s `capability!` in both crates.
 

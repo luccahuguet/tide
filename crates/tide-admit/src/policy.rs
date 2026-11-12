@@ -195,6 +195,9 @@ pub const RULES: &[Rule] = &[
     allow("alloc::string::*"),
     allow("alloc::vec::*"),
     // ---- Rust's std: inherent methods of the types Tide's std re-exports
+    // Channel try-errors are data-only Rust enums retained by Tide's mpsc API.
+    allow("std::sync::mpsc::TryRecvError::*"),
+    allow("std::sync::mpsc::TrySendError::*"),
     deny("std::path::Path::exists", FS),
     deny("std::path::Path::try_exists", FS),
     deny("std::path::Path::metadata", FS),
@@ -325,6 +328,15 @@ mod tests {
             verdict("core::fmt::rt::Argument::<'_>::new_display"),
             Some(Verdict::Allow)
         );
+        assert_eq!(
+            verdict("std::sync::mpsc::TryRecvError::Empty"),
+            Some(Verdict::Allow)
+        );
+        assert_eq!(
+            verdict("std::sync::mpsc::TrySendError::Full"),
+            Some(Verdict::Allow)
+        );
+        assert_eq!(verdict("std::sync::mpsc::channel"), None);
         assert_eq!(verdict("std::fs::read"), None);
     }
 }

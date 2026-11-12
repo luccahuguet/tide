@@ -209,7 +209,16 @@ simulation events, domain rejection, and reset's payload drop after release.
 checkpoints, shields and isolation through the driver on both runtimes in debug and release.
 `tasks/limit_deadlock.rs` also executes against production: its simulated recursive limit
 waits abort after reporting every blocked task's wait kind and source span. These use the
-same global report as sleeps and joins; channel waits can extend it.
+same global report as sleeps, joins, and channel waits.
+The stub includes production `sync/mpsc.rs` for bounded/unbounded channels,
+sender clone, blocking/nonblocking operations, deadline receives, iteration,
+and cancellation-aware error enums. `tasks/channels.rs` executes every exposed
+item through the admission driver in debug and release, on real threads and
+under the seeded scheduler. `tasks/channel_deadlock.rs` executes a blocked
+send and receive through the shared global report, including both call sites.
+Runtime tests additionally cover FIFO/no barging, rendezvous completion,
+cancellation races and echo attribution, cross-runtime wakeups, payload drop
+after lock release, simulation identities, and payload-free tracing.
 The stub's `std::time` is the production `time.rs`: `Clock`, `Duration`,
 `Instant`, `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH`.
 `authority/clock_time.rs` also executes against production through the driver.

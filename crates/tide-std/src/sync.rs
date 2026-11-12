@@ -1,3 +1,8 @@
+/// Channels with cancellation-aware checkpoints on both runtimes.
+pub mod mpsc {
+    include!("sync/mpsc.rs");
+}
+
 use crate::marker::Pure;
 use crate::task::{Context, SimCell, Tasks};
 use std::fmt;

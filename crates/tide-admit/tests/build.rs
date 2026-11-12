@@ -777,6 +777,62 @@ fn task_controls_build_and_run_against_production_std() {
     }
 }
 
+/// Channels execute through the admitted std on the real and simulated runtimes.
+#[test]
+fn channels_build_and_run_against_production_std() {
+    let dir = package(
+        "channels",
+        include_str!("../../../conformance/cases/tasks/channels.rs"),
+    );
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(&mut Command::new(dir.join("out/demo")));
+        assert_eq!(out.stdout, b"CHANNELS_RAN\n");
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+        checked(driver(&dir).args(["--test", &format!("--tide-profile={profile}")]));
+        let out = checked(
+            Command::new(dir.join("out/demo-test")).args(["--exact", "simulated_channels"]),
+        );
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn admitted_channel_deadlock_lists_senders_receivers_and_call_sites() {
+    let dir = package(
+        "channel-deadlock",
+        include_str!("../../../conformance/cases/tasks/channel_deadlock.rs"),
+    );
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = Command::new(dir.join("out/demo"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        let report = stderr(&out);
+        assert!(
+            report.contains("task 0 blocked in send(chan 1) at "),
+            "{report}"
+        );
+        assert!(
+            report.contains("task 1 blocked in recv(chan 0) at "),
+            "{report}"
+        );
+        let last = report.lines().last().unwrap();
+        assert!(last.contains("\"operation\":\"deadlock\""), "{report}");
+        assert!(
+            last.contains("\"blocked\":[{\"task\":0,\"operation\":\"send\",\"target\":1"),
+            "{report}"
+        );
+        assert!(
+            last.contains("{\"task\":1,\"operation\":\"recv\",\"target\":0"),
+            "{report}"
+        );
+        assert!(last.contains("demo.rs"), "{report}");
+    }
+}
+
 #[test]
 fn admitted_limit_deadlock_lists_every_waiter_and_call_site() {
     let dir = package(

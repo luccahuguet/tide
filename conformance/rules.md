@@ -195,8 +195,8 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - RUN-6 (03:666): result channel and output escaping.
 - TASK-1 (03 §6.2): runtime failure, panic propagation and isolation; `tasks/task_controls.rs` executes isolation through the driver. Its `Owned` closure typing is the SCOPE-3 row.
 - TASK-2 (03:1135): runtime scope-outcome precedence.
-- TASK-3 (03 §6.2): runtime level-triggered cancellation; `tasks/task_controls.rs` executes checkpoints and cancelled limited spawns.
-- TASK-4 (03 §6.2): runtime deadlines; `tasks/task_controls.rs` executes deadline errors and partial Ok results.
+- TASK-3 (03 §6.2): runtime level-triggered cancellation; `tasks/task_controls.rs` executes checkpoints and cancelled limited spawns; `tasks/channels.rs` executes cancellation-aware sends/receives and preserves buffered values.
+- TASK-4 (03 §6.2): runtime deadlines; `tasks/task_controls.rs` executes deadline errors and partial Ok results; `tasks/channels.rs` executes receive timeouts and cancellation of channel waits.
 - TASK-5 (03:1223): runtime list of what cancellation cannot interrupt.
 - TASK-6 (03 §6.2): runtime shielding; `tasks/task_controls.rs` executes outer-cause hiding and an inner deadline.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.

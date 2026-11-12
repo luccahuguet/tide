@@ -692,7 +692,7 @@ Channels are Rust's `std::sync::mpsc`, except that creation takes `&Tasks`
 (7.4): `channel(tasks)` (unbounded; a lint in libraries, `FX0608`),
 `sync_channel(n, tasks)`, `Sender: Clone`, `send`, `try_send`, `recv`,
 `try_recv`, `recv_deadline(t)`, and iteration, which ends at the first
-`recv` error. `recv`, `recv_deadline`, and `send` on a full `sync_channel`
+`recv` error. `recv`, `recv_deadline`, and every `SyncSender::send`
 are checkpoints, so their errors are enums with `is_cancelled()`:
 `RecvError::{Disconnected, Cancelled}`, `RecvTimeoutError` (adds `Timeout`),
 and `SendError::{Disconnected(v), Cancelled(v)}` (`into_inner()`). A

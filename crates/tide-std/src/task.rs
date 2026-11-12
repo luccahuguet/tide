@@ -16,6 +16,10 @@ mod limit {
     include!("task/limit.rs");
 }
 use limit::{Limit, Slots};
+mod channel {
+    include!("task/channel.rs");
+}
+pub(crate) use channel::Channel;
 
 /// Authority to spawn structured tasks on the thread runtime.
 #[derive(Clone)]
@@ -44,18 +48,18 @@ struct Baton {
 }
 
 // Resource-owned readiness and waker, also usable across independent real runtimes.
-struct Signal {
+pub(crate) struct Signal {
     ready: AtomicBool,
     thread: Mutex<thread::Thread>,
 }
 impl Signal {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ready: AtomicBool::new(false),
             thread: Mutex::new(thread::current()),
         }
     }
-    fn wake(&self) {
+    pub(crate) fn wake(&self) {
         self.ready.store(true, Ordering::SeqCst);
         self.thread.lock().unwrap().unpark();
     }
@@ -70,6 +74,24 @@ enum Wake {
     Ready,
     Timeout,
     Cancelled,
+}
+
+// Resource waits can defer echo observation until they decide whether a hand-off already
+// completed. Waiting itself must still wake on cancellation; only a returned error sets a bit.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cancellation {
+    Shielded,
+    Checkpoint,
+    Deferred,
+}
+impl Cancellation {
+    fn check(self, runtime: &mut Runtime, at: Location) -> bool {
+        match self {
+            Self::Shielded => false,
+            Self::Checkpoint => runtime.observe(at),
+            Self::Deferred => runtime.cancelled(at),
+        }
+    }
 }
 
 impl Baton {
@@ -500,8 +522,10 @@ impl Context {
     // The one owner of blocking (AP-OWNERSHIP-001). Waits until `operation` is done
     // (`Runtime::wait_done`), the instant `until` (an offset on the clock in use), or, when
     // `cancellable`, the cancellation of the caller's scope, which is checked first on entry and
-    // on every wake and marks the echo as a checkpoint does. A blocking resource passes one
-    // fresh Signal per waiting task to wait_for and wakes it on hand-off. A resource with
+    // on every wake. Checkpoint waits mark the echo there; a Deferred resource wait observes
+    // only when the resource returns cancellation, after checking a completed hand-off.
+    // A blocking resource passes one fresh Signal per waiting task to wait_for and wakes it
+    // on hand-off. A resource with
     // several waiters, such as a channel, keeps one Signal per waiter; Signals are one-shot
     // and hold one Thread handle. fx-hxw also needs a Thread-or-eventfd waker. Lock order is
     // runtime, then resource; a resource never takes the runtime lock while holding its own
@@ -513,7 +537,17 @@ impl Context {
         until: Option<Duration>,
         cancellable: bool,
     ) -> Wake {
-        self.wait_for(operation, span, until, cancellable, None)
+        self.wait_for(
+            operation,
+            span,
+            until,
+            if cancellable {
+                Cancellation::Checkpoint
+            } else {
+                Cancellation::Shielded
+            },
+            None,
+        )
     }
 
     fn wait_for(
@@ -521,10 +555,10 @@ impl Context {
         operation: Operation,
         span: Span,
         until: Option<Duration>,
-        cancellable: bool,
+        cancellation: Cancellation,
         resource: Option<Arc<Signal>>,
     ) -> Wake {
-        let at = self.at.filter(|_| cancellable);
+        let at = self.at.filter(|_| cancellation != Cancellation::Shielded);
         let mut runtime = self.lock();
         if let Some(resource) = &resource {
             *resource.thread.lock().unwrap() = thread::current();
@@ -534,7 +568,7 @@ impl Context {
             let me = thread::current();
             runtime.waiting.push(me.clone());
             let wake = loop {
-                if at.is_some_and(|at| runtime.observe(at)) {
+                if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
                     break Wake::Cancelled;
                 }
                 if resource.as_ref().is_some_and(|signal| signal.ready())
@@ -550,7 +584,7 @@ impl Context {
                 let left = target.map(|until| until.saturating_sub(crate::time::monotonic()));
                 if left == Some(Duration::ZERO) {
                     runtime.refresh_deadlines();
-                    if at.is_some_and(|at| runtime.observe(at)) {
+                    if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
                         break Wake::Cancelled;
                     }
                     break Wake::Timeout;
@@ -566,7 +600,7 @@ impl Context {
             return wake;
         };
         // Under the simulator no path below reads real time or parks on it.
-        if at.is_some_and(|at| runtime.observe(at)) {
+        if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
             return Wake::Cancelled;
         }
         if resource.as_ref().is_some_and(|signal| signal.ready()) || runtime.wait_done(operation) {
@@ -589,7 +623,7 @@ impl Context {
         let mut runtime = Baton::wait(runtime, task);
         runtime.baton.as_mut().unwrap().cancellable.remove(&task);
         runtime.baton.as_mut().unwrap().resources.remove(&task);
-        if at.is_some_and(|at| runtime.observe(at)) {
+        if at.is_some_and(|at| cancellation.check(&mut runtime, at)) {
             Wake::Cancelled
         } else if resource.as_ref().is_some_and(|signal| signal.ready())
             || runtime.wait_done(operation)
@@ -1079,7 +1113,7 @@ impl Tasks {
                 Operation::Isolated(task.unwrap_or(0)),
                 span,
                 None,
-                false,
+                Cancellation::Shielded,
                 Some(done),
             );
             handle.join().expect("isolated task runtime panicked");
@@ -1240,7 +1274,13 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
             };
             let operation = Operation::Limit(slots.blocked_at());
             let cancelled = matches!(
-                current.wait_for(operation, span, None, true, Some(slots.signal())),
+                current.wait_for(
+                    operation,
+                    span,
+                    None,
+                    Cancellation::Checkpoint,
+                    Some(slots.signal())
+                ),
                 Wake::Cancelled
             );
             if cancelled || check_cancellation().is_err() {
@@ -1577,7 +1617,7 @@ impl<U, E> Task<'_, U, E> {
                 Operation::Join(0),
                 std::panic::Location::caller(),
                 None,
-                false,
+                Cancellation::Shielded,
                 Some(self.done.clone()),
             );
         }

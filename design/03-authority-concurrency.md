@@ -325,7 +325,7 @@ Notes:
 | Type | Operations | Waits |
 | --- | --- | --- |
 | `Shared<T>`, `T: Send + Pure` | `Shared::new(v, tasks)`, `clone()` (same cell), `Shared::same(&a, &b)`, `reset(v)`, `with`, `with2`, `with_all` (§6.5) | acquisition, not a checkpoint |
-| `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `send` on a full `sync_channel`, `recv`, `recv_deadline`; all checkpoints |
+| `Sender<T>`, `SyncSender<T>`, `Receiver<T>`, `T: Send` | `channel(tasks)`, `sync_channel(n, tasks)`, `send`, `try_send`, `recv`, `try_recv`, `recv_deadline(t)`, iteration | `SyncSender::send` may wait at capacity; every call is a checkpoint, as are `recv` and `recv_deadline` |
 | `Scope<'s, 'env, E>` | `spawn`, `set_deadline(t)`, `cancel()` | `spawn` under `Tasks::limit`, a checkpoint (§6.1) |
 | `Task<'s, U, E>` | `join` | yes, shielded (§6.3) |
 | `Arc<T>`, `sync::Weak<T>` | `Arc::new(v, tasks)`, `clone`, `make_mut`, `Arc::downgrade(&a, tasks)`, `upgrade` | none |
@@ -1496,9 +1496,18 @@ remain process failures (PANIC-1).
 
 Channels follow Rust's `std::sync::mpsc`, except that creating one takes
 `&Tasks` (§1.2): `channel(tasks)` is unbounded and `sync_channel(n, tasks)`
-bounded; `Sender` is `Clone`; a `Receiver` is iterable. `send` on a full
-`sync_channel`, `recv`, and `recv_deadline(t)` are checkpoints;
-`recv_deadline` returns `Timeout` at `t`. Payloads must be `Send`
+bounded (zero is a rendezvous); both sender types are `Clone`; a `Receiver`
+is iterable and is not `Sync`. Every `SyncSender::send`, `recv`, and
+`recv_deadline(t)` is a checkpoint, including a bounded send with free capacity.
+They check cancellation before any transfer: a cancelled receive leaves a
+buffered message in place. The exception is an already accepted rendezvous:
+a value a zero-capacity `try_send` handed to a blocked receiver is returned
+even if that receiver's scope was cancelled meanwhile, without observing
+cancellation or setting an echo. Otherwise, on wake a receive prefers
+cancellation, then a message, then disconnect, then timeout. A blocked sender
+whose value was already accepted returns `Ok(())`; otherwise cancellation returns its value,
+then disconnect does. A ready message beats even a past receive deadline;
+only an empty live channel returns `Timeout` at or after `t`. Payloads must be `Send`
 (`02-memory.md` SEND-3). **CHANNEL-1.** An unbounded `channel` in a library is lint
 `FX0608`.
 
@@ -1525,6 +1534,29 @@ from a finished one calls `recv`. Rust patterns that name the old shapes,
 `Err(RecvError)` and `SendError(v)`, become `Err(RecvError::Disconnected)`
 and `e.into_inner()`. A bare `Err(RecvError)` still compiles, as a binding
 that catches every error.
+
+`iter()` and both owned and borrowed `IntoIterator` call `recv().ok()` once
+per `next()`; `try_iter()` calls `try_recv().ok()`. All stop on the first error.
+Unbounded `Sender::send`, the `try_` operations, clone, and drop are not
+checkpoints. Under simulation, each send/receive call (including the `try_`
+forms) takes one scheduling point on entry, before inspecting channel state;
+creation, clone, and drop take none. Bounded senders queue in arrival order,
+with no barging. A rendezvous send completes only after a receiver accepts
+its value; `try_send` at zero capacity succeeds only with a blocked receiver.
+Dropping the last sender lets the receiver drain accepted values before
+reporting disconnect. Dropping the receiver wakes all blocked senders with
+their values and drops buffered payloads after releasing internal locks.
+
+Production `sync::mpsc` owns this behavior on both runtimes; conformance
+includes the same implementation. Channel waits use the runtime's shared
+wait primitive and deadlock report, named `recv(chan id)` and `send(chan id)`.
+A channel owns one waiter Signal per blocked task; lock order is runtime,
+then channel, and neither lock spans a wait or scheduling point. Simulated
+channel identities are local to their simulation. Events use kind `chan`
+for creation, sends/receives and close, with no payload in the trace. Close
+events carry an implementation span rather than the user's drop site.
+The evidence and adopted choices are in
+[research/21-channels-tcp.md](../research/21-channels-tcp.md) §§1.1–1.8 and §4 items 1–3.
 
 A disconnect is not a cancellation and alone sets no echo bit (TASK-2): a
 child that returns `Err` because its peer dropped the other end, and
