@@ -215,8 +215,8 @@ environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `FX0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-as identities (`Fs`, `Tasks` and `Clock` have operations, below), `Pure`, and the `out` and `err` sinks
-(`print!`, `println!`, `eprint!`, `eprintln!`), ordinary and property `#[test]`, `#[sim_test]`,
+(`Net`, `Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
+(`print!`, `println!`, `eprint!`, `eprintln!`, `error!` through `trace!`), ordinary and property `#[test]`, `#[sim_test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
 unannotated enum variants with manual Display are also unsupported),
@@ -242,8 +242,8 @@ while inner scopes keep their own deadlines. `tasks.spawn_isolated` runs an
 owned closure in a new task, waits shielded without taking a limit slot,
 and returns `Panicked { message }` for an unwinding panic. The process panic
 hook still runs; aborts and stack overflows are not contained.
-Suppressed failures/echoes/panics emit nothing at the default log
-level; their debug record is deferred until the log sink exists. Discarded task
+Suppressed failures/echoes/panics emit one count-only debug record per scope,
+filtered at the default log level. Discarded task
 values drop on the child or receiver thread depending on timing, so a destructor panic
 is attributed to the thread that runs it. Suppressed payload drops on the panic
 path follow PANIC-2 and can abort; on the non-panic path, a drop panic surfaces
@@ -299,6 +299,26 @@ in a cancelled scope, and a cancel ends one in progress. A sleep whose target
 is not after now does not block, and a sleep whose target overflows ends only
 by cancellation. `monotonic_only()` gives a `Clock` whose `system_time()` panics.
 
+Process I/O executes through the same driver: `root.env` reads real arguments,
+variables and cwd; `only` intersects variable names and `args_only` denies variables
+and cwd. `args`/`vars` are owned iterators that panic on a non-Unicode item;
+`var` returns `VarError`. No `_os` forms are provided. `root.stdin` supports
+`read_line`, `lines`, `read_to_string`, `read_to_end`, and `is_terminal`,
+and implements `io::Read` owned or borrowed.
+Reads check cancellation at entry; a real read blocked in the kernel waits for
+input/EOF. `lines()` moves one line per fill so dropping it preserves later input.
+`io::stdout()`/`stderr()` implement `io::Write` through the same synchronous sinks
+as the print macros; they always return `Ok`. There is no `lock()`; batch with
+`BufWriter::new(io::stdout())`. Unflushed writer Drop discards bytes and warns
+with their count. Closed stdout exits quietly with 141. `main` uses Rust's
+`Termination`: taught forms are `()` (0), `Result<(), E: Debug>` (1 on Err), and
+`ExitCode` (given status); an unwinding panic exits with 101.
+`root.log: std::log::LogConfig` has `&self` setters `level(Level)`, `format(Format)`,
+and `to_file(File)` for the log sink. Defaults are Info/text/stderr. Arguments
+always format before filtering. Text is `level: message`; JSON has fixed
+`level`/`message` keys and no timestamp (provisional). `dbg!`, the trace sink,
+`log::`/`tracing::`-prefixed log macros, and `release-max-level` remain unimplemented.
+
 Production std includes a seeded scheduler for structured tasks,
 `Shared`, channels, and `Clock`. It runs one task at a time between
 scheduling points and records decisions and waits with source locations.
@@ -306,12 +326,16 @@ Virtual time starts at zero and jumps to the next timer only when every task
 is blocked; with no timer left, the run ends in a deadlock report.
 `Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
 task 0 until the root drops. `sim.tasks`, `Shared`, channels, `sim.fs`, and
-`sim.clock` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
-ordered sink records, and provisional NDJSON events without scheduling. `out`
-and `err` append sink events under simulation and do not write to host streams.
+`sim.clock`, `sim.env`, and `sim.stdin` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
+ordered sink records, and provisional NDJSON events without scheduling. `out`, `err`, and every log level append raw sink events under simulation and do not write to host streams.
 `sim.world.file(path, contents)` creates or replaces a file and its parents
 immediately, from simulated `/`, without scheduling or virtual time. Invalid
-setup panics. Other capabilities carry simulated identities; Rand-backed hash
+setup panics. `sim.world.args` appends arguments (including a supplied program
+name), `env_var` overwrites a key, and `stdin` appends bytes; unset inputs are
+empty. Env/input operations schedule with zero latency and no random draw.
+`records()` assembles lines per stream, strips newlines, converts bytes lossily
+to UTF-8, and emits unterminated tails last; the node is `main` outside nodes.
+`SimRoot` has no log configuration. Other capabilities carry simulated identities; Rand-backed hash
 initialization panics until its simulated backend exists.
 
 Without requires discards, `#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
@@ -335,7 +359,7 @@ These test processes are for reviewed/trusted code; they have no OS sandbox.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
-`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
+`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes and warns with their count.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
 `std::fs` provides real and simulated files through the same `Fs`: path reads
 and writes, `OpenOptions`, `File` with `Read`/`Write`/`Seek`, directory mutation

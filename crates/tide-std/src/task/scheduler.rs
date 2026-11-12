@@ -38,6 +38,7 @@ pub(super) enum Operation {
     Sink,
     File(&'static str),
     WorldFile,
+    Input(&'static str),
     Channel(&'static str, usize),
 }
 
@@ -97,7 +98,7 @@ pub(super) struct Scheduler {
     fs_rng: u64,
     step: usize,
     pub(super) trace: String,
-    pub(super) records: Vec<crate::sim::Record>,
+    sink_events: Vec<(&'static str, Vec<u8>, Duration)>,
     // Virtual time moves only in `pick`, when no task is runnable.
     pub(super) now: Duration,
     timers: BTreeMap<TimerKey, TaskId>,
@@ -123,7 +124,7 @@ impl Scheduler {
             fs_rng: seed ^ 0x7469_6465_6669_6c65, // "tidefile"
             step: 0,
             trace: String::new(),
-            records: Vec::new(),
+            sink_events: Vec::new(),
             now: Duration::ZERO,
             timers: BTreeMap::new(),
             next_timer: 0,
@@ -312,7 +313,7 @@ impl Scheduler {
         pending
     }
 
-    pub(super) fn sink(&mut self, task: TaskId, stream: &str, message: &str, span: Span) {
+    pub(super) fn sink(&mut self, task: TaskId, stream: &'static str, message: &[u8], span: Span) {
         self.event(
             task,
             Pending {
@@ -325,18 +326,60 @@ impl Scheduler {
         self.trace.push_str(",\"stream\":");
         quoted(&mut self.trace, stream);
         self.trace.push_str(",\"message\":");
-        quoted(&mut self.trace, message);
-        self.trace.push_str("}\n");
-        self.records.push(crate::sim::Record {
-            node: "main".into(),
-            time: self.now,
-            sink: match stream {
-                "out" => crate::sim::Sink::Out,
-                "err" => crate::sim::Sink::Err,
-                _ => unreachable!("unsupported sink"),
-            },
-            message: message.into(),
-        });
+        quoted(&mut self.trace, &String::from_utf8_lossy(message));
+        // Preserve raw bytes as well: lossy display must not erase replay differences.
+        write!(self.trace, ",\"bytes\":{message:?}}}\n").unwrap();
+        self.sink_events.push((stream, message.to_vec(), self.now));
+    }
+
+    pub(super) fn records(&self) -> Vec<crate::sim::Record> {
+        use crate::sim::{Record, Sink};
+        #[cfg(test)]
+        let mut scanned = 0;
+        let mut records = Vec::new();
+        let mut pending: Vec<(&str, Vec<u8>, Duration)> = Vec::new();
+        for (stream, bytes, time) in &self.sink_events {
+            let i = pending.iter().position(|(s, _, _)| s == stream).unwrap_or_else(|| {
+                pending.push((stream, Vec::new(), *time));
+                pending.len() - 1
+            });
+            let (_, buf, last_time) = &mut pending[i];
+            let previous_len = buf.len();
+            buf.extend(bytes);
+            *last_time = *time;
+            if *stream != "out" && *stream != "err" { buf.push(b'\n'); }
+            let mut consumed = 0;
+            for (offset, byte) in buf[previous_len..].iter().enumerate() {
+                #[cfg(test)]
+                { scanned += 1; }
+                if *byte != b'\n' { continue; }
+                let end = previous_len + offset;
+                records.push(Record {
+                    node: "main".into(), time: *time,
+                    sink: match *stream {
+                        "out" => Sink::Out, "err" => Sink::Err,
+                        name => Sink::Log(crate::log::Level::from_name(name)),
+                    },
+                    message: String::from_utf8_lossy(&buf[consumed..end]).into_owned(),
+                });
+                consumed = end + 1;
+            }
+            buf.drain(..consumed);
+        }
+        #[cfg(test)]
+        assert_eq!(scanned, self.sink_events.iter().map(|(stream, bytes, _)| {
+            bytes.len() + usize::from(!matches!(*stream, "out" | "err"))
+        }).sum::<usize>(), "line assembly must scan each appended byte exactly once");
+        for (stream, bytes, time) in pending {
+            if !bytes.is_empty() {
+                records.push(Record {
+                    node: "main".into(), time,
+                    sink: match stream { "out" => Sink::Out, "err" => Sink::Err, name => Sink::Log(crate::log::Level::from_name(name)) },
+                    message: String::from_utf8_lossy(&bytes).into_owned(),
+                });
+            }
+        }
+        records
     }
 
     /// Records what a blocking capability operation returned.
@@ -673,6 +716,7 @@ impl Operation {
             Self::Sink => ("sink", None),
             Self::File(name) => (name, None),
             Self::WorldFile => ("world.file", None),
+            Self::Input(name) => (name, None),
             Self::Channel(name, id) => (name, Some(id)),
         }
     }
@@ -684,7 +728,7 @@ impl Operation {
             | Self::CellRelease(_)
             | Self::CellsAcquire
             | Self::CellsRelease => "cell",
-            Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } => "cap",
+            Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } | Self::Input(_) => "cap",
             Self::File(_) => "io_wait",
             Self::Channel(..) => "chan",
             Self::Cancel(_) | Self::Failure(_) | Self::Deadline(..) | Self::SetDeadline(..) => {
@@ -722,6 +766,42 @@ impl std::fmt::Display for Operation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fragmented_sink_records_scan_each_byte_once() {
+        use crate::sim::{Record, Sink};
+        fn event(stream: &'static str, bytes: &[u8], time: u64) -> (&'static str, Vec<u8>, Duration) {
+            (stream, bytes.to_vec(), Duration::from_secs(time))
+        }
+        // records() counts actual byte comparisons in test builds and asserts the exact
+        // linear bound, including implicit log newlines; doubling fragments cannot rescan tails.
+        for fragments in [2048, 4096] {
+            let mut scheduler = Scheduler::new(0, std::panic::Location::caller());
+            for _ in 0..fragments {
+                scheduler.sink_events.push(event("out", b"x", 0));
+            }
+            scheduler.sink_events.extend([
+                event("err", b"err\n", 1),
+                event("out", b"\xc3", 2),
+                event("out", b"\xa9\nA\n\xff", 3),
+                event("debug", b"note\n", 4),
+                event("err", b"tail", 5),
+            ]);
+            let expected: Vec<_> = [
+                (Sink::Err, "err".into(), 1),
+                (Sink::Out, format!("{}é", "x".repeat(fragments)), 3),
+                (Sink::Out, "A".into(), 3),
+                (Sink::Log(crate::log::Level::Debug), "note".into(), 4),
+                (Sink::Log(crate::log::Level::Debug), "".into(), 4),
+                (Sink::Out, "�".into(), 3),
+                (Sink::Err, "tail".into(), 5),
+            ].into_iter().map(|(sink, message, time)| Record {
+                node: "main".into(), time: Duration::from_secs(time), sink, message,
+            }).collect();
+            assert_eq!(scheduler.records(), expected);
+            assert_eq!(scheduler.records(), expected);
+        }
+    }
 
     #[test]
     fn cancelling_the_last_sleeper_resets_the_stall_count_before_another_registers() {

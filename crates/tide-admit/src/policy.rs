@@ -210,6 +210,7 @@ pub const RULES: &[Rule] = &[
     deny("std::path::Path::is_symlink", FS),
     deny("std::path::absolute", CWD),
     allow("std::path::*"),
+    allow("std::env::VarError::*"), // data-only errors from Env, never ambient reads
     allow("std::ffi::os_str::*"), // `OsStr` and `OsString` do no I/O (03 §1.1)
     // What `main` may return (reference 6.2); `ExitCode::from(u8)` is a `From` impl.
     allow("std::process::ExitCode::SUCCESS"),

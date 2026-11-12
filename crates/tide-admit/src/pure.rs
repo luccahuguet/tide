@@ -69,6 +69,7 @@ const NOT_PURE: &[(&str, Carries)] = &[
     ("tide_std::rand::Rand", Carries::Kinds(&["rand"])),
     ("tide_std::env::Env", Carries::Kinds(&["env"])),
     ("tide_std::io::Stdin", Carries::Kinds(&["stdin"])),
+    ("tide_std::io::StdinReader", Carries::Kinds(&["stdin"])),
     ("tide_std::process::Proc", PROC),
     ("tide_std::task::Tasks", Carries::Kinds(&["tasks"])),
     ("tide_std::accel::Accel", Carries::Kinds(&["accel"])),

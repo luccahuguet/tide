@@ -66,12 +66,13 @@ mod simulation {
         println!("quote=\" slash=\\ newline=\n nul=\0 café");
         eprint!("error");
         let records = sim.records();
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 3);
         assert!(matches!(records[0].sink, Sink::Out));
-        assert!(matches!(records[1].sink, Sink::Err));
+        assert!(matches!(records[1].sink, Sink::Out));
+        assert!(matches!(records[2].sink, Sink::Err));
         assert_eq!(records[0].node, "main");
         assert_eq!(records[0].time, sim.elapsed());
-        assert_eq!(records[1].message, "error");
+        assert_eq!(records[2].message, "error");
         sim.trace()
     }
 

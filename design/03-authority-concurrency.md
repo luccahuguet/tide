@@ -113,6 +113,23 @@ Notes:
   Real files are Linux-only in v0; tide-std does not build on other targets.
   `.` or `..` as the last component of `rename`,
   `remove_file`, or `remove_dir` gives `InvalidInput` (provisional).
+- **INPUT-1. Process inputs (v0).** `Env::args()`/`vars()` return owned `env::Args`/
+  `env::Vars`: `Iterator`, `ExactSizeIterator`, `DoubleEndedIterator`, `Debug`.
+  As in Rust, a non-Unicode argument or variable panics at its iteration item;
+  `var` returns `VarError::NotUnicode`. No `_os` forms exist in v0.
+  `only(names)` filters variables by exact name (v0 Linux), with denied reads
+  returning `NotPresent`; chained calls intersect. Arguments and cwd survive
+  `only`; `args_only()` keeps arguments, hides variables and makes
+  `current_dir() -> io::Result<PathBuf>` return `PermissionDenied` (provisional).
+  Simulated cwd is `/`.
+  `Stdin::lines() -> io::Lines<StdinReader>` moves exactly one line per fill
+  under the global stdin lock, so readers interleave by line and early iterator
+  drop loses no later line. Reads return `io::Result`; `lines` strips LF/CRLF,
+  yields an invalid-UTF-8 line as `InvalidData`, then continues. A cancellation
+  error ends iteration. v0 checks cancellation at entry: a real read already
+  blocked in the kernel finishes on input/EOF (TASK-3's kernel-cancellation
+  limit). `is_terminal()` is false under simulation.
+  These readings follow [process-I/O research §A4–A5 and §4](../research/26-process-io-and-shared-sets.md).
 - **`exists`.** `fs.exists(p) -> io::Result<bool>` is Rust's
   `std::fs::exists`: `Ok(false)` when the lookup finds no file at `p`
   (`NotFound`, a broken symlink included), and `Err` for any other failure,
@@ -360,8 +377,11 @@ par-threads = "cores"      # the join/par_* pool (§8); 1 makes them sequential
 
 The entry point that `#[tide::main]` generates starts the allocator,
 runtime, and sinks, builds `Root` with full authority over the real process,
-and runs `main(root)` as the main task. Exit statuses follow Rust: 1 after `Err(e)` (printed as
-`Error: {e:?}`), 101 after a panic.
+and runs `main(root)` as the main task. It accepts Rust's `Termination` set;
+the taught forms are `()` (status 0), `Result<(), E: Debug>` (1 after `Err(e)`,
+printed as `Error: {e:?}`), and `ExitCode` (the given status). A panic exits 101
+([research §A6](../research/26-process-io-and-shared-sets.md)). `Proc::exit`
+remains separate.
 
 | Runtime | Tasks run as | Suspension is | Code generation |
 | --- | --- | --- | --- |
@@ -535,8 +555,16 @@ determinism claim here holds modulo exhaustion of memory, stack, or
   suspend, are not checkpoints, and do not affect `Pure`, authority-freedom,
   or the may-suspend analysis.
 - **SINK-2. Configured only in `main`.** `root.log` sets levels, text or JSON
-  format, and destinations (`root.log.to_file(file)`, where `file` is a
-  `File` that `main` opened with its own authority). Defaults: `out` to
+  format, and destinations. Its type is `std::log::LogConfig`: private field,
+  no `Clone`, `Default`, or getters; `&self` setters `level(Level)`,
+  `format(Format)`, and `to_file(File)` configure the log sink. `std::log`
+  defines `Level::{Error, Warn, Info, Debug, Trace}` (threshold) and
+  `Format::{Text, Json}`. `main` opens the destination file with its own
+  authority. No admission rule enforces this yet; whether a `LogConfig`
+  may leave `main` is open (fx-djp). `SimRoot` has no `log` field.
+  Provisional lines are `level: message\n` or
+  `{"level":"info","message":"..."}\n`, with fixed JSON keys and no timestamp
+  or target ([research §A2 and §4](../research/26-process-io-and-shared-sets.md)). Defaults: `out` to
   stdout; `err`, and `log` at `info`, to stderr; `dbg` to stderr in debug
   builds; `trace` discarded unless a destination is set.
 - **SINK-3. Arguments.** Format arguments are always evaluated, and the
@@ -554,26 +582,34 @@ determinism claim here holds modulo exhaustion of memory, stack, or
   branches after the first panicking one are discarded (PAR-2). A child
   process whose stdout or stderr is the process's own (`Stdio::inherit()`,
   the default for `spawn` and `status`, or `io::stdout()` and
-  `io::stderr()`, §1.1) writes to the descriptors directly, past the writer
-  thread. So when a `Command`'s `spawn`, `status`, or `output` starts such a
-  child, it first waits until the writer has written every sink record
-  emitted before the call, or dropped it where SINK-5 allows:
-  `println!("building"); cmd.status()?` prints in that order, as in Rust. A
-  branch's records count as emitted when the outermost join appends them to
-  its task's output. The wait is backpressure (SINK-5), not suspension. The
-  simulator needs none, since records enter its trace when emitted (SINK-6).
+  `io::stderr()`, §1.1) writes to the descriptors directly. When a `Command`'s
+  `spawn`, `status`, or `output` starts such a child, every earlier emitted
+  sink record must already have been written, or dropped where SINK-5 allows:
+  `println!("building"); cmd.status()?` prints in that order. A branch's
+  records count as emitted when the outermost join appends them. v0 writes
+  synchronously, so no drain wait is needed; a writer thread is a possible
+  evented-runtime mechanism, not a contract. Simulation records at emission.
   A parallel branch cannot start a child, since its closure is `Pure`
   (§8.1).
 - **SINK-5. Loss and backpressure.** `out` and `err` are never dropped under
-  load: when the process-wide buffer passes its high-water mark, the
-  emitting OS thread blocks until the writer thread drains it. That is
-  backpressure, not suspension. If stdout is a closed pipe, the process
-  exits quietly with status 141, matching the default `SIGPIPE` behavior
-  that `cmd | head` relies on. Any other record that cannot be written to
-  its destination is discarded. `log` and `trace` drop records under
-  overload and report the count as a `log` record.
+  load. v0 writes whole records synchronously under the destination's lock
+  and flushes: blocking in a write is backpressure, not suspension. Across
+  tasks the order is emission order, with no line atomicity promised across
+  processes. A closed stdout exits quietly with status 141, matching the
+  shell status for default `SIGPIPE` that `cmd | head` relies on; other
+  failed writes are discarded. `log` and `trace` may drop records under
+  overload and report the count as a `log` record; v0 has no queued overload
+  loss ([research §A1](../research/26-process-io-and-shared-sets.md)).
+  `io::stdout()`/`stderr()` return Tide's `Stdout`/`Stderr`, implementing
+  `io::Write` (owned or borrowed) through the same sinks. No `lock()` is
+  provided; `BufWriter::new(io::stdout())` is the batching idiom.
 - **SINK-6. Under simulation.** Every record enters the event trace with
-  node, task, and virtual time; tests read them with `sim.records()`.
+  node, task, and virtual time, including every log level; tests read them
+  with `sim.records()`. Raw sink bytes remain in the event trace. Records
+  assemble lines per node/stream, strip LF, use lossy UTF-8, and emit any
+  unterminated tail last. A line takes its completing event's time; a tail
+  takes its last event's time. Outside a node, `node` is `"main"` (provisional).
+  `Record`, `Sink`, and `Level` derive `Debug`, `Clone`, `PartialEq`, `Eq`.
 - **SINK-7. Elision.** Output from authority-free code may appear zero or
   one times under memoization and `const fn` evaluation.
 - **SINK-8. Release and library rules.** `dbg!` is an error in release and
@@ -1869,7 +1905,15 @@ Setup follows Rust's builders: `world.args(impl IntoIterator<Item:
 AsRef<OsStr>>)` and `world.env_var(k: impl AsRef<OsStr>, v: impl
 AsRef<OsStr>)` as `Command::args` and `Command::env` take them, and
 `world.stdin(impl AsRef<[u8]>)` and `world.file(path, contents: impl
-AsRef<[u8]>)` take bytes or text. `world.file(path, contents)`
+AsRef<[u8]>)` take bytes or text. `args` appends, `env_var` overwrites,
+and `env_var` panics on an empty key or a key containing `=` or NUL.
+`stdin` appends bytes; unset inputs are empty. Setup is immediate, with no
+point, time or draw. Arguments, an ordered `BTreeMap<OsString, OsString>`
+environment, and stdin bytes belong to the simulation state; `Env`/`Stdin`
+retain its identity. Each input operation schedules with zero latency and no
+random draw. Simulated stdin is an already-closed pipe: drain bytes, then EOF.
+These readings follow [research §A7 and §4](../research/26-process-io-and-shared-sets.md).
+`world.file(path, contents)`
 returns `()`, resolves from simulated `/`, creates parents, and creates or
 replaces the file immediately, without a point, time, draw or mode check.
 Invalid setup (including a file parent or `..` above `/`) panics; one `world`
@@ -1894,7 +1938,7 @@ summary names the last started seed. Ordinary failures name the failing seeds;
 success emits at most one libtest-captured summary, with seed-start records kept
 internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
 REPLAY-2 identity validation. Tasks, `Shared`, files, file setup,
-clocks and sinks are modeled; other capabilities carry simulated identities but
+clocks, process inputs and sinks are modeled; other capabilities carry simulated identities but
 their operations, other world setup, faults, nodes, manifests and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,
 requires guidance and filtering, and shrinking with the simulator seed kept fixed.

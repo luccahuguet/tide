@@ -37,6 +37,7 @@ struct Runtime {
     waiting: Vec<thread::Thread>,
     baton: Option<Baton>,
     simulation_ended: bool,
+    inputs: crate::env::Inputs,
 }
 
 struct Baton {
@@ -727,7 +728,7 @@ pub(crate) fn is_simulating() -> bool {
 }
 
 // Sinks never hand off the baton. Format before entering here, outside the runtime lock.
-pub(crate) fn record_sink(stream: &str, message: &str, span: Span) -> bool {
+pub(crate) fn record_sink(stream: &'static str, message: &[u8], span: Span) -> bool {
     let Some(context) = Context::current().filter(|context| context.task.is_some()) else {
         return false;
     };
@@ -827,6 +828,19 @@ pub(crate) fn observe_cancellation() -> bool {
 }
 
 impl Tasks {
+    /// Process inputs take one scheduling point, no time and no random draw.
+    #[track_caller]
+    pub(crate) fn input_op<T>(&self, name: &'static str, f: impl FnOnce(&mut crate::env::Inputs) -> T) -> T {
+        let context = self.context().expect("input operation needs a simulation");
+        context.point(Operation::Input(name), std::panic::Location::caller());
+        f(&mut context.lock().inputs)
+    }
+
+    pub(crate) fn world_inputs(&self, f: impl FnOnce(&mut crate::env::Inputs)) {
+        let context = self.context().expect("input setup needs a simulation");
+        f(&mut context.lock().inputs);
+    }
+
     // File calls check cancellation once before drawing; their timers are shielded.
     pub(crate) fn file_op<T>(
         &self,
@@ -920,8 +934,7 @@ impl Tasks {
             .as_ref()
             .unwrap()
             .scheduler
-            .records
-            .clone()
+            .records()
     }
 
     pub(crate) fn unmodeled(&self, capability: &str) -> ! {
@@ -1036,9 +1049,11 @@ impl Tasks {
                 }
             })
         };
-        // shortcut: suppressed outcomes become one `debug!` record when the log sink exists.
-        let _suppressed =
+        let suppressed =
             payloads.len() + usize::from(matches!(result, Ok(Err(_))) && selected.is_some());
+        if suppressed != 0 {
+            crate::__sink::log(crate::log::Level::Debug, format_args!("{suppressed} suppressed task outcomes"));
+        }
         match result {
             Err(panic) => resume_unwind(panic),
             Ok(body) => match selected {

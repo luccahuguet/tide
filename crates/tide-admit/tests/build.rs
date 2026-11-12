@@ -2159,6 +2159,223 @@ fn link_mode_keeps_the_source_loader_boundary() {
     );
 }
 
+// fx-5vj: process I/O executes through admission against the shared production std.
+#[test]
+fn process_inputs_execute_real_and_simulated() {
+    use std::io::Write;
+    let dir = package("process-inputs", include_str!("../../../conformance/cases/authority/process_inputs.rs"));
+    checked(&mut driver(&dir));
+    let mut child = Command::new(dir.join("out/demo"))
+        .args(["one", "two words"]).env_clear().env("TIDE_INPUT", "value")
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"one\ntwo\r\nthree\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(out.stdout, b"ab\nd\n");
+    assert_eq!(out.stderr, b"c\ne\ninfo: ready\n");
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let first = checked(Command::new(dir.join("out/demo-test")).args(["simulated_", "--nocapture"]));
+    let second = checked(Command::new(dir.join("out/demo-test")).args(["simulated_", "--nocapture"]));
+    assert_eq!(first.stderr, b"");
+    // libtest timing varies; the test compares full observations and emits no captured bytes.
+    for out in [first, second] {
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(text.contains("2 passed; 0 failed"), "{text}");
+        assert!(!text.contains("info: ready"), "{text}");
+    }
+}
+
+#[test]
+fn process_main_exit_codes_and_sink_order() {
+    for (name, result, body, code, error) in [
+        ("unit", "()", "()", 0, ""),
+        ("err", "Result<(), &'static str>", "Err(\"bad\")", 1, "Error: \"bad\"\n"),
+        ("exit", "std::process::ExitCode", "std::process::ExitCode::from(7)", 7, ""),
+        ("custom", "Custom", "Custom", 9, ""),
+        ("panic", "()", "panic!(\"deliberate\")", 101, "deliberate"),
+    ] {
+        let custom = if name == "custom" {
+            "struct Custom; impl std::process::Termination for Custom { fn report(self) -> std::process::ExitCode { std::process::ExitCode::from(9) } }"
+        } else { "" };
+        let dir = package(&format!("process-main-{name}"), &format!(r#"
+{custom}
+#[tide::main]
+fn main() -> {result} {{
+    use std::io::Write;
+    print!("first");
+    std::io::stdout().write_all(b" second\n").unwrap();
+    eprint!("third ");
+    std::io::stderr().write_all(b"fourth\n").unwrap();
+    {body}
+}}
+"#));
+        checked(&mut driver(&dir));
+        let out = Command::new(dir.join("out/demo")).stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(code), "{}", stderr(&out));
+        assert_eq!(out.stdout, b"first second\n");
+        if name == "panic" { assert!(stderr(&out).contains(error)); }
+        else { assert_eq!(stderr(&out), format!("third fourth\n{error}")); }
+        // One descriptor proves ordering across out, err, and Termination's own diagnostic.
+        let file = std::fs::File::create(dir.join("merged")).unwrap();
+        let status = Command::new(dir.join("out/demo")).stdin(Stdio::null())
+            .stdout(file.try_clone().unwrap()).stderr(file).status().unwrap();
+        assert_eq!(status.code(), Some(code));
+        let merged = std::fs::read_to_string(dir.join("merged")).unwrap();
+        assert!(merged.starts_with("first second\nthird fourth\n"), "{merged}");
+    }
+}
+
+#[test]
+fn process_stdin_reader_and_log_config_remain_nonpure() {
+    let dir = package("process-purity", r#"
+fn pure_value(_: impl std::marker::Pure) {}
+#[tide::main]
+fn main(root: Root) {
+    pure_value(root.stdin.lines());
+    pure_value(root.log);
+}
+"#);
+    let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("FX0517"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("StdinReader"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("LogConfig"), "{}", stderr(&out));
+}
+
+#[test]
+fn process_logs_format_filter_redirect_and_warn_without_payload() {
+    let dir = package("process-logs", include_str!("../../../conformance/cases/authority/process_sinks.rs"));
+    checked(&mut driver(&dir));
+    let out = checked(Command::new(dir.join("out/demo")).env("LOG_FILE", dir.join("log")));
+    assert_eq!(out.stdout, b"done\n");
+    assert_eq!(stderr(&out), "info: default 1\nerror: error\nwarn: warn\ndebug: debug\ntrace: trace\n{\"level\":\"info\",\"message\":\"quote=\\\" newline=\\n café\"}\n");
+    let file = std::fs::read_to_string(dir.join("log")).unwrap();
+    assert_eq!(file, "{\"level\":\"info\",\"message\":\"file\"}\n{\"level\":\"warn\",\"message\":\"BufWriter dropped with 14 unflushed bytes\"}\n");
+}
+
+#[test]
+fn process_nonunicode_inputs_panic_lazily_and_var_preserves_os_value() {
+    use std::os::unix::ffi::OsStringExt;
+    let bad = std::ffi::OsString::from_vec(vec![0xff]);
+    let dir = package("process-unicode", r#"
+#[tide::main]
+fn main(root: Root) {
+    let mut args = root.env.args();
+    assert!(args.next().is_some());
+    let mode = args.next().unwrap();
+    if mode == "args" {
+        println!("before");
+        args.next();
+    } else {
+        assert!(matches!(root.env.var("BAD"), Err(std::env::VarError::NotUnicode(_))));
+        let mut vars = root.env.vars();
+        println!("before");
+        if mode == "vars" { vars.next(); }
+    }
+}
+"#);
+    checked(&mut driver(&dir));
+    for (mode, code) in [("args", 101), ("vars", 101), ("var", 0)] {
+        let out = Command::new(dir.join("out/demo")).env_clear().env("BAD", &bad)
+            .arg(mode).arg(&bad).stdin(Stdio::null()).output().unwrap();
+        assert_eq!(out.status.code(), Some(code), "{}", stderr(&out));
+        assert_eq!(out.stdout, b"before\n");
+    }
+}
+
+#[test]
+fn process_stdin_boundaries_and_cancellation_execute_on_both_backends() {
+    use std::io::Write;
+    let dir = package("process-stdin", r#"
+use std::io::{self, Read, Stdin};
+use std::task::{Tasks, TaskError};
+fn exercise(stdin: &Stdin, tasks: &Tasks) {
+    let mut reader = stdin;
+    tasks.scope::<_, TaskError, _>(|scope| {
+        scope.cancel();
+        assert!(reader.read(&mut [0; 2]).unwrap_err().is_cancelled());
+        assert!(stdin.read_line(&mut String::new()).unwrap_err().is_cancelled());
+        let mut lines = stdin.lines();
+        assert!(lines.next().unwrap().unwrap_err().is_cancelled());
+        assert!(lines.next().is_none());
+        Ok(())
+    }).unwrap();
+    assert_eq!(reader.read(&mut []).unwrap(), 0);
+    let mut prefix = [0; 2];
+    assert_eq!(reader.read(&mut prefix).unwrap(), 2);
+    assert_eq!(prefix, *b"zz");
+    let mut lines = stdin.lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "a");
+    assert_eq!(lines.next().unwrap().unwrap(), "b");
+    assert_eq!(lines.next().unwrap().unwrap_err().kind(), io::ErrorKind::InvalidData);
+    drop(lines);
+    let mut invalid = String::from("kept");
+    assert_eq!(stdin.read_line(&mut invalid).unwrap_err().kind(), io::ErrorKind::InvalidData);
+    assert_eq!(invalid, "kept");
+    assert_eq!(stdin.lines().next().unwrap().unwrap(), "c");
+    let mut rest = vec![b'x'];
+    assert_eq!(stdin.read_to_end(&mut rest).unwrap(), 4);
+    assert_eq!(rest, b"xtail");
+    assert_eq!(stdin.read_line(&mut String::new()).unwrap(), 0);
+    assert_eq!(stdin.clone().read(&mut [0; 1]).unwrap(), 0);
+}
+#[tide::main]
+fn main(root: Root) { exercise(&root.stdin, &root.tasks); }
+#[test]
+fn simulated() {
+    let sim = Root::sim(2);
+    sim.world.stdin(b"zza\nb\r\n\xff\n\xff\nc\ntail");
+    exercise(&sim.stdin, &sim.tasks);
+    assert_eq!(sim.elapsed(), std::time::Duration::ZERO);
+}
+"#);
+    checked(&mut driver(&dir));
+    let mut child = Command::new(dir.join("out/demo")).stdin(Stdio::piped())
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"zza\nb\r\n\xff\n\xff\nc\ntail").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(out.stdout, b"");
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    checked(Command::new(dir.join("out/demo-test")).args(["--exact", "simulated"]));
+}
+
+#[test]
+fn process_closed_stdout_exits_141_and_concurrent_records_stay_whole() {
+    use std::io::BufRead;
+    let dir = package("process-sink-threads", r#"
+#[tide::main]
+fn main(root: Root) {
+    root.tasks.scope::<_, std::task::TaskError, _>(|scope| {
+        for worker in 0..4 {
+            scope.spawn(move || {
+                for _ in 0..1000 { println!("{}:{}", worker, "x".repeat(200)); }
+                Ok(())
+            });
+        }
+        Ok(())
+    }).unwrap();
+}
+"#);
+    checked(&mut driver(&dir));
+    let out = checked(&mut Command::new(dir.join("out/demo")));
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(text.lines().count(), 4000);
+    for line in text.lines() {
+        assert_eq!(line.len(), 202);
+        assert!(line.ends_with(&"x".repeat(200)), "{line}");
+    }
+    let mut child = Command::new(dir.join("out/demo")).stdin(Stdio::null())
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut pipe = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut first = String::new();
+    pipe.read_line(&mut first).unwrap();
+    drop(pipe);
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(141));
+    assert_eq!(out.stderr, b"");
+}
+
 /// std::io's core (bead fx-ecb) passes the driver and runs: an in-memory reader through
 /// `BufReader` and `BufRead::lines`, writes through `Write` and `BufWriter`, `Cursor` and
 /// `SeekFrom`, an `io::Error` from an `ErrorKind` through `?`, and `is_cancelled()`.

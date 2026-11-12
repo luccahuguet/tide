@@ -25,7 +25,7 @@ pub mod ffi {
 
 // `panic!` alone, since re-exporting `std::panic` would also export the module and
 // `catch_unwind`; `print!` and its kin write to the sinks below.
-pub use tide_macros::{Decode, Encode, Error, eprint, eprintln, panic, print, println};
+pub use tide_macros::{Decode, Encode, Error, debug, eprint, eprintln, error, info, panic, print, println, trace, warn};
 
 /// The `Encode` and `Decode` traits, which share their derives' names, and the engine those
 /// derives call; shared by production and conformance.
@@ -61,7 +61,7 @@ pub mod __sink {
 
     pub(crate) struct Record {
         pub(crate) stream: &'static str,
-        pub(crate) message: String,
+        pub(crate) message: Vec<u8>,
         span: &'static std::panic::Location<'static>,
     }
     thread_local! {
@@ -102,8 +102,10 @@ pub mod __sink {
             {
                 std::process::exit(141);
             }
-        } else {
+        } else if record.stream == "err" {
             let _ = write(io::stderr().lock(), &record.message);
+        } else {
+            crate::log::emit(crate::log::Level::from_name(record.stream), &record.message);
         }
     }
 
@@ -111,7 +113,7 @@ pub mod __sink {
     pub fn out(args: Arguments<'_>, newline: bool) {
         emit(Record {
             stream: "out",
-            message: format(args, newline),
+            message: format(args, newline).into_bytes(),
             span: std::panic::Location::caller(),
         });
     }
@@ -120,9 +122,19 @@ pub mod __sink {
     pub fn err(args: Arguments<'_>, newline: bool) {
         emit(Record {
             stream: "err",
-            message: format(args, newline),
+            message: format(args, newline).into_bytes(),
             span: std::panic::Location::caller(),
         });
+    }
+
+    #[track_caller]
+    pub(crate) fn bytes(stream: &'static str, bytes: &[u8]) {
+        emit(Record { stream, message: bytes.to_vec(), span: std::panic::Location::caller() });
+    }
+
+    #[track_caller]
+    pub fn log(level: crate::log::Level, args: Arguments<'_>) {
+        emit(Record { stream: level.name(), message: fmt::format(args).into_bytes(), span: std::panic::Location::caller() });
     }
 
     /// The record; `fmt::format` panics when a formatting impl returns an error.
@@ -134,8 +146,8 @@ pub mod __sink {
         record
     }
 
-    fn write(mut w: impl Write, record: &str) -> io::Result<()> {
-        w.write_all(record.as_bytes())?;
+    fn write(mut w: impl Write, record: &[u8]) -> io::Result<()> {
+        w.write_all(record)?;
         w.flush()
     }
 }
@@ -155,7 +167,7 @@ macro_rules! declare_prelude {
                     Unpin, Vec, assert, cfg, derive, drop, format_args, stringify,
                 };
                 pub use crate::{
-                    Decode, Encode, Error, assert_eq, assert_ne, debug_assert, eprint, eprintln, format,
+                    Decode, Encode, Error, assert_eq, assert_ne, debug, debug_assert, eprint, eprintln, error, format, info, trace, warn,
                     matches, panic, print, println, todo, unimplemented, unreachable, vec, write,
                     writeln,
                 };
@@ -205,8 +217,7 @@ pub(crate) use capability;
 
 /// Every capability a program starts with (reference 6.2), which the entry that `#[tide::main]`
 /// generates hands to `main`. The private field keeps user code from building one (ROOT-4). The
-/// reference's `log` field, sink configuration (SINK-2), is not provided: no document fixes its
-/// type.
+/// `log` field configures the process log sink (SINK-2).
 pub struct Root {
     _private: (),
     pub fs: fs::Fs,
@@ -217,6 +228,7 @@ pub struct Root {
     pub stdin: io::Stdin,
     pub proc: process::Proc,
     pub tasks: task::Tasks,
+    pub log: log::LogConfig,
 }
 
 /// The runtime entry. Only the `main` that `#[tide::main]` generates may name it: the admission
@@ -242,10 +254,11 @@ pub mod __rt {
             net: crate::net::Net(None),
             clock: crate::time::Clock::new(crate::task::Time::real()),
             rand: crate::rand::Rand(None),
-            env: crate::env::Env(None),
+            env: crate::env::Env::new(None),
             stdin: crate::io::Stdin(None),
             proc: crate::process::Proc(None),
             tasks: crate::task::Tasks::real(),
+            log: crate::log::LogConfig(()),
         };
         main(root).report()
     }

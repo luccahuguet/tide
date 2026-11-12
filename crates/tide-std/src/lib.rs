@@ -11,9 +11,20 @@
 //!   own violations and unchecked records for runners (limits below);
 //! - the entry: `#[tide::main]`, `Root`, and the runtime entry it calls, which mints the
 //!   process's one `Root` (03 ROOT-1, RUN-1);
-//! - the `out` and `err` sinks: `print!`, `println!`, `eprint!`, and `eprintln!` (03 §2.4);
+//! - `out`/`err` sinks (`print!`, `println!`, `eprint!`, `eprintln!`, `io::stdout`/`stderr`),
+//!   and `error!`, `warn!`, `info!`, `debug!`, `trace!`. Synchronous writes preserve whole
+//!   records and exit quietly with 141 on closed stdout. `Root::log: log::LogConfig` has
+//!   `&self` setters `level`, `format`, `to_file`; default Info/text/stderr. Text is
+//!   `level: message`, JSON has fixed `level`/`message` keys and no timestamp (provisional);
+//! - `env::Env`: real/simulated `args`, `var`, `vars`, `current_dir`, `only`, `args_only`;
+//!   owned double-ended exact-size `Args`/`Vars` panic lazily on non-Unicode items. Denied
+//!   variables are absent; `only` intersects; `args_only` denies cwd with PermissionDenied;
+//!   `_os` forms are absent. `Stdin` has `read_line`, `lines`, `read_to_string`, `read_to_end`,
+//!   `is_terminal`, and implements `io::Read` owned or borrowed; reads check cancellation
+//!   at entry. A kernel-blocked real read waits for
+//!   input/EOF. `Lines<StdinReader>` takes one line per fill, preserving later lines on drop;
 //! - `Pure` (reference 6.6), which the admission driver decides;
-//! - the capability types `Root` carries: the identities `Net`, `Rand`, `Env`, `Stdin`,
+//! - the capability types `Root` carries: the identities `Net`, `Rand`,
 //!   and `Proc`; `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
@@ -64,12 +75,14 @@
 //!   Disconnect ends iteration. Both runtimes share the FIFO queue and wait primitive;
 //!   simulation records payload-free `chan` events and reports channel deadlocks;
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   `Shared`, channels, files, and `Clock`, with
+//!   `Shared`, channels, files, `Env`, `Stdin`, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
 //!   `elapsed`, `records`, and `trace` inspect without scheduling. Sinks record ordered events
-//!   instead of writing to host streams;
+//!   instead of writing to host streams. `world.args` appends, `env_var` overwrites,
+//!   `stdin` appends bytes; unset inputs are empty. Input calls schedule with zero latency;
+//!   `records()` assembles lines per stream with lossy UTF-8 and final unterminated tails;
 //! - `#[sim_test] fn t(sim: SimRoot)` (100 accepted cases) and `#[sim_test(seeds = N)]`
 //!   (N accepted cases), using seeds from zero in order,
 //!   one child process per test with a wall-clock backstop of 300 s per evaluation and empty stdin.
@@ -189,16 +202,16 @@
 //! Source-boundary classification uses current-thread runtime violation records; const
 //! requires and child-task violations lack those records and fail normally.
 //!
-//! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
-//! record is deferred until the log sink exists. Discarded task values drop on the child or
+//! Suppressed failures, echoes and panics emit one debug record with their count per scope
+//! (filtered at the default log level). Discarded task values drop on the child or
 //! receiver thread depending on timing, so a destructor panic is attributed to the thread that
 //! runs it. Suppressed payload drops on the panic path follow PANIC-2 and can abort; on the
 //! non-panic path, a drop panic surfaces in the scope's caller.
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
 //! Not provided yet: other capability operations and attenuation of reference 6.1 (network,
-//! random draws, environment, input, processes); `Root`'s `log` field;
-//! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
+//! random draws, processes); the `dbg` and `trace` sinks;
+//! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! other `sync` items,
 //! `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
 //! and laws. A
@@ -209,7 +222,7 @@
 //!
 //! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
 //! scheduler and channel adapter), `par.rs`, `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
-//! runner), and `time.rs`
+//! runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
 //! share their definitions with the conformance fixture std. The identity-only capability
 //! types use `root.rs`'s `capability!` in both crates.
 
@@ -241,12 +254,8 @@ pub mod rand {
     );
 }
 
-pub mod env {
-    crate::capability!(
-        /// Authority to read the arguments and the environment. It has no operations yet.
-        Env
-    );
-}
+pub mod env;
+pub mod log;
 
 pub mod io;
 

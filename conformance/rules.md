@@ -99,7 +99,13 @@ not cite is a best mapping that a case must confirm.
 | GLOBAL-3 | §2.2, 03:307 | Safe code has no thread-locals or task-locals | checker | `thread_local!` FX0502 |
 | GLOBAL-4 | §2.2, 03:310 | Raw pointer types, pointer-to-integer casts, `addr`, `{:p}`, and a function pointer's address observers only under the `unsafe` grant; under it, an address counts as a `usize` in D3's lossless rule | checker | FX0520 (via ADMIT-1; ref:956); FX0301 for a lossy address cast |
 | GLOBAL-6 | §2.2, 03:320 | `Arc` and `sync::Weak` are not `Pure`, take `&Tasks` to create, and lack count observers | both | `Pure` part: needing rule's code or FX0517; FX0505; E0599 / E0061 |
+| INPUT-1 | §1.1, 03 INPUT-1; §1.3; ref §6.2 | Arguments, attenuated environment, cwd and stdin execute on real and simulated capabilities; main uses Rust Termination (0, 1 for Err, given ExitCode, 101 for panic) | runtime | — |
+| SINK-1 | §2.4, 03 SINK-1 | Stdout/stderr handles always return Ok; sinks expose no world state | runtime | — |
+| SINK-2 | §2.4, 03 SINK-2 | LogConfig defaults to Info/text/stderr; setters configure the log sink | runtime | — |
+| SINK-3 | §2.4, 03 SINK-3 | Every record formats its arguments before filtering | runtime | — |
 | SINK-4 | §2.4, 03 SINK-4 | Within a task, records appear in program order; parallel branches' buffers are appended in branch order at the join | runtime | — |
+| SINK-5 | §2.4, 03 SINK-5 | Synchronous sinks preserve records under load; closed stdout exits quietly with 141 | runtime | — |
+| SINK-6 | §2.4, 03 SINK-6 | Simulated sink events assemble per-stream lines, including filtered log levels, without host writes | runtime | — |
 | SINK-8 | §2.4, 03:424 | `dbg!` is an error in release and CI profiles; `print!` in a library and printing in a `with` closure are lints | checker | FX0507 (error); FX0508, FX0607 (lints) |
 | SINK-10 | §2.4, 03:435 | `Secret<T>` has no `Debug`/`Display`, so formatting one is a type error | rustc | E0277 |
 | ADMIT-1 | §2.5, 03:446 | Only listed `core`/`alloc` items and std inherent methods are admitted (paths, methods, operators, derefs, selected impls, macro expansions), and `#![no_std]` is not | checker | FX0520; FX0517 for `io::Error` conversions (03:464) |
@@ -110,6 +116,7 @@ not cite is a best mapping that a case must confirm.
 | = DYN-2 | §3.1, 03:762 | A `Pure` trait object goes through a companion supertrait, checked at each coercion (E0225 for `dyn Trait + Pure` is 02 §5.1's) | checker | FX0517 |
 | AFREE-1 | §3.2, 03:795 | `#[pure]` asserts authority-freedom for every instantiation the bounds allow | checker | FX0511 |
 | AFREE-2 | §3.5 table, 03:852 | `const fn`: `Pure + Sync` parameters, no `&mut` parameters (rustc accepts both); type parameters bounded at the definition | checker | FX0518 |
+| TASK-6 | §6.2, 03 TASK-6 | Shielding hides enclosing cancellation; BufWriter Drop discards unflushed bytes and warns with their count | runtime | — |
 | = SEND-3 | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
 | CHANNEL-1 | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker | FX0608 (lint) |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
@@ -180,12 +187,7 @@ already implements them; `--tide-print-codes` names the enforced subset.
 
 - PANIC-1 (03:347): runtime abort, and the harness reruns in-flight tests.
 - PANIC-2 (03:363): runtime abort on a panic during unwinding.
-- SINK-1 (03:377): runtime/library semantics of sinks.
-- SINK-2 (03:382): runtime sink configuration and defaults.
-- SINK-3 (03:387): runtime argument evaluation.
 - SINK-4 (03 §2.4): runtime output ordering; `tasks/parallel_regions.rs` and driver panic tests exercise ordered parallel buffers.
-- SINK-5 (03:412): runtime loss and backpressure.
-- SINK-6 (03:420): simulator trace.
 - SINK-7 (03:422): output elision under memoization.
 - Memoization (03:852, 02:927): rejects nothing; the compiler memoizes only calls that meet AFREE-2's conditions.
 - SINK-9 (03:430): v1, plus lockfile tooling.
@@ -201,7 +203,6 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - TASK-3 (03 §6.2): runtime level-triggered cancellation; `tasks/task_controls.rs` executes checkpoints and cancelled limited spawns; `tasks/channels.rs` executes cancellation-aware sends/receives and preserves buffered values.
 - TASK-4 (03 §6.2): runtime deadlines; `tasks/task_controls.rs` executes deadline errors and partial Ok results; `tasks/channels.rs` executes receive timeouts and cancellation of channel waits.
 - TASK-5 (03:1223): runtime list of what cancellation cannot interrupt.
-- TASK-6 (03 §6.2): runtime shielding; `tasks/task_controls.rs` executes outer-cause hiding and an inner deadline.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
 - PAR-1 (03 §8.2): runtime determinism; `tasks/parallel_regions.rs` executes join/map/for/sort on both runtimes in debug and release through the driver.

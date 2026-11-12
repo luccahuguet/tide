@@ -9,7 +9,7 @@
 //
 // The supported items follow Rust's API with `BufWriter<W: Sized>`. `ErrorKind` adds
 // `Cancelled`, which `is_cancelled()` tests; `Lines`, `Split`, and `Bytes` end after yielding
-// it. Per TASK-6, `BufWriter` Drop discards pending bytes without I/O. Rust's items cannot
+// it. Per TASK-6, `BufWriter` Drop discards pending bytes and warns with their count. Rust's items cannot
 // carry cancellation: its `ErrorKind` cannot gain a variant, and the traits return its error.
 
 pub use std::io::{Cursor, SeekFrom};
@@ -1076,6 +1076,7 @@ pub struct Lines<B> {
 impl<B: BufRead> Iterator for Lines<B> {
     type Item = Result<String>;
 
+    #[track_caller]
     fn next(&mut self) -> Option<Result<String>> {
         if self.done {
             return None;
@@ -1243,7 +1244,8 @@ impl<R: ?Sized + fmt::Debug> fmt::Debug for BufReader<R> {
 }
 
 /// Adds a buffer to a sized writer, so small writes do not each call it.
-/// Per TASK-6, Drop discards pending bytes without I/O; call `flush` or `into_inner` to write them.
+/// Per TASK-6, Drop discards pending bytes and warns with their count; call `flush` or
+/// `into_inner` to write them.
 pub struct BufWriter<W: Write> {
     buf: Vec<u8>,
     /// Set while the inner writer runs; stays true if it panics.
@@ -1391,7 +1393,9 @@ impl<W: Write + Seek> Seek for BufWriter<W> {
 
 impl<W: Write> Drop for BufWriter<W> {
     fn drop(&mut self) {
-        // shortcut: no unflushed warn! until fx-5vj provides log sinks; Drop does no I/O.
+        if !self.buf.is_empty() {
+            crate::__sink::log(crate::log::Level::Warn, format_args!("BufWriter dropped with {} unflushed bytes", self.buf.len()));
+        }
     }
 }
 

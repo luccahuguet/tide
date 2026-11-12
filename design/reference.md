@@ -367,16 +367,16 @@ fn main(root: Root) -> Result<(), AppError> {
 
 - `Root` has public fields `fs`, `net`, `clock`, `rand`, `env`, `stdin`,
   `proc`, `tasks`, and `log` (sink configuration, 6.5).
-- The attribute generates Rust's parameterless entry point and mints
-  `root`; every binary's `main` needs it (`FX0512`, safe fix). `main` takes
-  `root: Root` or nothing and returns `()`, `Result<(), E: Debug>`, or
-  `ExitCode`, as in Rust: `Err(e)` prints `Error: {e:?}` and exits with 1
+- The attribute mints `root` through Rust's parameterless entry; every
+  binary needs it (`FX0512`, safe fix). `main` takes
+  `root: Root` or nothing and returns Rust's `Termination` (taught forms:
+  `()`, `Result<(), E: Debug>`, `ExitCode`): `Err(e)` prints `Error: {e:?}` and exits with 1
   (to print `Display` and the `source()` chain, return `ExitCode` and log
   the error yourself). A panic exits with 101.
 - `Root` can be named only in `main`'s signature and as `Root::sim`. `root`
   cannot be passed, borrowed into a call, stored, returned, or captured
-  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). No code
-  may call `main` (`FX0506`), so tests call functions that take
+  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). Code cannot
+  call `main` (`FX0506`), so tests call functions that take
   capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
   (`FX0504`, 6.8).
@@ -447,22 +447,20 @@ because their results depend on other tasks; `make_mut` stays.
 ### 6.5 Write-only sinks are not authority
 
 `print!`, `println!`, `eprint!`, `eprintln!`, `dbg!`, `error!`..`trace!`,
-`std::io::stdout()`/`stderr()` (write-only `impl Write` handles that always
-return `Ok`), and `std::trace::span(name)` (a guard that closes on drop)
-write to sinks owned by the current task. They read nothing back, need no
-capability, never suspend, and keep a function authority-free, so
-`warn!("legacy row {}", row.id)` may sit in a pure decoder.
+`std::io::stdout()`/`stderr()` (write-only `impl Write`, always `Ok`), and
+`std::trace::span(name)` (guard closing on drop) write task-owned sinks:
+no reads, capability, or suspension, so functions stay authority-free; a pure decoder may
+`warn!("legacy row {}", row.id)`.
 
-- Format arguments are always evaluated and the record formatted, whatever
-  level is enabled, so sink configuration never changes results or panics.
-  Order is program order; inside `join`/`par_map`, output is emitted in
-  sequential order.
-- `main` configures sinks through `root.log` (levels, text or JSON,
-  `root.log.to_file(file)`). Defaults: `println!` to stdout; `eprintln!` and
-  `info!` and above to stderr; `dbg!` to stderr in debug builds (2.1).
-  `println!` in a library is a lint (`FX0508`).
-- `Secret<T>` implements neither `Debug` nor `Display`; read it with
-  `expose()`.
+- Arguments always evaluate and records format, even disabled; configuration
+  changes no results or panics. Output follows program order, sequential
+  order in `join`/`par_map`.
+- `main` sets `root.log: std::log::LogConfig` with `level`, `format`,
+  `to_file(file)`. `std::log` defines
+  `Level::{Error, Warn, Info, Debug, Trace}` and `Format::{Text, Json}`.
+  Defaults: `println!` to stdout; `eprintln!` and `info!` upward to stderr;
+  `dbg!` to stderr in debug builds (2.1). Library `println!` is lint `FX0508`.
+- `Secret<T>` has no `Debug`/`Display`; read with `expose()`.
 
 ### 6.6 `Pure` and authority-free functions
 

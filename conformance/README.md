@@ -196,8 +196,20 @@ capability types with that file's `capability!`, so those items share one
 definition at the same paths. Its I/O core also includes
 `crates/tide-std/src/io/shared.rs`, sharing the traits, errors, adapters and
 buffered types with production. The supported I/O API follows Rust with
-`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
+`BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes and warns with their count.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
+The fixture includes production's `env.rs`, `io/stdio.rs`, and `log.rs` too:
+real/simulated arguments, attenuated environment and cwd, stdin reads,
+stdout/stderr handles and all five log macros have one implementation.
+`authority/process_inputs.rs` and `process_sinks.rs` also execute through the
+admission driver against production. Driver tests cover exit statuses, lazy
+non-Unicode panics, stdin cancellation, invalid lines and early iterator drop,
+log defaults/filtering/JSON/file routing, atomic records and closed stdout.
+Simulation setup appends args/stdin and overwrites env keys; `records()` assembles
+per-stream lines, including every log level, without host writes. Env/input
+latency is zero. Real stdin cancellation is entry-only; a kernel-blocked read
+waits for input/EOF. `_os`, output `lock()`, `dbg!` runtime, trace sinks,
+`log::`/`tracing::`-prefixed log macros, and `release-max-level` are not implemented in production.
 The stub includes the production `sync.rs` for `Shared::new`, `clone`, `same`,
 `with`, `with2`, `with_all`, `reset`, and `LockError`; it has no separate Shared
 runtime. `tasks/shared_counter.rs` and `tasks/shared_sets.rs` also execute against

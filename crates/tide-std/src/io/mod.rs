@@ -5,7 +5,7 @@
 //! the traits implemented for `&[u8]`, `Vec<u8>`, `&mut [u8]`, and `Cursor`.
 //!
 //! The supported items follow Rust's API with `BufWriter<W: Sized>`. Per TASK-6, its Drop
-//! discards pending bytes without I/O; call `flush` or `into_inner` to write them. `ErrorKind`
+//! discards pending bytes and logs a warning with their count; call `flush` or `into_inner` to write them. `ErrorKind`
 //! adds `Cancelled`, which `Error::is_cancelled()` tests (reference 7.2; 03 §1.1), and `Lines`,
 //! `Split`, and `Bytes` end after yielding a cancellation error. Rust's `ErrorKind` cannot
 //! gain one, so `Error` and the traits that return it are Tide's too.
@@ -13,16 +13,17 @@
 //! payload is `Pure` (02 §9, `FX0517`), and rejects `Error::last_os_error` (`FX0520`).
 //!
 //! `shared.rs` holds these items; the conformance corpus's fixture std includes it too, so they
-//! have one definition. Not provided here: `Stdin`'s reads, `stdout()`/`stderr()`, and the
-//! socket handles (their own bead), vectored I/O, `LineWriter`, `copy`, `empty`,
+//! have one definition. `Stdin` reads real or simulated input, checking cancellation at entry;
+//! a real read already blocked in the kernel finishes on input/EOF.
+//! Owned and borrowed `Stdin` implement `Read`. `lines()` pulls one line
+//! per fill under the global input lock. `stdout()`/`stderr()` share the print sinks, always
+//! return `Ok`, and provide no `lock()`; use `BufWriter::new(stdout())` for batching.
+//! Not provided here: socket handles (their own bead), vectored I/O, `LineWriter`, `copy`, `empty`,
 //! `sink`, `repeat`, `io::read_to_string`, `BufWriter::into_parts`, and `BufError`.
 
 include!("shared.rs");
 
-crate::capability!(
-    /// Authority to read standard input. It has no operations yet.
-    Stdin
-);
+include!("stdio.rs");
 
 #[cfg(test)]
 mod tests {

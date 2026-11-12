@@ -28,10 +28,6 @@
 // runtime entry, Rust's re-exports, and the `capability!` and `declare_prelude!` macros.
 include!("../../../../crates/tide-std/src/root.rs");
 
-// The log sink (reference 6.5): arguments are evaluated and formatted.
-#[macro_export]
-macro_rules! __log { ($($t:tt)*) => {{ let _ = ::core::format_args!($($t)*); }} }
-
 // The dbg sink (reference 6.5): as Rust's `dbg!`, it formats each argument with `Debug` and
 // returns it.
 #[macro_export]
@@ -42,7 +38,6 @@ macro_rules! dbg {
 }
 
 crate::declare_prelude! {
-    pub use crate::{__log as error, __log as info};
     pub use crate::dbg;
     pub use crate::Secret;
     pub use crate::test::test;
@@ -65,26 +60,12 @@ pub mod process {
     crate::capability!(Proc);
 }
 
-pub mod io {
-    // Tide's std's io core, included as `root.rs` is, so each item has one definition.
-    include!("../../../../crates/tide-std/src/io/shared.rs");
-
-    crate::capability!(Stdin);
-    /// Reference 6.1: `io::Stdin`'s methods with `&self` receivers.
-    impl Stdin {
-        pub fn read_line(&self, buf: &mut String) -> Result<usize> { unimplemented!() }
-    }
-}
-
-pub mod env {
-    /// GUESS: `args()` "as std::env's", so Rust's `Args`, an iterator of `String`.
-    pub use std::env::Args;
-    pub use std::env::VarError;
-    crate::capability!(Env);
-    impl Env {
-        pub fn args(&self) -> Args { unimplemented!() }
-    }
-}
+#[path = "../../../../crates/tide-std/src/io/mod.rs"]
+pub mod io;
+#[path = "../../../../crates/tide-std/src/env.rs"]
+pub mod env;
+#[path = "../../../../crates/tide-std/src/log.rs"]
+pub mod log;
 
 pub mod rand {
     crate::capability!(Rand);
@@ -261,9 +242,6 @@ pub mod sim {
     }
 
     impl World {
-        /// GUESS: element and return types of `args` and `stdin`.
-        pub fn args<S: Into<String>>(&self, args: impl IntoIterator<Item = S>) { unimplemented!() }
-        pub fn stdin(&self, bytes: impl AsRef<[u8]>) { unimplemented!() }
         pub fn http(&self, addr: &str, f: impl Fn(&Request) -> Reply + 'static) { unimplemented!() }
     }
 

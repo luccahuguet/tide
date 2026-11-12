@@ -411,6 +411,14 @@ impl std::fmt::Debug for File {
     }
 }
 impl File {
+    // Sinks are not checkpoints and cannot observe cancellation or report a write failure.
+    pub(crate) fn write_sink(&self, bytes: &[u8]) {
+        if let FileBackend::Real(file) = &self.backend {
+            crate::task::outside_simulation();
+            if self.write { let _ = std::io::Write::write_all(&mut &*file, bytes); }
+        }
+    }
+
     #[track_caller]
     fn run<T>(
         &self,

@@ -1,4 +1,4 @@
-// Seeded simulation for tests (03 §9). Tasks, Shared, channels, files, clocks and sinks are modeled.
+// Seeded simulation for tests (03 §9). Tasks, Shared, channels, files, process inputs, clocks and sinks are modeled.
 // Other capability operations/setup, faults, nodes and replay manifests are pending.
 
 use crate::task::{Simulation, Tasks};
@@ -37,10 +37,13 @@ impl SimRoot {
             net: crate::net::Net(Some(tasks.clone())),
             clock: simulation.clock().clone(),
             rand: crate::rand::Rand(Some(tasks.clone())),
-            env: crate::env::Env(Some(tasks.clone())),
+            env: crate::env::Env::new(Some(tasks.clone())),
             stdin: crate::io::Stdin(Some(tasks.clone())),
             proc: crate::process::Proc(Some(tasks.clone())),
-            world: World { fs },
+            world: World {
+                fs,
+                tasks: tasks.clone(),
+            },
             faults: Faults {
                 _tasks: tasks.clone(),
             },
@@ -65,11 +68,38 @@ impl SimRoot {
     }
 }
 
-/// Simulated input setup. Only file setup is currently modeled.
+/// Simulated input setup. File and process inputs are modeled.
 pub struct World {
     fs: crate::fs::Fs,
+    tasks: Tasks,
 }
 impl World {
+    /// Appends arguments, including the program name when desired.
+    pub fn args(&self, args: impl IntoIterator<Item: AsRef<std::ffi::OsStr>>) {
+        let args: Vec<_> = args.into_iter().map(|s| s.as_ref().to_owned()).collect();
+        self.tasks.world_inputs(|inputs| inputs.args.extend(args));
+    }
+    /// Sets or replaces a variable. Inputs start empty.
+    pub fn env_var(&self, key: impl AsRef<std::ffi::OsStr>, value: impl AsRef<std::ffi::OsStr>) {
+        let key = key.as_ref();
+        assert!(
+            !key.is_empty()
+                && !key
+                    .as_encoded_bytes()
+                    .iter()
+                    .any(|b| matches!(*b, b'=' | 0)),
+            "environment key must be nonempty and contain neither '=' nor NUL"
+        );
+        let (key, value) = (key.to_owned(), value.as_ref().to_owned());
+        self.tasks.world_inputs(|inputs| {
+            inputs.env.insert(key, value);
+        });
+    }
+    /// Appends bytes to a pipe whose writer has closed. Reads have zero latency.
+    pub fn stdin(&self, bytes: impl AsRef<[u8]>) {
+        let bytes = bytes.as_ref();
+        self.tasks.world_inputs(|inputs| inputs.stdin.extend(bytes));
+    }
     /// Immediately creates or replaces a file and creates its parents, from simulated `/`.
     /// Takes no virtual time and does not schedule. Panics on invalid setup paths.
     #[track_caller]
@@ -98,19 +128,24 @@ pub enum Sink {
     Dbg,
     Log(Level),
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Level {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
+pub use crate::log::Level;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    #[test]
+    fn invalid_environment_setup_panics_without_poisoning_simulation() {
+        let sim = crate::Root::sim(7);
+        for key in ["", "A=B", "A\0B"] {
+            assert!(catch_unwind(AssertUnwindSafe(|| sim.world.env_var(key, "value"))).is_err());
+        }
+        assert!(sim.trace().is_empty());
+        assert_eq!(sim.env.vars().len(), 0);
+        sim.world.env_var("VALID", "value");
+        assert_eq!(sim.env.var("VALID").unwrap(), "value");
+    }
 
     #[test]
     fn dropping_the_root_in_a_live_scope_asserts_and_does_not_restore_a_dead_context() {
@@ -156,6 +191,20 @@ mod tests {
         crate::Root::sim(1).tasks.checkpoint().unwrap();
     }
 
+    #[test]
+    fn suppressed_task_failures_emit_one_count_only_debug_record() {
+        let sim = crate::Root::sim(3);
+        let result = sim.tasks.scope::<_, crate::task::TaskError, _>(|scope| {
+            scope.spawn(|| Err::<(), _>(crate::task::TaskError::Cancelled));
+            Err::<(), _>(crate::task::TaskError::Cancelled)
+        });
+        assert!(result.is_err());
+        let records = sim.records();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].sink, Sink::Log(Level::Debug));
+        assert_eq!(records[0].message, "1 suppressed task outcomes");
+    }
+
     fn sinks(seed: u64) -> String {
         let sim = crate::Root::sim(seed);
         crate::__sink::out(
@@ -164,13 +213,11 @@ mod tests {
         );
         crate::__sink::err(format_args!("error"), false);
         let records = sim.records();
-        assert_eq!(records.len(), 2);
-        assert_eq!(
-            records[0].message,
-            "quote=\" slash=\\ newline=\n nul=\0 café\n"
-        );
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].message, "quote=\" slash=\\ newline=");
         assert_eq!(records[0].sink, Sink::Out);
-        assert_eq!(records[1].sink, Sink::Err);
+        assert_eq!(records[1].message, " nul=\0 café");
+        assert_eq!(records[2].sink, Sink::Err);
         let trace = sim.trace();
         assert_eq!(trace.lines().count(), 2);
         assert!(

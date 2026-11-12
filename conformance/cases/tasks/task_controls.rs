@@ -1,4 +1,4 @@
-//@ rules: SCOPE-1, SCOPE-3, SEND-3
+//@ rules: SCOPE-1, SCOPE-3, SEND-3, TASK-6
 // Production and conformance share these APIs; the driver executes both runtimes.
 use std::sync::Shared;
 use std::task::{Cancelled, Panicked, TaskError, Tasks};

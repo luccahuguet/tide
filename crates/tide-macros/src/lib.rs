@@ -65,7 +65,7 @@ pub fn derive_decode(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(t) = attr.into_iter().next() {
-        return error(t.span(), "`#[tide::main]` takes no arguments");
+        return diagnostic(t.span(), "`#[tide::main]` takes no arguments");
     }
     let mut tokens: Vec<TokenTree> = item.into_iter().collect();
     // The name follows the first top-level `fn`; attributes are bracketed groups.
@@ -77,7 +77,7 @@ pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
         .map(|i| i + 1);
     let Some(name) = found.filter(|&i| tokens[i].to_string() == "main") else {
         let span = found.map_or(Span::call_site(), |i| tokens[i].span());
-        return error(span, "`#[tide::main]` goes on the binary's `fn main`");
+        return diagnostic(span, "`#[tide::main]` goes on the binary's `fn main`");
     };
     let takes_root = tokens[name..].iter().find_map(|t| match t {
         TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => {
@@ -124,6 +124,34 @@ pub fn eprintln(input: TokenStream) -> TokenStream {
     sink("err", input, true)
 }
 
+/// Writes an error-level log record, formatting even when disabled.
+#[proc_macro]
+pub fn error(input: TokenStream) -> TokenStream { log_sink("Error", input) }
+
+/// Writes a warn-level log record, formatting even when disabled.
+#[proc_macro]
+pub fn warn(input: TokenStream) -> TokenStream { log_sink("Warn", input) }
+
+/// Writes an info-level log record, formatting even when disabled.
+#[proc_macro]
+pub fn info(input: TokenStream) -> TokenStream { log_sink("Info", input) }
+
+/// Writes a debug-level log record, formatting even when disabled.
+#[proc_macro]
+pub fn debug(input: TokenStream) -> TokenStream { log_sink("Debug", input) }
+
+/// Writes a trace-level log record, formatting even when disabled.
+#[proc_macro]
+pub fn trace(input: TokenStream) -> TokenStream { log_sink("Trace", input) }
+
+fn log_sink(level: &str, input: TokenStream) -> TokenStream {
+    let mut args: TokenStream = format!("::std::log::Level::{level}, ::core::format_args!").parse().unwrap();
+    args.extend([TokenTree::Group(Group::new(Delimiter::Parenthesis, input))]);
+    let mut call: TokenStream = "::std::__sink::log".parse().unwrap();
+    call.extend([TokenTree::Group(Group::new(Delimiter::Parenthesis, args))]);
+    call
+}
+
 /// `panic!(..)`, as `core`'s.
 #[proc_macro]
 pub fn panic(input: TokenStream) -> TokenStream {
@@ -150,7 +178,7 @@ fn sink(name: &str, input: TokenStream, newline: bool) -> TokenStream {
 }
 
 /// `compile_error!(message)` at `span`.
-fn error(span: Span, message: &str) -> TokenStream {
+fn diagnostic(span: Span, message: &str) -> TokenStream {
     let tokens: TokenStream = format!("::core::compile_error!({message:?});")
         .parse()
         .unwrap();
@@ -187,7 +215,7 @@ pub fn invariants(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Reports an invariant that no enclosing contract attribute rewrote.
 #[proc_macro]
 pub fn invariant(input: TokenStream) -> TokenStream {
-    error(
+    diagnostic(
         input
             .into_iter()
             .next()

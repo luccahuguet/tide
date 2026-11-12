@@ -86,7 +86,7 @@ fn lowest_panic_sink_prefix_stop_and_token_return() {
     assert_eq!(
         records
             .iter()
-            .map(|r| r.message.as_str())
+            .map(|r| std::str::from_utf8(&r.message).unwrap())
             .collect::<Vec<_>>(),
         ["left\n"]
     );
@@ -113,7 +113,7 @@ fn lowest_panic_sink_prefix_stop_and_token_return() {
     assert!(executed.load(Ordering::Relaxed) < 10000);
     result.unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].message, "0\n");
+    assert_eq!(records[0].message, b"0\n");
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn out_of_order_blocks_choose_lowest_panic_and_nested_sink_order() {
     });
     result.unwrap();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].message, "0\n");
+    assert_eq!(records[0].message, b"0\n");
     let (result, records) = crate::__sink::capture(|| {
         fork(
             &budget,
@@ -155,7 +155,7 @@ fn out_of_order_blocks_choose_lowest_panic_and_nested_sink_order() {
     assert_eq!(
         records
             .iter()
-            .map(|r| (r.stream, r.message.as_str()))
+            .map(|r| (r.stream, std::str::from_utf8(&r.message).unwrap()))
             .collect::<Vec<_>>(),
         [("out", "0\n"), ("err", "1\n"), ("out", "2\n")]
     );
@@ -207,7 +207,7 @@ fn simulation_stays_on_calling_task_and_emits_only_ordered_sinks() {
             .iter()
             .map(|r| r.message.as_str())
             .collect::<Vec<_>>(),
-        ["left\n", "0\n", "1\n", "2\n"]
+        ["left", "0", "1", "2"]
     );
     assert!(
         sim.trace()
@@ -423,9 +423,9 @@ fn simulated_panics_keep_only_the_sequential_sink_prefix() {
         assert_eq!(
             messages,
             if region == "join" {
-                vec!["left\n"]
+                vec!["left"]
             } else {
-                vec!["0\n", "1\n"]
+                vec!["0", "1"]
             }
         );
     }

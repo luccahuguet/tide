@@ -86,8 +86,8 @@ mod tests {
         assert_eq!(
             messages,
             vec![
-                "left\n", "right\n", "map 0\n", "map 1\n", "map 2\n", "map 3\n", "for 0\n",
-                "for 3\n", "for 6\n", "for 9\n"
+                "left", "right", "map 0", "map 1", "map 2", "map 3", "for 0",
+                "for 3", "for 6", "for 9"
             ]
         );
     }
