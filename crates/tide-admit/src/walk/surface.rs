@@ -797,7 +797,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     }
 }
 
-fn written_bang(tcx: TyCtxt<'_>, span: Span, name: rustc_span::Symbol) -> bool {
+pub(super) fn written_bang(tcx: TyCtxt<'_>, span: Span, name: rustc_span::Symbol) -> bool {
     use rustc_ast::token::TokenKind;
     use rustc_parse::parser::PathStyle;
     use rustc_session::parse::ParseSess;

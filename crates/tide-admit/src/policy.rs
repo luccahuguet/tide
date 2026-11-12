@@ -54,6 +54,13 @@ const fn deny(pattern: &'static str, help: &'static str) -> Rule {
     rule(Verdict::Deny, pattern, Some(help))
 }
 
+const fn deny_as(pattern: &'static str, code: Code, help: &'static str) -> Rule {
+    Rule {
+        code,
+        ..deny(pattern, help)
+    }
+}
+
 const fn ambient(pattern: &'static str) -> Rule {
     Rule {
         code: Code::Fx0501,
@@ -74,6 +81,7 @@ const LAZY: &str = "build the value first and pass it down; between tasks use \
 const FS: &str = "use a capability method: `fs.exists(path)?`, `fs.metadata(path)?`";
 const CWD: &str = "it reads the working directory; use `env.current_dir()?.join(path)`";
 const OS_ERROR: &str = "an OS error code is read from a capability's result";
+const SPAWN: &str = "spawn into `tasks.scope` instead";
 const ENTRY: &str = "`#[tide::main]` is the only way to start the runtime";
 const RANDOM_KEY: &str = "Rust's `RandomState` draws its key from the OS; use \
                           `HashMap::with_hasher(RandomState::from_rand(&rand))`";
@@ -175,7 +183,50 @@ pub const RULES: &[Rule] = &[
     ),
     deny("std::sync::lazy_lock::*", LAZY),
     deny("std::sync::once_lock::*", LAZY),
-    // ---- async machinery (D8)
+    // ---- concurrency and panic habits (D8, D5); defining paths on the pinned rustc.
+    // Tokio is a pseudo-key shared by resolved and recovered uses.
+    deny_as("tokio::spawn", Code::Fx0602, SPAWN),
+    deny_as(
+        "std::thread::functions::spawn",
+        Code::Fx0602,
+        SPAWN,
+    ),
+    deny_as(
+        "std::thread::builder::*",
+        Code::Fx0602,
+        SPAWN,
+    ),
+    deny_as(
+        "std::thread::scoped::*",
+        Code::Fx0602,
+        "use `tasks.scope` instead of Rust thread scopes",
+    ),
+    deny_as(
+        "std::sync::poison::mutex::*",
+        Code::Fx0604,
+        "use `Shared::with` instead of a Mutex guard",
+    ),
+    deny_as(
+        "std::sync::poison::rwlock::*",
+        Code::Fx0604,
+        "use `Shared::with` instead of a RwLock guard",
+    ),
+    deny_as(
+        "std::panic::catch_unwind",
+        Code::Fx0701,
+        "use `tasks.spawn_isolated` instead",
+    ),
+    // ---- async machinery (D8); core::task keeps its admission code.
+    deny_as(
+        "core::future::*",
+        Code::Fx0601,
+        "use ordinary functions and structured tasks; remove async/await",
+    ),
+    deny_as(
+        "core::pin::*",
+        Code::Fx0601,
+        "use ordinary owned or borrowed values instead of Pin",
+    ),
     deny(
         "core::task::*",
         "Tide has no async; `Waker` and `Context` are not admitted",

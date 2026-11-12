@@ -72,6 +72,11 @@ test code (`FX0504`), and handle creation missing the final `&Tasks` (`FX0505`).
 Field moves, borrows and patterns are allowed. Test code includes test-only cfg ancestors,
 plain/property/simulation tests and the separate test suite; ordinary helpers
 in a `--test` build and the separate candidate library remain production code.
+The concurrency and error checks reject async/await and core's future/pin APIs
+(`FX0601`), unstructured spawning (`FX0602`), Mutex/RwLock habits (`FX0604`),
+`select!` (`FX0605`), `catch_unwind` (`FX0701`), and a `Result` ignored in
+statement position (`FX0702`). Explicit `let _ = result;` is accepted; other
+`#[must_use]` types retain rustc's lint. `#[allow]` does not silence FX errors.
 It also rejects `#![no_std]` (`FX0520`) and package build scripts
 (`FX0915`), and caches successful checks/builds by source and trusted-input
 content. A crate it admits against Tide's std also gets a trust artifact beside its metadata,

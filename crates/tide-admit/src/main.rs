@@ -9,6 +9,11 @@
 //! handle creation missing its final `&Tasks` (`FX0505`). Ordinary functions in a `--test`
 //! build remain production code unless nested under a test or a test-only cfg. A separate
 //! `--tide-test-library` suite is test code; its candidate library is checked as production.
+//! `walk/habits.rs` and the policy table reject async/await and future/pin APIs (`FX0601`),
+//! unstructured spawning (`FX0602`), Mutex/RwLock habits (`FX0604`), select! (`FX0605`),
+//! catch_unwind (`FX0701`), and Results ignored in statement position (`FX0702`). Explicit
+//! `let _ = result;` is accepted, including for Result<(), Infallible>; other must-use types
+//! retain rustc's lint. FX errors ignore allow attributes.
 //! It also decides `Pure` (`pure.rs`) and the rules on items that need it or the `unsafe` grant,
 //! each under its own FX code (D18). It checks after name resolution and before rustc's
 //! analysis, so a crate with rustc errors still gets its verdicts, and after the analysis, when

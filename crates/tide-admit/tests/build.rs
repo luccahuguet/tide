@@ -3730,3 +3730,101 @@ fn authority_field_patterns_and_import_sources_use_production_std() {
         }
     }
 }
+
+#[test]
+fn concurrency_and_error_cases_use_production_std() {
+    for (name, source, rejection) in [
+        (
+            "async",
+            include_str!("../../../conformance/cases/tasks/async_reject.rs"),
+            Some("FX0601"),
+        ),
+        (
+            "future-pin",
+            include_str!("../../../conformance/cases/tasks/future_pin_reject.rs"),
+            Some("FX0601"),
+        ),
+        (
+            "spawn",
+            include_str!("../../../conformance/cases/tasks/spawn_reject.rs"),
+            Some("FX0602"),
+        ),
+        (
+            "mutex",
+            include_str!("../../../conformance/cases/tasks/mutex_reject.rs"),
+            Some("FX0604"),
+        ),
+        (
+            "select",
+            include_str!("../../../conformance/cases/tasks/select_reject.rs"),
+            Some("FX0605"),
+        ),
+        (
+            "catch",
+            include_str!("../../../conformance/cases/errors/catch_unwind_reject.rs"),
+            Some("FX0701"),
+        ),
+        (
+            "result",
+            include_str!("../../../conformance/cases/errors/ignored_result_reject.rs"),
+            Some("FX0702"),
+        ),
+        (
+            "ordinary",
+            include_str!("../../../conformance/cases/tasks/async_accept.rs"),
+            None,
+        ),
+        (
+            "scoped",
+            include_str!("../../../conformance/cases/tasks/spawn_accept.rs"),
+            None,
+        ),
+        (
+            "shared",
+            include_str!("../../../conformance/cases/tasks/mutex_accept.rs"),
+            None,
+        ),
+        (
+            "channel",
+            include_str!("../../../conformance/cases/tasks/select_accept.rs"),
+            None,
+        ),
+        (
+            "isolated",
+            include_str!("../../../conformance/cases/errors/catch_unwind_accept.rs"),
+            None,
+        ),
+        (
+            "handled",
+            include_str!("../../../conformance/cases/errors/ignored_result_accept.rs"),
+            None,
+        ),
+    ] {
+        let dir = package(&format!("habits-{name}"), source);
+        for test in [false, true] {
+            let mut command = driver(&dir);
+            command.args([
+                "--crate-type=lib",
+                "--emit=metadata",
+                "--error-format=short",
+            ]);
+            if test {
+                command.arg("--test");
+            }
+            let out = command.stdin(Stdio::null()).output().unwrap();
+            assert_eq!(
+                out.status.code(),
+                Some(if rejection.is_some() { 1 } else { 0 }),
+                "{}",
+                stderr(&out)
+            );
+            if let Some(code) = rejection {
+                assert!(
+                    stderr(&out).contains(&format!("error: {code}:")),
+                    "{}",
+                    stderr(&out)
+                );
+            }
+        }
+    }
+}

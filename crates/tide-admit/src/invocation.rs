@@ -907,6 +907,7 @@ fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     let krate = tcx.resolver_for_lowering().1.borrow();
     check.visit_crate(&krate);
     crate::walk::check_trait_surface(tcx, &krate, &mut check.diags);
+    crate::walk::check_habit_surface(tcx, &krate, &mut check.diags);
     // ADMIT-1: the std rustc injects is Tide's, whose identity the rules key on
     // (`Crates::tide_std`). Under `#![no_std]` rustc injects `core`, so no crate is Tide's std and
     // the `Pure` rules are off, and an `extern crate std` loads it only as an ordinary crate.

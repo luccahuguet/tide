@@ -47,10 +47,12 @@ use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
 mod authority;
+mod habits;
 mod mono;
 mod sinks;
 mod surface;
 mod traits;
+pub use habits::check_habit_surface;
 pub use mono::check_mono_items;
 pub use traits::check_trait_surface;
 
@@ -283,6 +285,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             return Ok(Admitted::Free);
         }
+        if let Some(rejection) = self.habit_def(def_id) {
+            return Err(rejection);
+        }
         let key = self.key(def_id);
         match role {
             Role::Other => Err(Rejection {
@@ -320,15 +325,13 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             ty::RawPtr(_, m) => self.admit_pseudo(raw_pointer_key(m)),
             _ => Ok(Admitted::Free),
         };
-        if role == Role::TideStd || (self.admit_def(used_as.def_id).is_ok() && head.is_ok()) {
-            Ok(Admitted::Free)
-        } else {
-            Err(Rejection {
-                key,
-                code: Code::Fx0520,
-                help: None,
-            })
+        if role == Role::TideStd {
+            return Ok(Admitted::Free);
         }
+        self.admit_def(used_as.def_id)
+            .and(head)
+            .map(|_| Admitted::Free)
+            .map_err(|rejection| Rejection { key, ..rejection })
     }
 
     fn admit_pseudo(&self, key: &str) -> Result<Admitted, Rejection> {
@@ -418,6 +421,13 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     fn check(&mut self, span: Span, verdict: Result<Admitted, Rejection>) {
         if self.generated_by_toolchain(span) {
+            return;
+        }
+        // Written async/await is rejected before lowering; its lang-item uses are not user code.
+        if matches!(
+            span.desugaring_kind(),
+            Some(rustc_span::DesugaringKind::Async | rustc_span::DesugaringKind::Await)
+        ) {
             return;
         }
         match verdict {
@@ -1411,7 +1421,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let end = LocalExpnId::fresh_empty().as_u32();
         for i in 1..end {
             let data = LocalExpnId::from_u32(i).expn_data();
-            if self.surface_expansion(&data) {
+            if self.habit_expansion(&data) || self.surface_expansion(&data) {
                 continue;
             }
             match (data.kind, data.macro_def_id) {
@@ -1903,6 +1913,11 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             }
         }
         intravisit::walk_expr(self, e)
+    }
+
+    fn visit_stmt(&mut self, stmt: &'tcx hir::Stmt<'tcx>) {
+        self.habit_stmt(stmt);
+        intravisit::walk_stmt(self, stmt);
     }
 
     fn visit_pat(&mut self, p: &'tcx hir::Pat<'tcx>) {

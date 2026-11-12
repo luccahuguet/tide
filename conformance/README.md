@@ -160,6 +160,24 @@ need no separate registry. `#[allow]` does not silence these errors.
 The deadlock fixtures run as tests; generated-contract fixtures use capability
 parameters rather than whole `Root` parameters.
 
+The concurrency/error slice enforces `FX0601`, `FX0602`, `FX0604`, `FX0605`,
+`FX0701` and `FX0702` as errors. Async functions, blocks, closures and awaits
+are checked before lowering; all `core::future::*` and `core::pin::*` uses have
+`FX0601`, while `core::task::*` retains `FX0520`. Rust thread spawning, Builder
+and thread scopes use `FX0602`; unresolved `tokio::spawn` and resolved Tokio
+spawn items do too. Same-spelled local functions pass. Mutex/RwLock types and
+methods use `FX0604`; Condvar, Barrier and Once keep their existing owners.
+Missing std and Tokio paths, including module aliases and re-exports, use the
+authority slice's source recovery.
+Every user-written `select!` is `FX0605`, whether resolved, unresolved, or
+renamed from another macro. Catching an unwind uses `FX0701`; task isolation
+passes. `FX0702` checks the type of an expression statement, including macro
+results such as `writeln!` and `Result<(), Infallible>`. Propagation, returned
+results and explicit `let _ =` pass. Other must-use values retain rustc's
+lint. `#[allow]` does not silence these errors. The cases also check against
+production std in the focused driver build tests; trusted std bodies are not
+candidate code.
+
 ## Case format
 
 One `.rs` file per case, under `cases/<area>/`: `memory` (02), `authority`

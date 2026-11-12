@@ -70,8 +70,16 @@ pub enum Code {
     Fx0518,
     /// A use outside the admission allowlist (ADMIT-1).
     Fx0520,
+    /// Async syntax, Future, or Pin (D8).
+    Fx0601,
+    /// Unstructured spawning (D8).
+    Fx0602,
     /// A `Shared::with` closure that is not `Pure` (LOCK-4).
     Fx0603,
+    /// Mutex and RwLock habits (D8).
+    Fx0604,
+    /// A select! macro (D8).
+    Fx0605,
     /// A `Shared` payload that is not `Pure` (LOCK-1).
     Fx0606,
     /// Printing inside a `Shared::with` closure (LOCK-4).
@@ -85,6 +93,10 @@ pub enum Code {
     Fx0611,
     /// Elements of a parallel slice method that are not `Pure` (PAR-4).
     Fx0612,
+    /// Catching an unwind instead of isolating a task (D5).
+    Fx0701,
+    /// A Result ignored in statement position (D5).
+    Fx0702,
     /// Clause syntax, contextual result, loop placement, and bounds (toolchain macros).
     Fx0804,
     Fx0805,
@@ -132,13 +144,19 @@ impl Code {
         Code::Fx0517,
         Code::Fx0518,
         Code::Fx0520,
+        Code::Fx0601,
+        Code::Fx0602,
         Code::Fx0603,
+        Code::Fx0604,
+        Code::Fx0605,
         Code::Fx0606,
         Code::Fx0607,
         Code::Fx0608,
         Code::Fx0610,
         Code::Fx0611,
         Code::Fx0612,
+        Code::Fx0701,
+        Code::Fx0702,
         Code::Fx0804,
         Code::Fx0805,
         Code::Fx0806,
@@ -179,13 +197,19 @@ impl Code {
             Code::Fx0517 => "FX0517",
             Code::Fx0518 => "FX0518",
             Code::Fx0520 => "FX0520",
+            Code::Fx0601 => "FX0601",
+            Code::Fx0602 => "FX0602",
             Code::Fx0603 => "FX0603",
+            Code::Fx0604 => "FX0604",
+            Code::Fx0605 => "FX0605",
             Code::Fx0606 => "FX0606",
             Code::Fx0607 => "FX0607",
             Code::Fx0608 => "FX0608",
             Code::Fx0610 => "FX0610",
             Code::Fx0611 => "FX0611",
             Code::Fx0612 => "FX0612",
+            Code::Fx0701 => "FX0701",
+            Code::Fx0702 => "FX0702",
             Code::Fx0804 => "FX0804",
             Code::Fx0805 => "FX0805",
             Code::Fx0806 => "FX0806",

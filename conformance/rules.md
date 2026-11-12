@@ -173,12 +173,12 @@ already implements them; `--tide-print-codes` names the enforced subset.
 | REF-0406 | D4; ref §5.1 | Impl bounds use parameters, their projections, concrete types, or strict subterms of self/trait arguments | checker | FX0406 |
 | REF-0407 | D3; ref §5.1 | No expanding cycles between (function, type parameter) nodes: parameter flow under a constructor must not cycle; trait edges require selected local impls; unresolved aliases and rustc instance-depth errors alone prove no growth | checker | FX0407 |
 | REF-0408 | D3; ref §5.1 | One inherent method per name per type | checker | FX0408 |
-| REF-0601 | D8; ref §7 | No async/await, Future or Pin | checker | FX0601 |
-| REF-0602 | D8; ref §7.1 | No unstructured thread or runtime spawning | both | FX0602 |
-| REF-0604 | D8; ref §7.4 | Mutex habits use Shared and its scoped closures | both | FX0604 |
-| REF-0605 | D8; ref §7.2 | No select!; use deadline/cancellation operations | both | FX0605 |
+| REF-0601 | D8; ref §7 | No async/await or core future/pin APIs; core task machinery keeps FX0520 | checker | FX0601 |
+| REF-0602 | D8; ref §7.1 | Use Tasks scopes instead of Rust thread spawn, Builder, thread scopes, or tokio::spawn | both | FX0602 |
+| REF-0604 | D8; ref §7.4 | Mutex/RwLock habits use Shared and its scoped closures | both | FX0604 |
+| REF-0605 | D8; ref §7.2 | No user-written select!, regardless of provider; use one enum channel or deadline/cancellation operations | both | FX0605 |
 | REF-0701 | D5; ref §9 | No catch_unwind; isolate a task with spawn_isolated | both | FX0701 |
-| REF-0702 | D5; ref §9 | A Result in statement position cannot be ignored | checker | FX0702 |
+| REF-0702 | D5; ref §9 | A Result in expression statement position (including `Result<(), Infallible>` and macro results) cannot be ignored; `let _ =` discards explicitly | checker | FX0702 |
 | REF-0902 | D11; ref §11 | Each unsafe block, with or without the grant, needs a SAFETY line comment directly above the block or its statement; unsafe impls need none | checker | FX0902 |
 | REF-0910 | D12; ref §12.1 | An out-of-line module needs its source file | both | FX0910 |
 | REF-0912 | D12; ref §12.2 | No user extern crate items | checker | FX0912 |

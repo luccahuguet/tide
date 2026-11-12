@@ -4,6 +4,24 @@ use rustc_span::Symbol;
 
 use super::*;
 
+/// A recovered source can name an unavailable runtime without inventing a rustc DefId.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Source {
+    Def(DefId),
+    Tokio,
+    TokioSpawn,
+}
+
+impl Source {
+    fn is_module(self, tcx: TyCtxt<'_>) -> bool {
+        match self {
+            Self::Def(def) => tcx.def_kind(def) == DefKind::Mod,
+            Self::Tokio => true,
+            Self::TokioSpawn => false,
+        }
+    }
+}
+
 impl<'a, 'tcx> Walk<'a, 'tcx> {
     fn is_root(&self, ty: Ty<'tcx>) -> bool {
         matches!(ty.peel_refs().kind(), ty::Adt(adt, _) if self.key(adt.did()) == "tide_std::Root")
@@ -303,7 +321,14 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 };
                 let def = match path.res {
                     Res::Def(DefKind::Struct | DefKind::Enum | DefKind::TyAlias, def) => def,
-                    Res::Err => self.rust_path(path.segments, id, &mut FxHashSet::default())?,
+                    Res::Err => {
+                        let Source::Def(def) =
+                            self.source_path(path.segments, id, &mut FxHashSet::default())?
+                        else {
+                            return None;
+                        };
+                        def
+                    }
                     _ => return None,
                 };
                 if !matches!(
@@ -324,7 +349,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
     }
 
-    /// One recovery path for missing std items, including aliases and imports.
+    /// One recovery path for missing std/runtime items, including aliases and imports.
     pub(super) fn authority_unresolved(&mut self, path: &hir::Path<'tcx>, id: HirId) {
         if !self.user_written(path.span) {
             return;
@@ -336,17 +361,19 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             self.denied_key("thread_rng".into(), path.span);
         }
-        if let Some(def) = self.rust_path(path.segments, id, &mut FxHashSet::default()) {
-            self.denied_key(self.key(def), path.span);
+        match self.source_path(path.segments, id, &mut FxHashSet::default()) {
+            Some(Source::Def(def)) => self.denied_key(self.key(def), path.span),
+            Some(Source::TokioSpawn) => self.denied_key("tokio::spawn".into(), path.span),
+            _ => {}
         }
     }
 
-    fn rust_path(
+    fn source_path(
         &self,
         segments: &[hir::PathSegment<'tcx>],
         id: HirId,
         seen: &mut FxHashSet<LocalDefId>,
-    ) -> Option<DefId> {
+    ) -> Option<Source> {
         let (index, mut current) = segments
             .iter()
             .enumerate()
@@ -356,27 +383,29 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 };
                 self.rust_counterpart(def)
                     .or_else(|| def.is_local().then_some(def))
-                    .map(|def| (i, def))
+                    .map(|def| (i, Source::Def(def)))
             })
             .or_else(|| {
                 let index = segments.iter().position(|s| s.ident.name != kw::PathRoot)?;
                 if segments[index].ident.name == sym::std {
-                    return Some((index, self.crates.rust_std()?.as_def_id()));
+                    return Some((index, Source::Def(self.crates.rust_std()?.as_def_id())));
                 }
-                self.imported_type(segments[index].ident.name, id, seen)
+                self.imported_name(segments[index].ident.name, id, seen)
                     .map(|def| (index, def))
             })?;
         for segment in &segments[index + 1..] {
             let name = segment.ident.name;
-            current = if self.tcx.def_kind(current) == DefKind::Mod {
+            current = if current.is_module(self.tcx) {
                 self.imported_member(current, name, seen).flatten()?
-            } else if matches!(self.tcx.def_kind(current), DefKind::Struct | DefKind::Enum) {
-                self.tcx.inherent_impls(current).iter().find_map(|&imp| {
+            } else if let Source::Def(def) = current
+                && matches!(self.tcx.def_kind(def), DefKind::Struct | DefKind::Enum)
+            {
+                self.tcx.inherent_impls(def).iter().find_map(|&imp| {
                     self.tcx
                         .associated_items(imp)
                         .in_definition_order()
                         .find(|item| item.name() == name)
-                        .map(|item| item.def_id)
+                        .map(|item| Source::Def(item.def_id))
                 })?
             } else {
                 return None;
@@ -388,10 +417,16 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// Prefer real module members before recovering missing imports.
     fn imported_member(
         &self,
-        module: DefId,
+        module: Source,
         name: Symbol,
         seen: &mut FxHashSet<LocalDefId>,
-    ) -> Option<Option<DefId>> {
+    ) -> Option<Option<Source>> {
+        if module == Source::Tokio {
+            return (name.as_str() == "spawn").then_some(Some(Source::TokioSpawn));
+        }
+        let Source::Def(module) = module else {
+            return None;
+        };
         let children = match module.as_local() {
             Some(local) => self.tcx.module_children_local(local),
             None => self.tcx.module_children(module),
@@ -399,25 +434,25 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         children
             .iter()
             .find_map(|child| match child.res {
-                Res::Def(_, def) if child.ident.name == name => Some(Some(def)),
+                Res::Def(_, def) if child.ident.name == name => Some(Some(Source::Def(def))),
                 _ => None,
             })
             .or_else(|| {
                 module.as_local().and_then(|local| {
-                    self.import_in_scope(name, self.tcx.local_def_id_to_hir_id(local), seen)
+                    self.import_in_scope(name, self.tcx.local_def_id_to_hir_id(local), None, seen)
                 })
             })
     }
 
-    fn imported_type(
+    fn imported_name(
         &self,
         name: Symbol,
         id: HirId,
         seen: &mut FxHashSet<LocalDefId>,
-    ) -> Option<DefId> {
+    ) -> Option<Source> {
         for (scope, node) in self.tcx.hir_parent_iter(id) {
             if lexical_scope(node) {
-                if let Some(resolved) = self.import_in_scope(name, scope, seen) {
+                if let Some(resolved) = self.import_in_scope(name, scope, Some(id), seen) {
                     return resolved;
                 }
                 if !matches!(node, hir::Node::Block(_)) {
@@ -425,7 +460,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 }
             }
         }
-        None
+        (name.as_str() == "tokio").then_some(Source::Tokio)
     }
 
     /// Some(None) is a shadowing binding whose source cannot be recovered.
@@ -433,8 +468,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         &self,
         name: Symbol,
         scope: HirId,
+        origin: Option<HirId>,
         seen: &mut FxHashSet<LocalDefId>,
-    ) -> Option<Option<DefId>> {
+    ) -> Option<Option<Source>> {
         let imports = self
             .tcx
             .hir_crate_items(())
@@ -446,6 +482,10 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 let hir::ItemKind::Use(path, kind) = item.kind else {
                     return None;
                 };
+                // A use's source resolves outside the binding that use introduces.
+                if origin == Some(item.hir_id()) {
+                    return None;
+                }
                 (self
                     .tcx
                     .hir_parent_iter(item.hir_id())
@@ -461,7 +501,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             if named.next().is_some() || !seen.insert(def) {
                 return Some(None);
             }
-            let result = self.rust_path(path.segments, id, seen);
+            let result = self.source_path(path.segments, id, seen);
             seen.remove(&def);
             return Some(result);
         }
@@ -471,8 +511,8 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 continue;
             }
             let found = self
-                .rust_path(path.segments, id, seen)
-                .filter(|module| self.tcx.def_kind(*module) == DefKind::Mod)
+                .source_path(path.segments, id, seen)
+                .filter(|source| source.is_module(self.tcx))
                 .and_then(|module| self.imported_member(module, name, seen));
             seen.remove(&def);
             if let Some(found) = found {
@@ -487,6 +527,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     fn denied_key(&mut self, key: String, span: Span) {
         if let Some(rule) = policy::lookup(&key).filter(|r| r.verdict == Verdict::Deny) {
+            let note = if rule.code == Code::Fx0501 || key == "tokio::spawn" {
+                ""
+            } else {
+                " (Tide's std does not export it)"
+            };
             self.reject(
                 span,
                 Rejection {
@@ -494,11 +539,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     code: rule.code,
                     help: rule.help,
                 },
-                if rule.code == Code::Fx0501 {
-                    ""
-                } else {
-                    " (Tide's std does not export it)"
-                },
+                note,
             );
         }
     }

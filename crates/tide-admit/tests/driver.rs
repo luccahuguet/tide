@@ -1170,3 +1170,107 @@ fn ambient_operations_use_the_closed_policy_code() {
         );
     }
 }
+
+#[test]
+fn concurrency_and_error_rules_reject_with_their_own_codes() {
+    for (name, source, expected) in [
+        ("async", "pub async fn run() {}", "FX0601"),
+        (
+            "future",
+            "pub fn run(_: impl core::future::Future<Output = ()>) {}",
+            "FX0601",
+        ),
+        ("pin", "pub fn run(_: core::pin::Pin<&u8>) {}", "FX0601"),
+        (
+            "spawn",
+            "pub fn run() { let _ = std::thread::spawn(|| ()); }",
+            "FX0602",
+        ),
+        (
+            "mutex",
+            "pub fn run() { let _ = std::sync::Mutex::new(1); }",
+            "FX0604",
+        ),
+        ("select", "pub fn run() { select! {}; }", "FX0605"),
+        (
+            "catch",
+            "pub fn run() { let _ = std::panic::catch_unwind(|| ()); }",
+            "FX0701",
+        ),
+        (
+            "result",
+            "#[allow(unused_must_use)] pub fn run() { Ok::<(), core::convert::Infallible>(()); }",
+            "FX0702",
+        ),
+    ] {
+        let (status, stderr) = admit(&format!("habits-{name}"), source, &[]);
+        assert_eq!(status, 1, "{name}: {stderr}");
+        assert!(
+            stderr.contains(&format!("error: {expected}:")),
+            "{name}: {stderr}"
+        );
+        assert!(
+            !stderr.contains(&format!("warning: {expected}:")),
+            "{name}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn concurrency_select_catches_resolved_and_renamed_macros() {
+    for (name, source) in [
+        (
+            "resolved",
+            "macro_rules! select { () => { () } } pub fn run() { select!(); }",
+        ),
+        (
+            "renamed",
+            "macro_rules! branch { () => { () } } use branch as select; pub fn run() { select!(); }",
+        ),
+    ] {
+        let (status, stderr) = admit(&format!("habits-select-{name}"), source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("error: FX0605:"), "{stderr}");
+        assert!(!stderr.contains("FX0103:"), "{stderr}");
+    }
+}
+
+#[test]
+fn concurrency_tokio_module_imports_keep_the_spawn_diagnostic() {
+    for (name, source, line) in [
+        (
+            "alias",
+            "use tokio as runtime;\npub fn run() { let _ = runtime::spawn(|| 1); }",
+            2,
+        ),
+        (
+            "reexport",
+            "mod exports { pub use tokio as runtime; }\npub fn run() { let _ = exports::runtime::spawn(|| 1); }",
+            2,
+        ),
+        (
+            "reimport",
+            "mod exports { pub use tokio as runtime; }\nuse exports::runtime as relay;\npub fn run() { let _ = relay::spawn(|| 1); }",
+            3,
+        ),
+        (
+            "reexport-name",
+            "mod exports { pub use tokio; }\npub fn run() { let _ = exports::tokio::spawn(|| 1); }",
+            2,
+        ),
+        (
+            "import-name",
+            "use tokio;\npub fn run() { let _ = tokio::spawn(|| 1); }",
+            2,
+        ),
+    ] {
+        let (status, stderr) = admit(&format!("habits-tokio-{name}"), source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(
+            fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+                .starts_with(&format!("lib.rs:{line}:"))
+                && diagnostic.contains("error: FX0602:")),
+            "{name}: {stderr}"
+        );
+    }
+}
