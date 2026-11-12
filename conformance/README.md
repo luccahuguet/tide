@@ -210,6 +210,26 @@ checkpoints, shields and isolation through the driver on both runtimes in debug 
 `tasks/limit_deadlock.rs` also executes against production: its simulated recursive limit
 waits abort after reporting every blocked task's wait kind and source span. These use the
 same global report as sleeps, joins, and channel waits.
+The stub includes production `par.rs` for `join` and the prelude `ParSlice`
+methods `par_map`, `par_for`, and stable `par_sort`. `tasks/parallel_regions.rs`
+executes all four through the driver on real and simulated runtimes in debug and
+release, including nested regions, cancellation and regions inside `Shared::with`.
+Driver tests check panic sink prefixes and Pure rejections; runtime tests force
+helper threads even on a one-core host, check lowest-index panic selection,
+per-call block stopping, stable owned sorting, nested sink ordering and simulation
+thread identity. The scheduler uses budgeted scoped threads; the pool and `par-threads`
+remain planned. Buffers are unbounded and losing host panic hooks are unsuppressed.
+Stop flags are per call; propagation across calls is partial. `join` and nested
+regions run an already spawned right branch to completion after a left panic. A
+right branch that never terminates diverges, and whether the region panics or
+diverges can depend on machine load.
+Every fork finding a free token spawns an OS thread, so fine-grained recursive
+`join` is slow until the planned pool. Sort forks only for ranges of at least
+4096 elements; tests check the same sorted result and ordered comparator trace
+with one and four workers below, at and above that cutoff. Simulated panic tests
+assert the sink prefix on `sim.records()`. Helper-thread panic metadata is not
+returned to the property runner: on the thread runtime, scheduling can turn a
+`requires` discard into a failure. Simulation is unaffected by that metadata gap.
 The stub includes production `sync/mpsc.rs` for bounded/unbounded channels,
 sender clone, blocking/nonblocking operations, deadline receives, iteration,
 and cancellation-aware error enums. `tasks/channels.rs` executes every exposed

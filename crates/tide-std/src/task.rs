@@ -717,6 +717,15 @@ impl Drop for Simulation {
     }
 }
 
+// CURRENT's simulation task identity is the sole owner of parallel-region mode.
+pub(crate) fn is_simulating() -> bool {
+    CURRENT.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|context| context.task.is_some())
+    })
+}
+
 // Sinks never hand off the baton. Format before entering here, outside the runtime lock.
 pub(crate) fn record_sink(stream: &str, message: &str, span: Span) -> bool {
     let Some(context) = Context::current().filter(|context| context.task.is_some()) else {

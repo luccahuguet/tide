@@ -1,0 +1,24 @@
+Model: gpt-6.1-sol · Effort: high · Date: 2026-11-12
+
+Verdict: request_changes
+
+1. **Blocking — result cleanup can replace the winning panic and evade PANIC-2.**
+
+   Evidence: `crates/tide-std/src/par.rs:210-214` explicitly drops both the remaining block outcomes and the earlier successful results before `resume_unwind(payload)`. Likewise, `crates/tide-std/src/par.rs:81-85` drops the right outcome before resuming the left panic. Those drops can execute user code while the caller is no longer unwinding.
+
+   Concrete case: define a Pure, Send unit struct `Bomb` whose `Drop` does `panic!("cleanup")`, then evaluate `[0, 1].par_map(|i| { if *i == 1 { panic!("winner"); } Bomb })`. The two elements always occupy separate blocks (`block_size(2, ...) == 1`). Block 0's `Vec<Bomb>` survives in the completed outcomes; block 1's panic is caught. During ordered assembly, `drop(values)` panics with `"cleanup"` before `"winner"` is resumed. The original panic is lost, and an enclosing `spawn_isolated` can contain the replacement panic. Sequential collection would drop the earlier result during unwinding and abort on the second panic, as `design/reference.md:807-810` and PANIC-2 (`design/03-authority-concurrency.md:518-520`) require. This case also occurs in simulation; it needs no custom panic payload, unsafe code, or non-Pure capture. A threaded `join(|| panic!("winner"), || Bomb)` has the corresponding problem at `drop(right)`.
+
+   Required fix: retain the winning unwind's cleanup semantics for user values. Either let these values drop while resuming the winner, or explicitly catch cleanup failures and abort under PANIC-2; do not allow a cleanup panic to replace the selected payload. Apply the same policy to successful values inside discarded later outcomes, not only `values`. Keep ordinary competing branch panics selecting the lowest index. Add timeout-bound subprocess regressions for the map case on both runtimes and the join case with a forced helper; assert process abort, since a normal should-panic test would accept the current wrong behavior. Existing `par/tests.rs:62-162` covers ordinary competing panics, and `par/tests.rs:221-255` covers comparator-panic ownership, but neither exercises panicking result cleanup.
+
+The direction and ownership are sound; approval needs the cleanup fix and its regressions, followed by re-check of this finding. Confidence: high in this control-flow defect; the rest of the review is inspection-based.
+
+Review coverage and decisions:
+
+- Reviewed `git diff dde6c57..99f5a5f`, all touched files, connected sink/task/checker owners, the requested beads and binding comments, reference §8, D9, PAR/SINK rules, and the implementer/research reports. HEAD remained `99f5a5f01f5150698b9ca25c6adf7313eaf47aae`, with a clean worktree. Diff SHA-256: `9dc2c9538bca82c3c1d1f174d3e9ebc5b298a43b0611e91ac98a44860d5f6138`.
+- Signatures, one-line prelude export, production/stub inclusion and existing Pure diagnostic ownership match the recorded choices. Helpers carry no task registration, CURRENT identity or limit slot; the mode accessor uses the existing simulation identity. No new scheduler/wait owner or dependency is introduced.
+- The sort interpretation is acceptable: D9 defines the split/merge structure and its sequential traversal. The chosen two-finger merge necessarily selects its next comparison from preceding results; decision 4's length-only comparison wording cannot literally describe that algorithm. Fixed midpoint splits, singleton leaves and the owned merge keep the algorithm independent of worker count and host sort revisions. The permutation is applied solely through safe swaps; comparator unwinding leaves all owned elements present.
+- The bounded scoped fork, retained-closure spawn fallback, indexed block claiming, sort cutoff and nested buffering otherwise fit the adopted mechanisms. Singleton leaves and scoped-thread startup have an acknowledged performance cost, without a performance acceptance threshold. The sink changes retain formatting-before-emission, stream identity, original caller spans, and routing through the existing host/simulator owner outside captures. Deferred pool/configuration work, unbounded buffers and losing host panic-hook output are documented.
+- Independently checked research byte equality after its added header: identical. `git diff --check dde6c57..99f5a5f` passed. No held-out directory was opened or searched.
+
+Not checked: no builds, executions or focused probes ran; the review occurred during today's 09:35 UTC pre-hold. The implementer's focused-check results were inspected, not independently reproduced. Full workspace/conformance proof remains with the coordinator, followed by Opus only after a Codex-clean candidate. Risk: the current candidate mishandles panicking result destructors as finding 1 describes.
+DONE

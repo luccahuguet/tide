@@ -44,7 +44,8 @@ pub mod __error {
 /// The sinks that `print!` and its kin write to (03 §2.4). Every call evaluates the arguments and
 /// formats the whole record before writing any of it (SINK-3), so the destination never decides
 /// which formatting impls run, and a panic in one propagates with nothing written. The record is
-/// then written whole under its stream's lock and flushed, so records keep program order, a
+/// buffered inside a parallel branch, then appended in branch order; otherwise it is written
+/// whole under its stream's lock and flushed, so records keep program order, a
 /// record a formatting impl prints comes before the record it is part of, and none waits in a
 /// buffer at exit. As in Rust, a formatting impl that returns an error panics. A sink returns `()`
 /// and never fails (SINK-1): when stdout is a closed pipe, the process exits quietly with status
@@ -54,29 +55,74 @@ pub mod __error {
 /// scheduling point or host write.
 #[doc(hidden)]
 pub mod __sink {
+    use std::cell::RefCell;
     use std::fmt::{self, Arguments};
     use std::io::{self, Write};
 
-    #[track_caller]
-    pub fn out(args: Arguments<'_>, newline: bool) {
-        let record = format(args, newline);
-        if crate::task::record_sink("out", &record, std::panic::Location::caller()) {
+    pub(crate) struct Record {
+        pub(crate) stream: &'static str,
+        pub(crate) message: String,
+        span: &'static std::panic::Location<'static>,
+    }
+    thread_local! {
+        static BUFFER: RefCell<Option<Vec<Record>>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn capture<T>(f: impl FnOnce() -> T) -> (std::thread::Result<T>, Vec<Record>) {
+        let previous = BUFFER.with(|slot| slot.replace(Some(Vec::new())));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        let records = BUFFER.with(|slot| slot.replace(previous)).unwrap();
+        (result, records)
+    }
+
+    pub(crate) fn append(records: Vec<Record>) {
+        for record in records {
+            emit(record);
+        }
+    }
+
+    fn emit(record: Record) {
+        let record = BUFFER.with(|slot| {
+            if let Some(buffer) = slot.borrow_mut().as_mut() {
+                buffer.push(record);
+                None
+            } else {
+                Some(record)
+            }
+        });
+        let Some(record) = record else {
+            return;
+        };
+        if crate::task::record_sink(record.stream, &record.message, record.span) {
             return;
         }
-        if let Err(e) = write(io::stdout().lock(), &record)
-            && e.kind() == io::ErrorKind::BrokenPipe
-        {
-            std::process::exit(141);
+        if record.stream == "out" {
+            if let Err(e) = write(io::stdout().lock(), &record.message)
+                && e.kind() == io::ErrorKind::BrokenPipe
+            {
+                std::process::exit(141);
+            }
+        } else {
+            let _ = write(io::stderr().lock(), &record.message);
         }
     }
 
     #[track_caller]
+    pub fn out(args: Arguments<'_>, newline: bool) {
+        emit(Record {
+            stream: "out",
+            message: format(args, newline),
+            span: std::panic::Location::caller(),
+        });
+    }
+
+    #[track_caller]
     pub fn err(args: Arguments<'_>, newline: bool) {
-        let record = format(args, newline);
-        if crate::task::record_sink("err", &record, std::panic::Location::caller()) {
-            return;
-        }
-        let _ = write(io::stderr().lock(), &record);
+        emit(Record {
+            stream: "err",
+            message: format(args, newline),
+            span: std::panic::Location::caller(),
+        });
     }
 
     /// The record; `fmt::format` panics when a formatting impl returns an error.
@@ -116,6 +162,7 @@ macro_rules! declare_prelude {
                 pub use std::error::Error;
                 pub use crate::Root;
                 pub use crate::marker::Pure;
+                pub use crate::par::ParSlice;
                 pub use crate::tide;
                 $($extra)*
             }

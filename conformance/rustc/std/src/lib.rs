@@ -9,7 +9,8 @@
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
 //! (`task.rs`), `Shared` (`sync.rs`), seeded simulations and their runner
-//! (`sim.rs`), `std::time` (`time.rs`), and executable contracts (`contract.rs`). It declares
+//! (`sim.rs`), parallel regions (`par.rs`), `std::time` (`time.rs`), and executable
+//! contracts (`contract.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
 //! types the same definitions and paths in both crates.
 //! Beyond them it defines only the items and methods the trial's programs and
@@ -44,7 +45,6 @@ crate::declare_prelude! {
     pub use crate::{__log as error, __log as info};
     pub use crate::dbg;
     pub use crate::Secret;
-    pub use crate::par::ParSlice; // stands in for inherent slice methods (reference 8)
     pub use crate::test::test;
     pub use crate::test::sim_test;
     pub use conformance_macros::{pure, trusted_pure};
@@ -238,44 +238,9 @@ pub mod arena {
     }
 }
 
-pub mod par {
-    use crate::marker::Pure;
-
-    /// 03 §8.1 (PAR-5). GUESS: the result types' `Send` bounds; 03 gives only
-    /// the closures' bounds.
-    pub fn join<A, B, RA: Send, RB: Send>(a: A, b: B) -> (RA, RB)
-    where
-        A: FnOnce() -> RA + Pure + Send,
-        B: FnOnce() -> RB + Pure + Send,
-    {
-        unimplemented!()
-    }
-
-    /// Reference 8 makes these inherent slice methods; a stub std cannot add
-    /// inherent methods to `[T]`, so a prelude trait stands in.
-    pub trait ParSlice<T> {
-        fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>
-        where
-            T: Pure + Sync;
-        fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)
-        where
-            T: Pure + Send;
-    }
-    impl<T> ParSlice<T> for [T] {
-        fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send + Sync) -> Vec<U>
-        where
-            T: Pure + Sync,
-        {
-            unimplemented!()
-        }
-        fn par_for(&mut self, f: impl Fn(&mut T) + Pure + Send + Sync)
-        where
-            T: Pure + Send,
-        {
-            unimplemented!()
-        }
-    }
-}
+// Production owns the signatures and execution of every parallel region.
+#[path = "../../../../crates/tide-std/src/par.rs"]
+pub mod par;
 
 pub mod sim {
     include!("../../../../crates/tide-std/src/sim.rs");

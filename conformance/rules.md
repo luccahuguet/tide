@@ -99,6 +99,7 @@ not cite is a best mapping that a case must confirm.
 | GLOBAL-3 | §2.2, 03:307 | Safe code has no thread-locals or task-locals | checker | `thread_local!` FX0502 |
 | GLOBAL-4 | §2.2, 03:310 | Raw pointer types, pointer-to-integer casts, `addr`, `{:p}`, and a function pointer's address observers only under the `unsafe` grant; under it, an address counts as a `usize` in D3's lossless rule | checker | FX0520 (via ADMIT-1; ref:956); FX0301 for a lossy address cast |
 | GLOBAL-6 | §2.2, 03:320 | `Arc` and `sync::Weak` are not `Pure`, take `&Tasks` to create, and lack count observers | both | `Pure` part: needing rule's code or FX0517; FX0505; E0599 / E0061 |
+| SINK-4 | §2.4, 03 SINK-4 | Within a task, records appear in program order; parallel branches' buffers are appended in branch order at the join | runtime | — |
 | SINK-8 | §2.4, 03:424 | `dbg!` is an error in release and CI profiles; `print!` in a library and printing in a `with` closure are lints | checker | FX0507 (error); FX0508, FX0607 (lints) |
 | SINK-10 | §2.4, 03:435 | `Secret<T>` has no `Debug`/`Display`, so formatting one is a type error | rustc | E0277 |
 | ADMIT-1 | §2.5, 03:446 | Only listed `core`/`alloc` items and std inherent methods are admitted (paths, methods, operators, derefs, selected impls, macro expansions), and `#![no_std]` is not | checker | FX0520; FX0517 for `io::Error` conversions (03:464) |
@@ -123,6 +124,8 @@ not cite is a best mapping that a case must confirm.
 | PAR-7 | §8.1, 03:1429 | Parallel closures capture shared data (a `&T`, borrowed or moved in) only if `T: Pure + Sync`, reported in place of PAR-5's and PAR-6's code; `&mut` captures must be disjoint | both | FX0611 (03:1430); E0277 / E0524 |
 | PAR-4 | §8.1, 03:1435 | `par_map` needs `T: Pure + Sync`; `par_for`, `par_chunks_mut`, and `par_sort` need `T: Pure + Send` | both | FX0612; E0277 for `Send`/`Sync` |
 | PAR-3 | §8.2, 03:1465 | Allowlist part: float sign/bit observers and math methods are outside the allowlist | checker | FX0520 (via ADMIT-1) |
+| PAR-1 | §8.2, 03 PAR-1 | When no branch panics, a parallel call's values, writes through `&mut`, and sink output equal sequential evaluation with branches left to right | runtime | — |
+| PAR-2 | §8.2, 03 PAR-2 | The panic first in sequential order propagates in the enclosing task, and buffered sink output from branches after it is discarded | runtime | — |
 
 ## 04-contracts.md
 
@@ -180,7 +183,7 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - SINK-1 (03:377): runtime/library semantics of sinks.
 - SINK-2 (03:382): runtime sink configuration and defaults.
 - SINK-3 (03:387): runtime argument evaluation.
-- SINK-4 (03:394): runtime output ordering.
+- SINK-4 (03 §2.4): runtime output ordering; `tasks/parallel_regions.rs` and driver panic tests exercise ordered parallel buffers.
 - SINK-5 (03:412): runtime loss and backpressure.
 - SINK-6 (03:420): simulator trace.
 - SINK-7 (03:422): output elision under memoization.
@@ -201,8 +204,8 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - TASK-6 (03 §6.2): runtime shielding; `tasks/task_controls.rs` executes outer-cause hiding and an inner deadline.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
-- PAR-1 (03:1445): runtime determinism.
-- PAR-2 (03:1453): runtime panic order.
+- PAR-1 (03 §8.2): runtime determinism; `tasks/parallel_regions.rs` executes join/map/for/sort on both runtimes in debug and release through the driver.
+- PAR-2 (03 §8.2): runtime panic order; driver tests check panic propagation and sink prefixes, and production runtime tests force competing panics.
 - PAR-3 (03:1461): float codegen and the math library. Only its allowlist part is a row above.
 - SUSP-1 (03:1357): compile-time may-suspend classification that rejects nothing.
 - SUSP-2 (03:1368): compile-time per-instance classification that rejects nothing.

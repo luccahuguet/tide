@@ -645,6 +645,123 @@ fn shared_sets_execute_on_threads_and_under_simulation() {
 }
 
 #[test]
+fn parallel_regions_execute_on_both_runtimes_in_debug_and_release() {
+    let dir = package(
+        "parallel-regions",
+        include_str!("../../../conformance/cases/tasks/parallel_regions.rs"),
+    );
+    for profile in ["debug", "release"] {
+        checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+        let out = checked(Command::new("timeout").arg("30").arg(dir.join("out/demo")));
+        assert_eq!(
+            out.stdout,
+            b"left\nright\nmap 0\nmap 1\nmap 2\nmap 3\nfor 0\nfor 3\nfor 6\nfor 9\n"
+        );
+        assert!(out.stderr.is_empty(), "{}", stderr(&out));
+        checked(driver(&dir).args([
+            "--crate-type=lib",
+            "--test",
+            &format!("--tide-profile={profile}"),
+        ]));
+        let out = checked(
+            Command::new("timeout")
+                .arg("60")
+                .arg(dir.join("out/demo-test")),
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("4 passed"),
+            "{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+    }
+}
+
+#[test]
+fn parallel_panics_keep_only_the_sequential_sink_prefix() {
+    for (name, body, expected) in [
+        (
+            "join",
+            "std::par::join(|| { println!(\"left\"); panic!(\"winner\") }, || { println!(\"right\"); panic!(\"loser\") });",
+            "left\n",
+        ),
+        (
+            "map",
+            "let _ = [0, 1, 2, 3].par_map(|i| { println!(\"{i}\"); if *i == 1 { panic!(\"winner\"); } *i });",
+            "0\n1\n",
+        ),
+        (
+            "for",
+            "[0, 1, 2, 3].par_for(|i| { println!(\"{i}\"); if *i == 1 { panic!(\"winner\"); } });",
+            "0\n1\n",
+        ),
+    ] {
+        for simulated in [false, true] {
+            let setup = if simulated {
+                "let _sim = Root::sim(7);"
+            } else {
+                ""
+            };
+            let dir = package(
+                &format!("parallel-panic-{name}-{simulated}"),
+                &format!("#[tide::main] fn main() {{ {setup} {body} }}"),
+            );
+            for profile in ["debug", "release"] {
+                checked(driver(&dir).arg(format!("--tide-profile={profile}")));
+                let out = Command::new("timeout")
+                    .arg("30")
+                    .arg(dir.join("out/demo"))
+                    .stdin(Stdio::null())
+                    .output()
+                    .unwrap();
+                assert_eq!(out.status.code(), Some(101), "{}", stderr(&out));
+                assert_eq!(out.stdout, if simulated { "" } else { expected }.as_bytes());
+                assert!(stderr(&out).contains("winner"), "{}", stderr(&out));
+            }
+        }
+    }
+}
+
+#[test]
+fn parallel_pure_rejections_use_the_existing_owner() {
+    for (name, source, code) in [
+        (
+            "join",
+            "pub fn run(clock: std::time::Clock) { std::par::join(move || clock.now(), || 1); }",
+            "FX0610",
+        ),
+        (
+            "capture",
+            "pub fn run(clock: &std::time::Clock) { [1].par_map(|_| clock.now()); }",
+            "FX0611",
+        ),
+        (
+            "for",
+            "pub fn run(clock: std::time::Clock) { [1].par_for(move |_| { clock.now(); }); }",
+            "FX0610",
+        ),
+        (
+            "elements",
+            "pub fn run(xs: &[std::time::Clock]) { xs.par_map(|_| 1); }",
+            "FX0612",
+        ),
+        (
+            "sort",
+            include_str!("../../../conformance/cases/tasks/par_sort_reject.rs"),
+            "FX0612",
+        ),
+    ] {
+        let dir = package(&format!("parallel-reject-{name}"), source);
+        let out = driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+        assert!(stderr(&out).contains(code), "{}", stderr(&out));
+    }
+}
+
+#[test]
 fn collections_execute_with_fixed_and_capability_seeded_keys() {
     let dir = package(
         "collections",

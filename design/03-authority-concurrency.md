@@ -1821,6 +1821,30 @@ When no branch panics, scheduling is unobservable, so the policy can change
 freely. Under the simulator, parallel regions run sequentially, branches in
 sequential order (D9), so a seed replays exactly even when a branch panics.
 
+**Implementation status (fx-iob).** Production std and conformance share
+`par::join` and the prelude `ParSlice<T>` methods `par_map`, `par_for`, and
+`par_sort(&mut self) where T: Ord + Pure + Send`; `par_chunks_mut` remains
+planned. The scheduler is partial: owned scoped threads share a process-wide
+helper budget sized once by `available_parallelism()`, rather than the pool
+above; `par-threads` stays planned. Helpers are not tasks, do not inherit task
+context, and consume no `Tasks::limit` slot. Indexed blocks are claimed in order;
+a panic stops unclaimed blocks, with already claimed lower blocks allowed to
+finish. Stop flags are per call: `join` and nested regions run an already spawned
+right branch to completion after a left panic. A right branch that never
+terminates diverges, and whether the region panics or diverges can depend on
+machine load; this part of PAR-2 remains partial. Every fork finding a free token
+spawns an OS thread, so fine-grained recursive `join` is slow until the planned
+pool. Simulation mode comes from the current runtime's simulation identity,
+with no separate flag and no region trace events. Sorting uses fixed midpoint
+splits to singleton leaves and an owned stable two-finger merge whose index
+permutation is applied by swaps; it uses no host sort algorithm. Only ranges of
+at least 4096 elements fork; smaller ranges follow the same tree inline. Branch
+buffers are unbounded; losing branches' host panic-hook output remains unsuppressed.
+Helper-thread panic metadata is not returned to the property runner: on the
+thread runtime, scheduling can turn a `requires` discard into a failure.
+Simulation executes inline and is unaffected by that metadata gap.
+The recorded choices and evidence are in `research/23-parallel-regions.md`.
+
 ## 9. Deterministic Simulation
 
 ### 9.1 Engines

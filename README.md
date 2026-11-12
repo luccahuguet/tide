@@ -272,6 +272,25 @@ with `is_cancelled()` and `SendError::into_inner()`; deadline receives also
 report `Timeout`. Disconnect ends iteration. Simulation records payload-free
 `chan` events and reports blocked channel waits through the shared deadlock report.
 
+`std::par::join` and the prelude's `ParSlice` methods `par_map`, `par_for`, and
+stable `par_sort` execute authority-free work with owned scoped helpers. Results
+and sink output follow sequential order; when branches terminate, the lowest-index
+panic propagates and later sink buffers are discarded. Simulation executes on the
+calling task in order, without region scheduling events. Helpers share a process-wide core budget
+and take no task-limit slots. Scheduling is partial against 03 §8.4: the
+work-stealing pool and `par-threads` setting remain planned. Branch buffers are
+unbounded, and losing branches' host panic-hook output is not suppressed.
+Stop flags are per call; propagation across calls is partial. `join` and nested
+regions run an already spawned right branch to completion after a left panic. A
+right branch that never terminates diverges, and whether the region panics or
+diverges can depend on machine load.
+Every fork finding a free token spawns an OS thread, so fine-grained recursive
+`join` is slow until the planned pool. Sort forks only for ranges of at least
+4096 elements; smaller ranges follow the same tree inline. Helper-thread panic
+metadata is not returned to the property runner: on the thread runtime,
+scheduling can turn a `requires` discard into a failure.
+Production and conformance use the same implementation.
+
 `root.clock` reads time and sleeps: `now() -> Instant`, `system_time() ->
 SystemTime`, `sleep(d)`, and `sleep_until(t)`. `std::time` has Rust's
 `Duration`, and `Instant` and `SystemTime` with Rust's arithmetic and no

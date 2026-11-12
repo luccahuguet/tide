@@ -22,6 +22,20 @@
 //!   `elapsed()`. A sleep is a checkpoint: it returns `task::Cancelled` in a cancelled scope,
 //!   and a cancel ends one in progress. Instants before a clock's origin and wall times before
 //!   1970 are not representable;
+//! - deterministic parallel regions: `par::join` and the prelude's `ParSlice` methods
+//!   `par_map`, `par_for`, and stable `par_sort`. Scoped helpers share a process-wide core
+//!   budget; simulation executes inline in order. For terminating branches the lowest-index
+//!   panic propagates, and sinks append in sequential order through the winning panic.
+//!   Scheduling is partial: the work-stealing pool and `par-threads` remain planned;
+//!   buffers are unbounded and losing branches' host panic hooks are not suppressed.
+//!   Stop flags are per call; propagation across calls is partial. `join` and nested
+//!   regions run an already spawned right branch to completion after a left panic,
+//!   so a right branch that never terminates diverges. Whether the region panics or diverges
+//!   can depend on machine load. Every fork finding a free token spawns an OS thread, so
+//!   fine-grained recursive `join` is slow until the planned pool. Sort forks only for ranges
+//!   of at least 4096 elements, keeping smaller ranges on the same tree inline. Helper panic
+//!   metadata is not returned to the property runner: on the thread runtime, scheduling can
+//!   turn a `requires` discard into a failure (`par.rs`, 03 §8.4);
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
@@ -186,7 +200,7 @@
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! other `sync` items,
-//! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
+//! `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
 //! and laws. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
@@ -194,7 +208,7 @@
 //! unreviewed-branch guarantee.
 //!
 //! `root.rs` (with `codec.rs` and `json.rs`), `fs.rs`, `test`, `task.rs` (including its
-//! scheduler and channel adapter), `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
+//! scheduler and channel adapter), `par.rs`, `sync.rs` (with `sync/mpsc.rs`), `sim.rs` (with its
 //! runner), and `time.rs`
 //! share their definitions with the conformance fixture std. The identity-only capability
 //! types use `root.rs`'s `capability!` in both crates.
@@ -250,6 +264,7 @@ pub mod process {
     );
 }
 
+pub mod par;
 pub mod task;
 pub mod sync;
 
