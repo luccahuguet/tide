@@ -137,8 +137,13 @@ fn seeds_choose_different_interleavings_and_trace_waits_at_call_sites() {
                 {
                     saw_scope_wait = true;
                 }
-                if line.contains("\"operation\":\"cell_acquire\"") && line.contains(&at_acquire) {
-                    assert!(has_file && line.contains("\"wait\":\"ready\""), "{line}");
+                if line.contains("\"operation\":\"cells_acquire\"") && line.contains(&at_acquire) {
+                    assert!(
+                        has_file
+                            && line.contains("\"wait\":\"ready\"")
+                            && line.contains("\"targets\":[0]"),
+                        "{line}"
+                    );
                     saw_acquire = true;
                 }
             }

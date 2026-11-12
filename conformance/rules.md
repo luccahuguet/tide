@@ -112,9 +112,11 @@ not cite is a best mapping that a case must confirm.
 | = SEND-3 | §6.4, 03:1258 | Channel payloads must be `Send` | rustc | E0277 |
 | CHANNEL-1 | §6.4, 03:1259 | An unbounded `channel` in a library is a lint | checker | FX0608 (lint) |
 | LOCK-1 | §6.5, 03:1307 | Payload `T: Send + Pure` | both | FX0606; E0277 for `Send` |
-| LOCK-3 | §6.5, 03:1494 | Single-cell acquisition proceeds in a cancelled scope | runtime | — |
+| LOCK-2 | §6.5, 03 LOCK-2 | Repeated cell operands return `Aliased` without running the callback, before poison is checked | runtime | — |
+| LOCK-3 | §6.5, 03 LOCK-3 | Multi-cell acquisition uses global cell ID order, FIFO per cell, and deterministic simulator IDs; acquisition proceeds in cancelled scopes | runtime | — |
 | LOCK-4 | §6.5, 03:1317 | `f` must be `Pure`; printing inside it is a lint | checker | FX0603; FX0607 (lint) |
 | LOCK-5 | §6.5, 03:1323 | `with`/`with2`/`with_all` return `Result<R, LockError>` | rustc | type errors (ignoring the result is FX0702, ref:803) |
+| LOCK-6 | §6.5, 03 LOCK-6 | A callback panic poisons every held cell; `reset` replaces the payload and clears poison | runtime | — |
 | = SEND-3 | §6.6, 03:1343 | `Send`/`Sync` are checked at task boundaries only | rustc | E0277 |
 | PAR-5 | §8.1, 03:1425 | `join` closures are `FnOnce + Pure + Send` | both | FX0610 (also ref:785); E0277 |
 | PAR-6 | §8.1, 03:1426 | `par_*` closures and `par_sort`'s comparator are `Fn + Pure + Send + Sync` | both | FX0610 (03:1429); E0277 / E0507 |
@@ -199,9 +201,6 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - TASK-6 (03:1231): runtime shielding.
 - JOIN-1 (03:1240): runtime; scope exit joins and is shielded.
 - JOIN-2 (03:1243): runtime `Task::join` semantics.
-- LOCK-2 (03:1309): runtime `Aliased` check.
-- LOCK-3 (03:1494): multi-cell acquisition in cell ID order and deterministic simulator IDs await fx-ugm.
-- LOCK-6 (03:1325): runtime poisoning.
 - PAR-1 (03:1445): runtime determinism.
 - PAR-2 (03:1453): runtime panic order.
 - PAR-3 (03:1461): float codegen and the math library. Only its allowlist part is a row above.

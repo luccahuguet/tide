@@ -8,7 +8,7 @@
 //! runtime entry, Rust's re-exports, and the codec engine and `std::json`,
 //! `codec.rs` and `json.rs`), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
-//! (`task.rs`), single-cell `Shared` (`sync.rs`), seeded simulations and their runner
+//! (`task.rs`), `Shared` (`sync.rs`), seeded simulations and their runner
 //! (`sim.rs`), `std::time` (`time.rs`), and executable contracts (`contract.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
 //! types the same definitions and paths in both crates.
@@ -171,20 +171,6 @@ pub mod sync {
     use std::marker::PhantomData;
 
     include!("../../../../crates/tide-std/src/sync.rs");
-
-    // Later Shared APIs remain compile-time fixtures only.
-    impl<T: Send + Pure> Shared<T> {
-        pub fn with2<U: Send + Pure, R>(
-            a: &Shared<T>,
-            b: &Shared<U>,
-            f: impl FnOnce(&mut T, &mut U) -> R + Pure,
-        ) -> Result<R, LockError> {
-            unimplemented!()
-        }
-        pub fn same(a: &Shared<T>, b: &Shared<T>) -> bool { unimplemented!() }
-        pub fn with_all<R>(cells: &[Shared<T>], f: impl FnOnce(&mut [&mut T]) -> R + Pure)
-            -> Result<R, LockError> { unimplemented!() }
-    }
 
     /// Rust's `Arc` without `strong_count`, `weak_count`, `get_mut`,
     /// `try_unwrap`, and `into_inner`; creation takes `&Tasks` (03 §1.2, GLOBAL-6).

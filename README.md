@@ -234,11 +234,14 @@ path follow PANIC-2 and can abort; on the non-panic path, a drop panic surfaces
 in the scope's caller.
 
 `std::sync::Shared::new(v, &tasks)` creates a cell with a `Send + Pure` payload.
-Clones refer to the same cell. `with` serializes `Pure` callbacks in FIFO order,
-including in cancelled scopes. A callback panic propagates and leaves every
-handle to that cell returning `LockError::Poisoned` on later `with` calls.
-`LockError::Aliased` is reserved for the planned multi-cell operations.
-`same` and `reset` are also planned.
+Clones refer to the same cell; `Shared::same(&a, &b)` tests identity without
+acquiring. `with`, `with2`, and `with_all` serialize `Pure` callbacks, including
+in cancelled scopes. Multi-cell calls acquire in cell-id order, with FIFO arrival
+at each cell, and return `LockError::Aliased` without running the callback when
+an operand repeats. `with_all` passes payloads in the caller's order and runs
+on an empty slice too. A callback panic poisons every held cell; later access
+returns `LockError::Poisoned`. `reset(v)` replaces a healthy or poisoned payload
+and clears poison, dropping the old value after release.
 
 `root.clock` reads time and sleeps: `now() -> Instant`, `system_time() ->
 SystemTime`, `sleep(d)`, and `sleep_until(t)`. `std::time` has Rust's
@@ -249,12 +252,12 @@ is not after now does not block, and a sleep whose target overflows ends only
 by cancellation. `monotonic_only()` gives a `Clock` whose `system_time()` panics.
 
 Production std includes a seeded scheduler for structured tasks,
-single-cell `Shared`, and `Clock`. It runs one task at a time between
+`Shared`, and `Clock`. It runs one task at a time between
 scheduling points and records decisions and waits with source locations.
 Virtual time starts at zero and jumps to the next timer only when every task
 is blocked; with no timer left, the run ends in a deadlock report.
 `Root::sim(seed)` in a test returns `std::sim::SimRoot`: its calling thread is
-task 0 until the root drops. `sim.tasks`, single-cell `Shared`, `sim.fs`, and
+task 0 until the root drops. `sim.tasks`, `Shared`, `sim.fs`, and
 `sim.clock` work; `sim.elapsed()`, `sim.records()`, and `sim.trace()` inspect virtual time,
 ordered sink records, and provisional NDJSON events without scheduling. `out`
 and `err` append sink events under simulation and do not write to host streams.

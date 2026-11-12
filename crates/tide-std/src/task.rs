@@ -246,7 +246,7 @@ impl Runtime {
 }
 
 #[derive(Clone)]
-struct Context {
+pub(crate) struct Context {
     runtime: Arc<Mutex<Runtime>>,
     at: Option<Location>,
     task: Option<TaskId>,
@@ -522,12 +522,70 @@ pub(crate) struct SimCell {
 }
 
 impl SimCell {
-    pub(crate) fn acquire(&self, span: Span) {
-        Context::simulated(&self.runtime).point(Operation::CellAcquire(self.id), span);
+    pub(crate) fn id(&self) -> u64 {
+        self.id as u64
     }
 
-    pub(crate) fn release(&self, span: Span) {
-        Context::simulated(&self.runtime).point(Operation::CellRelease(self.id), span);
+    pub(crate) fn context<'a>(
+        cells: impl IntoIterator<Item = Option<&'a Self>>,
+    ) -> Option<Context> {
+        let context =
+            CURRENT.with(|slot| slot.borrow().as_ref().filter(|c| c.task.is_some()).cloned());
+        for cell in cells {
+            match cell {
+                Some(cell) => assert!(
+                    context
+                        .as_ref()
+                        .is_some_and(|c| Arc::ptr_eq(&cell.runtime, &c.runtime)),
+                    "simulation handle used outside its simulation",
+                ),
+                None => assert!(
+                    context.is_none(),
+                    "real capability used inside a simulation"
+                ),
+            }
+        }
+        context
+    }
+
+    pub(crate) fn begin_set(
+        context: Option<&Context>,
+        ids: impl IntoIterator<Item = usize>,
+        span: Span,
+    ) {
+        if let Some(context) = context {
+            let ids: Vec<_> = ids.into_iter().collect();
+            context
+                .lock()
+                .baton
+                .as_mut()
+                .unwrap()
+                .scheduler
+                .cell_set(context.task.unwrap(), &ids);
+            context.point(Operation::CellsAcquire, span);
+        }
+    }
+
+    pub(crate) fn record_set(
+        context: Option<&Context>,
+        ids: impl IntoIterator<Item = usize>,
+        acquire: bool,
+        span: Span,
+    ) {
+        if let Some(context) = context {
+            context.lock().baton.as_mut().unwrap().scheduler.cells(
+                context.task.unwrap(),
+                ids,
+                acquire,
+                span,
+            );
+        }
+    }
+
+    pub(crate) fn end_set(context: Option<&Context>, span: Span) {
+        if let Some(context) = context {
+            context.point(Operation::CellsRelease, span);
+        }
     }
 }
 

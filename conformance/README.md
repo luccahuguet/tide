@@ -136,7 +136,7 @@ user code remains checked. `#[allow]` does not silence these errors.
 ## Case format
 
 One `.rs` file per case, under `cases/<area>/`: `memory` (02), `authority`
-(03 §0–§5 and §6.5: capabilities, admission, `Pure`, `Shared::with`),
+(03 §0–§5 and §6.5: capabilities, admission, `Pure`, `Shared`),
 `tasks` (the rest of 03 §6–§8: tasks, channels, parallelism), and
 `contracts` (04).
 
@@ -197,9 +197,13 @@ definition at the same paths. Its I/O core also includes
 buffered types with production. The supported I/O API follows Rust with
 `BufWriter<W: Sized>`; per TASK-6, Drop discards pending bytes without I/O.
 `Lines`, `Split`, and `Bytes` end after yielding `ErrorKind::Cancelled`.
-The stub includes the production `sync.rs` for `Shared::new`, `clone`, `with`,
-and `LockError`. `tasks/shared_counter.rs` also executes against production
-through the driver.
+The stub includes the production `sync.rs` for `Shared::new`, `clone`, `same`,
+`with`, `with2`, `with_all`, `reset`, and `LockError`; it has no separate Shared
+runtime. `tasks/shared_counter.rs` and `tasks/shared_sets.rs` also execute against
+production through the driver. The latter covers overlapping sets on real threads
+and under `Root::sim`/`#[sim_test]`, aliases, caller-order payloads, poisoning, and
+recovery. Runtime tests in `sync.rs` additionally check lazy FIFO tickets, ordered
+simulation events, domain rejection, and reset's payload drop after release.
 The stub's `std::time` is the production `time.rs`: `Clock`, `Duration`,
 `Instant`, `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH`.
 `authority/clock_time.rs` also executes against production through the driver.

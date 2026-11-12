@@ -16,6 +16,8 @@ pub(super) enum Operation {
     Checkpoint,
     Yield,
     CellNew(usize),
+    CellsAcquire,
+    CellsRelease,
     CellAcquire(usize),
     CellRelease(usize),
     ClockNow,
@@ -50,6 +52,7 @@ struct TaskState {
     state: State,
     spawn_span: Span,
     timer: Option<TimerKey>,
+    cells: Vec<usize>,
 }
 
 // (deadline, class, id). Class 0 is reserved for scope deadlines keyed by scope id, so an
@@ -89,6 +92,7 @@ impl Scheduler {
                 state: State::Ready(None),
                 spawn_span: span,
                 timer: None,
+                cells: Vec::new(),
             }],
             current: Some(0),
             next_cell: 0,
@@ -105,6 +109,37 @@ impl Scheduler {
         }
     }
 
+    pub(super) fn cell_set(&mut self, task: TaskId, ids: &[usize]) {
+        self.tasks[task].cells.clear();
+        self.tasks[task].cells.extend_from_slice(ids);
+    }
+
+    // Cell records within a set share one trace step; only the set boundaries schedule.
+    pub(super) fn cells(
+        &mut self,
+        task: TaskId,
+        ids: impl IntoIterator<Item = usize>,
+        acquire: bool,
+        span: Span,
+    ) {
+        let step = self.step;
+        let mut recorded = false;
+        for id in ids {
+            recorded = true;
+            let operation = if acquire {
+                Operation::CellAcquire(id)
+            } else {
+                Operation::CellRelease(id)
+            };
+            self.event(task, Pending { operation, span }, "cell", None);
+            self.trace.push_str("}\n");
+            self.step = step;
+        }
+        if recorded {
+            self.step += 1;
+        }
+    }
+
     /// Simulated wall time, as an offset from the Unix epoch.
     pub(super) fn wall(&self) -> Option<Duration> {
         WALL_START.checked_add(self.now)
@@ -116,6 +151,7 @@ impl Scheduler {
             state: State::Starting,
             spawn_span: span,
             timer: None,
+            cells: Vec::new(),
         });
         id
     }
@@ -283,7 +319,7 @@ impl Scheduler {
         for (index, (id, wait)) in blocked.into_iter().enumerate() {
             let comma = if index == 0 { "" } else { "," };
             write!(self.trace, "{comma}{{\"task\":{id}").unwrap();
-            self.operation(wait);
+            self.operation(id, wait);
             self.trace.push('}');
             write!(
                 report,
@@ -410,7 +446,7 @@ impl Scheduler {
         )
         .unwrap();
         self.step += 1;
-        self.operation(pending);
+        self.operation(task, pending);
         match wait {
             Some(wait) => write!(self.trace, ",\"wait\":\"{wait}\"").unwrap(),
             None => self.trace.push_str(",\"wait\":null"),
@@ -431,11 +467,14 @@ impl Scheduler {
         }
     }
 
-    fn operation(&mut self, pending: Pending) {
+    fn operation(&mut self, task: TaskId, pending: Pending) {
         let (operation, target) = pending.operation.name();
         write!(self.trace, ",\"operation\":\"{operation}\"").unwrap();
         if let Some(target) = target {
             write!(self.trace, ",\"target\":{target}").unwrap();
+        }
+        if pending.operation == Operation::CellsAcquire {
+            write!(self.trace, ",\"targets\":{:?}", self.tasks[task].cells).unwrap();
         }
         self.trace.push_str(",\"span\":{\"file\":");
         quoted(&mut self.trace, pending.span.file());
@@ -489,6 +528,8 @@ impl Operation {
             Self::Checkpoint => ("checkpoint", None),
             Self::Yield => ("yield_now", None),
             Self::CellNew(id) => ("cell_new", Some(id)),
+            Self::CellsAcquire => ("cells_acquire", None),
+            Self::CellsRelease => ("cells_release", None),
             Self::CellAcquire(id) => ("cell_acquire", Some(id)),
             Self::CellRelease(id) => ("cell_release", Some(id)),
             Self::ClockNow => ("clock.now", None),
@@ -505,7 +546,11 @@ impl Operation {
 
     fn kind(self) -> &'static str {
         match self {
-            Self::CellNew(_) | Self::CellAcquire(_) | Self::CellRelease(_) => "cell",
+            Self::CellNew(_)
+            | Self::CellAcquire(_)
+            | Self::CellRelease(_)
+            | Self::CellsAcquire
+            | Self::CellsRelease => "cell",
             Self::ClockNow | Self::ClockSystemTime(_) | Self::Sleep { .. } => "cap",
             Self::File(_) => "io_wait",
             _ => self.name().0,

@@ -1513,10 +1513,10 @@ outrank the failure that dropped its peer.
 
 ### 6.5 `Shared::with`
 
-The thread runtime provides `Shared::new`, `clone`, and single-cell `with`,
-with FIFO acquisition and `LockError::Poisoned` as the sole error from `with`.
-`LockError::Aliased` is reserved for the planned multi-cell operations.
-`same` and `reset` are also planned. The API and rules below describe the v0 design.
+The thread and simulated runtimes provide `Shared::new`, `clone`, `same`,
+`with`, `with2`, `with_all`, and `reset`. Production `sync.rs` owns the runtime;
+the conformance std includes it. `LockError::Poisoned` is the sole error from
+`with`; multi-cell calls can also return `Aliased`.
 
 ```rust
 impl<T: Send + Pure> Shared<T> {
@@ -1526,6 +1526,8 @@ impl<T: Send + Pure> Shared<T> {
         f: impl FnOnce(&mut T, &mut U) -> R + Pure) -> Result<R, LockError>;
     pub fn with_all<R>(cells: &[Shared<T>], f: impl FnOnce(&mut [&mut T]) -> R + Pure)
         -> Result<R, LockError>;            // provisional name for draft 2's lock_all
+    pub fn same(a: &Shared<T>, b: &Shared<T>) -> bool;
+    pub fn reset(&self, v: T);
 }
 pub enum LockError { Aliased, Poisoned }
 ```
@@ -1555,9 +1557,26 @@ These methods replace draft 2's `lock` keyword (D8).
   `cell.reset(v)` replaces the payload and clears the poison; it acquires
   the cell like `with` and is a scheduling point. No safe API reads a
   poisoned payload.
+  Reset is allowed on a healthy cell too. The old payload drops after release;
+  its destructor can panic without poisoning the replacement.
 - **LOCK-7. Invariants (v1).** A cell's invariant is its payload type's
   invariant. `f` may assume it at entry and must restore it at exit
   (`04-contracts.md` §4.4).
+
+Acquisition reserves each FIFO ticket only after holding all lower-id operands.
+The callback runs only after the whole set is held; no partial acquisition is
+visible to callbacks, and no scheduling point occurs inside the set. FIFO is
+per cell by arrival at that cell, rather than arrival at the whole operation.
+Aliases are detected before tickets and take precedence over poison. Acquisition
+stops at the first poisoned operand and releases everything held without running
+`f`. `with_all` passes payloads in operand order; an empty slice runs `f` too.
+Real cells and cells of different simulations cannot be mixed: every operand's
+domain is checked before ordering or taking tickets, and a mismatch panics.
+Simulated calls take one point before the whole set and one after release,
+including empty sets; an aliased call returns before either point. Acquire events
+list cell IDs ascending, releases descending.
+`same` compares identity without scheduling. See
+[the acquisition research](../research/26-process-io-and-shared-sets.md#part-b--fx-ugm).
 
 `with` cannot deadlock against `with`: no closure acquires, every call takes
 its whole set atomically in one global order, and every closure finishes
@@ -1797,7 +1816,7 @@ output. Failures print seeds, causes and traces; signal/timeout or a missing
 summary names the last started seed. Ordinary failures name the failing seeds;
 success emits at most one libtest-captured summary, with seed-start records kept
 internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
-REPLAY-2 identity validation. Tasks, single-cell `Shared`, files, file setup,
+REPLAY-2 identity validation. Tasks, `Shared`, files, file setup,
 clocks and sinks are modeled; other capabilities carry simulated identities but
 their operations, other world setup, faults, nodes, manifests and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,

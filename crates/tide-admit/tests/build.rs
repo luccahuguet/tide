@@ -630,6 +630,23 @@ fn shared_counter_runs_against_production_std() {
 }
 
 #[test]
+fn shared_sets_execute_on_threads_and_under_simulation() {
+    let dir = package(
+        "shared-sets",
+        include_str!("../../../conformance/cases/tasks/shared_sets.rs"),
+    );
+    checked(&mut driver(&dir));
+    checked(Command::new("timeout").arg("60").arg(dir.join("out/demo")));
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = checked(Command::new("timeout").arg("120").arg(dir.join("out/demo-test")));
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("4 passed"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
 fn collections_execute_with_fixed_and_capability_seeded_keys() {
     let dir = package(
         "collections",

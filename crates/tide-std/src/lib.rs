@@ -25,11 +25,13 @@
 //! - structured tasks on OS threads: `Tasks::scope`, `Scope::spawn`, `Task::join`, and
 //!   `Scope::cancel`, scoped borrows, automatic joins, TASK-2 failure selection and cancellation
 //!   echoes, and level-triggered `Tasks::checkpoint` / `Tasks::yield_now` (`task.rs`);
-//! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, and single-cell `with`, with FIFO
-//!   acquisition and `LockError::Poisoned` after callback panic. `LockError::Aliased` is
-//!   reserved for the planned multi-cell operations (03 §6.5);
+//! - `std::sync::Shared`: `new(v, &Tasks)`, `clone`, `same`, `with`, `with2`, `with_all`,
+//!   and `reset`. Multi-cell calls acquire in global cell-id order with FIFO arrival per
+//!   cell; aliases return `LockError::Aliased` before acquiring. Callbacks get payloads in
+//!   caller order and a panic poisons every held cell. `reset` clears poison and drops the
+//!   old payload after release. These operations work in cancelled scopes (03 §6.5);
 //! - `Root::sim(seed)`, `std::sim::SimRoot`, and a seeded scheduler for structured tasks,
-//!   single-cell `Shared`, files, and `Clock`, with
+//!   `Shared`, files, and `Clock`, with
 //!   source-located scheduling and wait records (03 §9.1) and virtual time, which starts at zero,
 //!   jumps to the next timer only when every task is blocked, and ends in a deadlock report
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
@@ -137,7 +139,7 @@
 //! isolation; other capability operations and attenuation of reference 6.1 (network,
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
-//! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
+//! other `sync` items,
 //! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
 //! and generated contract tests. A
 //! program that uses one fails to compile, as for any missing item.
