@@ -1159,6 +1159,211 @@ mod separate;
     }
 }
 
+/// fx-m72.2: shared fixture executes guidance, rejection blame, and fixed-seed shrinking.
+#[test]
+fn guided_properties_filter_report_vacuity_and_shrink_simulation_parameters() {
+    let dir = package(
+        "guided-properties",
+        include_str!("../../../conformance/cases/contracts/guided_properties.rs"),
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let executable = dir.join("out/demo-test");
+    let run = |name: &str, seed: Option<&str>, simulation: bool| {
+        let mut command = Command::new(&executable);
+        command
+            .args(["--exact", &format!("properties::{name}"), "--nocapture"])
+            .env_remove("TIDE_TEST_SEED")
+            .env_remove("TIDE_SIM_SEED")
+            .env_remove("__TIDE_SIM_CHILD");
+        if let Some(seed) = seed {
+            command.env(
+                if simulation {
+                    "TIDE_SIM_SEED"
+                } else {
+                    "TIDE_TEST_SEED"
+                },
+                seed,
+            );
+        }
+        let out = command.stdin(Stdio::null()).output().unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+        (out.status.success(), text)
+    };
+    for name in [
+        "index",
+        "borrowed_index",
+        "borrowed",
+        "borrowed_shapes",
+        "borrowed_scalars",
+        "borrowed_string",
+        "endpoints",
+        "lengths",
+        "shapes",
+        "other_scalars",
+        "shadowed",
+        "grouped",
+        "contains_one",
+    ] {
+        let (ok, text) = run(name, None, false);
+        assert!(
+            ok && text.contains("100/100 cases passed"),
+            "{name}: {text}"
+        );
+    }
+    for name in ["filter_always", "direct", "borrowed_constant"] {
+        let (ok, text) = run(name, None, false);
+        assert!(ok && text.contains("accepted/generated"), "{name}: {text}");
+        assert!(!text.contains("100/100 cases passed"), "{name}: {text}");
+    }
+    for (name, clause, count) in [
+        ("vacuous", "opaque(n)", "0 of 10000"),
+        ("contradictory", "n < 0", "0 of 10000"),
+        ("cyclic", "a < b", "0 of 10000"),
+    ] {
+        let (ok, text) = run(name, None, false);
+        assert!(
+            !ok && text.contains("vacuous:") && text.contains(count),
+            "{text}"
+        );
+        assert!(
+            text.contains(clause) && text.contains("most rejected by"),
+            "{text}"
+        );
+    }
+    let (ok, text) = run("expected", None, false);
+    assert!(ok && !text.contains("vacuous"), "{text}");
+    for name in ["nested", "nested_local", "nested_closure"] {
+        let (ok, text) = run(name, None, false);
+        assert!(
+            !ok && text.contains("property failed:") && !text.contains("vacuous"),
+            "{text}"
+        );
+    }
+    let (ok, text) = run("shrink_filtered", None, false);
+    assert!(!ok && text.contains("input: xs = [0, 0, 0]"), "{text}");
+    for (name, input) in [
+        ("shrink_index", "xs = [0, 0, 0, 0], i = 3"),
+        ("shrink_span", "lo = 0, hi = 5"),
+    ] {
+        let (ok, text) = run(name, None, false);
+        assert!(!ok && text.contains(&format!("input: {input}")), "{text}");
+    }
+    for name in ["simulated_pass", "simulated_struct", "simulated_guided_seed"] {
+        let (ok, text) = run(name, None, true);
+        assert!(
+            ok && text.contains(if name == "simulated_pass" {
+                "5/5 cases passed"
+            } else {
+                "2/2 cases passed"
+            }),
+            "{text}"
+        );
+    }
+    let (ok, text) = run("simulated_filtered", None, true);
+    assert!(
+        ok && text.contains("5/") && text.contains("cases passed (accepted/generated)"),
+        "{text}"
+    );
+    let (ok, text) = run("simulated_vacuous", None, true);
+    assert!(
+        !ok && text.contains("vacuous: 0 of 200") && text.contains("never(n)"),
+        "{text}"
+    );
+    assert!(!text.contains("missing summary"), "{text}");
+    let (ok, text) = run("simulated_generated_seed", None, true);
+    assert!(!ok && text.contains("input: seed = 2"), "{text}");
+    let out = Command::new(&executable)
+        .args(["--exact", "properties::simulated", "--nocapture"])
+        .env_remove("TIDE_TEST_SEED")
+        .env("TIDE_SIM_SEED", "0")
+        .env("__TIDE_SIM_CHILD", "demo::properties::simulated")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let errors = stderr(&out);
+    let evaluations: usize = errors
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("shrink evaluations: "))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(evaluations > 0, "{errors}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|line| *line == "TIDE_SIM_SEED_START 0")
+            .count(),
+        evaluations + 2,
+        "each initial, self-check and shrink evaluation must reset the backstop"
+    );
+    for (name, simulation) in [("simulated", true), ("explicit_seed", false)] {
+        let (ok, text) = run(name, None, simulation);
+        assert!(!ok && text.contains("input:"), "{text}");
+        let seed = text
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("seed: "))
+            .unwrap();
+        let input = text
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("input: "))
+            .unwrap();
+        assert!(input.ends_with("sizes = [0, 0, 0]"), "{text}");
+        if !simulation {
+            assert!(input.starts_with(&format!("seed = {seed}, ")), "{text}");
+        }
+        let (ok, replay) = run(name, Some(seed), simulation);
+        assert!(
+            !ok && replay.contains(&format!("input: {input}")),
+            "{replay}"
+        );
+        assert!(replay.contains(&format!("seed: {seed}")), "{replay}");
+    }
+    let dir = package(
+        "simulation-struct-synthesis",
+        r#"
+mod private {
+    #[derive(Debug)] struct Local { field: u8 }
+    #[sim_test(seeds = 2)]
+    fn structural(sim: std::sim::SimRoot, value: Local) { let _ = (sim, value.field); }
+}
+"#,
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = checked(&mut Command::new(dir.join("out/demo-test")));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    let dir = package(
+        "property-release-filter",
+        r#"
+fn even(n: u16) -> bool { n % 2 == 0 }
+#[requires(n >= 9 && n <= 12 && even(n))]
+#[test]
+fn filtered(n: u16) { assert!(even(n)); }
+#[test]
+#[requires(n < 10 && n > 100)]
+fn impossible(n: u16) { let _ = n; }
+#[sim_test(seeds = 3)]
+#[requires(even(n))]
+fn simulated(sim: std::sim::SimRoot, n: u16) { let _ = sim; assert!(even(n)); }
+"#,
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-profile=release"]));
+    for name in ["filtered", "simulated"] {
+        let out = checked(Command::new(dir.join("out/demo-test")).args(["--exact", name]));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+    }
+    let out = Command::new(dir.join("out/demo-test"))
+        .args(["--exact", "impossible", "--nocapture"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success() && stderr(&out).contains("vacuous:"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 #[test]
 fn property_callbacks_cannot_capture_caller_state() {
     let dir = package(
@@ -1167,7 +1372,7 @@ fn property_callbacks_cannot_capture_caller_state() {
 #[tide::main]
 fn main() {
     let mut partial = 0;
-    std::test::run("capture", |g| {
+    std::test::run_config("capture", std::test::Config::default(), |g| {
         let _ = g.index(2);
         partial += 1;
         Ok(())

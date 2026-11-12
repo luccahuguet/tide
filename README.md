@@ -167,8 +167,13 @@ with `--tide-dep-dir`, independent of Cargo's build layout.
 
 Execution is a separate trusted caller action. `--test` builds a libtest
 binary with ordinary and parameterized `#[test]` entries. A parameterized
-test generates 100 cases by default and reports the seed and shrunk input
-when a case fails. Its parameters need `Debug`; a user-defined generator
+test accepts 100 cases by default and reports the seed and shrunk input
+when a case fails. Its own `#[requires]` guides recognized shapes and filters all
+cases, including in release test binaries; a directly called function's failed requires
+discards that case when runtime contracts are enabled. The run
+fails as `vacuous` if fewer than 100 cases are accepted within 10,000 generated
+cases, naming the conjunct with the most first rejections. Passing runs report
+accepted/generated. Its parameters need `Debug`; a user-defined generator
 implements `std::test::Arbitrary`. List tests with `--list`. To replay a case,
 set `TIDE_TEST_SEED` to the reported seed and run the test binary with
 `--exact <test-name>`.
@@ -179,8 +184,7 @@ Executable `#[requires]`, `#[ensures]`, and loop `invariant!` clauses lower thro
 production macros and std. Checked clauses run in debug/test builds; sampled clauses
 run in the crate under test, with a 10,000-binder-value budget. Release builds
 type-check clauses but execute neither checks nor snapshots. The `tide test` command,
-remaining simulated capabilities, requires-guided generation and generated contract
-tests are planned.
+remaining simulated capabilities and generated contract tests are planned.
 
 Const requires violations name the clause's location rather than the caller's.
 The [std crate docs](crates/tide-std/src/lib.rs) own the supported contract forms
@@ -259,10 +263,10 @@ immediately, from simulated `/`, without scheduling or virtual time. Invalid
 setup panics. Other capabilities carry simulated identities; Rand-backed hash
 initialization panics until its simulated backend exists.
 
-`#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
+Without requires discards, `#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
 `#[sim_test(seeds = 20)]` runs `0..20`. Each entry re-executes its driver-built
 test binary once with an exact libtest filter, empty stdin, and a wall-clock
-backstop of 300 s per seed. The child catches panics per seed, checks the first and
+backstop of 300 s per evaluation. The child catches panics per seed, checks the first and
 every failing seed twice for identical traces/output, and prints failing seeds,
 causes, and traces on failure. Success emits at most one summary line, captured
 by libtest; seed-start records stay internal. Signal/timeout or a missing summary
@@ -270,7 +274,12 @@ names the last started seed; ordinary failures name the failing seeds. The
 internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
 the test binary; it does no build/source identity validation. Replay manifests
 and their identity checks, simulated network/randomness, other world setup,
-faults, generated simulation parameters and shrinking remain planned.
+and faults remain planned. Extra parameters, such as
+`#[sim_test] fn t(sim: SimRoot, sizes: Vec<u16>)`, use the property runner's
+guidance, filtering, vacuity floor and shrinking. Each case and shrink attempt
+gets a fresh simulator with the same case seed; only the parameters shrink.
+A plain property's parameter spelled `seed: u64` also receives the case seed
+and keeps it while shrinking.
 These test processes are for reviewed/trusted code; they have no OS sandbox.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
@@ -305,8 +314,7 @@ The crate docs list what it does not provide yet.
 The conformance runner injects
 a stub std that shares these definitions, including the production `#[test]`
 macro, property generation/shrinking runtime, and executable contract lowering/runtime.
-Requires-guided generation, generated simulation parameters/shrinking and generated
-contract tests remain planned. The
+Generated contract tests remain planned. The
 installed pinned toolchain is trusted and treated as immutable, as are the host
 C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
 and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.

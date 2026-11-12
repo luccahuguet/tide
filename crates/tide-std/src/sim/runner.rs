@@ -1,22 +1,22 @@
-use super::SimRoot;
+use crate::test::{Config, Gen};
 use std::io::{self, BufRead, Read, Write};
-use std::panic::{AssertUnwindSafe, catch_unwind};
+#[cfg(test)]
+use std::panic::catch_unwind;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const CHILD: &str = "__TIDE_SIM_CHILD";
-const SEED: &str = "TIDE_SIM_SEED";
 const START: &str = "TIDE_SIM_SEED_START ";
 const TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Internal entry for `#[sim_test]`. `TIDE_SIM_SEED` selects one fresh decimal u64 seed;
 /// it performs no source/build identity check and is not manifest replay.
 #[doc(hidden)]
-pub fn __run(path: &str, seeds: u64, body: fn(SimRoot)) {
+pub fn __run(path: &str, config: Config, body: fn(&mut Gen) -> Result<(), String>) {
     let name = path.split_once("::").map_or(path, |(_, name)| name);
     if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
-        run_seeds(name, seeds, body);
+        crate::test::run_config(path, config, body);
         return;
     }
     let output = child(path, name, TIMEOUT).expect("could not run simulation child");
@@ -24,7 +24,7 @@ pub fn __run(path: &str, seeds: u64, body: fn(SimRoot)) {
     let prefix = format!("simulation {name}: ");
     let summary = stderr
         .lines()
-        .find(|line| line.starts_with(&prefix) && line.ends_with(" seeds)"));
+        .find(|line| line.starts_with(&prefix) && line.contains(" seeds)"));
     // Use Rust's print family so libtest captures harness diagnostics under this test.
     if let Some(summary) = summary
         && !output.timed_out
@@ -38,7 +38,7 @@ pub fn __run(path: &str, seeds: u64, body: fn(SimRoot)) {
         panic!(
             "simulation {name} failed: {} (last started seed: {}); status: {}",
             if output.timed_out {
-                "per-seed wall-clock timeout"
+                "per-evaluation wall-clock timeout"
             } else if output.status.code().is_none() {
                 "child terminated by signal"
             } else {
@@ -49,6 +49,9 @@ pub fn __run(path: &str, seeds: u64, body: fn(SimRoot)) {
                 .map_or_else(|| "none".into(), |seed| seed.to_string()),
             output.status,
         );
+    }
+    if summary.is_some_and(|line| line.starts_with(&format!("{prefix}vacuous "))) {
+        panic!("simulation {name} failed as vacuous");
     }
     let failing = stderr
         .lines()
@@ -130,30 +133,17 @@ fn child(path: &str, name: &str, timeout: Duration) -> io::Result<ChildOutput> {
     })
 }
 
-struct Run {
-    trace: String,
-    failure: Option<String>,
+pub(crate) fn start(seed: u64) {
+    println!("\n{START}{seed}");
+    io::stdout()
+        .flush()
+        .expect("cannot report simulation seed start");
 }
 
-fn evaluate(seed: u64, body: fn(SimRoot)) -> Run {
-    let sim = crate::Root::sim(seed);
-    // Retain observation access after the body consumes and drops its SimRoot, even on panic.
-    let tasks = sim.tasks.clone();
-    let result = catch_unwind(AssertUnwindSafe(|| body(sim)));
-    let failure = result.err().map(|payload| {
-        payload
-            .downcast_ref::<String>()
-            .cloned()
-            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).into()))
-            .unwrap_or_else(|| "panic with a non-string payload".into())
-    });
-    Run {
-        trace: tasks.sim_trace(),
-        failure,
-    }
-}
-
-fn first_difference<'a>(first: &'a str, second: &'a str) -> Option<(usize, &'a str, &'a str)> {
+pub(crate) fn first_difference<'a>(
+    first: &'a str,
+    second: &'a str,
+) -> Option<(usize, &'a str, &'a str)> {
     let mut first = first.split_inclusive('\n');
     let mut second = second.split_inclusive('\n');
     for line in 1.. {
@@ -170,62 +160,6 @@ fn first_difference<'a>(first: &'a str, second: &'a str) -> Option<(usize, &'a s
         }
     }
     unreachable!()
-}
-
-fn run_seeds(name: &str, seeds: u64, body: fn(SimRoot)) {
-    let selected = std::env::var_os(SEED).map(|seed| {
-        seed.to_str()
-            .and_then(|seed| seed.parse::<u64>().ok())
-            .expect("TIDE_SIM_SEED must be a decimal u64")
-    });
-    let count = if selected.is_some() { 1 } else { seeds };
-    let mut failures = 0;
-    for index in 0..count {
-        let seed = selected.unwrap_or(index);
-        // Begin on a new line even when libtest has printed its `test name ... ` prefix.
-        println!("\n{START}{seed}");
-        io::stdout()
-            .flush()
-            .expect("cannot report simulation seed start");
-        let run = evaluate(seed, body);
-        let mut failed = run.failure.is_some();
-        if index == 0 || failed {
-            let again = evaluate(seed, body);
-            if let Some((line, a, b)) = first_difference(&run.trace, &again.trace) {
-                eprintln!(
-                    "simulation nondeterminism seed={seed}: first differing trace line {line}\n  first: {a:?}\n  second: {b:?}"
-                );
-                failed = true;
-            }
-            if run.failure != again.failure {
-                eprintln!(
-                    "simulation nondeterminism seed={seed}: outcomes differ\n  first: {:?}\n  second: {:?}",
-                    run.failure, again.failure
-                );
-                failed = true;
-            }
-        }
-        if failed {
-            failures += 1;
-            eprintln!("simulation failure seed={seed} test={name}");
-            eprintln!(
-                "  cause: {}",
-                run.failure
-                    .as_deref()
-                    .unwrap_or("determinism self-check failed")
-            );
-            eprintln!(
-                "  fresh seed: TIDE_SIM_SEED={seed} <test-binary> --exact {name} --nocapture"
-            );
-            // Includes the ordered sink output; success seeds keep their output in memory only.
-            eprint!("{}", run.trace);
-        }
-    }
-    eprintln!(
-        "simulation {name}: {} passed; {failures} failed ({count} seeds)",
-        count - failures
-    );
-    assert_eq!(failures, 0, "simulation {name} failed");
 }
 
 #[cfg(test)]
@@ -305,7 +239,18 @@ mod tests {
             io::stdout().flush().unwrap();
             return;
         }
-        let panic = catch_unwind(|| __run(path, 1, |_| {})).unwrap_err();
+        let panic = catch_unwind(|| {
+            __run(
+                path,
+                Config {
+                    cases: 1,
+                    simulation: true,
+                    ..Config::default()
+                },
+                |_| Ok(()),
+            )
+        })
+        .unwrap_err();
         let message = panic.downcast_ref::<String>().unwrap();
         assert!(message.contains("last started seed: 47"), "{message}");
         assert!(message.contains("missing summary"), "{message}");
@@ -319,13 +264,23 @@ mod tests {
         );
         let name = path.split_once("::").unwrap().1;
         if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
-            fn uncontrolled(_sim: SimRoot) {
+            fn uncontrolled(g: &mut Gen) -> Result<(), String> {
+                let _sim = g.simulation();
                 static NEXT: std::sync::atomic::AtomicUsize =
                     std::sync::atomic::AtomicUsize::new(0);
                 let value = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 crate::__sink::out(format_args!("{value}"), false);
+                Ok(())
             }
-            run_seeds(name, 1, uncontrolled);
+            crate::test::run_config(
+                path,
+                Config {
+                    cases: 1,
+                    simulation: true,
+                    ..Config::default()
+                },
+                uncontrolled,
+            );
             return;
         }
         let output = child(path, name, Duration::from_secs(10)).unwrap();

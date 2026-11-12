@@ -5,6 +5,7 @@ use std::process::{ExitCode, Termination};
 use std::sync::Once;
 
 use super::{Choice, Gen, Kind, mix};
+use crate::__contract::{self, Clause, Kind as ContractKind, Violation};
 
 /// Classify the success value after the macro has handled every resolved `Result` layer.
 #[doc(hidden)]
@@ -20,6 +21,46 @@ const CASES: u64 = 100;
 const RUN_SEED: u64 = 0x6a09e667f3bcc909;
 const SHRINK_BUDGET: usize = 1000;
 const STALLED_BUDGET: usize = 128;
+
+/// Source bounds used to distinguish direct calls from deeper contract failures.
+#[doc(hidden)]
+#[derive(Clone, Copy, Default)]
+pub struct Source {
+    pub file: &'static str,
+    pub start: (u32, u32),
+    pub end: (u32, u32),
+}
+impl Source {
+    fn contains(self, violation: &Violation) -> bool {
+        self.file == violation.file
+            && self.start <= (violation.line, violation.column)
+            && (violation.line, violation.column) <= self.end
+    }
+}
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct Config {
+    pub cases: u64,
+    pub body: Source,
+    pub call: Source,
+    pub excluded: &'static [Source],
+    pub should_panic: bool,
+    pub simulation: bool,
+    pub fixed_seed: bool,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            cases: CASES,
+            body: Source::default(),
+            call: Source::default(),
+            excluded: &[],
+            should_panic: false,
+            simulation: false,
+            fixed_seed: false,
+        }
+    }
+}
 
 // The hook delegates on every thread except the one currently evaluating a case.
 thread_local! {
@@ -51,6 +92,7 @@ enum Failure {
     Panic {
         payload: Box<dyn Any + Send>,
         location: Option<String>,
+        violation: Option<Violation>,
     },
     Exit(String),
 }
@@ -63,19 +105,23 @@ impl Failure {
                 Self::Panic {
                     payload: a,
                     location: at,
+                    violation: av,
                 },
                 Self::Panic {
                     payload: b,
                     location: bt,
+                    violation: bv,
                 },
-            ) => at == bt && a.as_ref().type_id() == b.as_ref().type_id(),
+            ) => at == bt && av == bv && a.as_ref().type_id() == b.as_ref().type_id(),
             _ => false,
         }
     }
 
     fn report(self) -> ! {
         match self {
-            Self::Panic { payload, location } => {
+            Self::Panic {
+                payload, location, ..
+            } => {
                 let message = payload
                     .downcast_ref::<String>()
                     .map(String::as_str)
@@ -102,81 +148,268 @@ struct FailedCase {
     failure: Failure,
 }
 
+enum Outcome {
+    Passed,
+    Rejected(Clause),
+    Failed(FailedCase),
+}
+struct Evaluation {
+    outcome: Outcome,
+    trace: Option<String>,
+}
+impl Evaluation {
+    fn signature(&self) -> String {
+        match &self.outcome {
+            Outcome::Passed => "passed".into(),
+            Outcome::Rejected(clause) => format!("rejected: {clause:?}"),
+            Outcome::Failed(case) => match &case.failure {
+                Failure::Exit(message) => format!("exit: {message}"),
+                Failure::Panic {
+                    payload,
+                    location,
+                    violation,
+                } => format!(
+                    "panic: {:?} {location:?} {violation:?}",
+                    payload
+                        .downcast_ref::<String>()
+                        .map(String::as_str)
+                        .or_else(|| payload.downcast_ref::<&str>().copied())
+                ),
+            },
+        }
+    }
+}
+
 fn evaluate(
     seed: u64,
     replay: Option<Vec<Choice>>,
+    config: Config,
     body: &mut impl FnMut(&mut Gen) -> Result<(), String>,
-) -> Option<FailedCase> {
+) -> Evaluation {
     let mut generator = Gen::new(seed, replay);
+    if config.simulation {
+        crate::sim::runner::start(seed);
+    }
+    if config.simulation || config.fixed_seed {
+        generator.random = mix(seed ^ RUN_SEED);
+    }
+    __contract::take_violation();
     let previous = CAPTURE.replace(Some(None));
     let result = panic::catch_unwind(AssertUnwindSafe(|| body(&mut generator)));
     let location = CAPTURE.replace(previous).flatten();
-    if generator.replay_overrun {
-        return None;
-    }
-    let failure = match result {
-        Ok(Ok(())) => return None,
-        Ok(Err(message)) => Failure::Exit(message),
-        Err(payload) => Failure::Panic { payload, location },
+    let violation = __contract::take_violation();
+    let trace = generator.simulation.as_ref().map(|tasks| tasks.sim_trace());
+    let outcome = if generator.replay_overrun {
+        Outcome::Passed
+    } else {
+        match result {
+            Ok(Ok(())) => Outcome::Passed,
+            Ok(Err(message)) => Outcome::Failed(FailedCase {
+                input: generator.input,
+                choices: generator.choices,
+                failure: Failure::Exit(message),
+            }),
+            Err(payload) => {
+                // A caught earlier clause must not turn a later, unrelated panic into a discard.
+                let rejected = violation.as_ref().filter(|v| {
+                    !config.should_panic
+                        && v.clause.kind == ContractKind::Requires
+                        && (config.body.contains(v) || config.call.contains(v))
+                        && !config.excluded.iter().any(|source| source.contains(v))
+                        && location.as_deref()
+                            == Some(format!("{}:{}:{}", v.file, v.line, v.column).as_str())
+                        && payload.downcast_ref::<String>().is_some_and(|s| {
+                            s.starts_with(&format!(
+                                "requires violated: {} (in `{}`",
+                                v.clause.text, v.clause.function
+                            ))
+                        })
+                });
+                if let Some(v) = rejected {
+                    Outcome::Rejected(v.clause)
+                } else {
+                    Outcome::Failed(FailedCase {
+                        input: generator.input,
+                        choices: generator.choices,
+                        failure: Failure::Panic {
+                            payload,
+                            location,
+                            violation,
+                        },
+                    })
+                }
+            }
+        }
     };
-    Some(FailedCase {
-        input: generator.input,
-        choices: generator.choices,
-        failure,
-    })
+    Evaluation { outcome, trace }
 }
 
-/// Execute the generated cases for a libtest entry.
-///
-/// `path` is the crate-qualified test path. The callback draws and records
-/// arguments before invoking the test body. A decimal `TIDE_TEST_SEED` replays
-/// one case, including its shrink sequence on failure.
-/// The callback cannot capture caller state and returns a silently classified result.
+/// One owner for accepted-case counting, requires discards, replay and shrinking.
+/// Callbacks cannot capture caller state across a caught panic.
 #[doc(hidden)]
-pub fn run(path: &str, mut body: fn(&mut Gen) -> Result<(), String>) {
+pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(), String>) {
     let name = path.split_once("::").map_or(path, |(_, name)| name);
-    let replay = std::env::var_os("TIDE_TEST_SEED").map(|seed| {
+    let seed_var = if config.simulation {
+        "TIDE_SIM_SEED"
+    } else {
+        "TIDE_TEST_SEED"
+    };
+    let replay = std::env::var_os(seed_var).map(|seed| {
         seed.to_str()
             .and_then(|seed| seed.parse::<u64>().ok())
-            .expect("TIDE_TEST_SEED must be a decimal u64")
+            .unwrap_or_else(|| panic!("{seed_var} must be a decimal u64"))
     });
-    let cases = if replay.is_some() { 1 } else { CASES };
-    // Stable path hash so replay does not depend on the host's hash builder.
+    let cases = if replay.is_some() { 1 } else { config.cases };
+    let limit = if replay.is_some() {
+        1
+    } else {
+        cases.saturating_mul(100)
+    };
     let path_hash = path.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
     });
     install_hook();
-    for index in 0..cases {
-        let seed = replay.unwrap_or_else(|| mix(RUN_SEED ^ path_hash ^ mix(index)));
-        if let Some(best) = evaluate(seed, None, &mut body) {
-            eprintln!("property failed: {name}");
-            eprintln!("  seed: {seed}");
-            eprintln!("  replay: tide test {name} --seed {seed}");
-            let executable = std::env::current_exe()
-                .map(|path| path.to_string_lossy().replace('\'', "'\\''"))
-                .unwrap_or_else(|_| "<test-binary>".into());
-            eprintln!("  replay: TIDE_TEST_SEED={seed} '{executable}' --exact {name}");
-            let mut shrinker = Shrinker {
-                seed,
-                body: &mut body,
-                best,
-                evaluations: 0,
-                last_improvement: 0,
-            };
-            shrinker.shrink();
-            eprintln!("  input: {}", shrinker.best.input);
-            eprintln!("  shrink evaluations: {}", shrinker.evaluations);
-            if shrinker.exhausted() {
-                eprintln!("  shrink budget reached");
+    let mut accepted = 0;
+    let mut generated = 0;
+    let mut failures = 0;
+    let mut first_failure = None;
+    let mut rejections: Vec<(Clause, u64)> = Vec::new();
+    for index in 0..limit {
+        if accepted == cases {
+            break;
+        }
+        let seed = replay.unwrap_or_else(|| {
+            if config.simulation {
+                index
+            } else {
+                mix(RUN_SEED ^ path_hash ^ mix(index))
             }
-            shrinker.best.failure.report();
+        });
+        generated += 1;
+        let mut evaluation = evaluate(seed, None, config, &mut body);
+        if config.simulation && (index == 0 || matches!(evaluation.outcome, Outcome::Failed(_))) {
+            let again = evaluate(seed, None, config, &mut body);
+            let difference = crate::sim::runner::first_difference(
+                evaluation.trace.as_deref().unwrap_or(""),
+                again.trace.as_deref().unwrap_or(""),
+            );
+            if let Some((line, a, b)) = difference {
+                eprintln!(
+                    "simulation nondeterminism seed={seed}: first differing trace line {line}\n  first: {a:?}\n  second: {b:?}"
+                );
+            }
+            let different_outcome = evaluation.signature() != again.signature();
+            if different_outcome {
+                eprintln!("simulation nondeterminism seed={seed}: outcomes differ");
+            }
+            if difference.is_some() || different_outcome {
+                evaluation.outcome = Outcome::Failed(FailedCase {
+                    input: String::new(),
+                    choices: Vec::new(),
+                    failure: Failure::Exit("determinism self-check failed".into()),
+                });
+            }
+        }
+        match evaluation.outcome {
+            Outcome::Passed => accepted += 1,
+            Outcome::Rejected(clause) => {
+                if let Some((_, count)) = rejections.iter_mut().find(|(c, _)| *c == clause) {
+                    *count += 1;
+                } else {
+                    rejections.push((clause, 1));
+                }
+            }
+            Outcome::Failed(best) => {
+                accepted += 1;
+                failures += 1;
+                eprintln!("property failed: {name}");
+                eprintln!("  seed: {seed}");
+                eprintln!("  replay: tide test {name} --seed {seed}");
+                let executable = std::env::current_exe()
+                    .map(|path| path.to_string_lossy().replace('\'', "'\\''"))
+                    .unwrap_or_else(|_| "<test-binary>".into());
+                eprintln!("  replay: {seed_var}={seed} '{executable}' --exact {name}");
+                if config.simulation {
+                    eprintln!("simulation failure seed={seed} test={name}");
+                    eprint!("{}", evaluation.trace.as_deref().unwrap_or(""));
+                }
+                let mut shrinker = Shrinker {
+                    seed,
+                    body: &mut body,
+                    config,
+                    best,
+                    evaluations: 0,
+                    last_improvement: 0,
+                };
+                shrinker.shrink();
+                eprintln!("  input: {}", shrinker.best.input);
+                eprintln!("  shrink evaluations: {}", shrinker.evaluations);
+                if shrinker.exhausted() {
+                    eprintln!("  shrink budget reached");
+                }
+                if config.simulation {
+                    let failure = shrinker.best.failure;
+                    match &failure {
+                        Failure::Exit(message) => eprintln!("  cause: {message}"),
+                        Failure::Panic { payload, .. } => eprintln!(
+                            "  cause: {}",
+                            payload
+                                .downcast_ref::<String>()
+                                .map(String::as_str)
+                                .or_else(|| payload.downcast_ref::<&str>().copied())
+                                .unwrap_or("non-string panic")
+                        ),
+                    }
+                    if first_failure.is_none() {
+                        first_failure = Some(failure);
+                    }
+                } else {
+                    shrinker.best.failure.report();
+                }
+            }
         }
     }
-    eprintln!("property {name}: {cases}/{cases} cases passed");
+    if let Some(failure) = first_failure {
+        eprintln!(
+            "simulation {name}: {} passed; {failures} failed ({generated} seeds)",
+            accepted - failures
+        );
+        failure.report();
+    }
+    if accepted != cases {
+        // Source order, rather than the first case to reject, breaks count ties.
+        rejections.sort_by_key(|(c, _)| (c.file, c.line, c.column, c.index, c.conjunct));
+        let most = rejections
+            .iter()
+            .fold(None, |best: Option<&(Clause, u64)>, next| {
+                if best.is_none_or(|best| next.1 > best.1) {
+                    Some(next)
+                } else {
+                    best
+                }
+            });
+        let (text, count) = most.map_or(("<unknown requires>", 0), |(clause, count)| {
+            (clause.text, *count)
+        });
+        if config.simulation {
+            eprintln!("simulation {name}: vacuous ({generated} seeds)");
+        }
+        panic!(
+            "vacuous: {accepted} of {generated} generated cases satisfied requires; most rejected by `{text}` ({count})"
+        );
+    }
+    if config.simulation {
+        eprintln!(
+            "simulation {name}: {accepted} passed; 0 failed ({generated} seeds); {accepted}/{generated} cases passed (accepted/generated)"
+        );
+    } else {
+        eprintln!("property {name}: {accepted}/{generated} cases passed (accepted/generated)");
+    }
 }
 
 struct Shrinker<'a, F> {
     seed: u64,
+    config: Config,
     body: &'a mut F,
     best: FailedCase,
     evaluations: usize,
@@ -195,7 +428,9 @@ impl<F: FnMut(&mut Gen) -> Result<(), String>> Shrinker<'_, F> {
             return false;
         }
         self.evaluations += 1;
-        let Some(candidate) = evaluate(self.seed, Some(choices), self.body) else {
+        let Outcome::Failed(candidate) =
+            evaluate(self.seed, Some(choices), self.config, self.body).outcome
+        else {
             return false;
         };
         let shorter = (candidate.choices.len(), &candidate.choices)
@@ -285,6 +520,96 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn fixed_seed_parameters_share_the_simulation_stream_and_replay() {
+        let draws = |config| {
+            let mut values = Vec::new();
+            evaluate(47, None, config, &mut |g| {
+                assert_eq!(g.seed(), 47);
+                values = (0..4).map(|_| g.index(usize::MAX)).collect();
+                Ok(())
+            });
+            values
+        };
+        let plain = Config {
+            fixed_seed: true,
+            ..Config::default()
+        };
+        let simulated = Config {
+            simulation: true,
+            ..Config::default()
+        };
+        assert_eq!(draws(plain), draws(simulated));
+        assert_eq!(draws(plain), draws(plain));
+        assert_ne!(draws(plain), draws(Config::default()));
+    }
+
+    #[test]
+    fn caught_clause_records_do_not_discard_an_unrelated_panic_or_should_panic_case() {
+        install_hook();
+        let clause = Clause {
+            kind: ContractKind::Requires,
+            text: "false",
+            function: "f",
+            file: file!(),
+            line: line!(),
+            column: 1,
+            index: 0,
+            conjunct: 0,
+        };
+        let config = Config {
+            body: Source {
+                file: file!(),
+                start: (0, 0),
+                end: (u32::MAX, u32::MAX),
+            },
+            ..Config::default()
+        };
+        let mut body = |_: &mut Gen| -> Result<(), String> {
+            let _ = panic::catch_unwind(|| __contract::requires(clause, || false));
+            panic!("ordinary failure");
+        };
+        assert!(matches!(
+            evaluate(1, None, config, &mut body).outcome,
+            Outcome::Failed(_)
+        ));
+        let mut body = |_: &mut Gen| -> Result<(), String> {
+            __contract::requires(clause, || false);
+            Ok(())
+        };
+        assert!(matches!(
+            evaluate(
+                1,
+                None,
+                Config {
+                    should_panic: true,
+                    ..config
+                },
+                &mut body
+            )
+            .outcome,
+            Outcome::Failed(_)
+        ));
+        let violation = Violation {
+            clause,
+            file: file!(),
+            line: 1,
+            column: 1,
+        };
+        let failure = |violation| Failure::Panic {
+            payload: Box::new(String::from("same payload type")),
+            location: None,
+            violation: Some(violation),
+        };
+        assert!(!failure(violation.clone()).same_kind(&failure(Violation {
+            clause: Clause {
+                conjunct: 1,
+                ..clause
+            },
+            ..violation
+        })));
+    }
+
+    #[test]
     fn a_slow_stalled_search_finishes_within_the_harness_budget() {
         install_hook();
         let started = Instant::now();
@@ -298,9 +623,12 @@ mod tests {
             assert!(values.iter().map(|n| u32::from(*n)).sum::<u32>() < 3958);
             Ok(())
         };
-        let best = evaluate(4, None, &mut body).expect("the initial case must fail");
+        let Outcome::Failed(best) = evaluate(4, None, Config::default(), &mut body).outcome else {
+            panic!("the initial case must fail")
+        };
         let mut shrinker = Shrinker {
             seed: 4,
+            config: Config::default(),
             body: &mut body,
             best,
             evaluations: 0,

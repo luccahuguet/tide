@@ -118,6 +118,7 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
             continue;
         }
         // Only the macro can mark the function whose arguments it draws.
+        let mut simulation = false;
         let property = tcx.hir_attrs(id.hir_id()).iter().any(|attr| {
             if attr
                 .doc_str()
@@ -127,9 +128,10 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
             }
             let expansion = attr.span().ctxt().outer_expn_data();
             matches!(expansion.kind, ExpnKind::Macro(MacroKind::Attr, _))
-                && expansion
-                    .macro_def_id
-                    .is_some_and(|mac| crates.exported(mac) && tcx.item_name(mac) == sym::test)
+                && expansion.macro_def_id.is_some_and(|mac| {
+                    simulation = tcx.item_name(mac).as_str() == "sim_test";
+                    crates.exported(mac) && (simulation || tcx.item_name(mac) == sym::test)
+                })
         });
         if !property {
             continue;
@@ -138,7 +140,12 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
         let sig = tcx.instantiate_bound_regions_with_erased(sig);
         properties.property = tcx.def_span(def);
         let mut kinds = String::new();
-        for &ty in sig.inputs() {
+        for (index, &ty) in sig.inputs().iter().enumerate() {
+            if simulation && index == 0 {
+                // The macro supplies this argument from the case's simulator.
+                kinds.push('v');
+                continue;
+            }
             let ty = properties.normalize(ty);
             let ty = if let Ref(_, referent, mutability) = *ty.kind() {
                 kinds.push(if mutability.is_mut() { 'm' } else { 'r' });

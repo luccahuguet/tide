@@ -218,8 +218,10 @@ the driver's `tests/build.rs`; parameterized property tests also execute through
 that driver suite. The fixture includes production's `sim.rs` and runner and uses its
 `#[sim_test]` macro: `tasks/simulation_runner.rs` also executes through the driver,
 covering seeded scopes, the split-update bug and ordered sink traces. Later world/fault/node
-operations remain fixture stubs. Requires-guided generation and generated contract tests
-remain planned in production. Structural generator insertion
+operations remain fixture stubs. `contracts/guided_properties.rs` reaches the same
+requires guidance, vacuity floor, fixed case seed and simulation-parameter shrinking items;
+the driver suite executes its passing and failing entries and checks replay. Generated
+contract tests remain planned in production. Structural generator insertion
 preserves original source lines, but columns of following tokens on an insertion's
 physical line can shift. A case that uses only the shared items is checked against Tide's
 std's own definitions. Every other item is the stub's own, a signature for an

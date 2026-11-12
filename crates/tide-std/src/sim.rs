@@ -4,7 +4,7 @@
 use crate::task::{Simulation, Tasks};
 use crate::time::Duration;
 
-mod runner {
+pub(crate) mod runner {
     include!("sim/runner.rs");
 }
 #[doc(hidden)]

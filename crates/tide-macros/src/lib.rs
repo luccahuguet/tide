@@ -11,6 +11,7 @@ mod contract;
 mod error;
 mod sim_test;
 mod test;
+mod test_guidance;
 
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
 

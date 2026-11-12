@@ -149,6 +149,39 @@ fn conjunct_source(tokens: &TS, clause: &Clause) -> String {
 }
 
 pub fn expand(kind: &'static str, tokens: TS, item: TS) -> syn::Result<TS> {
+    expand_inner(kind, tokens, item, Span::call_site(), false)
+}
+
+/// A property's requires are generation filters even in release test binaries.
+pub(super) fn property_body(mut f: ItemFn) -> syn::Result<TS> {
+    let Some(index) = f
+        .attrs
+        .iter()
+        .position(|a| matches!(attr_name(a).as_str(), "requires" | "ensures" | "invariants"))
+    else {
+        return Ok(quote!(#f));
+    };
+    let attr = f.attrs.remove(index);
+    let kind = match attr_name(&attr).as_str() {
+        "requires" => "requires",
+        "ensures" => "ensures",
+        _ => "invariants",
+    };
+    let (tokens, span) = match attr.meta {
+        syn::Meta::List(list) => (list.tokens, list.delimiter.span().join()),
+        syn::Meta::Path(_) if kind == "invariants" => (TS::new(), Span::call_site()),
+        _ => return Err(syn::Error::new_spanned(attr, "expected a contract clause")),
+    };
+    expand_inner(kind, tokens, quote!(#f), span, true)
+}
+
+fn expand_inner(
+    kind: &'static str,
+    tokens: TS,
+    item: TS,
+    first_span: Span,
+    property_filter: bool,
+) -> syn::Result<TS> {
     let mut f = match syn::parse2::<ItemFn>(item.clone()) {
         Ok(f) => f,
         Err(e) => {
@@ -176,7 +209,7 @@ pub fn expand(kind: &'static str, tokens: TS, item: TS) -> syn::Result<TS> {
     }
     let mut clauses = Vec::new();
     if kind != "invariants" {
-        clauses.push(Clause::new(kind, tokens, Span::call_site(), 0)?);
+        clauses.push(Clause::new(kind, tokens, first_span, 0)?);
     }
     let mut keep = Vec::new();
     for a in std::mem::take(&mut f.attrs) {
@@ -238,7 +271,12 @@ pub fn expand(kind: &'static str, tokens: TS, item: TS) -> syn::Result<TS> {
             if parts.len() > 1 {
                 c.text = conjunct_source(&tokens, clause);
             }
-            requires.push(c.check(tokens, &function, quote!(true)));
+            requires.push(if property_filter {
+                let metadata = c.metadata(&function);
+                quote!(::std::__contract::requires(#metadata, || #tokens);)
+            } else {
+                c.check(tokens, &function, quote!(true))
+            });
         }
     }
     let user_track_caller = f.attrs.iter().any(|a| a.path().is_ident("track_caller"));
@@ -424,7 +462,49 @@ fn attr_name(a: &syn::Attribute) -> String {
         .last()
         .map_or(String::new(), |s| s.ident.to_string())
 }
-fn requires_conjuncts<'a>(expr: &'a Expr, parts: &mut Vec<&'a Expr>) {
+/// Nested callable bodies are outside the property's direct-call boundary.
+pub(super) fn nested_bodies(block: &syn::Block) -> Vec<(Span, Span)> {
+    struct Nested(Vec<(Span, Span)>);
+    impl Nested {
+        fn push(&mut self, value: &impl ToTokens) {
+            let mut tokens = value.to_token_stream().into_iter();
+            if let Some(first) = tokens.next() {
+                let last = tokens.last().unwrap_or_else(|| first.clone());
+                self.0.push((first.span(), last.span()));
+            }
+        }
+    }
+    impl VisitMut for Nested {
+        fn visit_item_mut(&mut self, item: &mut syn::Item) {
+            self.push(item);
+        }
+        fn visit_expr_closure_mut(&mut self, expr: &mut syn::ExprClosure) {
+            self.push(&*expr.body);
+        }
+        fn visit_expr_async_mut(&mut self, expr: &mut syn::ExprAsync) {
+            self.push(&expr.block);
+        }
+        fn visit_expr_const_mut(&mut self, expr: &mut syn::ExprConst) {
+            self.push(&expr.block);
+        }
+        fn visit_macro_mut(&mut self, mac: &mut syn::Macro) {
+            expr::visit_macro(self, mac);
+        }
+    }
+    let mut nested = Nested(Vec::new());
+    nested.visit_block_mut(&mut block.clone());
+    nested.0
+}
+
+pub(super) fn requires_conjuncts<'a>(expr: &'a Expr, parts: &mut Vec<&'a Expr>) {
+    if let Expr::Paren(p) = expr {
+        requires_conjuncts(&p.expr, parts);
+        return;
+    }
+    if let Expr::Group(g) = expr {
+        requires_conjuncts(&g.expr, parts);
+        return;
+    }
     if let Expr::Binary(b) = expr {
         if matches!(b.op, syn::BinOp::And(_)) {
             requires_conjuncts(&b.left, parts);
@@ -813,7 +893,7 @@ fn extract_old(ts: TS, clause: &Clause, olds: &mut Vec<Old>) -> syn::Result<TS> 
         Ok(quote!(#value))
     }
 }
-fn lower(ts: TS) -> syn::Result<TS> {
+pub(super) fn lower(ts: TS) -> syn::Result<TS> {
     expr::parse(ts).map(|e| quote!(#e))
 }
 

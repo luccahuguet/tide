@@ -212,7 +212,10 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - REPLAY-2 (03:1671): `tide sim --replay` identity check (tooling).
 - CLAUSE-5 (04:451): compile-time class assignment that rejects nothing.
 - CLAUSE-6 (04:460): runtime check schedule. Only its name-resolution part is a row above.
-- CLAUSE-7 (04 §1.8): runtime violation outcome; `contracts/executable.rs`, `contracts/scoped_clauses.rs` and `contracts/clause_expressions.rs` execute through the production driver tests.
+- CLAUSE-7 (04 §1.8): Runtime violation outcome; `contracts/executable.rs`, `contracts/scoped_clauses.rs` and `contracts/clause_expressions.rs` execute through the production driver tests.
+  `contracts/guided_properties.rs` also checks property guidance and
+  rejection/vacuity, direct versus deeper call blame, and simulation-parameter shrinking
+  through production driver tests.
 - CLAUSE-8 (04:506): approval hash (review and CI tooling).
 - SEAL-1 (04:1336): `tide seal` command and file format (tooling).
 - SEAL-4 (04:1500): FX0921 from `tide review` and the CI gate, not from compilation.

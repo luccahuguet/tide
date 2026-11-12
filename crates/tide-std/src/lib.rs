@@ -35,8 +35,9 @@
 //!   when none is left (03 §9.3). `SimRoot` keeps its calling thread as task 0 until it drops;
 //!   `elapsed`, `records`, and `trace` inspect without scheduling. Sinks record ordered events
 //!   instead of writing to host streams;
-//! - `#[sim_test] fn t(sim: SimRoot)` (100 seeds) and `#[sim_test(seeds = N)]` (0..N),
-//!   one child process per test with a wall-clock backstop of 300 s per seed and empty stdin.
+//! - `#[sim_test] fn t(sim: SimRoot)` (100 accepted cases) and `#[sim_test(seeds = N)]`
+//!   (N accepted cases), using seeds from zero in order,
+//!   one child process per test with a wall-clock backstop of 300 s per evaluation and empty stdin.
 //!   The first and each failing seed runs twice for byte identity. Failures print seeds,
 //!   causes, and traces; success emits only a single summary, captured by libtest.
 //!   Signal/timeout or a missing summary names the last seed started; ordinary failures name
@@ -51,7 +52,15 @@
 //!   transparent variants), even with a manual Display;
 //! - the prelude's `#[test]`: ordinary libtest entries for parameterless tests and
 //!   deterministic generation and shrinking for tests with parameters. Replay a
-//!   failing case with `TIDE_TEST_SEED` set to the reported seed;
+//!   failing case with `TIDE_TEST_SEED` set to the reported seed. Requires guide recognized
+//!   shapes and filter every candidate, including in release test binaries. With runtime
+//!   contracts enabled, direct callee requires failures discard a case;
+//!   deeper ones fail. The runner accepts 100 cases within 10,000 generations or fails as
+//!   vacuous, naming the conjunct with the most first rejections (source-order ties).
+//!   Passing properties report accepted/generated; shrink attempts do not count.
+//!   Extra `#[sim_test]` parameters use the same runner with `seeds = N` accepted cases
+//!   within `100*N` generations, a fresh simulator per evaluation, and an unshrunk seed.
+//!   A plain test's parameter spelled `seed: u64` receives that unshrunk case seed;
 //! - `collections`: `HashMap`/`HashSet` with the pinned toolchain's full stable Rust API
 //!   and fixed default keys, capability-seeded `RandomState`, and
 //!   Rust's ordered collections, queue, and heap (see `collections`);
@@ -92,8 +101,31 @@
 //! panic propagation does not transport them. Runners must treat missing child metadata
 //! as an ordinary failure, never a requires rejection.
 //! Clause classification is syntactic until admission refines it; unknown or unparsed
-//! builtin macros remain untouched and classify as sampled. Unchecked-record printing,
-//! requires-guided generation and generated contract tests remain planned.
+//! builtin macros remain untouched and classify as sampled. Unchecked-record printing
+//! and generated contract tests remain planned.
+//!
+//! # Property implementation limits
+//!
+//! A called function's requires discards cases but does not guide generation.
+//!
+//! Guidance matches syntax, not resolved aliases: concrete integer/float ranges and scalar
+//! endpoint relations, Vec/String/slice length bounds, indices below those lengths,
+//! Vec/slice `is_sorted`, Vec/slice `contains(&x)` with primitive/String inputs or literals,
+//! Option `is_some`, and scalar equality. Bounds use literals, concrete scalar parameters
+//! (copied from borrowed inputs), and sequence lengths; unresolved constant paths only filter.
+//! Other shapes and aliases only filter. The full
+//! requires still runs after constructive generation, including while shrinking. Cyclic
+//! dependencies disable guidance; contradictory bounds use ordinary generation.
+//! Constructive sequences have at most 32 elements unless a larger minimum is requested;
+//! minima over 4,096 fall back to ordinary generation. Guided Strings use ASCII to meet
+//! byte lengths. Contains guidance needs a clonable primitive/String input; arbitrary
+//! element types only filter. Float sorting may still reject NaNs through the full clause.
+//! Ordinary collection generation allows 32 elements and four nesting levels; tuples
+//! support twelve elements. Inputs need Debug. Shrinking budgets 1,000 evaluations,
+//! stopping after 128 without improvement. Replay selects one generated case; a rejected
+//! replay fails as vacuous. A should_panic property never discards requires failures.
+//! Source-boundary classification uses current-thread runtime violation records; const
+//! requires and child-task violations lack those records and fail normally.
 //!
 //! Suppressed failures, echoes and panics emit nothing at the default log level; their debug
 //! record is deferred until the log sink exists. Discarded task values drop on the child or
@@ -106,8 +138,7 @@
 //! random draws, environment, input, processes); `Root`'s `log` field;
 //! the `dbg`, `log`, and `trace` sinks and `io::stdout()`/`io::stderr()`; `Secret`;
 //! multi-cell `Shared` operations, `Shared::same` and `Shared::reset`, other `sync` items,
-//! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests, generated simulation
-//! parameters, requires-guided generation,
+//! `par`, `arena`, `ptr`; other world setup, faults, nodes, replay manifests,
 //! and generated contract tests. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a

@@ -1,8 +1,9 @@
 use proc_macro2::TokenStream;
+#[cfg(test)]
 use quote::quote;
 use syn::{Expr, ItemFn, Lit, MetaNameValue};
 
-pub fn expand(attr: TokenStream, mut body: ItemFn) -> syn::Result<TokenStream> {
+pub fn expand(attr: TokenStream, body: ItemFn) -> syn::Result<TokenStream> {
     let seeds = if attr.is_empty() {
         100u64
     } else {
@@ -25,7 +26,7 @@ pub fn expand(attr: TokenStream, mut body: ItemFn) -> syn::Result<TokenStream> {
             }
         }
     };
-    if body.sig.inputs.len() != 1
+    if body.sig.inputs.is_empty()
         || !body.sig.generics.params.is_empty()
         || body.sig.generics.where_clause.is_some()
         || body.sig.unsafety.is_some()
@@ -34,7 +35,7 @@ pub fn expand(attr: TokenStream, mut body: ItemFn) -> syn::Result<TokenStream> {
     {
         return Err(syn::Error::new_spanned(
             &body.sig,
-            "sim_test needs a safe `fn name(sim: SimRoot)`; generated parameters are not available yet",
+            "sim_test needs a safe `fn name(sim: SimRoot, ...)`",
         ));
     }
     if let Some(attr) = body
@@ -47,32 +48,7 @@ pub fn expand(attr: TokenStream, mut body: ItemFn) -> syn::Result<TokenStream> {
             "sim_test does not support should_panic; catch the expected panic inside the test",
         ));
     }
-    let name = &body.sig.ident;
-    let visibility = &body.vis;
-    let mut harness_attrs = Vec::new();
-    body.attrs.retain(|attr| {
-        if attr.path().is_ident("ignore")
-            || attr.path().is_ident("cfg")
-            || attr.path().is_ident("cfg_attr")
-        {
-            harness_attrs.push(attr.clone());
-            false
-        } else {
-            true
-        }
-    });
-    Ok(quote! {
-        #[::core::prelude::v1::test]
-        #(#harness_attrs)*
-        #visibility fn #name() {
-            #body
-            ::std::sim::__run(
-                ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#name)),
-                #seeds,
-                #name,
-            );
-        }
-    })
+    crate::test::expand_property(body, Some(seeds))
 }
 
 #[cfg(test)]
@@ -109,9 +85,6 @@ mod tests {
         for body in [
             syn::parse_quote!(
                 fn sample() {}
-            ),
-            syn::parse_quote!(
-                fn sample(sim: SimRoot, value: u8) {}
             ),
             syn::parse_quote!(
                 async fn sample(sim: SimRoot) {}

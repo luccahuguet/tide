@@ -1,21 +1,19 @@
 //! Property tests for driver-built libtest binaries.
 //!
-//! Parameterized tests generate 100 deterministic cases. Set `TIDE_TEST_SEED`
-//! to a reported decimal seed to replay one case. Inputs need `Debug`.
-//! Built-in collections generate up to 32 elements with four collection nesting
-//! levels. Tuples support up to twelve elements. Implement `Arbitrary` to
-//! choose a type's generation behavior.
-//! Shrinking allows 1,000 evaluations and stops after 128 without improvement.
-//!
-//! `#[sim_test] fn t(sim: std::sim::SimRoot)` runs 100 seeded simulations in one child
-//! process; `seeds = N` selects 0..N. `TIDE_SIM_SEED` selects one fresh seed internally.
-//! Generated simulation parameters and shrinking remain planned.
+//! Parameterized tests accept 100 deterministic cases under their requires, or fail as
+//! vacuous after 10,000 generated cases. `TIDE_TEST_SEED` replays one case.
+//! `#[sim_test]` uses the same runner in a child process, with a fresh simulator per
+//! evaluation and fixed seed during parameter shrinking. `TIDE_SIM_SEED` selects one case.
+//! The crate-level docs own supported guidance shapes and generation/shrinking limits.
 
 mod arbitrary;
+mod guided;
 mod runner;
 
 pub use arbitrary::{Arbitrary, Borrowed};
-pub use runner::{property_result, run};
+#[doc(hidden)]
+pub use guided::{range, sequence};
+pub use runner::{Config, Source, property_result, run_config};
 pub use tide_macros::{sim_test, test};
 
 use std::collections::VecDeque;
@@ -42,6 +40,8 @@ struct Choice {
 /// Draw through this generator so the same seed can replay the case and the
 /// runner can shrink it by asking the implementation to draw again.
 pub struct Gen {
+    seed: u64,
+    simulation: Option<crate::task::Tasks>,
     random: u64,
     replay: Option<VecDeque<Choice>>,
     choices: Vec<Choice>,
@@ -60,6 +60,8 @@ impl Gen {
             .as_ref()
             .map_or(0, |choices| choices.len().saturating_add(128));
         Self {
+            seed,
+            simulation: None,
             random: seed,
             replay: replay.map(VecDeque::from),
             choices: Vec::new(),
@@ -68,6 +70,18 @@ impl Gen {
             replay_remaining,
             replay_overrun: false,
         }
+    }
+
+    /// The case seed is independent of shrinkable parameter choices.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    #[doc(hidden)]
+    pub fn simulation(&mut self) -> crate::sim::SimRoot {
+        let sim = crate::Root::sim(self.seed);
+        self.simulation = Some(sim.tasks.clone());
+        sim
     }
 
     /// Choose one index in `0..choices`. Panics if there are no choices.

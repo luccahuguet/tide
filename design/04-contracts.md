@@ -570,8 +570,11 @@ values such as views and `Seq`.
 
 Driver-built libtest binaries support explicit property tests written as
 `#[test]` functions with parameters (reference §10.2). The `tide test`
-command, clause-guided generation, the vacuity floor, and generated contract
-tests are planned.
+command and generated contract tests are planned. Explicit properties support
+requires-guided generation, the vacuity floor, and generated simulation parameters.
+A property's own requires remains a generation filter in release test binaries;
+this does not retain ordinary functions' erased contract checks.
+The std crate docs own current implementation limits.
 
 `test` adds three things.
 
@@ -624,8 +627,14 @@ gets a property test.
    the `requires`, made distinct by blocking clauses.
 4. Shrinking keeps the `requires` true.
 5. The report counts generated inputs and inputs that satisfied the
-   `requires`. Below a floor (by default 100 accepted cases or 1% acceptance)
-   the test fails as `vacuous`, so a filtered test cannot pass on zero cases.
+   `requires`. Generate until 100 cases (or `N` for `sim_test(seeds = N)`)
+   are accepted or `100*N` cases have been generated. Missing the target
+   fails as `vacuous`, naming the conjunct with the most first rejections;
+   ties follow source order. Shrink candidates do not count. Passing tests
+   print accepted/generated. A directly called function's requires violation
+   blamed inside the test body discards the case; deeper violations fail,
+   and `should_panic` never discards. Each simulation evaluation gets a fresh
+   simulator from the case seed, which shrinking keeps fixed.
 6. A failure carries the seed, shrunk input, failing clause, and replay
    command (D14). `tide test --fuzz` adds coverage-guided mutation.
 
