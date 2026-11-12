@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E1 preparation and readiness checks. This is not a gate-session coordinator."""
+"""E1 rendering, isolated commands, snapshots and grading (coordinator.py runs sessions)."""
 import argparse
 import fcntl
 from hashlib import sha256
@@ -22,6 +22,8 @@ RUST = "1.96.0"
 NIGHTLY = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
 BINS = {"B1", "B2", "B5", "B8"}
 TASKS = [f"{band}{i}" for band in "ABC" for i in range(1, 11)]
+SESSION_SECONDS = 2400
+GRADE_SECONDS = 480
 # Freeze with the suites; candidate output never defines acceptance coverage.
 ACCEPTANCE_TESTS = {
     "A1": "case1 case2 case3 case4 case5",
@@ -177,8 +179,8 @@ def offline_vendor(arm, project, channel):
 
 def environment(config, work):
     return {"PATH": f"{config['sysroot']}/bin:/usr/bin:/bin", "HOME": str(work),
-            "CARGO_HOME": str(work / "cargo-home"), "TMPDIR": str(work),
-            "CARGO_TARGET_DIR": str(build_dir(config, work)), "CARGO_BUILD_JOBS": "6", "RUST_BACKTRACE": "0"}
+            "CARGO_HOME": str(work / "cargo-home"), "TMPDIR": "/tmp" if config["sandbox"] else str(work),
+            "CARGO_TARGET_DIR": str(build_dir(config, work)), "CARGO_BUILD_JOBS": os.environ.get("CARGO_BUILD_JOBS", "6"), "RUST_BACKTRACE": "0"}
 
 
 def build_dir(config, work):
@@ -202,7 +204,10 @@ def sandbox_command(cmd, config, work, read_only=()):
             reads.append(path)
     if config["arm"] == "tide":
         reads.extend([Path(config["driver"]), Path(config["std"])] + [Path(p) for p in config["deps"]])
+    if config.get("without_store"):
+        reads.remove(Path("/nix/store"))
     reads.extend(Path(p) for p in read_only)
+    args += ["--tmpfs", "/tmp"]
     for path in dict.fromkeys(reads):
         if path.exists(): args += ["--ro-bind", str(path), str(path)]
     return args + ["--bind", str(work), str(work), "--chdir", str(work), "--"] + cmd
@@ -218,18 +223,25 @@ def run(cmd, config, work, *, cwd=None, timeout=120, input=None, env=None, read_
         if cwd:
             at = cmd.index("--chdir") + 1
             cmd[at] = str(cwd)
-    proc = subprocess.Popen(cmd, cwd=cwd or work, env=environment(config, work) if env is None else env,
-                            stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-    try:
-        out, err = proc.communicate(input, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        out, err = proc.communicate()
-        return {"command": cmd, "code": 124, "stdout": out.decode(errors="replace"),
-                "stderr": err.decode(errors="replace") + "\ntime limit exceeded\n"}
-    return {"command": cmd, "code": proc.returncode, "stdout": out.decode(errors="replace"),
-            "stderr": err.decode(errors="replace")}
+    # Bubblewrap emits exit-code only after successful exec; writer stderr is not a setup verdict.
+    with tempfile.TemporaryFile() as status:
+        if config["sandbox"]:
+            cmd[1:1] = ["--json-status-fd", str(status.fileno())]
+        proc = subprocess.Popen(cmd, cwd=cwd or work, env=environment(config, work) if env is None else env,
+                                stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                                pass_fds=(status.fileno(),) if config["sandbox"] else ())
+        try:
+            out, err = proc.communicate(input, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            out, err = proc.communicate()
+            return {"command": cmd, "code": 124, "stdout": out.decode(errors="replace"),
+                    "stderr": err.decode(errors="replace") + "\ntime limit exceeded\n"}
+        status.seek(0)
+        setup_error = config["sandbox"] and re.search(rb'"exit-code"\s*:\s*\d+', status.read()) is None
+    return {"command": cmd, "code": 2 if setup_error else proc.returncode, "infrastructure": setup_error,
+            "stdout": out.decode(errors="replace"), "stderr": err.decode(errors="replace")}
 
 
 def package(work, config, candidate, acceptance=False):
@@ -393,7 +405,7 @@ def run_binary_cases(binary, config, work):
     return results
 
 
-def prepare(task, arm, dest, config, reference=False):
+def prepare(task, arm, dest, config, reference=False, session=None):
     dest.mkdir(parents=True)
     (dest / "src").mkdir()
     (dest / "prompt.md").write_text(task_text(task, arm))
@@ -406,9 +418,11 @@ def prepare(task, arm, dest, config, reference=False):
             shutil.copyfile(HERE / "rust" / name, dest / name)
     entry = dest / ("src/main.rs" if task in BINS else "src/lib.rs")
     entry.write_text(source(task, arm).read_text() if reference else "")
-    session = dest.parent / "sessions" / dest.name if reference else STATE / "sessions" / (dest.parent.name + "-" + dest.name)
+    if session is None:
+        session = dest.parent / "sessions" / dest.name if reference else STATE / "sessions" / (dest.parent.name + "-" + dest.name)
     session.mkdir(parents=True)
     config = dict(config, task=task, arm=arm, directory=str(dest), runs=0, started=time.time())
+    config["session_seconds"] = session_limit(config)
     (session / "session.json").write_text(json.dumps(config, indent=2) + "\n")
     return session
 
@@ -424,14 +438,33 @@ def candidate_failure(error):
     return {"code": 1, "stdout": "", "stderr": f"candidate source unavailable: {error}\n", "stage": "candidate"}
 
 
+def session_limit(config):
+    return config.get("session_seconds", SESSION_SECONDS) if config.get("dry_run") else SESSION_SECONDS
+
+
+def capture_final(session, config):
+    final = session / "final"
+    if final.exists(): return
+    try: raw = candidate(config)
+    except (OSError, ValueError, RuntimeError) as error:
+        raw = b""
+        config["final_failure"] = candidate_failure(error)
+    final.mkdir()
+    (final / "source.rs").write_bytes(raw)
+    (final / "identity.json").write_text(json.dumps({"sha256": sha256(raw).hexdigest()}) + "\n")
+
+
 def command(session, mode):
     with (session / "session.json").open("r+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         config = json.load(lock)
         now = time.time()
-        if config["runs"] >= 20 or (config["started"] is not None and now - config["started"] >= 2400):
+        limit = session_limit(config)
+        elapsed = (time.monotonic() - config["started_monotonic"] if "started_monotonic" in config
+                   else now - config["started"]) if config["started"] is not None else 0
+        if config["runs"] >= 20 or elapsed >= limit:
             print("E1 budget exhausted", file=sys.stderr)
-            return 2
+            return 3
         config["runs"] += 1
         lock.seek(0); lock.truncate(); json.dump(config, lock, indent=2); lock.flush()
         snapshot = session / f"snapshot-{config['runs']:02}"
@@ -444,7 +477,7 @@ def command(session, mode):
         except (OSError, ValueError, RuntimeError) as error:
             results.append(candidate_failure(error))
         (snapshot / "source.rs").write_bytes(raw)
-        config["deadline"] = time.monotonic() + min(120, 2400 - (now - config["started"]))
+        config["deadline"] = time.monotonic() + min(120, limit - elapsed)
         work = snapshot / "run"
         try:
             if not results:
@@ -454,18 +487,27 @@ def command(session, mode):
                 if mode == "test" and all(r["code"] == 0 for r in results):
                     results += executable_tests(config, work, pkg, acceptance=False)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
-            results.append({"code": 2, "stdout": "", "stderr": f"E1 run setup error: {error}\n"})
+            results.append({"code": 2, "infrastructure": True, "stdout": "", "stderr": f"E1 run setup error: {error}\n"})
             raise
         finally:
             (snapshot / "results.json").write_text(json.dumps(results, indent=2) + "\n")
             if work.exists():
                 shutil.rmtree(work)
+            if config["runs"] >= 20:
+                config.pop("deadline", None)
+                capture_final(session, config)
+                lock.seek(0); lock.truncate(); json.dump(config, lock, indent=2); lock.flush()
+                marker = session / "budget.tmp"
+                marker.write_text(json.dumps({"reason": "run_limit", "completed_run": config["runs"],
+                    "infrastructure": any(r.get("infrastructure") for r in results)}) + "\n")
+                marker.replace(session / "budget.json")
         for result in results:
             sys.stdout.write(result["stdout"]); sys.stderr.write(result["stderr"])
-        return 0 if all(r["code"] == 0 for r in results) else 1
+        return 2 if any(r.get("infrastructure") for r in results) else (0 if all(r["code"] == 0 for r in results) else 1)
 
 
 def grade(config, work, text, compile_only=False):
+    config = dict(config, deadline=time.monotonic() + GRADE_SECONDS)
     acceptance_work = work / "acceptance"
     acceptance_work.mkdir()
     pkg = package(acceptance_work, config, text, acceptance=True)
@@ -483,7 +525,11 @@ def grade(config, work, text, compile_only=False):
         if flags:
             results.append({"code": 1, "stdout": "", "stderr": "grader review required: " + ", ".join(flags) + "\n",
                             "stage": "integrity", "review_required": True, "flags": flags})
-    return {"structure": structure(config["task"], config["arm"], text), "results": results}
+    timed_out = time.monotonic() >= config["deadline"]
+    if timed_out:
+        results.append({"code": 124, "stage": "grade_timeout", "stdout": "",
+                        "stderr": "grade aggregate time limit exceeded\n"})
+    return {"structure": structure(config["task"], config["arm"], text), "results": results, "timed_out": timed_out}
 
 
 def base_config(arm, local=False):
@@ -536,7 +582,26 @@ def main():
     refs.add_argument("arm", choices=["rust", "tide"])
     refs.add_argument("tasks", nargs="*", choices=TASKS)
     refs.add_argument("--local", action="store_true", help="readiness only: run known reference sources without namespace isolation")
+    canary = sub.add_parser("canary")
+    canary.add_argument("arm", choices=["rust", "tide"])
+    canary.add_argument("output", type=Path)
+    identity = sub.add_parser("identity")
+    identity.add_argument("output", type=Path)
+    identity.add_argument("--claude", default=shutil.which("claude"))
+    identity.add_argument("--model", default="claude-opus-5-5")
+    identity.add_argument("--jobs", type=int, default=1)
     args = parser.parse_args()
+    if args.action in {"canary", "identity"}:
+        import gate_checks as gate
+        if args.action == "canary":
+            result = gate.canary(args.arm, base_config(args.arm))
+        else:
+            gate.clean()
+            result = gate.identity({arm: base_config(arm) for arm in ["rust", "tide"]},
+                                   args.claude, args.model, args.jobs)
+        gate.save(args.output, result)
+        print(args.action, "PASS", args.output)
+        return 0
     if args.action == "render": print(task_text(args.task, args.arm), end=""); return 0
     if args.action == "prepare":
         print(prepare(args.task, args.arm, args.directory.resolve(), base_config(args.arm))); return 0
@@ -550,7 +615,10 @@ def main():
                 failures = [r for r in saved if r.get("stage") == "candidate"]
                 raw = (args.session / "snapshot-01/source.rs").read_bytes()
             else:
-                raw = candidate(config)
+                final = args.session / "final/source.rs"
+                raw = final.read_bytes() if final.exists() else candidate(config)
+                if config.get("final_failure"):
+                    failures = [config["final_failure"]]
             if not failures:
                 text = raw.decode("utf-8")
         except (OSError, ValueError, RuntimeError) as error:
@@ -560,7 +628,9 @@ def main():
         else:
             with tempfile.TemporaryDirectory(prefix="grade-", dir=STATE) as directory:
                 result = grade(config, Path(directory), text, args.compile_only)
+        result["infrastructure"] = any(r.get("infrastructure") for r in result["results"])
         (args.session / ("first-grade.json" if args.first else "final-grade.json")).write_text(json.dumps(result, indent=2) + "\n")
+        if result["infrastructure"]: return 2
         return 0 if (args.compile_only or result["structure"]) and all(r["code"] == 0 for r in result["results"]) else 1
     config = base_config(args.arm, args.local)
     STATE.mkdir(parents=True, exist_ok=True)

@@ -270,14 +270,14 @@ one that does not execute is a toolchain defect (§7.4).
 | `Shared::with2`, `with_all`, `same`, `reset`, `LockError::Aliased` | C4 | `fx-ugm` (E1-P3) |
 | Channels: `sync_channel`, `channel`, `send`, `recv`, `recv_deadline`, iteration, error enums | C3 | `fx-o4h` (E1-P4) |
 | `std::par::join`, `par_map`, `par_for`, `par_sort` | C1, C2 | `fx-iob` (E1-P5) |
-| `Fs`, `File`, `OpenOptions`, `Mode`, `dir`, `read_only`, `write_synced`, `sync_dir`, `rename`, `read_dir`, `metadata`; `sim.world.file` | B1, B3–B7, B9 | `fx-byk` (E1-P6) |
+| `Fs`, `File`, `OpenOptions`, `Mode`, `dir`, `read_only`, `write_synced`, `sync_dir`, `rename`, `read_dir`, `metadata`; `sim.world.file` | B1, B3–B7, B9 | `fx-byk.1`, `fx-byk.2` (E1-P6) |
 | `Env`, `Stdin`, `stdout`/`stderr`, log sinks, `main` result and `ExitCode` exits; `sim.world.args`, `env_var`, `stdin`, `sim.records` | B1, B2, B5, B8 | `fx-5vj` (E1-P7) |
 | `Net::bind`, `Net::connect`, `TcpListener`, `TcpStream`, simulated loopback | C10 | `fx-hxw` (E1-P8) |
 | `derive(Error)` with `#[error]`, `#[from]`, `#[source]` | any (A3, A8, A9, B6–B8 invite it) | `fx-3iu` (E1-P9) |
 | `derive(Encode, Decode)`, `#[codec]`, `std::json` | A9, B8 | `fx-08m` (E1-P10) |
 | `#[requires]`, `#[ensures]`, `invariant!`, `old`, `result`, quantifiers, violation panics | C7, C8 | `fx-mhd` (E1-P11) |
-| Property tests, generated contract tests, vacuity | C7, C8, any writer property test | `fx-m72` (E1-P12) |
-| `#[pure]`, `Arena`/`Id`, `std::float`, `std::math`, `truncate`, `cast_signed`/`cast_unsigned`, `round_from`, float `TryFrom`, fixed-key `HashMap`, and the allowlist entries for the `core`/`alloc` items the reference admits | A2, A5, A6, B7, any | `fx-yg5` (E1-P13) |
+| Property tests, generated contract tests, vacuity | C7, C8, any writer property test | `fx-m72.1`, `fx-m72.2`, `fx-m72.3` (E1-P12) |
+| `#[pure]`, `Arena`/`Id`, `std::float`, `std::math`, `truncate`, `cast_signed`/`cast_unsigned`, `round_from`, float `TryFrom`, fixed-key `HashMap`, and the allowlist entries for the `core`/`alloc` items the reference admits | A2, A5, A6, B7, any | `fx-yg5.1`–`fx-yg5.5` (E1-P13) |
 
 Every bead in the table blocks `fx-ic2`. The ones filed for E1 carry the
 label `e1-prereq` and cite their row by its E1-P number.
@@ -287,12 +287,18 @@ label `e1-prereq` and cite their row by its E1-P number.
 `fx-ic2` starts its gate run only when all of these hold, each recorded on
 the bead with its evidence:
 
-1. Every bead named in §10.1 is closed.
+1. Every bead named in §10.1 is closed: E1-P6 is owned by
+   `fx-byk.1`–`fx-byk.2`, E1-P12 by `fx-m72.1`–`fx-m72.3`,
+   E1-P13 by `fx-yg5.1`–`fx-yg5.5`, and E1-P14 by `fx-u65`.
+   The library boundary is owned by `fx-dsa`, I/O core by `fx-ecb`,
+   and gate machinery by `fx-rpwp`; these must also be closed.
 2. Every reference solution (§6) passes `./check`, its structure check,
    and its acceptance suite in both arms on the recorded toolchains, and
    the Tide solutions do so through the driver with the production std,
    never the stub.
-3. For every `FX` code the reference names, a program violating it gets
+3. For every `FX` code the reference names except FX0920, FX0921 and
+   FX0516 (excluded from E1 gating by the owner decision of 2026-11-09
+   recorded on `fx-ic2`), a program violating it gets
    that code from the driver at the reference's severity (E1-P14's
    conformance cases): rejected for an error, reported for a lint. So a
    Tide writer cannot pass with code the reference forbids, and lint-level

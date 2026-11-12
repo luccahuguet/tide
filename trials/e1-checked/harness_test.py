@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Small contract checks for rendering, structure, budgets, and child timeouts."""
+import io
+import os
 import json
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
 
 import harness as h
+import broker as b
+import coordinator as c
+import gate_checks as g
+from standin import Broker
 
 
 class HarnessTests(unittest.TestCase):
@@ -68,11 +76,11 @@ class HarnessTests(unittest.TestCase):
                 state = json.loads((session / "session.json").read_text())
                 state["runs"] = 20
                 (session / "session.json").write_text(json.dumps(state))
-                self.assertEqual(h.command(session, "check"), 2)
+                self.assertEqual(h.command(session, "check"), 3)
                 state["runs"] = 0
                 state["started"] = time.time() - 2401
                 (session / "session.json").write_text(json.dumps(state))
-                self.assertEqual(h.command(session, "check"), 2)
+                self.assertEqual(h.command(session, "check"), 3)
 
     def test_timeout_and_clean_environment(self):
         with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
@@ -84,7 +92,7 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(result["code"], 0)
             self.assertEqual(result["stdout"], "None\n\n")
             with patch.dict(h.os.environ, {"CARGO_BUILD_JOBS": "4"}):
-                self.assertEqual(h.environment(config, root)["CARGO_BUILD_JOBS"], "6")
+                self.assertEqual(h.environment(config, root)["CARGO_BUILD_JOBS"], "4")
             result = h.run(["/usr/bin/env"], config, root, env={})
             self.assertEqual(result["stdout"], "")
 
@@ -512,6 +520,7 @@ pub mod acceptance { #[test] fn case1() {} }
         with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp:
             work = Path(tmp).resolve()
             config = h.base_config("rust")
+            config["without_store"] = bool(h.os.environ.get("E1_WITHOUT_STORE_TEST"))
             result = h.run([config["sysroot"] + "/bin/cargo", "--version"], config, work)
             self.assertEqual(result["code"], 0, result["stderr"])
             source = work / "hello.rs"
@@ -522,6 +531,22 @@ pub mod acceptance { #[test] fn case1() {} }
             result = h.run([str(binary)], config, work)
             self.assertEqual(result["code"], 0, result["stderr"])
             self.assertEqual(result["stdout"], "jailed toolchain ok\n")
+
+    def test_jailed_runtime_executable_under_tmp_survives_tmpfs(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+            root = Path(tmp)
+            config = h.base_config("rust")
+            source = root / "control.rs"
+            source.write_text('fn main() { println!("external tmp runtime ok"); }\n')
+            (root / "output").mkdir()
+            binary = root / "output/control"
+            built = h.run([config["sysroot"] + "/bin/rustc", str(source), "-o", str(binary)], config, root)
+            self.assertEqual(built["code"], 0, built["stderr"])
+            scratch = root / "scratch"
+            scratch.mkdir()
+            result = h.run([str(binary)], config, scratch, read_only=[binary])
+            self.assertEqual(result["code"], 0, result["stderr"])
+            self.assertEqual(result["stdout"], "external tmp runtime ok\n")
 
     def test_native_wrappers_check_without_running_then_run_unit_and_doc_tests(self):
         with tempfile.TemporaryDirectory(dir=h.ROOT / "target") as tmp, patch.object(h, "STATE", h.STATE / "self-test"):
@@ -573,6 +598,1016 @@ pub fn delayed_panic() {}
             self.assertEqual(h.command(session, "test"), 1)
             results = (session / "snapshot-04/results.json").read_text()
             self.assertIn("doctest time limit exceeded", results)
+
+
+class GateTests(unittest.TestCase):
+    def test_dry_flag_cannot_launch_existing_gate_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            g.save(root / "state.json", {"dry_run": False, "model": g.MODEL, "cli": "/pinned", "jobs": 1})
+            with patch.object(sys, "argv", ["coordinator", "run", str(root), "--dry-run"]), \
+                 patch.object(c, "batch") as batch:
+                with self.assertRaisesRegex(ValueError, "cannot turn a gate"):
+                    c.main()
+                batch.assert_not_called()
+
+    def test_dirty_identity_and_changed_cli_stop_before_next_writer(self):
+        with patch.object(g, "output", return_value=" M crates/control.rs"):
+            with self.assertRaisesRegex(ValueError, "clean"):
+                g.clean()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = {"dry_run": False, "order": [["A2", "rust", 1]], "jobs": 1,
+                     "configs": {"rust": {}}, "model": g.MODEL, "cli": "unused", "seconds": 2400,
+                     "identity": {"cheap": {"cli_version": "pinned"}}}
+            with patch.object(c, "prerequisites"), patch.object(g, "cheap", return_value={"cli_version": "changed"}), \
+                 patch.object(h, "prepare") as prepared:
+                with self.assertRaisesRegex(RuntimeError, "identity changed"):
+                    c.batch(root, state, 1)
+                prepared.assert_not_called()
+
+    def test_canary_rejects_leaks_missing_probes_and_broken_controls(self):
+        class Socket:
+            def __init__(self, *_args): pass
+            def __enter__(self): return self
+            def __exit__(self, *_args): pass
+            def connect(self, *_args): pass
+            def bind(self, *_args): pass
+            def listen(self, *_args): pass
+            def getsockname(self): return ("192.0.2.1", 1234)
+        for broken in [None, "repository", "network", "missing", "positive", "negative"]:
+            def run(cmd, config, work, **kwargs):
+                spec = json.loads(cmd[-1])
+                checks = {name: not config["sandbox"] for name in
+                          set(spec["paths"]) | set(spec["addresses"]) | {"environment", "dns"}}
+                if config["sandbox"] and broken in {"repository", "network"}: checks[broken] = True
+                if config["sandbox"] and broken == "missing": checks.pop("reference")
+                if not config["sandbox"] and broken == "negative": checks["network"] = False
+                raw = {"sentinel": "E1-CANARY", "checks": checks, "positive": broken != "positive", "tmpfs": True}
+                return {"code": 0, "stdout": json.dumps(raw), "stderr": ""}
+            with self.subTest(broken=broken), tempfile.TemporaryDirectory() as tmp, \
+                 patch.object(h, "STATE", Path(tmp)), patch.object(h, "run", side_effect=run), \
+                 patch.object(g.socket, "socket", Socket), patch.object(g, "canary_key", return_value={"revision": 1}):
+                config = {"arm": "rust", "sysroot": "/toolchain", "sandbox": True}
+                if broken:
+                    with self.assertRaisesRegex(ValueError, "canary failed|control failed"):
+                        g.canary("rust", config)
+                else:
+                    self.assertEqual(len(g.canary("rust", config)["records"]), 3)
+
+    def test_batch_persists_faults_and_recovers_interrupted_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = {"dry_run": True, "order": [["A2", "rust", 1]], "jobs": 1,
+                     "configs": {"rust": {}}, "model": g.MODEL, "cli": "unused", "seconds": 2400}
+            def prepare(task, arm, directory, config, *, session):
+                directory.mkdir(parents=True)
+                session.mkdir(parents=True)
+                g.save(session / "session.json", {"directory": str(directory), "runs": 0})
+            calls = []
+            def writer(session, *_args, **kwargs):
+                kwargs["on_started"]()
+                calls.append(session.name)
+                return {"fault": None, "end_reason": "done"}
+            g.save(root / "slot-000.json", {"complete": False, "attempts": [
+                {"fault": "host_interruption", "end_reason": "host_interruption"}]})
+            first = root / "sessions/000-1"
+            first.mkdir(parents=True)
+            g.save(first / "launch.json", {})
+            g.save(first / "process.json", {"boot": "old boot"})
+            with patch.object(h, "prepare", side_effect=prepare), patch.object(c, "run_writer", side_effect=writer), \
+                 patch.object(c, "freeze_final", return_value="hash"), \
+                 patch.object(c, "freeze_and_grade", return_value={"first": {"exit": 1}, "final": {"exit": 1}}) as grades:
+                c.batch(root, state, 1)
+            row = json.loads((root / "slot-000.json").read_text())
+            self.assertEqual(calls, ["000-2"])
+            self.assertEqual(grades.call_count, 1)
+            self.assertEqual(row["reruns"], 1)
+            self.assertTrue(row["complete"])
+            self.assertTrue(row["dry_run"])
+            self.assertFalse(row["first_pass"])
+            self.assertTrue((root / "sessions/000-2/trial.json").exists())
+
+    def test_real_broker_relays_both_budget_refusals_without_compiling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            g.save(root / "session.json", {"runs": 20, "started": time.time()})
+            mcp = c.mcp_config(root)
+            broker = Broker(mcp)
+            try:
+                self.assertEqual(broker.tool("check"), 3)
+                g.save(root / "session.json", {"runs": 0, "started": time.time(),
+                                              "started_monotonic": time.monotonic() - 2401})
+                self.assertEqual(broker.tool("test"), 3)
+            finally:
+                broker.close()
+                broker.proc.stdout.close()
+            self.assertEqual([row["exit"] for row in c.jsonl(root / "broker.jsonl") if "exit" in row], [3, 3])
+            self.assertEqual(list(root.glob("snapshot-*")), [])
+
+    def test_setup_status_is_separate_from_candidate_exit_and_stderr(self):
+        config = {"arm": "rust", "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor"}
+        for started in [False, True]:
+            class Process:
+                returncode = 2
+                def __init__(self, argv, **kwargs):
+                    if started:
+                        h.os.write(kwargs["pass_fds"][0], b'{"exit-code": 2}\n')
+                def communicate(self, *_args, **_kwargs):
+                    return b"", b"bwrap: candidate-controlled output\n"
+            with self.subTest(started=started), tempfile.TemporaryDirectory() as tmp, \
+                 patch.object(h.subprocess, "Popen", Process):
+                result = h.run(["/binary"], config, Path(tmp))
+                self.assertEqual(result["infrastructure"], not started)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(h, "STATE", Path(tmp) / "state"):
+            root = Path(tmp)
+            session = h.prepare("A2", "rust", root / "writer", dict(config, sandbox=False))
+            for infrastructure, expected in [(False, 1), (True, 2)]:
+                with patch.object(h, "checks", return_value=[{"code": 2, "infrastructure": infrastructure, "stdout": "", "stderr": ""}]):
+                    self.assertEqual(h.command(session, "check"), expected)
+
+    def test_frozen_tuple_order(self):
+        slots = c.order()
+        self.assertEqual(len(set(slots)), 120)
+        self.assertEqual(sum(arm == "rust" for _, arm, _ in slots), 60)
+        self.assertEqual(slots[:4], [("C1", "rust", 2), ("B6", "rust", 1), ("A9", "tide", 1), ("A10", "tide", 1)])
+        self.assertEqual(c.order_hash(slots), "9d0951c1c2301efa926f91a70f9bc1dfd9708015b6cbf1bc2c106ca818265c50")
+
+    def test_closed_fault_list_and_single_immediate_rerun(self):
+        for endings in [["init_failure", None], ["broker_crash", "cli_error"], [None]]:
+            records, called = [], []
+            def runner(attempt):
+                called.append(attempt)
+                return {"fault": endings[attempt - 1], "end_reason": endings[attempt - 1] or "budget_refusal"}
+            result = c.run_slot(0, ["A2", "rust", 1], runner, records.append)
+            self.assertEqual(len(result), len(endings))
+            self.assertEqual(called, list(range(1, len(endings) + 1)))
+            self.assertTrue(records[-1]["complete"])
+            self.assertEqual(records[-1]["failed_infrastructure"], endings[-1] is not None)
+            self.assertEqual(records[-1]["reruns"], len(endings) - 1)
+        with self.assertRaisesRegex(ValueError, "unclassified"):
+            c.run_slot(0, [], lambda _: {"fault": "wrong_output"}, lambda _: None)
+
+    def test_init_and_log_audit_fail_closed(self):
+        init = {"type": "system", "subtype": "init", "tools": sorted(g.TOOLS), "plugins": [],
+                "mcp_servers": [{"name": "e1", "status": "connected"}], "model": g.MODEL}
+        c.init_assertion(init, g.MODEL)
+        for changed in [{"tools": sorted(g.TOOLS) + ["Bash"]}, {"plugins": ["x"]}, {"model": "other"},
+                        {"mcp_servers": [{"name": "e1", "status": "failed"}]}, {"tools": []}]:
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                c.init_assertion(dict(init, **changed), g.MODEL)
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "link").symlink_to("/etc")
+            def event(name, args):
+                return {"type": "assistant", "message": {"model": g.MODEL, "usage": {"input_tokens": 4},
+                        "content": [{"type": "tool_use", "id": "1", "name": name, "input": args}]}}
+            for name, args in [("Bash", {}), ("Read", {"file_path": "/etc/passwd"}),
+                               ("Read", {"file_path": "link/passwd"}), ("mcp__e1__check", {"session": "other"})]:
+                self.assertFalse(c.audit([event(name, args)], directory, g.MODEL)["passed"])
+            valid = c.audit([event("Read", {"file_path": "reference.md", "offset": 8, "limit": 10})], directory, g.MODEL)
+            self.assertTrue(valid["passed"])
+            self.assertEqual(valid["tokens"]["input_tokens"], 4)
+            self.assertEqual(valid["reference_reads"][0]["offset"], 8)
+
+    def test_broker_schema_refusal_and_output_cap(self):
+        requests = [{"id": 1, "method": "tools/list"},
+                    {"id": 2, "method": "tools/call", "params": {"name": "check", "arguments": {"session": "escape"}}},
+                    {"id": 3, "method": "tools/call", "params": {"name": "test", "arguments": {}}}]
+        class Process:
+            returncode = 3
+            def communicate(self, **kwargs): return b"x" * (b.CAP + 1), b"refusal"
+        with tempfile.TemporaryDirectory() as tmp, patch.object(sys, "stdin", io.StringIO("".join(json.dumps(r) + "\n" for r in requests))), \
+             patch.object(sys, "stdout", io.StringIO()) as out, patch.object(b.subprocess, "Popen", return_value=Process()) as proc:
+            b.serve(Path(tmp))
+            replies = [json.loads(line) for line in out.getvalue().splitlines()]
+            self.assertTrue(all(t["inputSchema"]["additionalProperties"] is False for t in replies[0]["result"]["tools"]))
+            self.assertIn("error", replies[1])
+            self.assertEqual(proc.call_count, 1)
+            self.assertEqual(proc.call_args.args[0][-1], "test")
+            self.assertEqual(proc.call_args.kwargs["stdin"], subprocess.DEVNULL)
+            self.assertIn("[E1 output truncated]", replies[2]["result"]["content"][0]["text"])
+            self.assertTrue(replies[2]["result"]["isError"])
+            self.assertTrue(c.jsonl(Path(tmp) / "broker.jsonl")[0]["truncated"])
+
+    def test_monotonic_budget_and_dry_only_shortening(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = {"runs": 0, "started": time.time() + 9000, "started_monotonic": time.monotonic() - 2401,
+                      "session_seconds": 999999, "dry_run": False}
+            g.save(root / "session.json", config)
+            self.assertEqual(h.command(root, "check"), 3)
+            config.update(dry_run=True, session_seconds=1, started_monotonic=time.monotonic() - 2)
+            g.save(root / "session.json", config)
+            self.assertEqual(h.command(root, "test"), 3)
+            self.assertFalse((root / "snapshot-01").exists())
+
+    def test_store_scan_detects_content_even_with_different_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tracked = root / "tracked"
+            tracked.write_bytes(b"unique control")
+            store = root / "store"
+            store.mkdir()
+            (store / "different-name").write_bytes(tracked.read_bytes())
+            self.assertFalse(g.store_scan(store, [tracked])["passed"])
+            (store / "different-name").write_bytes(b"other contents")
+            self.assertTrue(g.store_scan(store, [tracked])["passed"])
+
+    def test_gate_requires_current_both_arm_canaries_probe_and_store(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(g, "canary_key", return_value={"revision": 1}):
+            root = Path(tmp)
+            state = {"dry_run": False, "identity": {"cheap": {"cli": "pinned"}}}
+            for arm in ["rust", "tide"]:
+                g.save(root / (arm + "-canary.json"), {"passed": True, "key": {"revision": 1}, "arm": arm})
+            g.save(root / "probe.json", {"passed": True, "key": {"revision": 1}, "writer": {"cli": "pinned"}})
+            g.save(root / "store-before.json", {"passed": True, "key": {"revision": 1}})
+            c.prerequisites(root, state)
+            g.save(root / "tide-canary.json", {"passed": True, "key": {"revision": 0}, "arm": "tide"})
+            with self.assertRaisesRegex(ValueError, "stale canary"):
+                c.prerequisites(root, state)
+
+    def test_final_grading_uses_saved_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            session = root / "session"
+            session.mkdir()
+            (session / "final").mkdir()
+            (session / "final/source.rs").write_text("stored control")
+            g.save(session / "session.json", {"directory": str(root / "absent-writer"), "task": "A2"})
+            with patch.object(h, "STATE", root), patch.object(sys, "argv", ["harness", "grade", str(session)]), \
+                 patch.object(h, "grade", return_value={"structure": True, "results": []}) as grade:
+                self.assertEqual(h.main(), 0)
+                self.assertEqual(grade.call_args.args[2], "stored control")
+
+    def test_runtime_tmpdir_is_tmpfs_in_both_arms(self):
+        for arm in ["rust", "tide"]:
+            config = {"arm": arm, "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor",
+                      "driver": "/driver", "std": "/std", "deps": []}
+            cmd = h.sandbox_command(["/binary"], config, Path("/work"), read_only=["/binary"])
+            self.assertEqual(cmd[cmd.index("--tmpfs") + 1], "/tmp")
+            self.assertEqual(h.environment(config, Path("/work"))["TMPDIR"], "/tmp")
+
+    def test_stream_monitor_checks_init_exit_audit_and_clock_without_a_model(self):
+        init = {"type": "system", "subtype": "init", "tools": sorted(g.TOOLS), "plugins": [],
+                "mcp_servers": [{"name": "e1", "status": "connected"}], "model": g.MODEL}
+        cases = [(init, [], 0, None), (dict(init, tools=["Bash"]), [], 0, "init_failure"),
+                 (init, [], 7, "cli_error"),
+                 (init, [{"type": "assistant", "message": {"model": g.MODEL, "content":
+                     [{"type": "tool_use", "name": "Bash", "input": {}}]}}], 0, "log_audit")]
+        for first, middle, code, fault in cases:
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                directory = root / "writer"
+                directory.mkdir()
+                (directory / "prompt.md").write_text("synthetic control")
+                g.save(root / "session.json", {"directory": str(directory), "started": None, "runs": 0})
+                (root / "broker.jsonl").write_text(' {"event":"start"}\n{"event":"stop"}\n')
+                events = [first, *middle, {"type": "result", "subtype": "success"}]
+                script = "import json,sys; sys.stdin.read(); " + "; ".join(
+                    "print(" + repr(json.dumps(event)) + ", flush=True)" for event in events) + f"; sys.exit({code})"
+                with patch.object(c, "writer_argv", return_value=[sys.executable, "-c", script]):
+                    result = c.run_writer(root, "unused", g.MODEL, seconds=5)
+                self.assertEqual(result["fault"], fault, result)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = root / "writer"
+            directory.mkdir()
+            (directory / "prompt.md").write_text("synthetic control")
+            g.save(root / "session.json", {"directory": str(directory), "started": None, "runs": 0, "dry_run": True})
+            script = "import time; print(" + repr(json.dumps(init)) + ", flush=True); time.sleep(10)"
+            with patch.object(c, "writer_argv", return_value=[sys.executable, "-c", script]):
+                result = c.run_writer(root, "unused", g.MODEL, seconds=0.2)
+            self.assertIsNone(result["fault"])
+            self.assertEqual(result["end_reason"], "time_limit")
+            self.assertLess(result["wall_seconds"], 1)
+
+
+class FixRound1Tests(unittest.TestCase):
+    def test_probe_accepts_complete_requests_with_actual_permission_frames(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = {"dry_run": False, "cli": "unused", "model": g.MODEL, "identity": {"cheap": {}}}
+            def writer(session, *_args, **kwargs):
+                inside = root / "probe-writer/inside.txt"
+                inside.write_text("control\n")
+                events = []
+                calls = [("Write", {"file_path": str(inside), "content": "control\n"}, False),
+                         ("Read", {"file_path": str(inside), "offset": 1, "limit": 1}, False)]
+                calls += [("Read", {"file_path": str(path), "offset": 1, "limit": 1}, True)
+                          for path in [h.ROOT / "AGENTS.md", Path("/etc/hostname")]]
+                calls.append(("Write", {"file_path": str(root / "probe-outside"), "content": c.PROBE_CONTENT}, True))
+                for index, (name, args, denied) in enumerate(calls):
+                    message = "Denied by restricted mode" if denied else "control"
+                    events.extend([{"type": "tool_use", "id": str(index), "name": name, "input": args},
+                                   {"type": "tool_result", "tool_use_id": str(index), "is_error": denied, "content": message}])
+                    if denied:
+                        events.append({"type": "system", "subtype": "permission_denied", "tool_name": name,
+                                       "tool_use_id": str(index), "decision_reason_type": "other",
+                                       "decision_reason": c.DENIAL_REASON, "message": message})
+                (session / "writer.jsonl").write_text("".join(json.dumps(event) + "\n" for event in events))
+                return {"fault": None}
+            with patch.object(c, "run_writer", side_effect=writer), patch.object(g, "canary_key", return_value={}):
+                c.probe(root, state)
+            self.assertTrue(json.loads((root / "probe.json").read_text())["passed"])
+
+    def test_batch_cancels_groups_before_waiting_for_workers(self):
+        events = []
+        class Pool:
+            def __init__(self, **kwargs): pass
+            def map(self, *_args): raise KeyboardInterrupt()
+            def shutdown(self, **kwargs): events.append("shutdown")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(c, "ThreadPoolExecutor", Pool), \
+             patch.object(c, "stop_active", side_effect=lambda: events.append("stop")):
+            state = {"dry_run": True, "order": [], "jobs": 1}
+            with self.assertRaises(KeyboardInterrupt): c.batch(Path(tmp), state, 1)
+        self.assertEqual(events, ["stop", "shutdown"])
+
+    def test_recovery_accepts_reused_and_ungranted_identity_without_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+            saved = {"pid": 123, "group": 123, "start": "old", "boot": boot}
+            g.save(root / "process.json", saved)
+            with patch.object(c, "process_identity", return_value=dict(saved, start="different")), \
+                 patch.object(c.os, "killpg") as killed:
+                c.reclaim_writer(root)
+                killed.assert_not_called()
+            (root / "process.json").unlink()
+            g.save(root / "launch.json", {"argv": ["unidentified previous writer"]})
+            c.reclaim_writer(root)
+
+    def test_probe_requires_valid_requests_and_structured_confinement_denial(self):
+        use = {"type": "tool_use", "id": "r", "name": "Read",
+               "input": {"file_path": "/etc/hostname", "offset": 1, "limit": 1}}
+        denial = {"type": "system", "subtype": "permission_denied", "tool_name": "Read", "tool_use_id": "r",
+                  "decision_reason_type": "other", "decision_reason": c.DENIAL_REASON,
+                  "message": "Read refused because the path is outside the working directory"}
+        result = {"is_error": True, "content": denial["message"]}
+        self.assertTrue(c.probe_denied(use, result, [denial]))
+        self.assertFalse(c.probe_denied(use, result, []))
+        self.assertFalse(c.probe_denied(use, {"is_error": True, "content": "InputValidationError: offset"}, [denial]))
+        bad = dict(use, input={"file_path": "/etc/hostname", "offset": -1, "limit": 1})
+        self.assertFalse(c.probe_denied(bad, result, [denial]))
+        self.assertFalse(c.probe_denied(dict(use, name="Write", input={"file_path": "/tmp/outside"}), result, [denial]))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = {"dry_run": False, "cli": "unused", "model": g.MODEL, "identity": {"cheap": {}}}
+            def writer(session, *_args, **kwargs):
+                directory = root / "probe-writer"
+                events = []
+                for index, (name, args, error, text) in enumerate([
+                    ("Write", {"file_path": str(directory / "inside.txt"), "content": "control"}, False, "ok"),
+                    ("Read", {"file_path": str(directory / "inside.txt")}, False, "control"),
+                    ("Read", {"file_path": str(h.ROOT / "AGENTS.md"), "offset": -1}, True, "InputValidationError"),
+                    ("Read", {"file_path": "/etc/hostname", "offset": -1}, True, "InputValidationError"),
+                    ("Write", {"file_path": str(root / "probe-outside")}, True, "InputValidationError"),
+                ]):
+                    events.extend([{"type": "tool_use", "id": str(index), "name": name, "input": args},
+                                   {"type": "tool_result", "tool_use_id": str(index), "is_error": error, "content": text}])
+                (session / "writer.jsonl").write_text("".join(json.dumps(event) + "\n" for event in events))
+                return {"fault": None}
+            with patch.object(c, "run_writer", side_effect=writer), patch.object(g, "canary_key", return_value={}):
+                c.probe(root, state)
+            self.assertFalse(json.loads((root / "probe.json").read_text())["passed"])
+
+    def test_last_command_captures_final_and_monitor_ends_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer = root / "writer"
+            (writer / "src").mkdir(parents=True)
+            entry = writer / "src/lib.rs"
+            entry.write_text("before exhaustion")
+            (writer / "prompt.md").write_text("synthetic control")
+            g.save(root / "session.json", {"directory": str(writer), "task": "A2", "arm": "rust", "sandbox": False,
+                                           "vendor": "/vendor", "sysroot": "/toolchain", "runs": 19, "started": None})
+            init = {"type": "system", "subtype": "init", "tools": sorted(g.TOOLS), "plugins": [],
+                    "mcp_servers": [{"name": "e1", "status": "connected"}], "model": g.MODEL}
+            fixture = root / "writer-control.py"
+            fixture.write_text('''import json, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import harness as h
+print(sys.argv[3], flush=True)
+h.checks = lambda *args: [{"code": 0, "stdout": "", "stderr": ""}]
+h.command(Path(sys.argv[2]), "check")
+Path(sys.argv[4]).write_text("late edit")
+time.sleep(0.1)
+Path(sys.argv[2], "broker.jsonl").write_text('{"mode":"check","exit":0,"completed_run":20}\\n')
+time.sleep(30)
+''')
+            argv = [sys.executable, str(fixture), str(h.HERE), str(root), json.dumps(init), str(entry)]
+            with patch.object(c, "writer_argv", return_value=argv):
+                result = c.run_writer(root, "unused", g.MODEL, seconds=5)
+            self.assertIsNone(result["fault"], result)
+            self.assertEqual(result["end_reason"], "run_limit")
+            self.assertEqual((root / "final/source.rs").read_text(), "before exhaustion")
+            self.assertEqual(json.loads((root / "snapshot-20/results.json").read_text())[0]["code"], 0)
+            self.assertNotIn("deadline", json.loads((root / "session.json").read_text()))
+            self.assertEqual(c.jsonl(root / "broker.jsonl")[-1]["completed_run"], 20)
+            self.assertFalse(c.group_alive(json.loads((root / "process.json").read_text())["group"]))
+
+    def test_grading_setup_exit_and_timeout_never_resample_the_writer(self):
+        for failure in [{"exit": 2}, {"exit": 1, "infrastructure": True}]:
+            records = []
+            def runner(attempt):
+                return {"fault": None, "end_reason": "done", "grades": {"first": failure if attempt == 1 else {"exit": 0}, "final": {"exit": 0}}}
+            with self.assertRaisesRegex(RuntimeError, "never the writer"):
+                c.run_slot(0, ["A2", "rust", 1], runner, records.append)
+            self.assertEqual(records, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer = root / "writer"
+            (writer / "src").mkdir(parents=True)
+            (writer / "src/lib.rs").write_text("generic control")
+            g.save(root / "session.json", {"directory": str(writer), "task": "A2"})
+            class Process:
+                pid = 123456
+                waits = 0
+                def __init__(self, argv, **kwargs):
+                    name = "first" if "--first" in argv else "final"
+                    g.save(root / (name + "-grade.json"), {"structure": True, "results": []})
+                def wait(self, timeout=None):
+                    self.waits += 1
+                    if self.waits == 1: raise subprocess.TimeoutExpired("grader", timeout)
+                    return -9
+            readers = []
+            def start(argv, *_args, **_kwargs):
+                read, grant = os.pipe()
+                readers.append(read)
+                return Process(argv), object(), grant
+            try:
+                with patch.object(c, "start_guard", side_effect=start), patch.object(c, "end_guard"):
+                    grades = c.freeze_and_grade(root)
+                self.assertTrue(all(grade["infrastructure"] and grade["exit"] == 2 for grade in grades.values()))
+            finally:
+                for fd in readers: os.close(fd)
+                for path in [writer, writer / "src"]: path.chmod(0o755)
+
+    def test_grade_preserves_jail_setup_failure_as_infrastructure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "final").mkdir()
+            (root / "final/source.rs").write_text("generic control")
+            g.save(root / "session.json", {"task": "A2", "directory": str(root / "absent")})
+            with patch.object(sys, "argv", ["harness", "grade", str(root)]), patch.object(h, "STATE", root), \
+                 patch.object(h, "grade", return_value={"structure": True, "results": [{"code": 2, "infrastructure": True}]}):
+                self.assertEqual(h.main(), 2)
+            self.assertTrue(json.loads((root / "final-grade.json").read_text())["infrastructure"])
+
+    def test_interrupted_parent_cannot_leave_a_live_writer_on_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer = root / "writer"
+            writer.mkdir()
+            (writer / "prompt.md").write_text("synthetic control")
+            g.save(root / "session.json", {"directory": str(writer), "started": None, "runs": 0})
+            sleeper = root / "sleep-control.py"
+            sleeper.write_text('import time\nfrom pathlib import Path\nPath(__file__).with_name("writer-started").touch()\ntime.sleep(30)\n')
+            fixture = root / "coordinator-control.py"
+            fixture.write_text('''import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import coordinator as c
+c.writer_argv = lambda *args: [sys.executable, sys.argv[3]]
+c.run_writer(Path(sys.argv[2]), "unused", c.g.MODEL, seconds=30)
+''')
+            parent = subprocess.Popen([sys.executable, str(fixture), str(h.HERE), str(root), str(sleeper)],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.PIPE, start_new_session=True)
+            try:
+                until = time.monotonic() + 5
+                while not (root / "process.json").exists() or not (root / "writer-started").exists():
+                    if parent.poll() is not None: self.fail(parent.stderr.read().decode())
+                    if time.monotonic() >= until: self.fail("guard identity not published")
+                    time.sleep(0.02)
+                group = json.loads((root / "process.json").read_text())["group"]
+                os.kill(parent.pid, signal.SIGKILL)
+                parent.wait(timeout=5)
+                c.reclaim_writer(root)
+                self.assertFalse(c.group_alive(group))
+            finally:
+                if parent.poll() is None: parent.kill(); parent.wait(timeout=5)
+                parent.stderr.close()
+                c.reclaim_writer(root)
+
+    def test_tmpfs_precedes_executable_bind_for_external_tmp_run(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+            root = Path(tmp)
+            binary = root / "output/test"
+            binary.parent.mkdir()
+            binary.write_text("control")
+            work = root / "scratch"
+            work.mkdir()
+            config = {"arm": "rust", "sysroot": "/toolchain", "vendor": "/vendor"}
+            cmd = h.sandbox_command([str(binary)], config, work, read_only=[binary])
+            self.assertLess(cmd.index("--tmpfs"), cmd.index(str(binary)))
+            self.assertIn([str(work), str(work)], [cmd[i+1:i+3] for i, arg in enumerate(cmd) if arg == "--bind"])
+
+
+class FixRound2Tests(unittest.TestCase):
+    def test_guarded_grading_preserves_the_child_exit_without_compiling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer = root / "writer"
+            (writer / "src").mkdir(parents=True)
+            (writer / "src/lib.rs").write_text("generic control")
+            g.save(root / "session.json", {"directory": str(writer), "task": "A2"})
+            fixture = root / "grade-control.py"
+            fixture.write_text('''import json, sys
+from pathlib import Path
+Path(sys.argv[1], sys.argv[2] + "-grade.json").write_text(json.dumps({"structure":False,"results":[{"code":1}]}))
+sys.exit(1)
+''')
+            real_start = c.start_guard
+            def start(argv, directory, **kwargs):
+                name = "first" if "--first" in argv else "final"
+                return real_start([sys.executable, str(fixture), str(root), name], directory, **kwargs)
+            try:
+                with patch.object(c, "start_guard", side_effect=start):
+                    grades = c.freeze_and_grade(root)
+                self.assertEqual({name: row["exit"] for name, row in grades.items()}, {"first": 1, "final": 1})
+                self.assertTrue(all(not row["infrastructure"] for row in grades.values()))
+            finally:
+                for path in [writer, writer / "src"]: path.chmod(0o755)
+
+    def test_pidfd_failure_has_no_numeric_signal_fallback(self):
+        class Handle:
+            closed = False
+            def fileno(self): return 91
+        with patch.object(c.signal, "pidfd_send_signal", side_effect=PermissionError("blocked")), \
+             patch.object(c.os, "killpg") as group_signal, patch.object(c.os, "kill") as pid_signal:
+            with self.assertRaisesRegex(RuntimeError, "refusing further attempts"): c.signal_guard(Handle())
+            group_signal.assert_not_called()
+            pid_signal.assert_not_called()
+
+    def test_recovery_identity_reused_after_verification_never_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+            saved = {"pid": 123, "group": 123, "start": "original", "boot": boot}
+            g.save(root / "process.json", saved)
+            observed = [dict(saved), dict(saved, start="reused")]
+            with patch.object(c, "process_identity", side_effect=observed), \
+                 patch.object(c, "group_alive", return_value=True), patch.object(c.time, "sleep"), \
+                 patch.object(c.os, "killpg") as group_signal, patch.object(c.os, "kill") as pid_signal, \
+                 patch.object(c.signal, "pidfd_send_signal") as handle_signal:
+                c.reclaim_writer(root)
+                group_signal.assert_not_called()
+                pid_signal.assert_not_called()
+                handle_signal.assert_not_called()
+
+    def test_recovery_waits_without_signals_and_refuses_if_group_stays_live(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+            saved = {"pid": 123, "group": 123, "start": "original", "boot": boot}
+            g.save(root / "process.json", saved)
+            with patch.object(c, "process_identity", return_value=saved), \
+                 patch.object(c, "group_alive", side_effect=[True, False]), patch.object(c.time, "sleep") as slept, \
+                 patch.object(c.signal, "pidfd_send_signal") as signalled:
+                c.reclaim_writer(root)
+                slept.assert_called_once()
+                signalled.assert_not_called()
+            with patch.object(c, "process_identity", return_value=saved), \
+                 patch.object(c, "group_alive", return_value=True), \
+                 patch.object(c.time, "monotonic", side_effect=[0, 11]), \
+                 patch.object(c.signal, "pidfd_send_signal") as signalled:
+                with self.assertRaisesRegex(ValueError, "still alive"): c.reclaim_writer(root)
+                signalled.assert_not_called()
+
+    def test_cancellation_racing_reaping_keeps_handle_until_signal_finishes(self):
+        entered, reaped = threading.Event(), threading.Event()
+        actions = []
+        class Handle:
+            closed = False
+            def fileno(self): return 91
+            def close(self):
+                self.closed = True
+                actions.append("closed")
+        class Process:
+            pid = 123
+        handle, proc = Handle(), Process()
+        def reap():
+            if not entered.wait(2): return
+            actions.append("pid reused")
+            reaped.set()
+            c.release_guard(proc, handle)
+        def send(fd, sig):
+            entered.set()
+            self.assertTrue(reaped.wait(2))
+            self.assertEqual(fd, 91)
+            self.assertEqual(sig, signal.SIGTERM)
+            self.assertFalse(handle.closed)
+            actions.append("original guard signalled through pidfd")
+        with patch.dict(c.ACTIVE, {proc.pid: handle}, clear=True), \
+             patch.object(c.signal, "pidfd_send_signal", side_effect=send), \
+             patch.object(c.os, "killpg") as group_signal, patch.object(c.os, "kill") as pid_signal:
+            worker = threading.Thread(target=reap)
+            worker.start()
+            try: c.stop_active()
+            finally: worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(handle.closed)
+            self.assertEqual(actions, ["pid reused", "original guard signalled through pidfd", "closed"])
+            group_signal.assert_not_called()
+            pid_signal.assert_not_called()
+            # Even a snapshotted handle cannot be signalled after close/fd reuse.
+            c.signal_guard(handle)
+            self.assertEqual(actions.count("original guard signalled through pidfd"), 1)
+
+
+class FixRound3Tests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        for path in self.root.rglob("*"):
+            if path.is_dir() and not path.is_symlink(): path.chmod(0o755)
+        self.tmp.cleanup()
+
+    def state(self, jobs=1, real=False):
+        return {"dry_run": not real, "jobs": jobs, "order": [["A2", "rust", 1], ["A3", "tide", 1]][:jobs],
+                "configs": {"rust": {}, "tide": {}}, "cli": "unused", "model": g.MODEL, "seconds": None,
+                "identity": {"cheap": {"head": "fixed"}}}
+
+    def prepare(self, task, arm, directory, config, *, session):
+        (directory / "src").mkdir(parents=True)
+        session.mkdir(parents=True)
+        (directory / "src/lib.rs").write_text("generic control")
+        (directory / "prompt.md").write_text("synthetic control")
+        g.save(session / "session.json", {"task": task, "arm": arm, "directory": str(directory), "runs": 0})
+
+    def grant(self, session, callback):
+        g.save(session / "launch.json", {})
+        g.save(session / "process.json", {"boot": "previous boot"})
+        callback()
+
+    def green(self):
+        return {"first": {"exit": 0}, "final": {"exit": 0}}
+
+    def test_one_interruption_resumes_as_one_fault_and_one_fresh_writer(self):
+        calls = []
+        def stopped(session, *_args, on_started=None, cancelled=None, **kwargs):
+            self.grant(session, on_started)
+            calls.append(session.name)
+            cancelled.set()
+            return {"fault": "host_interruption", "end_reason": "host_interruption"}
+        def healthy(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            calls.append(session.name)
+            return {"fault": None, "end_reason": "done"}
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=stopped):
+            with self.assertRaises(c.RunCancelled): c.batch(self.root, self.state(), 1)
+        row = json.loads((self.root / "slot-000.json").read_text())
+        self.assertEqual(len(row["attempts"]), 1)
+        self.assertFalse((self.root / "sessions/000-2").exists())
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=healthy), \
+             patch.object(c, "freeze_and_grade", return_value=self.green()):
+            c.batch(self.root, self.state(), 1)
+        row = json.loads((self.root / "slot-000.json").read_text())
+        self.assertEqual(calls, ["000-1", "000-2"])
+        self.assertEqual(sum(bool(a.get("fault")) for a in row["attempts"]), 1)
+        self.assertEqual(row["reruns"], 1)
+        self.assertTrue(row["complete"])
+        self.assertFalse(row["failed_infrastructure"])
+
+    def test_unstarted_legacy_placeholders_are_not_faults_on_resume(self):
+        for actual_first in [False, True]:
+            root = self.root / str(actual_first)
+            root.mkdir()
+            first = root / "sessions/000-1"
+            first.mkdir(parents=True)
+            g.save(first / "launch.json", {})
+            if actual_first: g.save(first / "process.json", {"boot": "old boot"})
+            second = root / "sessions/000-2"
+            second.mkdir()
+            g.save(second / "launch.json", {})
+            g.save(root / "slot-000.json", {"complete": False, "attempts": [
+                {"fault": "host_interruption", "end_reason": "host_interruption"},
+                {"fault": "host_interruption", "end_reason": "host_interruption"}]})
+            calls = []
+            def healthy(session, *_args, on_started=None, **kwargs):
+                self.grant(session, on_started)
+                calls.append(session.name)
+                return {"fault": None, "end_reason": "done"}
+            with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=healthy), \
+                 patch.object(c, "freeze_and_grade", return_value=self.green()):
+                c.batch(root, self.state(), 1)
+            row = json.loads((root / "slot-000.json").read_text())
+            self.assertEqual(calls, ["000-2" if actual_first else "000-1"])
+            self.assertEqual(row["reruns"], int(actual_first))
+            self.assertFalse(row["failed_infrastructure"])
+
+    def test_jobs_two_stop_and_identity_change_never_create_phantom_faults(self):
+        for stop in ["cancel", "identity"]:
+            root = self.root / stop
+            root.mkdir()
+            local, first = threading.local(), threading.Event()
+            calls = []
+            def prepare(task, arm, directory, config, *, session):
+                self.prepare(task, arm, directory, config, session=session)
+                local.slot = session.name
+                if session.name.startswith("001"): self.assertTrue(first.wait(2))
+            def cheap(*_args):
+                return {"head": "changed" if getattr(local, "slot", "").startswith("001") else "fixed"}
+            def stopped(session, *_args, on_started=None, cancelled=None, **kwargs):
+                self.grant(session, on_started)
+                calls.append(session.name)
+                first.set()
+                if stop == "cancel": cancelled.set()
+                else: self.assertTrue(cancelled.wait(2))
+                return {"fault": "host_interruption", "end_reason": "host_interruption"}
+            state = self.state(2, real=stop == "identity")
+            with patch.object(c, "prerequisites"), patch.object(h, "prepare", side_effect=prepare), \
+                 patch.object(g, "cheap", side_effect=cheap), patch.object(c, "run_writer", side_effect=stopped):
+                with self.assertRaises(RuntimeError): c.batch(root, state, 2)
+            self.assertEqual(calls, ["000-1"])
+            self.assertFalse((root / "slot-001.json").exists())
+            self.assertEqual(len(json.loads((root / "slot-000.json").read_text())["attempts"]), 1)
+            def healthy(session, *_args, on_started=None, **kwargs):
+                self.grant(session, on_started)
+                calls.append(session.name)
+                return {"fault": None, "end_reason": "done"}
+            with patch.object(c, "prerequisites"), patch.object(h, "prepare", side_effect=self.prepare), \
+                 patch.object(g, "cheap", return_value={"head": "fixed"}), \
+                 patch.object(g, "store_scan", return_value={"passed": True}), patch.object(g, "canary_key", return_value={}), \
+                 patch.object(c, "run_writer", side_effect=healthy), patch.object(c, "freeze_and_grade", return_value=self.green()):
+                c.batch(root, state, 2)
+            for i, reruns in [(0, 1), (1, 0)]:
+                row = json.loads((root / f"slot-{i:03}.json").read_text())
+                self.assertEqual(row["reruns"], reruns)
+                self.assertTrue(row["complete"])
+                self.assertFalse(row["failed_infrastructure"])
+
+    def test_grading_fault_retries_snapshot_and_resume_never_relaunches_writer(self):
+        writers, grades = [], []
+        def writer(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            writers.append(session.name)
+            return {"fault": None, "end_reason": "done"}
+        def grade(session, cancelled=None):
+            record = json.loads((session / "writer-result.json").read_text())
+            self.assertEqual(record["end_reason"], "done")
+            self.assertEqual(record["final_sha256"], g.digest(session / "final/source.rs"))
+            grades.append(session.name)
+            return {"final": {"exit": 2, "infrastructure": True}} if len(grades) == 1 else self.green()
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=writer), \
+             patch.object(c, "freeze_and_grade", side_effect=grade):
+            c.batch(self.root, self.state(), 1)
+        self.assertEqual(writers, ["000-1"])
+        self.assertEqual(grades, ["000-1", "000-1"])
+        row = json.loads((self.root / "slot-000.json").read_text())
+        self.assertEqual(row["reruns"], 0)
+        self.assertTrue(row["final_pass"])
+        # Model a stop after writer capture but before grading was committed to the slot.
+        g.save(self.root / "slot-000.json", {"complete": False, "attempts": [
+            {"fault": "host_interruption", "end_reason": "host_interruption"}]})
+        with patch.object(c, "run_writer", side_effect=AssertionError("frozen writer cannot relaunch")), \
+             patch.object(c, "freeze_and_grade", return_value=self.green()):
+            c.batch(self.root, self.state(), 1)
+        self.assertEqual(writers, ["000-1"])
+        self.assertEqual(json.loads((self.root / "slot-000.json").read_text())["reruns"], 0)
+
+    def test_frozen_resume_repeats_the_full_writer_classification(self):
+        for case, expected in [("budget", "harness_setup"), ("exit2", "harness_setup"),
+                               ("init", "init_failure"), ("lifecycle", "broker_crash"),
+                               ("audit", "log_audit"), ("healthy", None)]:
+            with self.subTest(case=case):
+                root = self.root / case
+                session = root / "sessions/000-1"
+                directory = root / "w/000-1"
+                self.prepare("A2", "rust", directory, {}, session=session)
+                self.grant(session, lambda: None)
+                c.freeze_final(session)
+                init = {"type": "system", "subtype": "init", "tools": sorted(g.TOOLS), "plugins": [],
+                        "mcp_servers": [{"name": "e1", "status": "connected"}], "model": g.MODEL}
+                if case == "init": init["tools"] = ["Bash"]
+                events = [init, {"type": "result", "subtype": "success", "is_error": False}]
+                if case == "audit": events.append({"type": "tool_use", "name": "Bash", "input": {}})
+                (session / "writer.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+                broker = [{"event": "start"}, {"event": "stop"}]
+                if case == "lifecycle": broker.pop()
+                if case == "exit2": broker.append({"exit": 2})
+                (session / "broker.jsonl").write_text("".join(json.dumps(e) + "\n" for e in broker))
+                g.save(session / "process-exit.json", {"exit": 0})
+                if case == "budget":
+                    g.save(session / "budget.json", {"reason": "run_limit", "completed_run": 20,
+                                                   "infrastructure": True})
+                g.save(root / "slot-000.json", {"complete": False, "attempts": [
+                    {"fault": "host_interruption", "end_reason": "host_interruption"}]})
+                with patch.object(h, "prepare", side_effect=self.prepare), \
+                     patch.object(c, "run_writer", return_value={"fault": "cli_error", "end_reason": "cli_error"}) as writer, \
+                     patch.object(c, "freeze_and_grade", return_value=self.green()) as grade:
+                    c.batch(root, self.state(), 1)
+                row = json.loads((root / "slot-000.json").read_text())
+                self.assertEqual(row["attempts"][0]["fault"], expected)
+                self.assertEqual(writer.call_count, int(expected is not None))
+                self.assertEqual(grade.call_count, int(expected is None))
+                if expected is None: self.assertEqual(row["attempts"][0]["end_reason"], "done")
+
+    def test_frozen_resume_refuses_changed_final_hash_before_grading_or_overwriting(self):
+        session = self.root / "sessions/000-1"
+        self.prepare("A2", "rust", self.root / "w/000-1", {}, session=session)
+        original_hash = c.freeze_final(session)
+        saved = {"fault": None, "end_reason": "done", "session": str(session), "final_sha256": original_hash}
+        g.save(session / "writer-result.json", saved)
+        original_record = (session / "writer-result.json").read_bytes()
+        final = session / "final/source.rs"
+        final.chmod(0o644)
+        final.write_text("changed synthetic control")
+        with patch.object(c, "run_writer") as writer, patch.object(c, "freeze_and_grade", return_value=self.green()) as grade:
+            with self.assertRaisesRegex(RuntimeError, "final snapshot hash changed"):
+                c.batch(self.root, self.state(), 1)
+        writer.assert_not_called()
+        grade.assert_not_called()
+        self.assertEqual((session / "writer-result.json").read_bytes(), original_record)
+        self.assertFalse((session / "trial.json").exists())
+
+    def test_grading_exhaustion_stops_operator_without_writer_failure(self):
+        writers = []
+        def writer(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            writers.append(session.name)
+            return {"fault": None, "end_reason": "done"}
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=writer), \
+             patch.object(c, "freeze_and_grade", return_value={"final": {"exit": 2, "infrastructure": True}}) as grade:
+            with self.assertRaisesRegex(RuntimeError, "after two retries"): c.batch(self.root, self.state(), 1)
+            self.assertEqual(grade.call_count, 3)
+            with self.assertRaisesRegex(RuntimeError, "after two retries"): c.batch(self.root, self.state(), 1)
+            self.assertEqual(grade.call_count, 3)
+        self.assertEqual(writers, ["000-1"])
+        self.assertFalse(json.loads((self.root / "slot-000.json").read_text())["complete"])
+
+    def test_stop_during_grading_resumes_frozen_writer(self):
+        writers = []
+        def writer(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            writers.append(session.name)
+            return {"fault": None, "end_reason": "done"}
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=writer), \
+             patch.object(c, "freeze_and_grade", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt): c.batch(self.root, self.state(), 1)
+        with patch.object(c, "run_writer", side_effect=AssertionError("writer must not restart")), \
+             patch.object(c, "freeze_and_grade", return_value=self.green()):
+            c.batch(self.root, self.state(), 1)
+        self.assertEqual(writers, ["000-1"])
+        self.assertEqual(json.loads((self.root / "slot-000.json").read_text())["reruns"], 0)
+
+    def test_denied_outside_requests_are_information_but_breaches_stop_run(self):
+        use = {"type": "tool_use", "id": "read", "name": "Read", "input": {"file_path": "/outside"}}
+        denial = {"type": "system", "subtype": "permission_denied", "tool_name": "Read", "tool_use_id": "read",
+                  "decision_reason_type": "other", "decision_reason": c.DENIAL_REASON, "message": "restricted denial"}
+        result = {"type": "tool_result", "tool_use_id": "read", "is_error": True, "content": "restricted denial"}
+        audit = c.audit([use, denial, result], self.root, g.MODEL)
+        self.assertTrue(audit["passed"])
+        self.assertEqual(len(audit["denied_outside"]), 1)
+        denied_root = self.root / "denied"
+        denied_root.mkdir()
+        def healthy(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            return {"fault": None, "end_reason": "done", "audit": audit}
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=healthy), \
+             patch.object(c, "freeze_and_grade", return_value=self.green()):
+            c.batch(denied_root, self.state(), 1)
+        trial = json.loads((denied_root / "sessions/000-1/trial.json").read_text())
+        self.assertEqual(trial["denied_outside_by_arm"], {"rust": 1})
+        breach = c.audit([use], self.root, g.MODEL)
+        self.assertTrue(breach["confinement_breach"])
+        def writer(session, *_args, on_started=None, **kwargs):
+            self.grant(session, on_started)
+            g.save(session / "confinement-breach.json", breach)
+            raise c.ConfinementBreach("operator stop")
+        with patch.object(h, "prepare", side_effect=self.prepare), patch.object(c, "run_writer", side_effect=writer) as launch:
+            with self.assertRaises(c.ConfinementBreach): c.batch(self.root, self.state(), 1)
+            with self.assertRaises(c.ConfinementBreach): c.batch(self.root, self.state(), 1)
+            self.assertEqual(launch.call_count, 1)
+
+    def test_grade_deadline_is_a_solution_timeout(self):
+        root = self.root
+        (root / "final").mkdir()
+        (root / "final/source.rs").write_text("generic control")
+        g.save(root / "session.json", {"task": "A2", "arm": "rust", "directory": str(root / "absent")})
+        observed = []
+        def checks(config, *_args):
+            observed.append(config["deadline"])
+            return [{"code": 0, "stdout": "", "stderr": ""}]
+        with patch.object(sys, "argv", ["harness", "grade", str(root)]), patch.object(h, "STATE", root), \
+             patch.object(h, "package", return_value=root), patch.object(h, "checks", side_effect=checks), \
+             patch.object(h, "executable_tests", return_value=[]), \
+             patch.object(h.time, "monotonic", side_effect=[0, h.GRADE_SECONDS + 1]):
+            self.assertEqual(h.main(), 1)
+        data = json.loads((root / "final-grade.json").read_text())
+        self.assertTrue(data["timed_out"])
+        self.assertFalse(data["infrastructure"])
+        self.assertEqual(observed, [h.GRADE_SECONDS])
+        self.assertLess(h.GRADE_SECONDS, 600)
+
+    def test_harness_owns_the_launch_clock_limit_and_tail_trimming_is_narrow(self):
+        g.save(self.root / "session.json", {"dry_run": False, "runs": 0})
+        with patch.object(h, "SESSION_SECONDS", 17):
+            self.assertEqual(c.launch_clock(self.root)["session_seconds"], 17)
+        path = self.root / "stream.jsonl"
+        path.write_text('{"type":"system"}\n{"partial":')
+        events, tail = c.writer_events(path, True)
+        self.assertTrue(tail)
+        self.assertEqual(len(events), 1)
+        with self.assertRaises(ValueError): c.writer_events(path, False)
+        path.write_text('{"type":"system"}\nbad\n{"partial":')
+        with self.assertRaises(ValueError): c.writer_events(path, True)
+        path.write_bytes(b'{"type":"system"}\n{"partial":"\xe2')
+        self.assertEqual(c.writer_events(path, True), ([{"type": "system"}], True))
+
+    def stream_case(self, mode, extra=None, on_started=lambda: None):
+        root = self.root / mode
+        root.mkdir()
+        writer = root / "writer"
+        writer.mkdir()
+        (writer / "prompt.md").write_text("synthetic control")
+        session = root / "session"
+        session.mkdir()
+        g.save(session / "session.json", {"directory": str(writer), "runs": 20, "started": None,
+                                          "dry_run": mode == "time"})
+        init = {"type": "system", "subtype": "init", "tools": sorted(g.TOOLS), "plugins": [],
+                "mcp_servers": [{"name": "e1", "status": "connected"}], "model": g.MODEL}
+        events = root / "events.json"
+        g.save(events, [init, *(extra or []), {"type": "result", "subtype": "success", "is_error": False}])
+        broker = root / "broker-control.py"
+        broker.write_text('''import json, sys, time
+from pathlib import Path
+path = Path(sys.argv[1], "broker.jsonl")
+path.write_text(json.dumps({"event":"start"}) + chr(10))
+time.sleep(0.4)
+with path.open("a") as log: log.write(json.dumps({"event":"stop"}) + chr(10))
+''')
+        fixture = root / "cli-control.py"
+        fixture.write_text('''import json, subprocess, sys, time
+from pathlib import Path
+session, events, mode, broker = Path(sys.argv[1]), json.loads(Path(sys.argv[2]).read_text()), sys.argv[3], sys.argv[4]
+if mode == "done":
+    subprocess.Popen([sys.executable, broker, str(session)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    while not (session / "broker.jsonl").exists(): time.sleep(0.01)
+print(json.dumps(events[0]), flush=True)
+if mode in ("limit","time"):
+    sys.stdout.write('{"type":"user","content":"' + "x" * 200000)
+    sys.stdout.flush()
+    if mode == "limit":
+        (session / "budget.json").write_text(json.dumps({"reason":"run_limit","completed_run":20}))
+        (session / "broker.jsonl").write_text(json.dumps({"mode":"check","exit":1,"completed_run":20}) + chr(10))
+    time.sleep(30)
+else:
+    for event in events[1:]: print(json.dumps(event), flush=True)
+''')
+        argv = [sys.executable, str(fixture), str(session), str(events), mode, str(broker)]
+        with patch.object(c, "writer_argv", return_value=argv):
+            return c.run_writer(session, "unused", g.MODEL, seconds=0.3 if mode == "time" else 3,
+                                on_started=on_started)
+
+    def test_placeholder_write_failure_stops_its_granted_guard(self):
+        def fail(): raise OSError("cannot save attempt placeholder")
+        try:
+            with self.assertRaisesRegex(OSError, "placeholder"):
+                self.stream_case("limit", on_started=fail)
+            self.assertFalse(c.ACTIVE)
+        finally:
+            c.stop_active()
+
+    def test_native_budget_and_clock_kills_drop_only_the_unterminated_tail(self):
+        for mode, reason in [("limit", "run_limit"), ("time", "time_limit")]:
+            result = self.stream_case(mode)
+            self.assertIsNone(result["fault"], result)
+            self.assertEqual(result["end_reason"], reason)
+            self.assertTrue(result["truncated_tail"])
+
+    def test_normal_done_waits_for_broker_stop_row(self):
+        result = self.stream_case("done")
+        self.assertIsNone(result["fault"], result)
+        self.assertEqual(result["end_reason"], "done")
+        self.assertTrue(any(row.get("event") == "stop" for row in c.jsonl(self.root / "done/session/broker.jsonl")))
+
+    def test_native_undenied_outside_access_stops_for_operator(self):
+        use = {"type": "tool_use", "id": "read", "name": "Read", "input": {"file_path": "/outside"}}
+        result = {"type": "tool_result", "tool_use_id": "read", "content": "synthetic success", "is_error": False}
+        with self.assertRaises(c.ConfinementBreach): self.stream_case("breach", [use, result])
+        self.assertTrue((self.root / "breach/session/confinement-breach.json").is_file())
+
+    def test_reused_leader_nonleader_missing_pid_and_ungranted_guard_recover(self):
+        root = self.root
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        saved = {"pid": 123, "group": 123, "start": "original", "boot": boot}
+        g.save(root / "launch.json", {})
+        g.save(root / "session.json", {"runs": 0})
+        g.save(root / "process.json", saved)
+        for current in [dict(saved, start="new"), dict(saved, start="new", group=999)]:
+            with patch.object(c, "process_identity", return_value=current), patch.object(c, "group_alive") as group, \
+                 patch.object(c.signal, "pidfd_send_signal") as signalled:
+                c.reclaim_writer(root)
+                group.assert_not_called()
+                signalled.assert_not_called()
+        with patch.object(c, "process_identity", side_effect=FileNotFoundError): c.reclaim_writer(root)
+        (root / "process.json").unlink()
+        c.reclaim_writer(root)
 
 
 if __name__ == "__main__":
