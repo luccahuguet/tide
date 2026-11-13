@@ -4,6 +4,11 @@ Research date: 2026-10-19. Sources are mostly 2024–2026 primary posts and pape
 
 Method note: the shared web-search budget ran out partway through. Later facts came from fetching primary URLs directly. Package-ecosystem history (npm, crates.io) and a few smaller languages (Crystal, Nim) therefore rest on fewer sources than the core topics, and they are flagged where it matters.
 
+**Repository correction — 2026-11-12.** Bend's canonical home is now
+[bendlang/bend](https://github.com/bendlang/bend). The `HigherOrderCO/Bend`
+URL in source [bend] redirects there; it is retained as part of this
+2026-10-19 evidence snapshot, not as Bend's current repository home.
+
 ---
 
 ## Question

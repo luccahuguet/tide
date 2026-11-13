@@ -39,7 +39,7 @@ in that column.
 | [MPL / Parallel ML](https://github.com/MPLLang/mpl) | Automatic granularity control; heartbeat scheduling only if benchmarks justify it | – | D9 | 01, 10 |
 | [Futhark](https://futhark-lang.org/) | GPU data parallelism belongs in a separate kernel language | GPU work in Tide before 1.0 | D12, D16 | 01, 10 |
 | [Bend 2](https://bend-lang.com) ([repo](https://github.com/bendlang/bend)) and Bend 1 | Laws that impls must satisfy, with agent-written proofs gated by human approval; erased ghost code; the tandem for proved parallel kernels through a process boundary | Leading with proofs (Bend's pitch); once-only closures, no `if`, 32-bit numbers that wrap; whole-program builds; emitting Bend | D10, D11, D16 | 01, 11 |
-| [HVM](https://github.com/HigherOrderCO/HVM) | Lessons only; research/01 leaves superposition search as a possible external engine | Interaction nets as a runtime or backend | D9, D16 | 01, 10 |
+| [HVM](https://github.com/HigherOrderCO/HVM1) | Lessons only; research/01 leaves superposition search as a possible external engine | Interaction nets as a runtime or backend | D9, D16 | 01, 10 |
 | [FoundationDB](https://apple.github.io/foundationdb/testing.html) | A whole system simulated in one process, with simulated time, network, and disks | – | D15 | 10 |
 | [TigerBeetle](https://docs.tigerbeetle.com/about/vopr) | VOPR's seed-plus-commit replay; always-on assertions | – | D15 | 07, 10 |
 | [Antithesis](https://antithesis.com/blog/deterministic_hypervisor/) | Whole-machine determinism as the bar a simulator must meet | A hypervisor as the enforcement point; Tide gets determinism from capabilities | D15 | 10 |
@@ -212,6 +212,12 @@ Tide used it for.
 
 ### Bend
 
+**Repository correction — 2026-11-12.** Bend's canonical home is
+[bendlang/bend](https://github.com/bendlang/bend); `HigherOrderCO/Bend`
+redirects there. The former HVM repository is now
+[HigherOrderCO/HVM1](https://github.com/HigherOrderCO/HVM1), linked in the
+influences table above. HVM2's paper remains at its version-specific URL.
+
 - [BendRT: A Parallel Runtime for CPUs and GPUs](https://github.com/bendlang/bend/blob/main/paper/BendRT.pdf), Taelin et al., 2026. Bend 2 dropped interaction nets at run time.
 - [BendTT: An Affine Dependent Type Theory](https://github.com/bendlang/bend/blob/main/paper/BendTT.pdf), Taelin et al., 2026. The live/dead split and once-only closures.
 - [HVM2: A Parallel Evaluator for Interaction Combinators](https://github.com/HigherOrderCO/HVM2/blob/main/paper/HVM2.pdf), Taelin. HOC's own single-thread overhead figures.
@@ -220,7 +226,10 @@ Tide used it for.
 - [Breaking Bend: Benchmarking the HVM](https://blog.speedfox.co.uk/), Speedfox, 2024. Independent Bend 1 slowdown.
 - [New AI-Focused Language Just Released: Bend 2](https://akitaonrails.com/en/2026/09/19/new-ai-language-just-released-bend-2/) and [bend-tests findings](https://github.com/akitaonrails/bend-tests/blob/main/docs/findings.md), Akita, 2026. Porting Rust tools to Bend 2.
 - [Bend vs SPARK](https://blog.liampwll.com/posts/bend_vibe_coding/), Powell. Auto-active proof discharged what Bend proved by hand.
-- [Issue #813](https://github.com/bendlang/bend/issues/813), Bend. The missing native library target that shapes D16's two stages.
+- [Issue #813](https://github.com/bendlang/bend/issues/813), Bend. As of
+  2026-11-12 the issue is closed as `not_planned`, while the native library
+  target remains [“planned, not scheduled” in WONTFIX.txt](https://github.com/bendlang/bend/blob/f311527776559ce40095108ad6a7514a6c34aaa1/WONTFIX.txt#L152-L154).
+  D16's Stage 1 still waits on it; the process boundary remains Stage 0.
 - [Bend EFFECTS guide](https://github.com/bendlang/bend/blob/main/guide/EFFECTS.md). Bend's only FFI and its lack of an ABI promise.
 
 ## Measurements That Changed Decisions

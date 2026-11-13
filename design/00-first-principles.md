@@ -243,8 +243,9 @@ validation program (D0) has to settle it.
   versions are pre-release or private, and independent measurements show
   large single-thread and memory overheads. Deterministic parallelism of pure
   code is inherited natively instead (`join`, `par_map`, and `par_for` equal
-  their sequential versions, D9), and Bend 2, the closest peer, works in
-  tandem with Tide as the owner of proved, parallel kernels (D16).
+  their sequential versions, D9), and Bend 2, the closest peer, is planned
+  to work in tandem with Tide as the owner of proved, parallel kernels
+  (Later tier, D16).
   Sources: `research/01-bend-hvm.md`, `research/10-concurrency-parallelism.md`,
   `research/11-bend-interop.md`, `reviews/round1-strategy.md` B1.
 - **H7: refined.** The strongest evidence is for a fast, single-verdict check

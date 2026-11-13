@@ -29,7 +29,6 @@ and safety.
 - **Already familiar.** Rust syntax wherever the meaning is the same,
   including lifetimes, without macros or `async`/`await`. Contracts run as
   checks and tests today and become proofs later.
-- **Works with Bend** for massively parallel, proved kernels.
 
 *Tide is in the design phase: the guarantees are what the design commits to,
 and the speed figures are targets, not measurements.*

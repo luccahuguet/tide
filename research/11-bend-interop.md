@@ -2,6 +2,30 @@
 
 Research date: 2026-10-19. Builds on report 01 (`research/01-bend-hvm.md`) without repeating it. Bracketed numbers refer to Sources. **Inference** marks my reasoning, not a sourced claim.
 
+## Correction — 2026-11-12
+
+The findings below remain a 2026-10-19 evidence snapshot. These updates
+supersede its repository-home and current-cadence claims:
+
+- **Repository homes.** Bend is now at [bendlang/bend](https://github.com/bendlang/bend);
+  `HigherOrderCO/Bend` redirects there. HVM's former repository is now
+  [HigherOrderCO/HVM1](https://github.com/HigherOrderCO/HVM1).
+- **Release cadence.** The “37 releases in 26 days” statements describe the
+  launch burst. Releases have since slowed to roughly one every one to two
+  weeks: [2.0.37 on October 13](https://github.com/bendlang/bend/releases/tag/v2.0.37),
+  [2.0.38 on October 20](https://github.com/bendlang/bend/releases/tag/v2.0.38),
+  [2.0.39 on October 23](https://github.com/bendlang/bend/releases/tag/v2.0.39),
+  and [2.0.40 on November 6](https://github.com/bendlang/bend/releases/tag/v2.0.40),
+  the latest release as of this correction. These are GitHub publication dates;
+  the changelog dates 2.0.40 November 5.
+- **Native library target (#813).** The [issue](https://github.com/bendlang/bend/issues/813)
+  is closed as `not_planned`, while [WONTFIX.txt at the checked revision](https://github.com/bendlang/bend/blob/f311527776559ce40095108ad6a7514a6c34aaa1/WONTFIX.txt#L152-L154)
+  still says “planned, not scheduled”. Stage 1 has not become available.
+  Stage 0 remains feasible with current Bend through a process boundary
+  (standalone binaries with argument, file and output effects but no stdin,
+  F5); neither stage is implemented in Tide, whose tandem remains in the
+  Later tier (D16).
+
 ## Question
 
 Ferox must not compete with Bend 2 (HigherOrderCO); it should work alongside it or be a plain Rust replacement. What is Bend 2's interop surface today, which division of labor is most valuable, what must Ferox's design include to make it smooth, where should the languages deliberately differ, and what are the risks?

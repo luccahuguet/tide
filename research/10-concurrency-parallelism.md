@@ -2,6 +2,11 @@
 
 Research date: 2026-10-19. Scope: concurrency (IO-bound tasks, servers, CLIs), parallelism (CPU/GPU throughput on pure code), and deterministic simulation testing (DST). Claims marked **Inference** are my reasoning, not something a source states. Everything else has a URL.
 
+**Repository correction — 2026-11-12.** The HVM repository linked in F7
+and Sources now lives at [HigherOrderCO/HVM1](https://github.com/HigherOrderCO/HVM1).
+The old `HigherOrderCO/HVM` links below are retained as part of this
+2026-10-19 evidence snapshot.
+
 ---
 
 ## Question

@@ -948,10 +948,11 @@ lowering of Tide tasks); D18 reversed that.
 
 - Tide calls Bend 2 for pure, proved, massively parallel kernels; Bend may
   call Tide libraries through its foreign effects once Tide exports C ABIs.
-- **Stage 0, available now**: a `bend` dependency kind with an exact version
-  pin and cached builds; a generated shim lets Bend's own checker verify the
-  declared kernel signature; kernels run as a supervised child process with a
-  generated text protocol. A Bend crash maps to `Err`.
+- **Stage 0, planned for Tide (Later tier); feasible with current Bend**: a
+  `bend` dependency kind with an exact version pin and cached builds; a
+  generated shim lets Bend's own checker verify the declared kernel signature;
+  kernels run as a supervised child process with a generated text protocol. A
+  Bend crash maps to `Err`.
 - **Stage 1, if Bend ships a native library target**: in-process calls under
   an `ffi` grant. Tide never depends on this stage.
 - The boundary has a closed type map (no 64-bit Bend numbers yet, bounded

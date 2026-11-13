@@ -2,6 +2,18 @@
 
 Research date: 2026-10-19. Scope: Bend 1 and 2, HVM1 through HVM5, Kind, interaction combinators, superpositions and SupGen, and Higher Order Company (HOC) strategy. Numbers in brackets refer to the Sources list. Text marked **Inference** is my reasoning, not something a source states.
 
+**Correction — 2026-11-12.** Bend's canonical home is
+[bendlang/bend](https://github.com/bendlang/bend), and HVM's former repository
+is now [HigherOrderCO/HVM1](https://github.com/HigherOrderCO/HVM1).
+[2.0.40, published November 6](https://github.com/bendlang/bend/releases/tag/v2.0.40)
+is the latest Bend release as of this correction; 2.0.37 in F1 belongs to
+this report's 2026-10-19 snapshot. The native library target (#813; the issue
+itself is closed as `not_planned`) remains
+[“planned, not scheduled”](https://github.com/bendlang/bend/blob/f311527776559ce40095108ad6a7514a6c34aaa1/WONTFIX.txt#L152-L154).
+See [report 11's dated correction](11-bend-interop.md#correction--2026-11-12)
+for the release cadence and unchanged interop staging. Findings below are
+preserved as dated evidence.
+
 ## Question
 
 What are Bend and HVM, and what do they deliver against native code? Which of their ideas are new and worth keeping? And which of five options should a Rust-like, agent-first language with optional proofs take?
