@@ -21,7 +21,7 @@ The owner asked: lust and Blaze make Rust compile faster, so what is Tide's poin
 
 | | Rust (rustc + cargo) | lust | Blaze | Tide |
 |---|---|---|---|---|
-| Bet | general systems language | how fast check/build gets on a Rust subset | second Rust compiler, warm daemon, agent loops | Rust that can't overreach and replays bit for bit |
+| Bet | general systems language | how fast check/build gets on a Rust subset | second Rust compiler, warm daemon, agent loops | a Rust subset in which code can't overreach and programs replay bit for bit |
 | Compiler | rustc / LLVM | own front end, trait solver, borrowck; dev builds emit C for tcc | own front end (rust-analyzer lineage), Cranelift/LLVM, own linker; never runs rustc | rustc + admission driver |
 | Language | all of Rust | subset of valid Rust 1.99; must match rustc or reject; no proc macros, async, unsafe | all of Rust intended, plus opt-in extensions | checked subset of valid Rust 2024; no user proc macros, async or build scripts; `unsafe` only with a grant |
 | Fidelity to rustc | is rustc | "0 false accepts" in its runs | Polonius default; known missed borrow errors; its docs disagree (99.8% vs about two thirds) | pinned rustc oracle, NLL |
@@ -57,13 +57,14 @@ Conclusions:
 
 The owner wanted Tide definable in a few words.
 
-- **Adopted** (fx-tcde, in review): headline "Capability-safe, replayable Rust"; plain form "Rust that can't overreach and replays bit for bit", with replay conditioned on simulator models for every reached foreign effect; audience form "for code agents write".
+- **Adopted** (fx-vp4u, refining fx-tcde): headline "A capability-safe, replayable subset of Rust"; plain form "a checked subset of valid Rust 2024 in which code can't overreach and programs replay bit for bit", with replay conditioned on simulator models for every reached foreign effect; audience form "for code agents write".
 - **Rejected:**
   - "safer Rust": vague, since Rust is already memory-safe and Tide's added safety is authority safety;
   - "pure Rust": means "no C dependencies" in the Rust community;
   - "formal Rust": proofs are later tiers, and Verus, Prusti and Creusot own that space;
-  - "Bend Rust": Bend is an interop partner (D16), not Tide's identity.
-- The Rust trademark policy allows stating accurately that software is compatible with the Rust programming language [web: §4]. It also says the word marks "may not be used: To refer to any other programming language; To refer to a modified version of the Rust programming language, except as permitted below for minor changes", and no use may appear "official, affiliated, or endorsed" to a casual observer [web: "The Basics: Referring to Rust/Cargo"]. Compatibility statements such as "a checked subset of valid Rust 2024" or "every Tide program is a Rust crate built by rustc" are the allowed kind. The headline "Capability-safe, replayable Rust" and the plain form "Rust that can't overreach" use "Rust" as Tide's own descriptor, which is the case the restriction addresses [inference]. The headline is the owner's choice and stays; the trademark check before any public use (fx-gbq4) covers the tagline as well as the name. Making "Rust" part of the product's own name falls under the policy's permission rule (§4). None of this is legal advice.
+  - "Bend Rust": Bend is an interop partner (D16), not Tide's identity;
+  - "Capability-safe, replayable Rust" (fx-tcde's first headline): it calls Tide "Rust" rather than stating Tide's relation to Rust (Tide admits only part of Rust, compiled against its own std), and that is the use the trademark policy restricts. The owner allowed a better description (2026-11-13: "update it only if you find a better description").
+- The Rust trademark policy allows stating accurately that software is compatible with the Rust programming language [web: §4]. It also says the word marks "may not be used: To refer to any other programming language; To refer to a modified version of the Rust programming language, except as permitted below for minor changes", and no use may appear "official, affiliated, or endorsed" to a casual observer [web: "The Basics: Referring to Rust/Cargo"]. Compatibility statements such as "a checked subset of valid Rust 2024" or "every Tide program is a Rust crate built by rustc" are the allowed kind. fx-tcde's first headline, "Capability-safe, replayable Rust", and its plain form "Rust that can't overreach" used "Rust" as Tide's own descriptor, which is the case the restriction addresses [inference]. The adopted "subset of Rust" form states Tide's relation to Rust instead (D18). The trademark check before any public use (fx-gbq4) still covers the tagline as well as the name. Making "Rust" part of the product's own name falls under the policy's permission rule (§4). None of this is legal advice.
 
 ## 4. The name
 

@@ -1,12 +1,13 @@
 # Tide
 
-**Capability-safe, replayable Rust.**
+**A capability-safe, replayable subset of Rust.**
 
-Tide is Rust that can't overreach and replays bit for bit. It is a checked
-subset of valid Rust 2024 for software that AI agents write and humans have
-to trust: code cannot do more than its signature says, programs replay from
-a seed when every foreign effect they reach has a simulator model, and reviews
-show what changed in what code may do, with Rust's speed and safety.
+Tide is a checked subset of valid Rust 2024 in which code can't overreach and
+programs replay bit for bit. It is for software that AI agents write and
+humans have to trust: code cannot do more than its signature says, programs
+replay from a seed when every foreign effect they reach has a simulator
+model, and reviews show what changed in what code may do, with Rust's speed
+and safety.
 
 - **No ambient authority.** No code, in any dependency, can touch files, the
   network, or the clock unless it is handed that authority, so a function's
