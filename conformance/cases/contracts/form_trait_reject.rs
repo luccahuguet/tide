@@ -25,3 +25,10 @@ impl Grow for Bag {
         self.items.reserve(n);
     }
 }
+
+// The first macro also consumes subsequent contract attributes.
+pub trait Hidden {
+    #[invariants] //~ FX0802
+    #[ensures(result == 0)]
+    fn value(&self) -> u32 { 0 }
+}

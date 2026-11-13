@@ -624,9 +624,9 @@ fn separate_library_tests_cannot_read_each_others_sources() {
 #[test]
 fn separate_library_tests_accept_local_impls_and_check_pure_at_use() {
     let suite = r#"
-extern crate tide_candidate as solution;
+use tide_candidate as solution;
 mod test {
-    use solution::Shape;
+    use crate::solution::Shape;
 
     fn sides<T: Shape>(shape: T) -> u8 { shape.sides() }
     fn empty() {}
@@ -1266,7 +1266,7 @@ fn collections_disjoint_lookups_enforce_safety() {
 #[tide::main]
 fn main() {
     let mut map = std::collections::HashMap::from([(1, 10), (2, 20)]);
-    // Distinct keys satisfy the unchecked lookup's safety contract.
+    // SAFETY: distinct keys satisfy the unchecked lookup's safety contract.
     let [first, missing, second] = unsafe { map.get_disjoint_unchecked_mut([&1, &0, &2]) };
     *first.unwrap() += 1;
     assert!(missing.is_none());
@@ -1950,6 +1950,7 @@ fn generated_contract_tests_execute_and_report_unchecked() {
         "forged_runtime",
         "invariant_clause",
         "concrete_consts",
+        "default_law_value",
     ] {
         let (ok, text) = run(name);
         assert!(
@@ -1993,7 +1994,6 @@ fn generated_contract_tests_execute_and_report_unchecked() {
     for (name, reason) in [
         ("reexported", "type not nameable from the generated module"),
         ("local_method", "body-local function"),
-        ("default_law", "trait method"),
     ] {
         let (ok, text) = run(name);
         assert!(ok && text.contains(&format!("ignored, unchecked: {reason}")), "{name}: {text}");
@@ -2600,7 +2600,7 @@ fn granted_native_inputs_are_rebuilt_without_cache_reuse() {
         ".pushsection .rodata\n.global tide_payload\ntide_payload:\n.incbin {input:?}\n.popsection"
     );
     let source = format!(
-        "core::arch::global_asm!({assembly:?});\nunsafe extern \"C\" {{ static tide_payload: u8; }}\n#[tide::main] fn main() {{ println!(\"{{}}\", unsafe {{ tide_payload }}); }}"
+        "core::arch::global_asm!({assembly:?});\nunsafe extern \"C\" {{ static tide_payload: u8; }}\n#[tide::main] fn main() {{\n // SAFETY: the linked assembly defines tide_payload as an initialized byte.\n println!(\"{{}}\", unsafe {{ tide_payload }}); }}"
     );
     std::fs::write(dir.join("package/src/demo.rs"), source).unwrap();
     for byte in [1u8, 2] {

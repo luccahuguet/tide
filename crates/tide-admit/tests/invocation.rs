@@ -390,6 +390,10 @@ fn trusted_input_directories_are_not_readable_by_candidate_source() {
 
 #[test]
 fn build_scripts_are_rejected_without_running() {
+    let accepted = package("no-build-script", "pub fn f() {}\n");
+    let out = driver(&accepted).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("FX0915"), "{}", stderr(&out));
     let dir = package("build-script", "pub fn f() {}\n");
     std::fs::write(
         dir.join("package/build.rs"),
@@ -398,7 +402,7 @@ fn build_scripts_are_rejected_without_running() {
     .unwrap();
     let out = driver(&dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0915"));
+    assert!(stderr(&out).starts_with("error: FX0915:"), "{}", stderr(&out));
     assert!(!stderr(&out).contains("BUILD_SCRIPT_EXECUTED"));
     // A `..` in the source path must not hide the package root.
     std::fs::create_dir(dir.join("package/src/sub")).unwrap();
@@ -409,7 +413,7 @@ fn build_scripts_are_rejected_without_running() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0915"), "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: FX0915:"), "{}", stderr(&out));
 }
 
 fn entries(dir: &std::path::Path) -> usize {

@@ -800,7 +800,7 @@ fn private(_: Net) {}
 
     let granted = source.replace(
         "s.len()",
-        "unsafe { s.as_bytes().as_ptr().read() as usize }",
+        "\n    // SAFETY: this metadata-only fixture is never executed.\n    unsafe { s.as_bytes().as_ptr().read() as usize }",
     );
     let flags = ["--tide-std", std, "--tide-grant=unsafe"];
     let (code, stderr) = admit("artifact", &granted, &flags);
@@ -862,6 +862,7 @@ pub fn show(f: fn()) -> String {
 }
 pub fn outer() {
     unsafe fn inner() {}
+    // SAFETY: inner performs no operations.
     unsafe { inner() }
 }
 pub fn debug<T: core::fmt::Debug>(t: T) -> String {
@@ -1024,7 +1025,7 @@ pub fn handle(app: &App, req: &str) -> usize {
                 "    pub clock: Clock,\n",
                 "    pub clock: Clock,\n    net: std::net::Net,\n",
             )
-            .replace("req.len()", "unsafe { req.as_ptr().read() as usize }"),
+            .replace("req.len()", "\n    // SAFETY: this metadata-only fixture is never executed.\n    unsafe { req.as_ptr().read() as usize }"),
     );
     let expected = "\
 declared authority (no exercised authority, effects, or proof status)
@@ -1292,4 +1293,40 @@ fn concurrency_tokio_module_imports_keep_the_spawn_diagnostic() {
             "{name}: {stderr}"
         );
     }
+}
+
+#[test]
+fn a_module_file_inside_the_snapshot_is_accepted() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("module-file/package");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("leaf.rs"), "pub struct T;").unwrap();
+    let (code, stderr) = admit(
+        "module-file",
+        "mod leaf; pub fn make() -> leaf::T { leaf::T }",
+        &[],
+    );
+    assert_eq!(code, 0, "{stderr}");
+}
+
+#[test]
+fn a_rejected_import_has_no_secondary_unused_diagnostic() {
+    let (code, stderr) = admit("rejected-import-usage", "use core::sync::atomic::AtomicU64;", &[]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("error: FX0520:"), "{stderr}");
+    assert!(!stderr.contains("FX0913"), "{stderr}");
+}
+
+#[test]
+fn a_rejected_import_does_not_hide_an_unused_list_sibling() {
+    let (code, stderr) = admit(
+        "rejected-import-sibling",
+        "use core::{\n    sync::atomic::AtomicU64,\n    cmp::Ordering,\n};\npub fn f(_: AtomicU64) {}",
+        &[],
+    );
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("error: FX0520:"), "{stderr}");
+    assert!(
+        stderr.lines().any(|line| line.starts_with("lib.rs:3:") && line.contains("error: FX0913:")),
+        "{stderr}"
+    );
 }

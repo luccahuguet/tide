@@ -44,8 +44,8 @@ mod ambiguous_globs {
 }
 
 mod cyclic_globs {
-    mod left { pub use super::right::*; }
-    mod right { pub use super::left::*; }
+    mod left { pub use super::right::*; } //~ FX0914
+    mod right { pub use super::left::*; } //~ FX0914
     use left::*;
     pub fn missing() { let _ = Cmd::new("data"); } //~ E0433
 }

@@ -238,9 +238,10 @@ fn local_container() {
     }
 }
 
+#[ensures(result)]
+fn default_law_value() -> bool { true }
 trait DefaultLaw {
-    #[ensures(result)]
-    fn default_law(&self) -> bool { true }
+    fn default_law(&self) -> bool { default_law_value() }
 }
 
 #[requires(n < 0)]

@@ -47,12 +47,15 @@ use crate::policy::{self, Rule, Verdict};
 use crate::pure::{self, Need, Pure};
 
 mod authority;
+mod contracts;
 mod habits;
+mod modules;
 mod mono;
 mod sinks;
 mod surface;
 mod traits;
 pub use habits::check_habit_surface;
+pub use modules::check_module_surface;
 pub use mono::check_mono_items;
 pub use traits::check_trait_surface;
 
@@ -80,6 +83,8 @@ pub fn check_crate(
     test_suite: bool,
     labels: &RustcLabels,
     insertions: &crate::synthesis::Insertions,
+    surface_errors: usize,
+    unused_imports: &[Span],
 ) -> Holes {
     let crates = Crates::new(tcx);
     let mut walk = Walk::new(tcx, &crates, grants, test_library);
@@ -89,6 +94,7 @@ pub fn check_crate(
     walk.obligations = obligations;
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.ceiling_cycles();
+    walk.module_rules(surface_errors, unused_imports);
     walk.entry_point(tide_std);
     walk.check_expansions();
     for def in tcx.hir_crate_items(()).definitions() {
@@ -1755,6 +1761,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
             let ty = self.tcx.type_of(def).instantiate_identity();
             self.declared(def, ty.skip_normalization(), hir_ty.span);
         }
+        self.contract_placement(item.owner_id.def_id);
         self.unsafe_attrs(item.hir_id(), item.span);
         intravisit::walk_impl_item(self, item);
         self.item = outer;
@@ -1770,6 +1777,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         if let hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(_)) = &item.kind {
             self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
         }
+        self.contract_placement(item.owner_id.def_id);
         self.unsafe_attrs(item.hir_id(), item.span);
         intravisit::walk_trait_item(self, item);
         self.item = outer;
@@ -1799,13 +1807,15 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         if let Some(header) = kind.header() {
             self.fn_item(def, header, decl);
         }
+        self.contract_function(def, body);
         intravisit::walk_fn(self, kind, decl, body, def)
     }
 
-    /// UNSAFE-1: an `unsafe` block needs the grant.
+    /// An unsafe block needs the grant (UNSAFE-1) and a SAFETY comment (FX0902).
     fn visit_block(&mut self, block: &'tcx hir::Block<'tcx>) {
         if let hir::BlockCheckMode::UnsafeBlock(hir::UnsafeSource::UserProvided) = block.rules {
             self.granted(block.span, "an `unsafe` block");
+            self.safety_comment(block);
         }
         intravisit::walk_block(self, block)
     }

@@ -119,6 +119,13 @@ struct Rule {
 // already receive FX0407 from the definition graph; unresolved dispatch stays unlabelled.
 const RULES: &[Rule] = &[
     Rule {
+        code: Code::Fx0910,
+        rustc_codes: &[583],
+        wording: None,
+        site: Site::None,
+        message: "an out-of-line module needs its source file",
+    },
+    Rule {
         code: Code::Fx0203,
         rustc_codes: &[373, 521, 597, 515],
         wording: Some("lifetime may not live long enough"),

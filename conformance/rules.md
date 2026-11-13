@@ -147,7 +147,7 @@ not cite is a best mapping that a case must confirm.
 | CLAUSE-1 | §1.8, 04:385 | v0 clause forms only; quantifiers must be bounded (`lo <= x && x < hi ==>` or `c.contains(&x) ==>`) | both | FX0807 in an uncoded compile error; a v1 form is an attribute v0's std lacks, rustc's uncoded error |
 | CLAUSE-2 | §1.8, 04:392 | A clause is a Rust boolean expression, typed as code; names resolve as in the body | rustc | type errors (e.g. E0308); E0425 for an unresolved name |
 | CLAUSE-3 | §1.8, 04:401 | Clauses call only authority-free fns with `Pure + Sync` arguments and `&mut` only to clause temporaries; generic code needs the bound at the definition | checker | FX0808 (defined in 04 §1.8) |
-| CLAUSE-4 | §1.8, 04:417 (also §1.2 rule 4, 04:189) | `old` snapshots are borrow-checked; non-`Copy` non-`Clone` `old` is an error; `old(e)` cannot name `result` or a bound variable; prophetic `&mut` param outside `old` is FX0803; mutated non-snapshot param in `ensures` is an error | both | FX0803 and FX0809 await admission; production lowering gives uncoded errors for invalid `old`, E0599 for a missing value Clone or E0277 for a non-Clone referent, and E0502/E0505 for conflicting entry borrows |
+| CLAUSE-4 | §1.8, 04:417 (also §1.2 rule 4, 04:189) | `old` snapshots are borrow-checked; non-`Copy` non-`Clone` `old` is an error; `old(e)` cannot name `result` or a bound variable; prophetic `&mut` param outside `old` is FX0803; mutated non-snapshot param in `ensures` is an error | both | FX0803 is enforced by admission; FX0809 awaits admission; production lowering gives uncoded errors for invalid `old`, E0599 for a missing value Clone or E0277 for a non-Clone referent, and E0502/E0505 for conflicting entry borrows |
 | CLAUSE-6 | §1.8, 04:466 | Name-resolution part: over an iterator other than `a..b`, a `for` loop's invariant cannot name the loop pattern's bindings | rustc (through the contract macros' lowering) | E0425: the head comes before `next`, so the bindings are out of scope |
 | SEAL-2 | §11.1, 04:1391 | What an interface, whole, or manifest seal entry fixes (content and identity, checked by SEAL-3) | checker (admission driver) | FX0920 via SEAL-3 |
 | SEAL-3 | §11.1, 04:1482 | After rustc's analysis and before any artifact is written, the driver checks the crate against its own `tide.seal`; a changed or missing item, or an unlisted target, is an error and the crate is not admitted | checker (admission driver) | FX0920 |
@@ -181,9 +181,11 @@ already implements them; `--tide-print-codes` names the enforced subset.
 | REF-0702 | D5; ref §9 | A Result in expression statement position (including `Result<(), Infallible>` and macro results) cannot be ignored; `let _ =` discards explicitly | checker | FX0702 |
 | REF-0902 | D11; ref §11 | Each unsafe block, with or without the grant, needs a SAFETY line comment directly above the block or its statement; unsafe impls need none | checker | FX0902 |
 | REF-0910 | D12; ref §12.1 | An out-of-line module needs its source file | both | FX0910 |
+| REF-0911 | D12; ref §12.1 | No path attributes on modules | checker | FX0911 |
 | REF-0912 | D12; ref §12.2 | No user extern crate items | checker | FX0912 |
 | REF-0913 | D12; ref §12.2 | Unused imports are errors | checker | FX0913 |
-| REF-0914 | D12; ref §12.2 | No import cycles between modules | checker | FX0914 |
+| REF-0914 | D12; ref §12.2 | No use-item cycles between modules; edges target the defining module, including re-exports and globs | checker | FX0914 |
+| REF-0915 | D13; ref §12.4 | Packages cannot have build scripts | checker | FX0915; package cases in tide-admit tests/invocation.rs `build_scripts_are_rejected_without_running` assert error severity, exit 1, and accepted exit 0 without a build script |
 
 ## Considered and excluded (runtime, simulator, sandbox, tooling, non-rejecting, or v1)
 

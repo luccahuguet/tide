@@ -1,5 +1,7 @@
 //@ rules: SCOPE-1, SCOPE-3, SEND-3
+#[cfg(test)]
 use std::sync::mpsc::sync_channel;
+#[cfg(test)]
 use std::task::TaskError;
 
 #[test]

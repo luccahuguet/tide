@@ -99,10 +99,18 @@ only as a single direct statement before capture in the declaring body;
 multiple or conditional assignments are omitted. These are known limits on
 labels, not admission exceptions. The rules
 sourced only from the reference/decision record use `REF-<FX digits>` IDs in
-`rules.md`. FX0902's comment rule (pending the unsafe/modules slice)
+`rules.md`. FX0902's comment rule
 applies only to unsafe blocks, with or without the grant: a `// SAFETY:` line
 in the comment lines directly above the block or its statement, never a
 trailing same-line comment or a requirement on unsafe impls.
+
+The contracts/modules slice enforces `FX0802`, `FX0803`, `FX0902`, and
+`FX0910`–`FX0915` as errors. Module cycles use only `use` items (public uses
+and globs included), targeting the module defining the imported item or the
+imported module itself; declarations, body paths and external crates add no
+edge. FX0915 is package-level, without a source line: the invocation test
+`build_scripts_are_rejected_without_running` is its violating/accepted pair
+and asserts error severity and exit status.
 
 The trait slice enforces `FX0401`–`FX0408` as errors. Impl placement uses
 exact module equality: the local ADT's module or the trait's module; for a

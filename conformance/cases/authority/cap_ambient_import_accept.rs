@@ -23,7 +23,10 @@ mod globbed {
     mod exports { pub use crate::local::Command as Cmd; }
     use exports::*;
     mod relay { pub use super::exports::*; }
-    use relay::*;
+    mod relayed {
+        use super::relay::*;
+        pub fn construct() { let _ = Cmd::new("data"); }
+    }
     pub fn construct() {
         let _ = Cmd::new("data");
         let _ = relay::Cmd::new("data");

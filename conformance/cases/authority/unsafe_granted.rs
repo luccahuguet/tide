@@ -1,9 +1,9 @@
 //@ rules: UNSAFE-1
 //@ grants: unsafe
-// Under the `unsafe` grant, with a `// SAFETY:` comment on each `unsafe { .. }` block and
-// `unsafe impl`; `asm!`, `global_asm!`, a `#[unsafe(naked)]` function's `naked_asm!`, which
-// needs no `unsafe` block, and `unsafe extern` blocks, an empty one too, and their items, `safe`
-// ones included, are admitted.
+// Under the `unsafe` grant, with a `// SAFETY:` comment on each `unsafe { .. }` block
+// (`unsafe impl` needs none), `asm!`, `global_asm!`, a `#[unsafe(naked)]` function's
+// `naked_asm!`, which needs no `unsafe` block, and `unsafe extern` blocks, an empty one too,
+// and their items, `safe` ones included, are admitted.
 pub unsafe fn raw_len(p: &[u8]) -> usize {
     p.len()
 }

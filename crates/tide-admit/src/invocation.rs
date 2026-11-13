@@ -66,7 +66,8 @@ impl Callbacks for Admission {
     fn after_expansion<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         assert!(!self.test_ice, "`--tide-test-ice`: a seeded compiler crash");
         // Before `check_crate` lowers the crate, which takes the expanded AST.
-        check_expanded(tcx, self.tide_std);
+        let (surface_errors, unused_imports) =
+            check_expanded(tcx, self.tide_std, &self.sources.insertions);
         self.test_library = self.library_artifact.as_ref().and_then(|path| {
             tcx.crates(()).iter().copied().find(|&krate| {
                 tcx.crate_extern_paths(krate)
@@ -74,7 +75,7 @@ impl Callbacks for Admission {
                     .any(|loaded| loaded == path)
             })
         });
-        if self.synthesize && tcx.dcx().has_errors().is_none() {
+        if self.synthesize && tcx.dcx().has_errors().is_none() && unused_imports.is_empty() {
             self.insertions = synthesis::plan(tcx, self.test_library);
             tcx.dcx().abort_if_errors();
             if !self.insertions.is_empty() {
@@ -90,6 +91,8 @@ impl Callbacks for Admission {
             self.library_artifact.is_some(),
             &self.labels,
             &self.sources.insertions,
+            surface_errors,
+            &unused_imports,
         );
         Compilation::Continue
     }
@@ -261,6 +264,8 @@ impl Invocation {
             "--error-format=short".into(),
             "-Zallow-features=".into(),
             "-Zpolonius=no".into(),
+            // FX0913 owns unused imports independently of Rust lint levels.
+            "-Aunused-imports".into(),
             // The backstop's mono items: the crate makes its own instances of upstream generics
             // instead of linking an upstream crate's.
             "-Zshare-generics=no".into(),
@@ -864,8 +869,13 @@ impl<'ast> Visitor<'ast> for Guard<'_> {
 /// Rejects user macro definitions (FX0101), `#![no_std]` (FX0520), `#![no_main]` on a binary
 /// (FX0512), and the file-loading attributes that only expansion shows (FX0911), such as ones
 /// built from a macro's tokens. `Guard` rejects the written attributes before rustc reads their
-/// files; the file loader confines what the rest read.
-fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
+/// files; the file loader confines what the rest read. Returns emitted driver errors and
+/// deferred unused imports, so later checks can exclude earlier errors and rejected imports.
+fn check_expanded(
+    tcx: TyCtxt<'_>,
+    tide_std: bool,
+    insertions: &Insertions,
+) -> (usize, Vec<rustc_span::Span>) {
     struct Expanded<'tcx> {
         tcx: TyCtxt<'tcx>,
         diags: Diagnostics,
@@ -908,6 +918,7 @@ fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
     check.visit_crate(&krate);
     crate::walk::check_trait_surface(tcx, &krate, &mut check.diags);
     crate::walk::check_habit_surface(tcx, &krate, &mut check.diags);
+    let unused_imports = crate::walk::check_module_surface(tcx, &krate, &mut check.diags, insertions);
     // ADMIT-1: the std rustc injects is Tide's, whose identity the rules key on
     // (`Crates::tide_std`). Under `#![no_std]` rustc injects `core`, so no crate is Tide's std and
     // the `Pure` rules are off, and an `extern crate std` loads it only as an ordinary crate.
@@ -930,7 +941,9 @@ fn check_expanded(tcx: TyCtxt<'_>, tide_std: bool) {
                 .report(tcx, attr.span, Code::Fx0512, message.into(), None);
         }
     }
+    let before = tcx.dcx().err_count();
     check.diags.emit(tcx);
+    (tcx.dcx().err_count() - before, unused_imports)
 }
 
 /// The clean process's whole environment: rustc's crash hook otherwise writes a report to the

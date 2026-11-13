@@ -97,6 +97,10 @@ pub enum Code {
     Fx0701,
     /// A Result ignored in statement position (D5).
     Fx0702,
+    /// Contracts on trait methods.
+    Fx0802,
+    /// A prophetic mutable parameter in a postcondition.
+    Fx0803,
     /// Clause syntax, contextual result, loop placement, and bounds (toolchain macros).
     Fx0804,
     Fx0805,
@@ -105,8 +109,18 @@ pub enum Code {
     /// Unsafe code, an unsafe attribute, or `#[trusted_pure]` without the `unsafe` grant
     /// (UNSAFE-1).
     Fx0901,
+    /// An unsafe block without a SAFETY comment.
+    Fx0902,
+    /// A module without a source file.
+    Fx0910,
     /// File-loading attributes (RUN-2).
     Fx0911,
+    /// Explicit extern crate items.
+    Fx0912,
+    /// Unused imports.
+    Fx0913,
+    /// Cyclic module imports.
+    Fx0914,
     /// Package build scripts (D13).
     Fx0915,
 }
@@ -157,12 +171,19 @@ impl Code {
         Code::Fx0612,
         Code::Fx0701,
         Code::Fx0702,
+        Code::Fx0802,
+        Code::Fx0803,
         Code::Fx0804,
         Code::Fx0805,
         Code::Fx0806,
         Code::Fx0807,
         Code::Fx0901,
+        Code::Fx0902,
+        Code::Fx0910,
         Code::Fx0911,
+        Code::Fx0912,
+        Code::Fx0913,
+        Code::Fx0914,
         Code::Fx0915,
     ];
 
@@ -210,12 +231,19 @@ impl Code {
             Code::Fx0612 => "FX0612",
             Code::Fx0701 => "FX0701",
             Code::Fx0702 => "FX0702",
+            Code::Fx0802 => "FX0802",
+            Code::Fx0803 => "FX0803",
             Code::Fx0804 => "FX0804",
             Code::Fx0805 => "FX0805",
             Code::Fx0806 => "FX0806",
             Code::Fx0807 => "FX0807",
             Code::Fx0901 => "FX0901",
+            Code::Fx0902 => "FX0902",
+            Code::Fx0910 => "FX0910",
             Code::Fx0911 => "FX0911",
+            Code::Fx0912 => "FX0912",
+            Code::Fx0913 => "FX0913",
+            Code::Fx0914 => "FX0914",
             Code::Fx0915 => "FX0915",
         }
     }
@@ -265,6 +293,12 @@ impl Diagnostics {
 
     pub fn is_empty(&self) -> bool {
         self.found.is_empty()
+    }
+
+    pub fn has_error_in(&self, span: Span) -> bool {
+        self.found
+            .iter()
+            .any(|d| !d.code.is_lint() && span.contains(d.span))
     }
 
     /// Emits the diagnostics in source order, one per code at each start position: the one with

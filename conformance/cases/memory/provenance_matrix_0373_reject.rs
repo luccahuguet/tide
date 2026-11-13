@@ -1,6 +1,5 @@
 //@ rules: BORROW-3, SCOPE-3
 // Matrix rows: shape_route. FX marks are fixed by the evidence policy.
-use std::task::Tasks;
 pub struct Parts<'a> { pub first: &'a str, pub other: &'static str }
 pub fn whole_direct() -> Box<dyn Fn() -> usize> {  let value = "static"; Box::new(|| (&(value)).len()) } //~ E0373 FX0203
 pub fn whole_alias() -> Box<dyn Fn() -> usize> {  let value = "static"; let alias = value; Box::new(|| (&(alias)).len()) } //~ E0373 FX0203
