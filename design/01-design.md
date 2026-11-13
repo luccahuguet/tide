@@ -82,7 +82,7 @@ later-tier feature, the tier table wins.
 | --- | --- |
 | v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); the unreviewed-branch guarantee and the test sandbox on Linux (D13); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
 | v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); strict JSON decoding and internally tagged enums (D6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
-| Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
+| Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export; modeled child processes, signals and raw PTYs through Proc (D15; 03 §9.9). The API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`) and subscription rules (one live subscription with `AlreadyExists`, default disposition on drop, five-signal set) are Later on both real and simulated backends. |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
 already use the clause attributes agents will later prove, so moving proofs in
@@ -999,6 +999,11 @@ lowering of Tide tasks); D18 reversed that.
 - A determinism self-check runs a seed twice and diffs the event traces.
 - Coverage: the build lists any reachable foreign effect with no simulator
   model.
+- Later: Proc child lifecycle, coalesced signals and raw PTY I/O/size have
+  explicit external-child models (03 §9.9). Replay covers only declared
+  models and process modes; missing coverage is reported and never silently
+  starts a host process. Process death and whole-node crash have distinct
+  lifetime and storage effects.
 
 ### D16. Bend tandem
 

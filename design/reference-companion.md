@@ -654,7 +654,11 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
 
 **Later:** the Bend tandem and `Accel` (D16); deferred overflow traps;
 automatic parallelization; `Shape` reflection; Polonius-precision borrows;
-interactive-proof export; snapshot-and-branch simulation.
+interactive-proof export; snapshot-and-branch simulation; modeled child
+processes, signals and raw PTYs through Proc (D15; 03 §9.9), including the
+API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`) and
+subscription rules (one live subscription with `AlreadyExists`, default
+disposition on drop, five-signal set) on both real and simulated backends.
 
 **Removed** (01 draft 3): `Frozen`, the `lock` keyword, `par { }`, and the
 moved-out rule. Not yet tiered by 01, and left out of v0 here: codec formats

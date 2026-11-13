@@ -17,6 +17,8 @@ on foreign functions, and `ThreadBound` (§5); the evented runtime and its lower
 to RUST-6). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
 by `reference-companion.md`: `pct` scheduling and `--minimize` (§9).
+The process model in §9.9 is **Later tier**, decided by the coordinator
+on 2026-11-13 (fx-f6xp), not part of the v0 simulation commitment.
 Draft 3 removed `Frozen` (now `Pure + Sync`), the `lock` keyword (now
 `Shared::with`, §6.5), `par { }` (now `join`, §8), and the moved-out rule (a
 child's panic propagates, §6.2).
@@ -2085,6 +2087,8 @@ protocol needs. `restart` reruns the entry with a fresh `NodeRoot` over the
 surviving durable storage; no volatile state survives. `sim.run_for(d)` and
 `sim.run_until(&handle)`, which returns the entry's `Result<T, E>`, drive
 the world; `node.fs()` inspects a node's disk.
+Later, §9.9 adds `run_until_exit` for expected process death and defines
+restart after parent-only death; `run_until` keeps this signature.
 
 ### 9.6 `tide sim`
 
@@ -2157,6 +2161,235 @@ real child processes, which need a `sim.world.proc` model. The
 simulated file backend applies each multi-call operation whole after its
 latency; it does not expose partial effects when cancellation interrupts real
 multi-call operations. Modelling those partial effects belongs with faults.
+
+### 9.9 `sim.world.proc` (Later; fx-f6xp)
+
+**[repo evidence / decision]** Decided by the coordinator on 2026-11-13
+(fx-f6xp): a bounded process model in **Later**, recorded in 01's tier table
+and D15. It is not implemented; §9.8's current exclusions remain until it
+ships. [Research/30](../research/30-sim-world-proc.md) records evidence,
+alternatives, the accepted choices and implementation acceptance for
+fx-ayh2. API spellings are provisional.
+The API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`)
+and subscription rules (one live subscription with `AlreadyExists`, default
+disposition on drop, five-signal set) are Later on both real and simulated
+backends; v0's real `Proc::signals` and `Proc::exit` retain exactly their
+existing v0 specification.
+
+**[inference] Surface and ownership.** Programs use the same `Proc`,
+`Command`, `Child`, pipe ends, `Signals` and `io::Result` in real and
+simulated execution (§1.1). `Proc::only` is checked before model lookup;
+registration grants no authority. Add child-directed
+`Child::signal(&mut self, Signal) -> io::Result<()>`, and a PTY launch:
+`Command::spawn_pty(&mut self, PtySize) -> io::Result<(Child, Pty)>`.
+`Child::kill` still means SIGKILL to the direct child, never its descendants;
+`Child::signal` rejects Kill with `InvalidInput`, even for a reaped child,
+so `child.kill()` is the one way to submit SIGKILL through a Child.
+ExitStatus keeps `code()`/`success()` and gains
+`signal(&self) -> Option<i32>`, reporting any terminating signal number,
+distinct from a normal exit code such as 143. Models may declare death by
+any signal number, including SIGPIPE, SIGSEGV or SIGABRT. Linux exit codes
+retain their low eight bits. The typed send/subscription set is separate:
+`Child` (SIGCHLD), `Term` (SIGTERM),
+`Kill` (SIGKILL), `Winch` (SIGWINCH), and terminal-hangup `Hup` (SIGHUP);
+subscriptions reject `Kill`.
+`Proc::signals(&[Signal])` subscribes to the calling process, with
+`Signals::recv(&self) -> io::Result<Signal>`. No raw-PID signalling,
+wait-any, signal handlers, or process-group management API is added.
+
+**[inference] Test surface.** `sim.world.proc(program, ProcessModel)`
+registers an owned, declarative model for an exact program spelling, with
+`program: impl AsRef<OsStr>` and no PATH search, shell interpretation or
+host execution. It returns `()`;
+duplicate names or malformed models panic during setup, before execution.
+Setup takes no point, draw or time and is recorded inline. Each spawn
+instantiates fresh state, identified by node incarnation and spawn ordinal.
+Models describe accepted arguments, environment, cwd and stdio; ordered
+state transitions consume spawn, input bytes/closure, delivered signal or
+timer events and emit output, close/reopen endpoints, exit, or arm timers.
+Resize is not a model input: a model reads current PTY size only when it
+handles a delivered Winch, so coalesced resizes cannot be counted separately.
+They contain finite alternatives and bounded delay ranges, not callbacks
+that can consult the host. Unmatched command shapes or model inputs fail
+as missing coverage, rather than pretend the program succeeded.
+`sim.world.proc_snapshot()` returns ordered, data-only instance states,
+including running children, zombies, reaped instances and orphaned children,
+without scheduling. Fault targets use these instance identities, not PIDs.
+
+**[inference] Lifecycle.** The process table owns
+`Running -> Zombie(status) -> Reaped(status)`. Spawn failure creates no
+child; successful creation is atomic, and the child may exit before the
+caller resumes from spawn. Exit stores one immutable code or signal status,
+closes that process's endpoints, and makes it waitable independently of
+SIGCHLD delivery. `try_wait` returns `None` while running, otherwise reaps
+once and caches `Some(status)`; `wait` blocks until the same transition.
+Repeated calls return the cached status. Each child is waited for by its
+own handle; different handles may be polled in any application order.
+`wait` closes its retained stdin; `try_wait` does not. Dropping `Child`
+neither kills nor reaps, though dropping its pipe fields closes those ends.
+Endpoint closure and buffered output remain
+independent of waitability: EOF or PTY EIO is not an exit status.
+
+**[inference] Signals.** Standard signals coalesce, never count child
+exits. Model a kernel pending bit per process/signal and a separate latched
+bit per subscribed signal. Delivery transfers the pending bit to the latch;
+`recv` consumes a latch; if several signals are latched, a process-sub-stream
+choice selects which comes first. Real checks accept any order. This is
+deliberately stronger exploration than Linux signalfd's lowest-number-first
+selection among the supported pending standard signals.
+Repeated arrivals coalesce at each stage. The first
+(Linux) profile retains a pending SIGCHLD until delivery/acceptance or a
+disposition change discards it; reaping even the last zombie does not clear
+it or retract a latched hint. Registration is not retrospective; callers
+subscribe, then scan children before waiting for hints and rescan all retained children
+after one. Overlapping live subscriptions, including through cloned Proc
+values, return `AlreadyExists`; one subscription may include several
+signals. Drop removes its interest and latched bits, restoring the default
+dispositions for those signals. Default SIGCHLD ignores notifications but
+retains zombies; it is not explicit POSIX `SIG_IGN`/`SA_NOCLDWAIT`.
+Restoring an ignoring default discards the kernel-pending bit; restoring a
+terminating default delivers any still-kernel-pending signal with that
+default action, even if model delivery was held. The real Linux backend
+uses a runtime-owned signalfd dispatcher with subscribed signals blocked
+on all application threads (and inherited by new threads). Deregistration
+is serialized with that dispatcher: stop accepting the signal, discard its
+runtime latch, restore `SIG_DFL`, then unblock it on the runtime's threads,
+without first draining the pending signal. Thus a pending Term/Hup is not
+silently lost when the subscription drops.
+Before exec, a child clears the runtime-owned subscription mask and resets
+the parent's caught dispositions; the parent's subscription is not inherited.
+Default Term/Hup terminates the addressed process; a subscription catches it,
+and a child model may catch or ignore it. Kill cannot be caught or ignored.
+Successful signal submission acknowledges no cleanup or reap; termination
+may be delayed. For a non-Kill signal, signalling an already zombie/reaped Child is `Ok(())`
+without sending to a numeric PID. No signal can change its exit status.
+
+**[inference] PTYs.** `Pty` is a Proc-derived resource handle, with
+`io::Read`/`Write`, `size(&self) -> io::Result<PtySize>` and
+`resize(&self, PtySize) -> io::Result<()>`. `PtySize` has four `u16` fields:
+`rows`, `cols`, `xpixel`, `ypixel` (zero is allowed). `spawn_pty` attaches
+all three standard descriptors to one slave, starts the direct child as
+session leader and foreground group, and returns the master; the Child's
+three pipe fields are `None`. Explicit stdio configuration conflicts with
+this launch and returns `InvalidInput` before starting anything. The bounded
+model starts in raw mode (no echo or byte translation); arbitrary termios
+changes, foreground-group changes and descendant-held descriptors need
+additional models. Each direction preserves byte order with finite
+backpressure and short I/O. Drained reads with no open slave return Linux
+EIO, including while a live child temporarily closes its slave; reopening
+can resume traffic. A successful changed size commits all four fields
+atomically, then generates Winch for the foreground group, not the parent.
+Unchanged sizes generate none. Winch coalesces, carries no size payload,
+and the child observes the latest size when it handles it. No terminal
+emulator or rendering policy is simulated. Dropping the master closes it
+and generates Hup for its foreground group. The accompanying SIGCONT has
+no modeled effect because stopped processes/job control are excluded.
+Pty reads and writes suspend and are cancellation checkpoints like pipe
+ends; `size`, `resize`, `Child::signal` and `spawn_pty` are scheduling points
+but not checkpoints. Pty's exercised authority kind is `proc`.
+
+**[inference] Determinism.** Use §9.3's scheduler and clock. A process
+sub-stream, separate from task/fs/net randomness, chooses only model-internal
+alternatives (including selection among latched signals), bounded
+whole-nanosecond delays, short I/O sizes and enabled faults. The existing
+scheduler alone chooses among ready application tasks and ready model actions,
+including signal delivery; no second process-stream interleaving choice is
+made. Runs that spawn nothing retain exactly today's draws in the existing
+streams. The manifest records the model schema,
+models, bounds, buffer capacities, platform profile and fault plan inline,
+as well as D15's source/build identities and seed. Instance IDs and event
+ordinals follow deterministic registration order; PIDs are simulated data
+and never become authority. Events cannot precede their causes. Independent
+ready model transitions compete with tasks in scheduler order, including
+at the current instant; future events advance time only when none is ready
+and all tasks are blocked. Timer expiry merely makes a transition ready:
+§9.3's deadline-before-operation and registration ordering still applies,
+with every due timer fired before choosing the next runnable action.
+Thus equal-time scope cancellation precedes a pending process transition.
+No automatic time advance repairs busy polling. Pending process-model timers
+count as operation timers for §9.3's 1,000,000-point stall guard.
+Held process events remain pending operations for that guard; with no
+future event and all tasks blocked, an unreleased hold reports deadlock.
+Setup/data inspection takes no point; every process/stream/signal operation that observes or
+changes state takes one, including `try_wait` and unsuccessful calls.
+Spawn and `try_wait` do not become new cancellation checkpoints. Cancellation
+of waits and I/O, retained Child ownership, shielded cleanup and kill-error
+warnings follow §1.1 unchanged. No cancellation undoes an exited child or a
+completed reap. Model actions make no host calls or recursive scheduler calls.
+
+**[inference] Fault set.** All controls extend
+`sim.faults`, composable with `at(t, fault)`; they are disabled by
+`--faults none`, while modeled scheduling, normal closure and signal
+coalescing still occur. Select by program plus spawn ordinal, or an exact
+instance, so late faults never hit a replacement process.
+
+| Control | Permitted effect |
+| --- | --- |
+| `proc_spawn_error(target, p, kind)` | Pre-creation `NotFound`, `PermissionDenied`, or resource exhaustion; no leaked child or PTY. |
+| `proc_delay(target, phase, min, max)` | Delay child progress or signal delivery/termination; never delay publication of a status after exit. |
+| `proc_hold(target, phase)`, `proc_release(target, phase)` | Under `at(t, fault)`, hold/release progress, delivery or termination. A never-released hold ends in the named deadlock or stall report. These are controls of the delay family. |
+| `proc_signal(target, signal)` | External Term/Kill to a child, node main or test body (task 0); no forced graceful behavior for Term. |
+| `proc_signal_error(target, p, kind)` | Submission fails (notably `PermissionDenied`); child remains owned and waitable later. |
+| `proc_io_error(target, endpoint, p, kind)` | Interrupted or failed I/O at an operation boundary; a reported error consumes no bytes. Normal short I/O/backpressure and endpoint close/reopen remain model events. |
+| `proc_resize_error(target, p, kind)` | Failed resize changes neither size nor signal state. |
+
+**[inference] Fault boundaries.** Killing a child is a process crash, not
+a disk crash: no destructors or promised cleanup run, its own descriptors
+close, and completed writes remain visible without being made durable.
+`Proc::exit` or unhandled Term/Kill on a node's main process records its
+code/signal in the run report and stops that entry's tasks, never the host
+harness, without destructors or storage loss. The parent's descriptors
+close: normal EOF, broken pipe and PTY Hup consequences still apply, but
+children are not directly killed. An abstract system reaper adopts surviving
+children and collects their eventual zombies.
+When a child writes a pipe whose reader was closed by parent death, it dies
+by SIGPIPE unless its model catches or ignores that signal; in those cases
+the write reports broken pipe and the declared model continues.
+The world table retains their identities for assertions. In contrast,
+§9.5's node crash is a whole-node failure: all local processes die, volatile
+handles disappear and the existing durability rules apply. Restart creates
+a fresh incarnation, never reviving dead processes or old handles.
+`restart(&node)` is also allowed after parent-only death, without a whole-node
+crash: adopted survivors keep running in that node, with their original
+identities, and are not inherited as children of the new incarnation. Its
+storage keeps the visible state left by the parent-only death. Reconnecting
+to surviving children after a parent-only death requires a separate recovery
+model; this design does not grant a restarted parent wait authority over
+non-children. Crash/durability controls remain owned by fx-m0f5.
+
+`sim.run_until(&handle) -> Result<T, E>` retains §9.5's v0 signature and
+returns the entry's result. If the observed entry ends by `Proc::exit` or
+signal death, it ends the seed as a `sim_failure` carrying the recorded
+code or signal, as for task 0; no `T` is invented. Tests expecting main-process
+death use the separate Later observer
+`sim.run_until_exit(&handle) -> Result<Result<T, E>, process::ExitStatus>`:
+`Ok(entry_result)` when the observed entry returns normally, or `Err(status)`
+on `Proc::exit` or signal death, carrying the recorded code or signal.
+After restart the node handle follows the new entry, without hiding an
+already observed process exit. In the test body (task 0, outside a node),
+`proc.exit` or fatal signal death instead ends the run as a `sim_failure`
+seed report carrying that code or signal, never ending the host harness.
+
+**[inference] Coverage and real backend.** Build-time-known unsupported
+process effects are listed as `FX0514` and make `tide sim` refuse to start
+unless `--allow-unmodeled` is given, consistently with §5.2. Reaching an
+unregistered command,
+unsupported command mode, signal, terminal effect or model event stops the
+seed with a source-located unmodelled-effect report naming the operation,
+node/instance and missing model. This is a coverage failure, not an ordinary
+spawn error, successful test, or silent host fallback. `--allow-unmodeled`
+marks the run non-replayable as in §9.8, but an unregistered command still
+stops the seed with that coverage report: the flag never supplies a process
+model, falls back to host execution or bypasses RUN-3.
+Linux is the first real profile: actual exec, owned-child signalling,
+waitpid and PTY ioctls sit behind the same handles, with one status owner per
+child and no global wait-any reaper. Unsupported real targets return
+`Unsupported`. Real-backend checks compare allowed outcomes and causal
+ordering, not timings, PIDs or signal counts. Raw competing waitpid callers,
+PID reuse/recovery, job control and foreign child internals are outside
+this bounded model; its coverage report must make those gaps visible.
+Coverage describes parent operations and declared model actions. An opaque
+child's actual internals are not executed or certified by its model.
 
 ## 10. The Bend Boundary (later tier, D16)
 
