@@ -168,10 +168,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && let (Some(from), Some(to)) = (t.expr_ty_opt(source), t.expr_ty_opt(e))
             && !from.references_error()
             && !to.references_error()
+            // Enum casts evaluate discriminants; primitive casts only read recorded types.
+            && (self.can_select() || !matches!(from.kind(), ty::Adt(..) | ty::FnDef(..)))
             && !lossless_cast(self.tcx, from, to)
         {
             self.report(e.span, Code::Fx0301, format!(
                 "`{from} as {to}` can lose information; use try_from, T::try_from_float(f.trunc()), truncate (same signedness, fixed widths), cast_signed/cast_unsigned, or round_from"));
+        }
+        if !self.can_select() {
+            return;
         }
         if let hir::ExprKind::Struct(_, fields, _) = e.kind {
             self.record_self_borrows(fields, t);

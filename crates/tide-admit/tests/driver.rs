@@ -608,6 +608,20 @@ pub mod net {
 pub mod sync {
     pub struct Arc<T>(T);
 }
+pub mod future {}
+pub mod par {
+    use crate::marker::Pure;
+    pub fn join<A: FnOnce() -> R + Pure + Send, B: FnOnce() -> S + Pure + Send, R, S>(a: A, b: B) -> (R, S) { (a(), b()) }
+    pub trait ParSlice<T> {
+        fn par_for<F: Fn(&mut T) + Pure + Send + Sync>(&mut self, f: F);
+    }
+    impl<T> ParSlice<T> for [T] {
+        fn par_for<F: Fn(&mut T) + Pure + Send + Sync>(&mut self, f: F) { self.iter_mut().for_each(f); }
+    }
+}
+pub mod task { pub struct Tasks; }
+pub struct Handle;
+impl Handle { pub fn new(_: &task::Tasks) -> Self { Self } }
 ",
     )
     .unwrap();
@@ -1327,6 +1341,653 @@ fn a_rejected_import_does_not_hide_an_unused_list_sibling() {
     assert!(stderr.contains("error: FX0520:"), "{stderr}");
     assert!(
         stderr.lines().any(|line| line.starts_with("lib.rs:3:") && line.contains("error: FX0913:")),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn unresolved_traits_keep_unrelated_walk_diagnostics() {
+    for (name, broken, rustc) in [
+        ("bound", "pub fn b<F: Missing>(_: F) {}", "E0405"),
+        (
+            "path-bound",
+            "pub fn b<F: std::nope::Missing>(_: F) {}",
+            "E0433",
+        ),
+        ("type", "pub fn b(_: Missing) {}", "E0425"),
+        (
+            "wrong-kind",
+            "pub struct Missing; pub fn b<F: Missing>(_: F) {}",
+            "E0404",
+        ),
+        (
+            "tainted-ambient",
+            "pub fn b<F: Missing>(_: F) { let _ = std::time::Instant::now(); }",
+            "E0405",
+        ),
+    ] {
+        let source = format!(
+            "pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{broken}\npub fn c(x: u16) -> u8 {{ x as u8 }}\npub fn d() {{ Ok::<(), ()>(()); }}\npub fn e() {{ println!(\"hello\"); }}\n"
+        );
+        let (status, stderr) = admit(&format!("unresolved-trait-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains(&format!("error[{rustc}]")), "{stderr}");
+        if name == "tainted-ambient" {
+            assert!(
+                fx_lines(&stderr)
+                    .iter()
+                    .any(|line| line.starts_with("lib.rs:2:") && line.contains("FX0501:")),
+                "{stderr}"
+            );
+        }
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0501:")),
+            "{stderr}"
+        );
+        for (line, severity, code) in [
+            (3, "error", "FX0301"),
+            (4, "error", "FX0702"),
+            (5, "warning", "FX0508"),
+        ] {
+            assert!(
+                stderr.lines().any(
+                    |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
+                        && diagnostic.contains(&format!("{severity}: {code}:"))
+                ),
+                "{stderr}"
+            );
+        }
+        assert!(
+            !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn unresolved_traits_do_not_invent_diagnostics_on_unknown_types() {
+    for (name, source) in [
+        (
+            "call",
+            "pub fn bad<T: Missing>(_: T) {} pub fn caller() { bad(1); }",
+        ),
+        (
+            "method",
+            "pub struct S; impl S { pub fn bad<T: Missing>(&self, _: T) {} } pub fn caller(s: S) { s.bad(1); }",
+        ),
+        (
+            "impl",
+            "pub trait Good {} pub struct S; impl Good for S where S: Missing {} pub fn caller<T: Good>(_: T) {} pub fn run() { caller(S); }",
+        ),
+        (
+            "supertrait",
+            "pub trait Good: Missing { fn call(&self); } pub fn caller<T: Good>(x: T) { x.call(); }",
+        ),
+        (
+            "alias",
+            "pub type Unknown = dyn Missing; pub fn caller(_: &Unknown) {}",
+        ),
+        (
+            "closure",
+            "pub fn caller() { let _ = |_: &dyn Missing| {}; }",
+        ),
+        (
+            "nested",
+            "pub fn caller() { fn bad<T: Missing>(_: T) {} bad(1); }",
+        ),
+        (
+            "unknown",
+            "pub fn caller<T: Missing>(x: T) { x.absent(); x; }",
+        ),
+        (
+            "opaque-return",
+            "pub fn unknown() -> impl Missing { 0 } pub fn caller() { let _ = unknown(); }",
+        ),
+        (
+            "blanket-impl",
+            "impl<T: Missing> core::fmt::Debug for T { fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { Ok(()) } } pub fn caller() { let _ = format!(\"{:?}\", 0u8); }",
+        ),
+        ("unsafe-impl", "pub struct S; unsafe impl Missing for S {}"),
+        (
+            "nested-impl",
+            "pub struct S; impl Missing for S { fn f() { mod nested { pub fn g() {} } nested::g(); nested::absent(); } }",
+        ),
+    ] {
+        let source = format!("{source}\npub fn other() {{ let _ = std::fs::read(\"x\"); }}");
+        let flags: &[&str] = if name == "unsafe-impl" {
+            &["--tide-grant=unsafe"]
+        } else {
+            &[]
+        };
+        let (status, stderr) = admit(&format!("unresolved-dependent-{name}"), &source, flags);
+        assert_eq!(status, 1, "{name}: {stderr}");
+        assert!(stderr.contains("E0405"), "{name}: {stderr}");
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:2:") && line.contains("FX0501:")),
+            "{name}: {stderr}"
+        );
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .all(|line| line.starts_with("lib.rs:2:")
+                    || (name == "blanket-impl"
+                        && line.starts_with("lib.rs:1:")
+                        && line.contains("error: FX0401:"))),
+            "{name}: {stderr}"
+        );
+        if name == "blanket-impl" {
+            // A foreign trait on the known type parameter is misplaced even with a bad bound.
+            assert_eq!(
+                fx_lines(&stderr)
+                    .iter()
+                    .filter(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0401:"))
+                    .count(),
+                1,
+                "{stderr}"
+            );
+        }
+        assert!(
+            !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
+            "{name}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn unresolved_future_traits_keep_their_walk_diagnostic() {
+    let std = tide_std("unresolved-future");
+    for (name, source, rustc, line) in [
+        (
+            "impl",
+            "pub struct S;\nimpl std::future::Future for S {}",
+            "E0405",
+            2,
+        ),
+        (
+            "bound",
+            "pub fn b<F: std::future::Future>(_: F) {}",
+            "E0405",
+            1,
+        ),
+        (
+            "dyn",
+            "pub fn b(_: &dyn std::future::Future<Output = ()>) {}",
+            "E0405",
+            1,
+        ),
+        (
+            "impl-arg",
+            "pub fn b(_: impl std::future::Future<Output = ()>) {}",
+            "E0405",
+            1,
+        ),
+        (
+            "import",
+            "use std::future::Future;\npub fn b(_: impl Future<Output = ()>) {}",
+            "E0432",
+            1,
+        ),
+    ] {
+        let (status, stderr) = admit(
+            &format!("unresolved-future-{name}"),
+            source,
+            &["--tide-std", std.to_str().unwrap()],
+        );
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains(&format!("error[{rustc}]")), "{stderr}");
+        assert!(
+            fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+                .starts_with(&format!("lib.rs:{line}:"))
+                && diagnostic.contains("error: FX0601:")),
+            "{stderr}"
+        );
+        assert!(
+            !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn typeck_error_recovery_keeps_known_authority_diagnostics() {
+    let std = tide_std("tainted-authority");
+    let source = "pub fn run() { let _: Missing; let _ = std::Handle::new(); let _ = std::time::Instant::now(); }";
+    let (status, stderr) = admit(
+        "tainted-authority",
+        source,
+        &["--tide-std", std.to_str().unwrap()],
+    );
+    assert_eq!(status, 1, "{stderr}");
+    for code in ["E0425", "E0061"] {
+        assert!(stderr.contains(&format!("error[{code}]")), "{stderr}");
+    }
+    for code in ["FX0501", "FX0505"] {
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:1:")
+                    && line.contains(&format!("error: {code}:"))),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn unresolved_traits_cover_anonymous_const_bodies() {
+    let std = tide_std("unresolved-anon");
+    for (name, body, expected) in [
+        (
+            "call",
+            "pub fn b<T: Missing>(_: T) {}\npub fn c() { let _: [u8; { b(0); 0 }]; }",
+            "FX0501",
+        ),
+        (
+            "future",
+            "pub fn c() { let _: [u8; { let _: &dyn std::future::Future<Output = ()>; 0 }]; }",
+            "FX0601",
+        ),
+    ] {
+        let source = format!("pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{body}");
+        let (status, stderr) = admit(
+            &format!("unresolved-anon-{name}"),
+            &source,
+            &["--tide-std", std.to_str().unwrap()],
+        );
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("E0405"), "{stderr}");
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("FX0501:")),
+            "{stderr}"
+        );
+        assert!(stderr.contains(&format!("error: {expected}:")), "{stderr}");
+    }
+}
+
+#[test]
+fn unresolved_trait_aliases_guard_implicit_method_lookup() {
+    for (name, declarations, caller, rustc) in [
+        (
+            "method",
+            "pub trait Bad = Missing;",
+            "pub fn c(x: u8) { x.absent(); }",
+            "E0405",
+        ),
+        (
+            "valid-method",
+            "pub trait Bad = Missing;",
+            "pub fn c(x: u8) { let _ = x.to_string(); }",
+            "E0405",
+        ),
+        (
+            "import",
+            "mod inner { pub trait Bad = Missing; } use inner::Bad;",
+            "pub fn c(x: u8) { x.absent(); }",
+            "E0405",
+        ),
+        (
+            "nested",
+            "",
+            "pub fn c(x: u8) { trait Bad = Missing; x.absent(); }",
+            "E0405",
+        ),
+        (
+            "wrong-kind",
+            "pub struct Missing; pub trait Bad = Missing;",
+            "pub fn c(x: u8) { x.absent(); }",
+            "E0404",
+        ),
+        (
+            "suggestion",
+            "mod inner { pub trait Bad = Missing; }",
+            "pub fn c(x: u8) { x.absent(); }",
+            "E0405",
+        ),
+    ] {
+        let source =
+            format!("pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{declarations}\n{caller}");
+        let (status, stderr) = admit(&format!("unresolved-trait-alias-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(
+            stderr.contains("E0658") && stderr.contains(rustc),
+            "{stderr}"
+        );
+        assert!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0501:")),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn unresolved_global_traits_keep_independent_typed_diagnostics() {
+    for (name, bad) in [
+        ("trait", "pub trait B: Missing {}"),
+        ("implementee", "pub struct S; impl Missing for S {}"),
+        (
+            "inherent",
+            "pub struct S; impl<T: Missing> S { pub fn m() {} }",
+        ),
+        (
+            "blanket",
+            "impl<T: Missing> core::fmt::Debug for T { fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { Ok(()) } }",
+        ),
+        (
+            "supertrait-impl",
+            "pub trait B: Missing {} pub struct S; impl B for S {}",
+        ),
+    ] {
+        let source = format!(
+            "{bad}\npub fn c(x: u16) -> u8 {{ x as u8 }}\npub fn d() {{ Ok::<(), ()>(()); }}"
+        );
+        let (status, stderr) = admit(&format!("unresolved-global-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("E0405"), "{stderr}");
+        for (line, code) in [(2, "FX0301"), (3, "FX0702")] {
+            assert!(
+                fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+                    .starts_with(&format!("lib.rs:{line}:"))
+                    && diagnostic.contains(&format!("error: {code}:"))),
+                "{stderr}"
+            );
+        }
+    }
+}
+
+#[test]
+fn partial_typeck_keeps_known_casts_without_inventing_unknown_ones() {
+    for (name, value, expected) in [("known", "x", true), ("unknown", "missing", false)] {
+        let source =
+            format!("pub fn c(x: u16) -> u8 {{\n    let _: Missing;\n    {value} as u8\n}}");
+        let (status, stderr) = admit(&format!("partial-cast-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("E0425"), "{stderr}");
+        assert_eq!(
+            fx_lines(&stderr)
+                .iter()
+                .any(|line| line.starts_with("lib.rs:3:") && line.contains("error: FX0301:")),
+            expected,
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn unresolved_impl_traits_guard_coercions_and_bounded_adts() {
+    let local = "pub trait Good {} pub struct S; impl Good for S where S: Missing {}";
+    let blanket = "impl<T: Missing> core::fmt::Debug for T { fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { Ok(()) } }";
+    for (name, bad, consumer) in [
+        ("local-coerce", local, "pub fn c(x: &S) -> &dyn Good { x }"),
+        (
+            "local-cast",
+            local,
+            "pub fn c(x: &S) { let _ = x as &dyn Good; }",
+        ),
+        (
+            "local-ctor",
+            local,
+            "pub struct Wrap<T: Good>(T); pub fn c(x: S) { let _ = Wrap(x); }",
+        ),
+        (
+            "local-literal",
+            local,
+            "pub struct Wrap<T: Good> { x: T } pub fn c(x: S) { let _ = Wrap { x }; }",
+        ),
+        (
+            "local-pattern",
+            local,
+            "pub struct Wrap<T: Good>(T); pub fn c(Wrap(_): Wrap<S>) {}",
+        ),
+        ("local-rpit", local, "pub fn c(x: S) -> impl Good { x }"),
+        (
+            "blanket-debug",
+            blanket,
+            "pub fn c(x: &u8) -> &dyn core::fmt::Debug { x }",
+        ),
+        (
+            "implicit-deref",
+            "pub struct S; impl core::ops::Deref for S where S: Missing { type Target = u8; fn deref(&self) -> &u8 { &0 } }",
+            "pub fn c(x: &S) -> &u8 { x }",
+        ),
+        (
+            "external-trait-callee",
+            "pub struct S; impl<T: Missing> core::fmt::Binary for T { fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { Ok(()) } }",
+            "pub fn c(x: &S, f: &mut core::fmt::Formatter<'_>) { let _ = <S as core::fmt::Binary>::fmt(x, f); }",
+        ),
+    ] {
+        let source = format!(
+            "pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{bad}\n{consumer}\npub fn later(x: u16) -> u8 {{ x as u8 }}\npub fn result() {{ Ok::<(), ()>(()); }}"
+        );
+        let (status, stderr) = admit(&format!("unresolved-impl-trait-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("E0405"), "{stderr}");
+        for (line, code) in [(1, "FX0501"), (4, "FX0301"), (5, "FX0702")] {
+            assert_eq!(
+                fx_lines(&stderr)
+                    .iter()
+                    .filter(
+                        |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
+                            && diagnostic.contains(&format!("error: {code}:"))
+                    )
+                    .count(),
+                1,
+                "{stderr}"
+            );
+        }
+    }
+}
+
+#[test]
+fn unrelated_bad_traits_keep_independent_const_parameter_checks() {
+    let std = tide_std("unrelated-const");
+    let source = "pub trait Bad: Missing {}\npub const fn c(_: std::time::Clock) {}";
+    let (status, stderr) = admit(
+        "unrelated-const",
+        source,
+        &["--tide-std", std.to_str().unwrap()],
+    );
+    assert_eq!(status, 1, "{stderr}");
+    assert!(stderr.contains("E0405"), "{stderr}");
+    assert!(
+        fx_lines(&stderr)
+            .iter()
+            .any(|line| line.starts_with("lib.rs:2:") && line.contains("error: FX0518:")),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn fatal_global_queries_keep_later_walk_diagnostics() {
+    for (name, bad, hazard) in [
+        (
+            "operator-index",
+            "pub struct W<T: ?Sized>(Box<T>); impl core::ops::Add for W<dyn Missing> { type Output = u8; fn add(self, _: Self) -> u8 { 0 } }",
+            "pub fn hazard(x: u8) -> u8 { x + 1 }",
+        ),
+        (
+            "inherent-index",
+            "impl dyn Missing { pub fn m(&self) {} }",
+            "pub fn hazard(x: i32) -> i32 { x.abs() }",
+        ),
+        (
+            "drop-coherence",
+            "pub struct W<T: ?Sized>(Box<T>); impl Drop for W<dyn Missing> { fn drop(&mut self) {} } pub struct T;",
+            "pub fn hazard(x: u16) { let _ = x as u8; Ok::<(), ()>(()); let _ = T; }",
+        ),
+        (
+            "derive-precision",
+            "#[derive(Debug)] pub struct S<T: Missing>(T);",
+            "pub fn hazard() {}",
+        ),
+    ] {
+        let method = if name == "derive-precision" {
+            "let _ = \"a\".len(); "
+        } else {
+            ""
+        };
+        let source = format!(
+            "pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{bad}\n{hazard}\npub fn later(x: u16) -> u8 {{ {method}x as u8 }}\npub fn result() {{ {method}Ok::<(), ()>(()); }}"
+        );
+        let (status, stderr) = admit(&format!("fatal-global-{name}"), &source, &[]);
+        assert_eq!(status, 1, "{stderr}");
+        assert!(stderr.contains("error[E0405]"), "{stderr}");
+        let mut expected = vec![(1, "FX0501"), (4, "FX0301"), (5, "FX0702")];
+        if name == "drop-coherence" {
+            expected.extend([(3, "FX0301"), (3, "FX0702")]);
+        }
+        for (line, code) in expected {
+            assert_eq!(
+                fx_lines(&stderr)
+                    .iter()
+                    .filter(
+                        |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
+                            && diagnostic.contains(&format!("error: {code}:"))
+                    )
+                    .count(),
+                1,
+                "{name}: {stderr}"
+            );
+        }
+        assert!(
+            !stderr.contains("internal compiler error") && !stderr.contains("panicked"),
+            "{name}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn partial_typeck_keeps_known_pure_and_parallel_obligations() {
+    let std = tide_std("partial-obligations");
+    let source = "\
+use std::par::ParSlice;
+fn need_send<T: Send + ?Sized>(_: &T) {} fn need_pure<T: Pure + ?Sized>(_: &T) {}
+pub fn object(f: &dyn Fn()) { need_send(f); need_pure(f); }
+pub fn owned() -> (u64, u64) { let n = std::rc::Rc::new(1); std::par::join(move || *n, || 2) }
+pub fn captured(log: &std::cell::RefCell<Vec<u64>>) -> (usize, u64) { std::par::join(|| log.borrow().len(), || 2) }
+pub fn mutable(xs: &mut [u64]) { let mut f = |_: &mut u64| {}; xs.par_for(&mut f); }
+pub fn unknown(x: Missing) { std::par::join(x, || 2u64); }
+";
+    let (status, stderr) = admit(
+        "partial-obligations",
+        source,
+        &["--tide-std", std.to_str().unwrap()],
+    );
+    assert_eq!(status, 1, "{stderr}");
+    assert!(stderr.contains("error[E0277]"), "{stderr}");
+    assert!(stderr.contains("error[E0425]"), "{stderr}");
+    for (line, code) in [(3, "FX0517"), (4, "FX0610"), (5, "FX0611"), (6, "FX0610")] {
+        assert_eq!(
+            fx_lines(&stderr)
+                .iter()
+                .filter(
+                    |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
+                        && diagnostic.contains(&format!("error: {code}:"))
+                )
+                .count(),
+            1,
+            "{stderr}"
+        );
+    }
+    assert!(
+        !fx_lines(&stderr)
+            .iter()
+            .any(|line| line.starts_with("lib.rs:7:")),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("internal compiler error"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn contract_scan_keeps_recovery_paths_inside_an_unresolved_impl() {
+    let source = "\
+pub struct S;
+impl Missing for S {
+    fn f() {
+        mod nested { pub fn g() {} }
+        macro_rules! call { () => { nested::g() } }
+        call!();
+        let _ = std::fs::read(\"x\");
+    }
+}
+";
+    let (status, stderr) = admit("contract-scan-recovery", source, &[]);
+    assert_eq!(status, 1, "{stderr}");
+    assert!(stderr.contains("error[E0405]"), "{stderr}");
+    for (line, code) in [(5, "FX0101"), (6, "FX0103"), (7, "FX0501")] {
+        assert_eq!(
+            fx_lines(&stderr)
+                .iter()
+                .filter(
+                    |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
+                        && diagnostic.contains(&format!("error: {code}:"))
+                )
+                .count(),
+            1,
+            "{stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("internal compiler error"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn partial_typeck_keeps_raw_read_pure_obligations() {
+    let std = tide_std("partial-raw-reads");
+    let source = "\
+use std::time::Clock;
+use std::mem::ManuallyDrop;
+pub union Pun { bits: u64, clock: ManuallyDrop<Clock> }
+pub fn deref(p: *const Clock) -> &'static Clock {
+    let _: u8 = \"x\";
+    unsafe { &*p }
+}
+pub fn field(p: &Pun) -> &Clock {
+    let _: u8 = \"x\";
+    unsafe { &p.clock }
+}
+pub fn pattern(p: Pun) {
+    let _: u8 = \"x\";
+    unsafe { let Pun { clock: _clock } = p; }
+}
+";
+    let (status, stderr) = admit(
+        "partial-raw-reads",
+        source,
+        &["--tide-std", std.to_str().unwrap(), "--tide-grant=unsafe"],
+    );
+    assert_eq!(status, 1, "{stderr}");
+    for (error, fx) in [(5, 6), (9, 10), (13, 14)] {
+        assert!(
+            stderr
+                .lines()
+                .any(|line| line.starts_with(&format!("lib.rs:{error}:"))
+                    && line.contains("error[E0308]")),
+            "{stderr}"
+        );
+        assert_eq!(
+            fx_lines(&stderr)
+                .iter()
+                .filter(|line| line.starts_with(&format!("lib.rs:{fx}:"))
+                    && line.contains("error: FX0517:"))
+                .count(),
+            1,
+            "{stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("internal compiler error"),
         "{stderr}"
     );
 }

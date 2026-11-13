@@ -35,6 +35,7 @@ use rustc_middle::ty::print::{
 use rustc_middle::ty::{
     self, GenericArgsRef, Ty, TyCtxt, TypeFoldable, TypeVisitableExt, TypingEnv, Unnormalized,
 };
+use rustc_span::fatal_error::catch_fatal_errors;
 use rustc_span::hygiene::LocalExpnId;
 use rustc_span::{ExpnId, ExpnKind, MacroKind, Span, kw, sym};
 use rustc_trait_selection::traits::{
@@ -95,7 +96,7 @@ pub fn check_crate(
     tcx.hir_walk_toplevel_module(&mut walk);
     walk.ceiling_cycles();
     walk.module_rules(surface_errors, unused_imports);
-    walk.entry_point(tide_std);
+    walk.visit_boundary(false, |walk| walk.entry_point(tide_std));
     walk.check_expansions();
     for def in tcx.hir_crate_items(()).definitions() {
         if std_attr_made(tcx, &crates, def, "trusted_pure") {
@@ -103,7 +104,12 @@ pub fn check_crate(
                 .insert((def, "`#[trusted_pure]`".into(), Some(tcx.def_span(def))));
         }
     }
-    let holes = walk.take_holes();
+    // Rejected crates have no artifact; formatting an unresolved impl's key also lowers its trait.
+    let holes = if !walk.caught_fatal {
+        walk.take_holes()
+    } else {
+        Holes::new()
+    };
     walk.diags.emit(tcx);
     holes
 }
@@ -143,6 +149,10 @@ struct Walk<'a, 'tcx> {
     insertions: Option<&'a crate::synthesis::Insertions>,
     typeck: Option<&'tcx ty::TypeckResults<'tcx>>,
     owner: Option<LocalDefId>,
+    /// A fatal query prevents serialization of rejected-crate trust holes.
+    caught_fatal: bool,
+    /// The current item still gets HIR checks, without querying its unknown types.
+    recovering: bool,
     seen_obligations: FxHashSet<(ty::TraitRef<'tcx>, Option<LocalDefId>)>,
     /// Like `seen_obligations`, per rule: a failed `Pure` obligation is reported once per item
     /// and rule, at its first use.
@@ -180,6 +190,8 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             insertions: None,
             typeck: None,
             owner: None,
+            caught_fatal: false,
+            recovering: false,
             seen_obligations: FxHashSet::default(),
             seen_pure: FxHashSet::default(),
             item_env: None,
@@ -189,6 +201,50 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             item: None,
             holes: FxHashSet::default(),
         }
+    }
+
+    /// A poisoned query raises the same fatal again; retain known facts and retry only HIR.
+    fn visit_boundary(&mut self, recovering: bool, mut visit: impl FnMut(&mut Self)) {
+        let outer = (
+            self.typeck,
+            self.owner,
+            self.item,
+            self.recovering,
+            self.item_env,
+        );
+        self.recovering = recovering;
+        if self.tcx.dcx().has_errors().is_none() {
+            visit(self);
+        } else {
+            // `impl_item_clauses` temporarily takes this cache, so unwinding must restore it too.
+            let seen_pure = self.seen_pure.clone();
+            // rustc's helper resumes every payload other than FatalErrorMarker unchanged.
+            if catch_fatal_errors(|| visit(self)).is_err() {
+                self.caught_fatal = true;
+                (
+                    self.typeck,
+                    self.owner,
+                    self.item,
+                    self.recovering,
+                    self.item_env,
+                ) = outer;
+                self.seen_pure.clone_from(&seen_pure);
+                if !recovering {
+                    self.typeck = None;
+                    self.recovering = true;
+                    if catch_fatal_errors(|| visit(self)).is_err() {
+                        self.seen_pure = seen_pure;
+                    }
+                }
+            }
+        }
+        (
+            self.typeck,
+            self.owner,
+            self.item,
+            self.recovering,
+            self.item_env,
+        ) = outer;
     }
 }
 
@@ -412,7 +468,17 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// The typeck results that cover `id`: none in the signature of an item nested in a body.
     fn typeck_of(&self, id: HirId) -> Option<&'tcx ty::TypeckResults<'tcx>> {
+        self.recovered_typeck_of(id)
+            .filter(|t| t.tainted_by_errors.is_none())
+    }
+
+    /// Recorded resolutions/types, including partial results; consumers validate query inputs.
+    fn recovered_typeck_of(&self, id: HirId) -> Option<&'tcx ty::TypeckResults<'tcx>> {
         self.typeck.filter(|t| t.hir_owner == id.owner)
+    }
+
+    fn can_select(&self) -> bool {
+        !self.recovering && self.typeck.is_none_or(|t| t.tainted_by_errors.is_none())
     }
 
     // ------------------------------------------------------------ uses
@@ -578,21 +644,29 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// is false for a type that is only named (`named`), whose obligations run no code: only
     /// their `Pure` part is checked.
     fn use_generic(&mut self, def_id: DefId, args: GenericArgsRef<'tcx>, span: Span, admit: bool) {
+        if self.recovering {
+            return;
+        }
         let tcx = self.tcx;
+        let complete = self.can_select();
+        // A failed bound can leave known arguments; each Pure check validates its own types.
+        if !complete && (self.pure.is_none() || args.len() != tcx.generics_of(def_id).count()) {
+            return;
+        }
         if let Some(tr) = tcx.trait_of_assoc(def_id) {
             let n = tcx.generics_of(tr).count();
             if args.len() >= n {
                 let tr = ty::TraitRef::new(tcx, tr, args.iter().take(n));
-                if admit {
+                if admit && complete {
                     self.obligation(tr, span, 0);
                 }
                 self.pure_obligation(tr, Need::Bound, span, 0);
             }
         }
         if tcx.def_kind(def_id) != DefKind::Field {
-            self.clause_obligations(def_id, args, span, admit);
+            self.clause_obligations(def_id, args, span, admit && complete);
         }
-        if let Some((impl_def_id, impl_args)) = local_drop_impl(tcx, def_id, args) {
+        if complete && let Some((impl_def_id, impl_args)) = local_drop_impl(tcx, def_id, args) {
             self.clause_obligations(impl_def_id, impl_args, span, false);
         }
     }
@@ -743,6 +817,13 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// The type `ty` normalized in the `Pure` environment, unless it holds an error or an
     /// inference variable.
     fn pure_ty(&self, ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
+        if self.recovering
+            || ty.references_error()
+            || ty.has_non_region_infer()
+            || ty.has_escaping_bound_vars()
+        {
+            return None;
+        }
         let tcx = self.tcx;
         let ty = tcx.erase_and_anonymize_regions(ty);
         let ty = tcx
@@ -759,7 +840,11 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// through its `Termination` impl.
     fn pure_obligation(&mut self, tr: ty::TraitRef<'tcx>, need: Need, span: Span, depth: usize) {
         let tcx = self.tcx;
-        let Some(pure) = self.pure.as_ref().filter(|_| self.obligations) else {
+        let Some(pure) = self
+            .pure
+            .as_ref()
+            .filter(|_| self.obligations && !self.recovering)
+        else {
             return;
         };
         if tr.references_error() || tr.has_non_region_infer() || tr.has_escaping_bound_vars() {
@@ -844,13 +929,23 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
         if let ty::Closure(def, args) = *callee.kind()
             && let Some(local) = def.as_local()
+            && !callee.references_error()
+            && !callee.has_non_region_infer()
+            && !callee.has_escaping_bound_vars()
         {
-            for cap in tcx.closure_captures(local) {
+            // Partial typeck may omit closure_typeinfo's signature entry; captures are optional.
+            for cap in tcx.typeck(local).closure_min_captures_flattened(local) {
                 // The capture's type at the closure's args, which the backstop gives concretely.
                 let place = ty::EarlyBinder::bind(tcx, cap.place.ty())
                     .instantiate(tcx, args.as_closure().parent_args())
                     .skip_normalization();
                 let place = tcx.erase_and_anonymize_regions(place);
+                if place.references_error()
+                    || place.has_non_region_infer()
+                    || place.has_escaping_bound_vars()
+                {
+                    continue;
+                }
                 let data = match cap.info.capture_kind {
                     ty::UpvarCapture::ByRef(ty::BorrowKind::Immutable) => place,
                     ty::UpvarCapture::ByValue | ty::UpvarCapture::ByUse => match *place.kind() {
@@ -885,7 +980,10 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
         let Some(ty) = self.pure_ty(ty) else { return };
         let not_fn = fn_bound.is_some_and(|tr| {
-            !tr.references_error() && !tr.has_non_region_infer() && !pure::implements(tcx, env, tr)
+            !tr.references_error()
+                && !tr.has_non_region_infer()
+                && !tr.has_escaping_bound_vars()
+                && !pure::implements(tcx, env, tr)
         });
         let why = if let Err(e) = pure.check(env, ty) {
             e.message(ty)
@@ -947,6 +1045,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// `tr` is the constructor's `E: Into<Box<dyn Error + Send + Sync>>`.
     fn io_error_payload(&mut self, tr: ty::TraitRef<'tcx>, span: Span) {
         let tcx = self.tcx;
+        if tr.references_error() || tr.has_non_region_infer() || tr.has_escaping_bound_vars() {
+            return;
+        }
         let (Some(pure), Some(from)) = (&self.pure, tcx.get_diagnostic_item(sym::From)) else {
             return;
         };
@@ -1008,6 +1109,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// without selecting an impl. As rustc does, each bound is read with the hidden type for the
     /// opaque type.
     fn opaque_bounds(&mut self, opaque: &'tcx hir::OpaqueTy<'tcx>) {
+        if !self.can_select() {
+            return;
+        }
         let tcx = self.tcx;
         let def = opaque.def_id;
         // An RPITIT in a trait has no hidden type unless its method has a default body.
@@ -1070,6 +1174,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             );
             return;
         }
+        if !self.can_select() {
+            return;
+        }
         let Some(pure) = &self.pure else { return };
         let ty = tcx.type_of(def).instantiate_identity().skip_normalization();
         let env = TypingEnv::non_body_analysis(tcx, def.to_def_id());
@@ -1120,6 +1227,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if header.is_unsafe() && !tcx.is_foreign_item(def) {
             self.granted(span, "an `unsafe fn`");
         }
+        if self.recovering {
+            return;
+        }
         let sig = tcx.fn_sig(def).instantiate_identity().skip_normalization();
         let sig = tcx.instantiate_bound_regions_with_erased(sig);
         for (&input, hir_ty) in sig.inputs().iter().zip(decl.inputs) {
@@ -1137,6 +1247,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             return;
         }
         if !is_const && !marked {
+            return;
+        }
+        if !self.can_select() {
             return;
         }
         let env = TypingEnv::non_body_analysis(tcx, def.to_def_id());
@@ -1213,6 +1326,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// formats with `E: Debug`), the bounds of its associated types, and its items' own
     /// where-clauses (`impl_item_clauses`).
     fn trait_impl(&mut self, impl_id: LocalDefId) {
+        if !self.can_select() {
+            return;
+        }
         let tcx = self.tcx;
         let tr = tcx
             .impl_trait_ref(impl_id)
@@ -1321,7 +1437,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// object candidate, or by an auto trait's builtin impl.
     fn obligation(&mut self, tr: ty::TraitRef<'tcx>, span: Span, depth: usize) {
         let tcx = self.tcx;
-        if !self.obligations {
+        if !self.obligations || !self.can_select() {
             return;
         }
         if depth > MAX_OBLIGATION_DEPTH {
@@ -1390,6 +1506,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 .report(tcx, span.source_callsite(), Code::Fx0512, message, help);
         }
         let Some(local) = main.as_local() else { return };
+        if self.recovering {
+            return;
+        }
         let Some(termination) = tcx.lang_items().termination() else {
             return;
         };
@@ -1705,95 +1824,105 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
-        // The item holds the trust holes found outside its bodies.
-        let outer = self.item.replace(item.owner_id.def_id);
-        let def = item.owner_id.def_id;
-        self.surface_item(item);
-        let valid_bounds = self.ceiling_item(item);
-        match item.kind {
-            hir::ItemKind::Impl(hir::Impl {
-                of_trait: Some(header),
-                ..
-            }) => {
-                // Do not ask selection to solve a bound that already exceeds the ceiling.
-                if valid_bounds {
-                    self.trait_impl(def);
+        self.visit_boundary(false, |walk| {
+            // The item holds the trust holes found outside its bodies.
+            walk.item = Some(item.owner_id.def_id);
+            let def = item.owner_id.def_id;
+            walk.surface_item(item);
+            let valid_bounds = !walk.recovering && walk.ceiling_item(item);
+            match item.kind {
+                hir::ItemKind::Impl(hir::Impl {
+                    of_trait: Some(header),
+                    ..
+                }) => {
+                    // Do not ask selection to solve a bound that already exceeds the ceiling.
+                    if valid_bounds {
+                        walk.trait_impl(def);
+                    }
+                    if header.safety.is_unsafe() && !written_by_other_crate(item.span) {
+                        walk.granted(walk.tcx.def_span(def), "an `unsafe impl`");
+                    }
                 }
-                if header.safety.is_unsafe() && !written_by_other_crate(item.span) {
-                    self.granted(self.tcx.def_span(def), "an `unsafe impl`");
+                hir::ItemKind::Static(mutability, ..) => walk.static_item(def, mutability),
+                // An empty block still links the native libraries its `#[link]` names (UNSAFE-1).
+                hir::ItemKind::ForeignMod { .. } => {
+                    walk.granted(walk.tcx.def_span(def), "an `unsafe extern` block")
+                }
+                hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
+                    if !walk.recovering {
+                        for field in walk.tcx.adt_def(def).all_fields() {
+                            let ty = walk.tcx.type_of(field.did).instantiate_identity();
+                            let span = walk.tcx.def_span(field.did);
+                            walk.declared(def, ty.skip_normalization(), span);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            if let hir::ItemKind::Impl(imp) = item.kind
+                && !walk.recovering
+            {
+                let ty = walk.tcx.type_of(def).instantiate_identity();
+                walk.declared(def, ty.skip_normalization(), imp.self_ty.span);
+                if imp.of_trait.is_some() {
+                    let tr = walk.tcx.impl_trait_ref(def).instantiate_identity();
+                    for t in tr.skip_normalization().args.types().skip(1) {
+                        walk.declared(def, t, walk.tcx.def_span(def));
+                    }
                 }
             }
-            hir::ItemKind::Static(mutability, ..) => self.static_item(def, mutability),
-            // An empty block still links the native libraries its `#[link]` names (UNSAFE-1).
-            hir::ItemKind::ForeignMod { .. } => {
-                self.granted(self.tcx.def_span(def), "an `unsafe extern` block")
-            }
-            hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
-                for field in self.tcx.adt_def(def).all_fields() {
-                    let ty = self.tcx.type_of(field.did).instantiate_identity();
-                    let span = self.tcx.def_span(field.did);
-                    self.declared(def, ty.skip_normalization(), span);
-                }
-            }
-            _ => {}
-        }
-        if let hir::ItemKind::Impl(imp) = item.kind {
-            let ty = self.tcx.type_of(def).instantiate_identity();
-            self.declared(def, ty.skip_normalization(), imp.self_ty.span);
-            if imp.of_trait.is_some() {
-                let tr = self.tcx.impl_trait_ref(def).instantiate_identity();
-                for t in tr.skip_normalization().args.types().skip(1) {
-                    self.declared(def, t, self.tcx.def_span(def));
-                }
-            }
-        }
-        self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_item(self, item);
-        self.item = outer;
+            walk.unsafe_attrs(item.hir_id(), item.span);
+            intravisit::walk_item(walk, item);
+        });
     }
 
     fn visit_impl_item(&mut self, item: &'tcx hir::ImplItem<'tcx>) {
-        // The item holds the trust holes found outside its bodies.
-        let outer = self.item.replace(item.owner_id.def_id);
-        if let hir::ImplItemKind::Type(hir_ty) = item.kind {
-            self.ceiling_associated_type(item.generics, item.span);
-            let def = item.owner_id.def_id;
-            let ty = self.tcx.type_of(def).instantiate_identity();
-            self.declared(def, ty.skip_normalization(), hir_ty.span);
-        }
-        self.contract_placement(item.owner_id.def_id);
-        self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_impl_item(self, item);
-        self.item = outer;
+        self.visit_boundary(false, |walk| {
+            // The item holds the trust holes found outside its bodies.
+            walk.item = Some(item.owner_id.def_id);
+            if let hir::ImplItemKind::Type(hir_ty) = item.kind {
+                walk.ceiling_associated_type(item.generics, item.span);
+                let def = item.owner_id.def_id;
+                if !walk.recovering {
+                    let ty = walk.tcx.type_of(def).instantiate_identity();
+                    walk.declared(def, ty.skip_normalization(), hir_ty.span);
+                }
+            }
+            walk.contract_placement(item.owner_id.def_id);
+            walk.unsafe_attrs(item.hir_id(), item.span);
+            intravisit::walk_impl_item(walk, item);
+        });
     }
 
     fn visit_trait_item(&mut self, item: &'tcx hir::TraitItem<'tcx>) {
-        // The item holds the trust holes found outside its bodies.
-        let outer = self.item.replace(item.owner_id.def_id);
-        if let hir::TraitItemKind::Type(..) = item.kind {
-            self.ceiling_associated_type(item.generics, item.span);
-        }
-        // A method with a body is checked from `visit_fn`.
-        if let hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(_)) = &item.kind {
-            self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
-        }
-        self.contract_placement(item.owner_id.def_id);
-        self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_trait_item(self, item);
-        self.item = outer;
+        self.visit_boundary(false, |walk| {
+            // The item holds the trust holes found outside its bodies.
+            walk.item = Some(item.owner_id.def_id);
+            if let hir::TraitItemKind::Type(..) = item.kind {
+                walk.ceiling_associated_type(item.generics, item.span);
+            }
+            // A method with a body is checked from `visit_fn`.
+            if let hir::TraitItemKind::Fn(sig, hir::TraitFn::Required(_)) = &item.kind {
+                walk.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
+            }
+            walk.contract_placement(item.owner_id.def_id);
+            walk.unsafe_attrs(item.hir_id(), item.span);
+            intravisit::walk_trait_item(walk, item);
+        });
     }
 
     fn visit_foreign_item(&mut self, item: &'tcx hir::ForeignItem<'tcx>) {
-        // The item holds the trust holes found outside its bodies.
-        let outer = self.item.replace(item.owner_id.def_id);
-        // A `safe` item reaches foreign code too, without an `unsafe` block.
-        self.granted(item.span, "a foreign item");
-        if let hir::ForeignItemKind::Fn(sig, ..) = &item.kind {
-            self.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
-        }
-        self.unsafe_attrs(item.hir_id(), item.span);
-        intravisit::walk_foreign_item(self, item);
-        self.item = outer;
+        self.visit_boundary(false, |walk| {
+            // The item holds the trust holes found outside its bodies.
+            walk.item = Some(item.owner_id.def_id);
+            // A `safe` item reaches foreign code too, without an `unsafe` block.
+            walk.granted(item.span, "a foreign item");
+            if let hir::ForeignItemKind::Fn(sig, ..) = &item.kind {
+                walk.fn_item(item.owner_id.def_id, &sig.header, sig.decl);
+            }
+            walk.unsafe_attrs(item.hir_id(), item.span);
+            intravisit::walk_foreign_item(walk, item);
+        });
     }
 
     fn visit_fn(
@@ -1821,15 +1950,23 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_nested_body(&mut self, id: hir::BodyId) {
-        let outer = (self.typeck, self.owner);
-        self.typeck = Some(self.tcx.typeck_body(id));
-        self.owner = Some(self.tcx.hir_body_owner_def_id(id));
-        let body = self.tcx.hir_body(id);
-        if let Some(output) = self.surface_return_type() {
-            self.owned_value(body.value, Some(output), &[], &mut FxHashSet::default());
-        }
-        self.visit_body(body);
-        (self.typeck, self.owner) = outer;
+        self.visit_boundary(self.recovering, |walk| {
+            let owner = walk.tcx.hir_body_owner_def_id(id);
+            walk.typeck = if walk.recovering {
+                None
+            } else {
+                Some(walk.tcx.typeck_body(id))
+            };
+            walk.owner = Some(owner);
+            let body = walk.tcx.hir_body(id);
+            if walk.can_select()
+                && walk.typeck_of(body.value.hir_id).is_some()
+                && let Some(output) = walk.surface_return_type()
+            {
+                walk.owned_value(body.value, Some(output), &[], &mut FxHashSet::default());
+            }
+            walk.visit_body(body);
+        });
     }
 
     fn visit_path(&mut self, path: &hir::Path<'tcx>, id: HirId) {
@@ -1842,7 +1979,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
                 // Typeck records no args for the lang-item calls that `?` and `for` desugar to
                 // (`FromResidual::from_residual`, `IntoIterator::into_iter`); their type has them.
                 let tcx = self.tcx;
-                let args = self.typeck_of(id).and_then(|t| {
+                let args = self.recovered_typeck_of(id).and_then(|t| {
                     t.node_args_opt(id)
                         .or_else(|| match *t.node_type_opt(id)?.kind() {
                             ty::FnDef(d, args) if d == def_id => {
@@ -1863,7 +2000,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_qpath(&mut self, qpath: &'tcx hir::QPath<'tcx>, id: HirId, _span: Span) {
-        if let (hir::QPath::TypeRelative(..), Some(t)) = (qpath, self.typeck_of(id)) {
+        if let (hir::QPath::TypeRelative(..), Some(t)) = (qpath, self.recovered_typeck_of(id)) {
             if let Some(def_id) = t.type_dependent_def_id(id) {
                 let span = qpath.span();
                 self.authority_use(def_id, span);
@@ -1878,23 +2015,29 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
-        if let Some(t) = self.typeck_of(e.hir_id) {
+        if let Some(t) = self.recovered_typeck_of(e.hir_id) {
             self.authority_expr(e, t);
-            self.surface_expr(e, t);
-            self.ceiling_call(e, t);
             self.lint_sink_expr(e, t);
+            self.surface_expr(e, t);
+            self.fn_pointer_address(e, t);
+            if let Some(ty) = t
+                .node_type_opt(e.hir_id)
+                .filter(|ty| !ty.references_error())
+            {
+                self.use_ty(ty, e.span);
+            }
             // Method calls, overloaded operators, and indexing.
-            if let Some(def_id) = t.type_dependent_def_id(e.hir_id) {
+            let callee = t.type_dependent_def_id(e.hir_id);
+            if let Some(def_id) = callee {
                 self.authority_use(def_id, e.span);
                 self.use_def(def_id, e.span);
+            }
+            self.ceiling_call(e, t);
+            if let Some(def_id) = callee {
                 let args = path_args(self.tcx, t, def_id, e.hir_id);
                 self.use_generic(def_id, args, e.span, true);
                 self.named(args.types(), e.span);
             }
-            if let Some(ty) = t.node_type_opt(e.hir_id) {
-                self.use_ty(ty, e.span);
-            }
-            self.fn_pointer_address(e, t);
             self.raw_place(e, t);
             let mut source = t.node_type_opt(e.hir_id);
             for adj in t.expr_adjustments(e) {
@@ -1931,7 +2074,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
     }
 
     fn visit_pat(&mut self, p: &'tcx hir::Pat<'tcx>) {
-        if let Some(t) = self.typeck_of(p.hir_id)
+        if let Some(t) = self.recovered_typeck_of(p.hir_id)
             && let Some(ty) = t.node_type_opt(p.hir_id)
         {
             self.use_ty(ty, p.span);

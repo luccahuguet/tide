@@ -79,7 +79,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     }
 
     pub(super) fn authority_use(&mut self, def: DefId, span: Span) {
-        if !self.user_written(span) {
+        if def.is_local() || !self.user_written(span) {
             return;
         }
         let key = self.key(def);
@@ -106,7 +106,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     }
 
     pub(super) fn root_name(&mut self, def: DefId, path: &hir::Path<'tcx>, id: HirId) {
-        if self.key(def) != "tide_std::Root" || !self.user_written(path.span) {
+        if def.is_local() || self.key(def) != "tide_std::Root" || !self.user_written(path.span) {
             return;
         }
         if matches!(self.tcx.hir_node(id), hir::Node::Pat(pat) if root_fields(self, pat)) {
@@ -208,7 +208,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             self.report(e.span, Code::Fx0503,
                 "the whole `root` cannot be passed, borrowed, stored, returned or captured; move or borrow its fields".into());
         }
-        if let hir::ExprKind::Closure(closure) = e.kind {
+        if let hir::ExprKind::Closure(closure) = e.kind
+            && t.tainted_by_errors.is_none()
+        {
             for capture in self.tcx.closure_captures(closure.def_id) {
                 if self.is_root(capture.place.ty()) {
                     self.report(
@@ -269,6 +271,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if self.crates.role(def.krate) == Role::RustStd {
             return Some(def);
         }
+        if self.crates.role(def.krate) != Role::TideStd {
+            return None;
+        }
         let key = self.key(def);
         let path = key.strip_prefix("tide_std::")?;
         let mut current = self.crates.rust_std()?.as_def_id();
@@ -308,12 +313,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if !self.user_written(path.span()) {
             return;
         }
-        let Some(t) = self.typeck_of(id) else { return };
-        if t.type_dependent_def_id(id).is_some() {
+        let t = self.recovered_typeck_of(id);
+        if t.is_none() && !self.recovering {
+            return;
+        }
+        if t.and_then(|t| t.type_dependent_def_id(id)).is_some() {
             return;
         }
         let ty = t
-            .node_type_opt(base.hir_id)
+            .and_then(|t| t.node_type_opt(base.hir_id))
             .filter(|ty| !ty.references_error())
             .or_else(|| {
                 let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = base.kind else {
@@ -334,7 +342,8 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if !matches!(
                     self.tcx.def_kind(def),
                     DefKind::Struct | DefKind::Enum | DefKind::TyAlias
-                ) {
+                ) || (self.recovering && def.is_local())
+                {
                     return None;
                 }
                 Some(
@@ -362,7 +371,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             self.denied_key("thread_rng".into(), path.span);
         }
         match self.source_path(path.segments, id, &mut FxHashSet::default()) {
-            Some(Source::Def(def)) => self.denied_key(self.key(def), path.span),
+            Some(Source::Def(def)) if !def.is_local() => self.denied_key(self.key(def), path.span),
             Some(Source::TokioSpawn) => self.denied_key("tokio::spawn".into(), path.span),
             _ => {}
         }
@@ -399,6 +408,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 self.imported_member(current, name, seen).flatten()?
             } else if let Source::Def(def) = current
                 && matches!(self.tcx.def_kind(def), DefKind::Struct | DefKind::Enum)
+                && !(self.recovering && def.is_local())
             {
                 self.tcx.inherent_impls(def).iter().find_map(|&imp| {
                     self.tcx

@@ -174,7 +174,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         expr: &'tcx hir::Expr<'tcx>,
         typeck: &ty::TypeckResults<'tcx>,
     ) {
-        if !self.user_written(expr.span) {
+        if !self.can_select() || !self.user_written(expr.span) {
             return;
         }
         let callee = match expr.kind {

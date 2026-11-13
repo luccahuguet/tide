@@ -116,7 +116,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if self.user_written(block.span));
         if written
             && self.user_written(span)
-            && let Some(t) = self.typeck_of(expr.hir_id)
+            && let Some(t) = self.recovered_typeck_of(expr.hir_id)
             && let Some(ty) = t.expr_ty_opt(expr)
             && let ty::Adt(adt, _) = ty.kind()
             && self.tcx.is_diagnostic_item(sym::Result, adt.did())

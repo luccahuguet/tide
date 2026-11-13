@@ -85,10 +85,12 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 self.walk.tcx
             }
             fn visit_expr(&mut self, expr: &'tcx hir::Expr<'tcx>) {
+                // A local path can lower an unresolved enclosing impl during recovery.
                 if let hir::ExprKind::Call(callee, args) = expr.kind
                     && let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = callee.kind
                     && let Res::Def(_, helper) = path.res
                     && expr.span.from_expansion()
+                    && (!self.walk.recovering || !helper.is_local())
                 {
                     let key = self.walk.crates.key(self.walk.tcx, helper);
                     if matches!(
@@ -143,7 +145,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         };
         clauses.visit_body(body);
         let uses = clauses.uses;
-        if uses.is_empty() {
+        if uses.is_empty() || self.recovering {
             return;
         }
         let signature = self.tcx.liberate_late_bound_regions(
