@@ -648,6 +648,9 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
 - **Parallelism**: `par_reduce` with its canonical grouping, `Combine`,
   `Monoid`, `Sum`/`Product`/`Min`/`Max`.
 - **Memory**: field-borrow declarations, spelling open under D18.
+- **Codecs** (01 D6): strict JSON objects (`#[codec(deny_unknown_fields)]`,
+  CODEC-1) and internally tagged unit and named-field enum variants
+  (`#[codec(tag = "..")]`, CODEC-2).
 
 **Later:** the Bend tandem and `Accel` (D16); deferred overflow traps;
 automatic parallelization; `Shape` reflection; Polonius-precision borrows;
@@ -655,7 +658,8 @@ interactive-proof export; snapshot-and-branch simulation.
 
 **Removed** (01 draft 3): `Frozen`, the `lock` keyword, `par { }`, and the
 moved-out rule. Not yet tiered by 01, and left out of v0 here: codec formats
-other than JSON, the codec plug-in API, and the `flatten`,
-`deny_unknown_fields`, and `try_from` keys; `pct` scheduling and
-`--minimize` in the simulator.
+other than JSON, the codec plug-in API, the `flatten` and `try_from`
+keys, and the adjacent, untagged, catch-all and tagged newtype or map enum
+representations (01 D6); `pct` scheduling and `--minimize` in the
+simulator.
 

@@ -81,7 +81,7 @@ later-tier feature, the tier table wins.
 | Tier | Contents |
 | --- | --- |
 | v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); the unreviewed-branch guarantee and the test sandbox on Linux (D13); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); strict JSON decoding and internally tagged enums (D6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
@@ -420,6 +420,62 @@ Rejected: exceptions; draft 1's `from` keyword on variants (collides with
 Rejected: token and procedural macros (opaque to agents and tools, uncached,
 supply-chain holes); unrestricted compile-time execution; reflection-based
 serialization as the default (5–7x slower in prior art).
+
+#### Strict and internally tagged JSON (v1, fx-v4c9)
+
+Decided 2026-11-13 (coordinator, fx-v4c9); not implemented. Research and
+alternatives: [`research/29-strict-tagged-codecs.md`](../research/29-strict-tagged-codecs.md).
+The v0 surface stays JSON-only `Encode`/`Decode`, `std::json::encode` and
+`std::json::decode`, with `rename`, `rename_all`, `default`, and `skip`;
+unknown fields are ignored and enums are externally tagged by default.
+v1 extends the toolchain-owned `#[codec]` helper, without adding a derive,
+user macro, reflection dependency, or serde lifetime API. Decoding builds
+owned values; the input buffer is not borrowed by the result.
+
+- **CODEC-1. Strict objects** (v1). `#[codec(deny_unknown_fields)]` on a
+  named-field struct or an enum makes its derived `Decode` reject keys
+  outside that struct's or selected variant's non-skipped fields, after
+  renaming. For an internally tagged enum the tag key is also allowed.
+  On an externally tagged enum this governs named-field variant payloads;
+  other variant shapes keep their existing decoding rules. Strictness is
+  local to that object: nested structs need their own annotation, while
+  map entries remain data, not schema fields. A skipped payload field adds
+  no allowed key. Missing `Option` fields and explicit defaults retain their
+  existing behavior; a default never repairs an unknown key or a malformed
+  present value. The key has no effect on `Encode`.
+- **CODEC-2. Internal tags** (v1). `#[codec(tag = "type")]` on an enum
+  selects a single JSON object with a string discriminator at the literal
+  key `"type"`; any non-empty string key, such as `"kind"`, may be
+  specified. Only
+  unit and named-field variants are supported. A named-field variant
+  encodes as `{"type":"Set","key":"a"}` and a unit variant as
+  `{"type":"Clear"}`. Variant `rename` and enum `rename_all` determine
+  the discriminator value as they determine external variant names today;
+  they do not rename the tag key or the variant's fields. Field `rename`
+  still applies. The tag may occur anywhere in the input object. A missing,
+  repeated (even identical), non-string, or unknown tag is an error, with
+  or without CODEC-1. A strict tagged unit accepts only its tag; a loose
+  tagged object ignores extra keys as v0 objects do. Repeated known payload
+  fields remain errors. Key comparisons use decoded JSON strings.
+- Both derives validate these keys, including with only `Encode` or only
+  `Decode` derived. Invalid placement, repeated or malformed helper keys,
+  `deny_unknown_fields` on an enum with neither `tag` nor a named-field
+  variant (where it would do nothing), `tag` on an enum containing any tuple
+  or newtype variant, a tag key that collides with a non-skipped payload
+  field after renaming, and duplicate wire field or variant names are
+  compile errors. Without `tag`, enum representation is unchanged; adding it
+  intentionally changes wire bytes. Decode failures return `json::Error`,
+  preserve whole-input consumption and the existing nesting/codec-call
+  limits, and never select another variant as a fallback. Decoding cannot
+  construct capability handles (ROOT-4).
+
+01 D6 owns the `CODEC` rule prefix. Deferred: tagged newtype/map payloads,
+`flatten`, adjacent and untagged representations, catch-all variants, and a
+public codec builder or format plug-in API. These two keys require no new
+public trait methods or runtime dependency. The implementation must handle
+tag order without losing duplicates, number spelling, error positions, or
+the decoder's limits; the research note proposes private input-span
+scanning.
 
 ### D7. Authority: capabilities as values, no ambient authority
 
