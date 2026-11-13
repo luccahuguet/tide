@@ -50,8 +50,9 @@ runtime checks, property tests, and optional SMT proofs. They support the
 thesis; they are not the headline. Proof-first, massively parallel pure
 computation is Bend's territory (D16).
 
-One line: authority you can read in a signature and whole-program
-deterministic replay, with Rust's guarantees and a much faster edit loop.
+One line: capability-safe, replayable Rust. Authority you can read in a
+signature and whole-program deterministic replay, with Rust's guarantees; a
+much faster edit loop is D12's target, not yet a measurement.
 
 ## Positioning And Scope
 

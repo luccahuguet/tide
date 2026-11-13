@@ -1,18 +1,20 @@
 # Tide
 
-**Code that cannot do more than its signature says, programs that replay bit
-for bit, and reviews that show what changed in what code may do, with Rust's
-speed and safety.**
+**Capability-safe, replayable Rust.**
 
-Tide is a systems language for software that AI agents write and humans have
-to trust.
+Tide is Rust that can't overreach and replays bit for bit. It is a checked
+subset of valid Rust 2024 for software that AI agents write and humans have
+to trust: code cannot do more than its signature says, programs replay from
+a seed when every foreign effect they reach has a simulator model, and reviews
+show what changed in what code may do, with Rust's speed and safety.
 
 - **No ambient authority.** No code, in any dependency, can touch files, the
   network, or the clock unless it is handed that authority, so a function's
   signature bounds what it can do.
 - **Every program replays.** Any Tide program, dependencies included, runs
-  under a seeded simulator and reproduces bit for bit, so concurrency bugs
-  become ordinary failing tests.
+  under a seeded simulator and reproduces bit for bit, provided every foreign
+  effect it reaches has a simulator model (the build lists any that do not),
+  so concurrency bugs become ordinary failing tests.
 - **Review what changed in what code may do.** The compiler diffs authority,
   contracts, and `unsafe` holes between revisions, so reviewers see the risk
   before reading the code.
