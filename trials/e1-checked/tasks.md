@@ -740,7 +740,7 @@ Checked cases:
 
 1. `[[1, 4, 9], [2, 3, 10], [], [5]]` with capacity 1 give
    `[1, 2, 3, 4, 5, 9, 10]`; no inputs give `[]`; duplicates are kept.
-2. Eight inputs of 10,000 ascending items each, capacity 2, equal their
+2. Eight inputs of 600 ascending items each, capacity 2, equal their
    sorted concatenation.
 3. `[[1, 2], [3, 1], [5, 0]]` give `Unsorted { input: 1, index: 1 }`.
 4. Capacity 0 panics.

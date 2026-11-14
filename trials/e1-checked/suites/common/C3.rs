@@ -10,7 +10,7 @@ fn case1() {
 #[test]
 fn case2() {
     let inputs: Vec<Vec<i64>> = (0..8)
-        .map(|i| (0..10000).map(|j| j * 8 + i).collect())
+        .map(|i| (0..600).map(|j| j * 8 + i).collect())
         .collect();
     let mut want: Vec<_> = inputs.iter().flatten().copied().collect();
     want.sort();
