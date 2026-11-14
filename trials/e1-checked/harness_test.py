@@ -91,7 +91,7 @@ class HarnessTests(unittest.TestCase):
             result = h.run([sys.executable, "-c", "import os,sys; print(os.environ.get('E1_SECRET')); print(sys.stdin.read())"], config, root)
             self.assertEqual(result["code"], 0)
             self.assertEqual(result["stdout"], "None\n\n")
-            with patch.dict(h.os.environ, {"CARGO_BUILD_JOBS": "4"}):
+            with patch.dict(h.os.environ, {"CARGO_BUILD_JOBS": "6"}):
                 self.assertEqual(h.environment(config, root)["CARGO_BUILD_JOBS"], "4")
             result = h.run(["/usr/bin/env"], config, root, env={})
             self.assertEqual(result["stdout"], "")
@@ -414,7 +414,9 @@ pub mod acceptance { #[test] fn case1() {} }
                     library = root / "acceptance/package/src/lib.rs"
                     entry = root / "acceptance/suite/src/lib.rs"
                     self.assertEqual(library.read_text(), candidate)
-                    self.assertEqual(entry.read_text(), "extern crate tide_candidate as solution;\n" + h.suite("A2", "tide"))
+                    self.assertEqual(entry.read_text(), "use tide_candidate as solution;\n" + h.suite("A2", "tide"))
+                    # Generated code must admit under the driver: `extern crate` is FX0912.
+                    self.assertNotIn("extern crate", entry.read_text())
                     self.assertEqual(cmd[-1], str(entry))
                     self.assertIn("--tide-test-library=" + str(library), cmd)
                     self.assertEqual([arg for arg in cmd if arg.startswith("--tide-dep-dir=")], ["--tide-dep-dir=/operator"])
@@ -491,17 +493,20 @@ pub mod acceptance { #[test] fn case1() {} }
     def test_system_mounts_preserve_layout_and_private_boundaries(self):
         links = {"/bin": "usr/bin", "/lib": "usr/lib", "/lib64": "usr/lib64"}
         work = h.ROOT / "target/layout-test"
+        closure = ["/nix/store/" + "a" * 32 + "-glibc", "/nix/store/" + "b" * 32 + "-zlib"]
         config = {"arm": "rust", "sysroot": "/toolchain", "vendor": "/operator/vendor"}
         for merged_usr, has_store in [(True, True), (True, False), (False, True), (False, False)]:
             with self.subTest(merged_usr=merged_usr, has_store=has_store), \
                  patch.object(Path, "is_symlink", autospec=True, side_effect=lambda p: merged_usr and str(p) in links), \
                  patch.object(Path, "readlink", autospec=True, side_effect=lambda p: Path(links[str(p)])), \
                  patch.object(Path, "exists", autospec=True, side_effect=lambda p: str(p) != "/nix/store" or has_store):
-                args = h.sandbox_command(["true"], config, work, read_only=[Path("/operator/test-binary")])
+                args = h.sandbox_command(["true"], dict(config, store_paths=closure if has_store else []), work,
+                                         read_only=[Path("/operator/test-binary")])
             reads = [args[i + 1:i + 3] for i, arg in enumerate(args) if arg == "--ro-bind"]
             for name in ["/usr", "/etc/alternatives", config["vendor"], "/operator/test-binary"]:
                 self.assertIn([name, name], reads)
-            self.assertEqual(["/nix/store", "/nix/store"] in reads, has_store)
+            self.assertNotIn(["/nix/store", "/nix/store"], reads)
+            self.assertEqual(all([p, p] in reads for p in closure), has_store)
             for name, target in links.items():
                 if merged_usr:
                     at = args.index(name)
@@ -635,7 +640,7 @@ class GateTests(unittest.TestCase):
             def bind(self, *_args): pass
             def listen(self, *_args): pass
             def getsockname(self): return ("192.0.2.1", 1234)
-        for broken in [None, "repository", "network", "missing", "positive", "negative"]:
+        for broken in [None, "repository", "network", "missing", "positive", "negative", "tmpfs_size"]:
             def run(cmd, config, work, **kwargs):
                 spec = json.loads(cmd[-1])
                 checks = {name: not config["sandbox"] for name in
@@ -643,7 +648,8 @@ class GateTests(unittest.TestCase):
                 if config["sandbox"] and broken in {"repository", "network"}: checks[broken] = True
                 if config["sandbox"] and broken == "missing": checks.pop("reference")
                 if not config["sandbox"] and broken == "negative": checks["network"] = False
-                raw = {"sentinel": "E1-CANARY", "checks": checks, "positive": broken != "positive", "tmpfs": True}
+                raw = {"sentinel": "E1-CANARY", "checks": checks, "positive": broken != "positive", "tmpfs": True,
+                       "tmpfs_bytes": h.TMPFS_SIZE if broken != "tmpfs_size" else 2 * h.TMPFS_SIZE}
                 return {"code": 0, "stdout": json.dumps(raw), "stderr": ""}
             with self.subTest(broken=broken), tempfile.TemporaryDirectory() as tmp, \
                  patch.object(h, "STATE", Path(tmp)), patch.object(h, "run", side_effect=run), \
@@ -653,7 +659,10 @@ class GateTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "canary failed|control failed"):
                         g.canary("rust", config)
                 else:
-                    self.assertEqual(len(g.canary("rust", config)["records"]), 3)
+                    record = g.canary("rust", config)
+                    self.assertEqual(len(record["records"]), 3)
+                    # The saved record carries each shape's negative-control probe output.
+                    self.assertTrue(all(r["negative_control"]["positive"] for r in json.loads(json.dumps(record))["records"]))
 
     def test_batch_persists_faults_and_recovers_interrupted_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -711,6 +720,9 @@ class GateTests(unittest.TestCase):
             class Process:
                 returncode = 2
                 def __init__(self, argv, **kwargs):
+                    limit_dir = Path(argv[argv.index(str(h.HERE / "jail_limits.py")) + 2])
+                    (limit_dir / "report.json").write_text(json.dumps({"max": 0, "oom": 0, "oom_kill": 0, "memory_peak": 1, "cpu_usage_usec": 1,
+                        "memory_max": str(h.MEMORY_MAX), "memory_swap_max": "0"}))
                     if started:
                         h.os.write(kwargs["pass_fds"][0], b'{"exit-code": 2}\n')
                 def communicate(self, *_args, **_kwargs):
@@ -814,6 +826,111 @@ class GateTests(unittest.TestCase):
             (store / "different-name").write_bytes(b"other contents")
             self.assertTrue(g.store_scan(store, [tracked])["passed"])
 
+    def test_store_scan_skips_unreadable_and_writer_visible_but_fails_held_out_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trial = root / "repo/trials/e1-checked"
+            (trial / "rust/src").mkdir(parents=True)
+            (trial / "tasks.md").write_bytes(b"held-out task text")
+            (trial / "rust/Cargo.toml").write_bytes(b"[package]\n")
+            (trial / "rust/src/held.rs").write_bytes(b"held-out rust text")
+            (trial / ".gitignore").write_bytes(b"/target\n")
+            tracked = [trial / "tasks.md", trial / "rust/Cargo.toml", trial / "rust/src/held.rs", trial / ".gitignore"]
+            store = root / "store"
+            entry = store / ("a" * 32 + "-unrelated")
+            entry.mkdir(parents=True)
+            (entry / "Cargo.toml").write_bytes(b"[package]\n")
+            (entry / ".gitignore").write_bytes(b"/target\n")
+            locked = entry / "check.lock"
+            locked.write_bytes(b"x" * len(b"held-out task text"))
+            locked.chmod(0)
+            # Unreadable content is skipped only when another uid owns it (EACCES). A jail runs as this
+            # uid and can regain owner capabilities in a nested user namespace, so content this uid owns
+            # but cannot read is fatal. Tests cannot chown, so a foreign owner is faked through getuid.
+            foreign = patch.object(g.os, "getuid", return_value=os.getuid() + 1)
+            try:
+                with self.assertRaises(PermissionError):
+                    g.store_scan(store, tracked, trial)
+                with foreign:
+                    scan = g.store_scan(store, tracked, trial)
+                self.assertTrue(scan["passed"], scan["matches"])
+                self.assertEqual(scan["unreadable_skipped"], [str(locked)])
+                locked.chmod(0o644)
+                (entry / "copy").write_bytes(b"held-out task text")
+                scan = g.store_scan(store, tracked, trial)
+                self.assertEqual(scan["matches"], [{"store": str(entry / "copy"), "tracked": [str(trial / "tasks.md")]}])
+                (entry / "copy").unlink()
+                # Only the files writers receive are exempt under rust/, not every file there.
+                (entry / "held.rs").write_bytes(b"held-out rust text")
+                self.assertEqual(g.store_scan(store, tracked, trial)["matches"],
+                                 [{"store": str(entry / "held.rs"), "tracked": [str(trial / "rust/src/held.rs")]}])
+                (entry / "held.rs").unlink()
+                opaque = entry / "opaque"
+                opaque.mkdir()
+                (opaque / "known.txt").write_bytes(b"held-out task text")
+                # A searchable but unlistable directory can still hold readable files: fatal for any owner.
+                opaque.chmod(0o111)
+                with self.assertRaises(PermissionError):
+                    g.store_scan(store, tracked, trial)
+                with foreign, self.assertRaises(PermissionError):
+                    g.store_scan(store, tracked, trial)
+                # An unsearchable directory is skipped only when another uid owns it (a root-owned 0700 Nix
+                # build chroot on a real host); this uid's 0600 or 000 directory is fatal.
+                for mode in [0o600, 0]:
+                    opaque.chmod(mode)
+                    with self.subTest(mode=oct(mode), owner="own"), self.assertRaises(PermissionError):
+                        g.store_scan(store, tracked, trial)
+                    with self.subTest(mode=oct(mode), owner="foreign"), foreign:
+                        scan = g.store_scan(store, tracked, trial)
+                        self.assertEqual((scan["passed"], scan["unreadable_skipped"]), (True, [str(opaque)]))
+                # Any error at the search probe other than EACCES is fatal, even for a foreign owner.
+                opaque.chmod(0)
+                real_open = g.os.open
+                def probe_fails(path, *args, **kwargs):
+                    if str(path) == str(opaque) + "/.": raise OSError(5, "Input/output error", str(path))
+                    return real_open(path, *args, **kwargs)
+                with foreign, patch.object(g.os, "open", probe_fails), self.assertRaises(OSError) as raised:
+                    g.store_scan(store, tracked, trial)
+                self.assertEqual(raised.exception.errno, 5)
+                opaque.chmod(0o755)
+                # Any other metadata error at the first lookup stays fatal (Path.is_file() hid EIO).
+                real = g.os.lstat
+                def failing(path, *args, **kwargs):
+                    if str(path) == str(opaque / "known.txt"): raise OSError(5, "Input/output error", str(path))
+                    return real(path, *args, **kwargs)
+                with patch.object(g.os, "lstat", failing), self.assertRaises(OSError) as raised:
+                    g.store_scan(store, tracked, trial)
+                self.assertEqual(raised.exception.errno, 5)
+            finally:
+                locked.chmod(0o644)
+                if (entry / "opaque").exists(): (entry / "opaque").chmod(0o755)
+
+    def test_store_scan_flags_trial_content_at_any_revision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trial = root / "repo/trials/e1-checked"
+            (trial / "suites/common").mkdir(parents=True)
+            tracked = trial / "suites/common/X1.rs"
+            tracked.write_bytes(b"current revision")
+            store = root / "store"
+            older = store / ("c" * 32 + "-suites/common/X1.rs")
+            older.parent.mkdir(parents=True)
+            older.write_bytes(b"older revision")
+            unrelated = store / ("d" * 32 + "-unrelated/common/X1.rs")
+            unrelated.parent.mkdir(parents=True)
+            unrelated.write_bytes(b"older revision")
+            # Writer-visible manifests share names with many unrelated Rust trees.
+            (trial / "rust").mkdir()
+            (trial / "rust/Cargo.lock").write_bytes(b"pinned lock")
+            (store / ("f" * 32 + "-rustc-src/rust")).mkdir(parents=True)
+            (store / ("f" * 32 + "-rustc-src/rust/Cargo.lock")).write_bytes(b"other lock")
+            self.assertEqual(g.store_scan(store, [tracked, trial / "rust/Cargo.lock"], trial)["matches"],
+                             [{"store": str(store / ("c" * 32 + "-suites")), "trial_path": "suites/common/X1.rs"}])
+            older.unlink()
+            (store / ("e" * 32 + "-source/trials/e1-checked")).mkdir(parents=True)
+            self.assertEqual(g.store_scan(store, [tracked], trial)["matches"],
+                             [{"store": str(store / ("e" * 32 + "-source")), "trial_path": "source/trials/e1-checked"}])
+
     def test_gate_requires_current_both_arm_canaries_probe_and_store(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(g, "canary_key", return_value={"revision": 1}):
             root = Path(tmp)
@@ -840,12 +957,175 @@ class GateTests(unittest.TestCase):
                 self.assertEqual(h.main(), 0)
                 self.assertEqual(grade.call_args.args[2], "stored control")
 
+    def test_jail_sees_only_the_store_closure_not_an_older_trial_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trial = root / "repo/trials/e1-checked"
+            (trial / "suites/common").mkdir(parents=True)
+            (trial / "suites/common/X1.rs").write_bytes(b"current revision")
+            store = root / "store"
+            closure = store / ("a" * 32 + "-loader")
+            closure.mkdir(parents=True)
+            (closure / "lib").write_text("loader control")
+            older = store / ("b" * 32 + "-source/trials/e1-checked/suites/common/X1.rs")
+            older.parent.mkdir(parents=True)
+            older.write_bytes(b"older revision")
+            work = root / "work"
+            work.mkdir()
+            # The host toolchain's real closure: the jail's /nix/store must list exactly it.
+            real = h.store_closure([h.toolchain(h.RUST) / "bin"]) if h.STORE.is_dir() else []
+            config = {"arm": "rust", "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor", "store_paths": [str(closure), *real]}
+            listing = "import os; print(sorted(os.listdir('/nix/store')) if os.path.isdir('/nix/store') else [])"
+            seen = h.run(["/usr/bin/python3", "-c", listing], config, work, timeout=30)
+            self.assertEqual((seen["code"], seen["stdout"]), (0, f"{sorted(Path(p).name for p in real)}\n"), seen["stderr"])
+            probe = "import os,sys; print([os.path.exists(p) for p in sys.argv[1:]])"
+            result = h.run(["/usr/bin/python3", "-c", probe, str(closure / "lib"), str(older), str(store / older.relative_to(store).parts[0])],
+                           config, work, timeout=30)
+            self.assertEqual((result["code"], result["stdout"]), (0, "[True, False, False]\n"), result["stderr"])
+            self.assertFalse(g.store_scan(store, [trial / "suites/common/X1.rs"], trial)["passed"])
+
+    def test_jail_dies_with_a_killed_harness(self):
+        mark = f"{41 + os.getpid() % 1000 / 1000:.3f}"
+        child = ("import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; import harness as h; "
+                 "h.run(['/bin/sleep', sys.argv[3]], {'arm': 'rust', 'sandbox': True, 'sysroot': '/toolchain', "
+                 "'vendor': '/vendor', 'store_paths': []}, Path(sys.argv[2]), timeout=100)")
+        def sleepers():
+            found = []
+            for entry in Path("/proc").iterdir():
+                try: argv = (entry / "cmdline").read_bytes().split(b"\0") if entry.name.isdigit() else []
+                except OSError: continue
+                if argv[1:2] == [mark.encode()] and argv[0].endswith(b"sleep"): found.append(int(entry.name))
+            return found
+        with tempfile.TemporaryDirectory() as tmp:
+            # The harness runs in its own group, as the grader does under its guard.
+            harness = subprocess.Popen([sys.executable, "-c", child, str(h.HERE), tmp, mark],
+                                       start_new_session=True, stdin=subprocess.DEVNULL)
+            try:
+                deadline = time.monotonic() + 20
+                while not sleepers() and time.monotonic() < deadline: time.sleep(0.1)
+                self.assertTrue(sleepers(), "the jailed sleep never started")
+            finally:
+                os.killpg(harness.pid, signal.SIGKILL)
+                harness.wait()
+            deadline = time.monotonic() + 10
+            while sleepers() and time.monotonic() < deadline: time.sleep(0.1)
+            left = sleepers()
+            for pid in left: os.kill(pid, signal.SIGKILL)
+            self.assertEqual(left, [])
+
+    def test_jail_memory_cap_kills_and_the_verdict_records_it(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(h, "MEMORY_MAX", 64 << 20):
+            config = {"arm": "rust", "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor", "store_paths": []}
+            control = h.run(["/usr/bin/python3", "-c", "b = bytearray(8 << 20); print('ok')"], config, Path(tmp), timeout=30)
+            self.assertEqual((control["code"], control["stdout"]), (0, "ok\n"), control["stderr"])
+            self.assertLess(control["memory_peak"], 64 << 20)
+            self.assertGreater(control["cpu_usage_usec"], 0)
+            self.assertNotIn("memory_limit_exceeded", control)
+            # The allocating child dies; its parent survives and exits 0, yet the run fails.
+            hog = "import subprocess,sys; subprocess.run([sys.executable, '-c', 'b = bytearray(256 << 20)'])"
+            result = h.run(["/usr/bin/python3", "-c", hog], config, Path(tmp), timeout=30)
+            self.assertEqual((result["code"], result["observed_exit"], result["memory_limit_exceeded"], result["infrastructure"]),
+                             (137, 0, True, False))
+            self.assertIn("memory limit exceeded", result["stderr"])
+
+    def test_reporter_launches_nothing_without_the_recorded_limits(self):
+        import jail_limits
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            own = Path(Path("/proc/self/cgroup").read_text().strip().split("::", 1)[1]).relative_to("/")
+            limits = {"memory_max": str(h.MEMORY_MAX), "memory_swap_max": "0"}
+            marker = root / "launched"
+            for case in ["missing", "uncontrolled", "refused", "orphaned", "applied"]:
+                fake = root / case
+                scope = fake / own
+                jail = scope / "jail"
+                jail.mkdir(parents=True)
+                if case != "missing":
+                    (jail / "cgroup.controllers").write_text("cpu pids\n" if case == "uncontrolled" else "cpu memory pids\n")
+                    (jail / "memory.max").write_text("max\n")
+                    (jail / "memory.swap.max").write_text("max\n")
+                    (jail / "memory.peak").write_text("4096\n")
+                    (jail / "memory.events.local").write_text("low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n")
+                    (jail / "cpu.stat").write_text("usage_usec 10\nuser_usec 5\nsystem_usec 5\n")
+                state = root / (case + "-state")
+                state.mkdir()
+                (state / "env.json").write_text("{}")
+                (state / "limits.json").write_text(json.dumps(limits))
+                parent = os.getpid() + (1 << 22) if case == "orphaned" else os.getppid()
+                argv = ["jail_limits.py", str(parent), str(state), "--", sys.executable, "-c", f"open({str(marker)!r}, 'w').close()"]
+                real_set = jail_limits.set_value
+                # "refused": the kernel keeps memory.max at "max" whatever the reporter writes.
+                def set_value(path, value):
+                    if not (case == "refused" and path.name == "memory.max"): real_set(path, value)
+                with self.subTest(case=case), patch.object(jail_limits, "CGROUP_ROOT", fake), \
+                     patch.object(sys, "argv", argv), patch.object(jail_limits, "set_value", set_value), \
+                     patch.object(jail_limits.ctypes, "CDLL", lambda *_a, **_k: type("C", (), {"prctl": staticmethod(lambda *_a: 0)})):
+                    code = jail_limits.main()
+                    written = json.loads((state / "report.json").read_text())
+                    if case == "applied":
+                        self.assertEqual((code, marker.exists(), written["oom_kill"], written["cpu_usage_usec"]), (0, True, 0, 10))
+                        # The reporter left the capped leaf; the cap and the jail's process sit on jail/.
+                        self.assertEqual([(scope / "reporter/cgroup.procs").read_text(), (scope / "cgroup.subtree_control").read_text(),
+                                          (jail / "memory.max").read_text(), (jail / "memory.swap.max").read_text(),
+                                          (jail / "cgroup.procs").read_text()],
+                                         ["0\n", "+memory\n", f"{h.MEMORY_MAX}\n", "0\n", "0\n"])
+                        marker.unlink()
+                    else:
+                        self.assertEqual((code, marker.exists()), (jail_limits.SETUP_EXIT, False))
+                        self.assertIn("gone" if case == "orphaned" else "", written["setup_error"])
+
+    def test_a_lowered_score_swarm_cannot_turn_its_cap_failure_into_infrastructure(self):
+        # The jail lowers its own OOM score, then forks past the cap. The OOM killer must pick only
+        # jail processes, never the reporter, so every run is a candidate memory failure.
+        swarm = ("import os,time\nopen('/proc/self/oom_score_adj','w').write('0')\nkids=[]\n"
+                 "for i in range(40):\n pid=os.fork()\n if pid==0:\n  b=bytearray(3<<20)\n  time.sleep(2)\n  os._exit(0)\n kids.append(pid)\n"
+                 "for k in kids: os.waitpid(k,0)\nprint('done')\n")
+        config = {"arm": "rust", "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor", "store_paths": []}
+        with patch.object(h, "MEMORY_MAX", 96 << 20):
+            for attempt in range(5):
+                with self.subTest(attempt=attempt), tempfile.TemporaryDirectory() as tmp:
+                    result = h.run(["/usr/bin/python3", "-c", swarm], config, Path(tmp), timeout=60)
+                    self.assertEqual((result["code"], result["infrastructure"], result.get("memory_limit_exceeded")),
+                                     (137, False, True), result["stderr"][-300:])
+
+    def test_only_local_limit_exhaustion_is_a_candidate_memory_failure(self):
+        config = {"arm": "rust", "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor", "store_paths": []}
+        for name, events, expected in [("local", {"max": 7, "oom": 1, "oom_kill": 1}, (137, False, True)),
+                                       ("external", {"max": 0, "oom": 0, "oom_kill": 1}, (2, True, False)),
+                                       ("ambiguous", {"max": 3, "oom": 0, "oom_kill": 1}, (2, True, False))]:
+            class Process:
+                returncode = 0
+                pid = 1
+                def __init__(self, argv, **kwargs):
+                    limit_dir = Path(argv[argv.index(str(h.HERE / "jail_limits.py")) + 2])
+                    (limit_dir / "report.json").write_text(json.dumps({"memory_peak": 64 << 20, "cpu_usage_usec": 1,
+                        "memory_max": str(h.MEMORY_MAX), "memory_swap_max": "0", **events}))
+                    h.os.write(kwargs["pass_fds"][0], b'{"exit-code": 0}\n')
+                def communicate(self, *_args, **_kwargs):
+                    return b"", b""
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp, patch.object(h.subprocess, "Popen", Process):
+                result = h.run(["/binary"], config, Path(tmp))
+                self.assertEqual((result["code"], result["infrastructure"], result.get("memory_limit_exceeded", False)), expected)
+                self.assertEqual(result["memory_events"], events)
+
+    def test_identity_records_pinned_jobs_limits_and_store_closure(self):
+        configs = {arm: {"sysroot": "/toolchain", "driver": "/driver", "std": "/std", "store_paths": ["/nix/store/x-" + arm]}
+                   for arm in ["rust", "tide"]}
+        with patch.object(g, "output", return_value="control"), patch.object(g, "digest", return_value="0" * 64), \
+             patch.object(g, "clean"), patch.object(g, "canary_key", return_value={}), patch.dict(h.os.environ, {"CARGO_BUILD_JOBS": "6"}):
+            record = g.identity(configs, "/pinned/claude", g.MODEL, 1)
+        self.assertEqual(record["jail_limits"]["cargo_build_jobs"], "4")
+        self.assertEqual((record["jail_limits"]["memory_max"], record["jail_limits"]["memory_swap_max"],
+                          record["jail_limits"]["tmpfs_size"]), (h.MEMORY_MAX, 0, h.TMPFS_SIZE))
+        self.assertEqual(record["store_closure"], {"rust": ["/nix/store/x-rust"], "tide": ["/nix/store/x-tide"]})
+
     def test_runtime_tmpdir_is_tmpfs_in_both_arms(self):
         for arm in ["rust", "tide"]:
             config = {"arm": arm, "sandbox": True, "sysroot": "/toolchain", "vendor": "/vendor",
                       "driver": "/driver", "std": "/std", "deps": []}
             cmd = h.sandbox_command(["/binary"], config, Path("/work"), read_only=["/binary"])
-            self.assertEqual(cmd[cmd.index("--tmpfs") + 1], "/tmp")
+            at = cmd.index("--tmpfs")
+            self.assertEqual(cmd[at - 2:at + 2], ["--size", str(h.TMPFS_SIZE), "--tmpfs", "/tmp"])
             self.assertEqual(h.environment(config, Path("/work"))["TMPDIR"], "/tmp")
 
     def test_stream_monitor_checks_init_exit_audit_and_clock_without_a_model(self):

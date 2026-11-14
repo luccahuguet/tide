@@ -132,7 +132,8 @@ prepare writes no check/test scripts; the broker dispatches logical commands
 directly to trusted harness.py command SESSION MODE. fx-ic2 owns that broker.
 
 Bubblewrap keeps --unshare-all, one writable work tree, and the approved
-read-only /usr, /etc/alternatives and optional /nix/store mounts.
+read-only /usr, /etc/alternatives and toolchain Nix-store closure mounts
+(only the closure's store paths, none when the host has no store).
 Before gate writers, fx-ic2 owes isolation canaries, toolchain/model identities
 and confirmation the Nix store contains no repository copy, plus suite freeze.
 

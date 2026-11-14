@@ -99,8 +99,9 @@ replacement. `./check` compiles source and writer tests;
 `./test` repeats that check then runs writer tests. A test has 10 seconds;
 a complete command has 120 seconds, bounded also by the session deadline.
 Timeouts kill the child process group. Bubblewrap's separate JSON status FD
-distinguishes setup failure from a candidate's exit or stderr. Cargo respects
-the operator's `CARGO_BUILD_JOBS` (default 6). Children get closed unused stdin and
+distinguishes setup failure from a candidate's exit or stderr. The harness pins
+`CARGO_BUILD_JOBS=4` for writer commands, grading and its driver build; the
+caller's value is never used. Children get closed unused stdin and
 a clean environment. Native test processes must write a completed libtest
 log record, so a silent early exit 0 fails.
 
@@ -157,7 +158,7 @@ its structure requirement.
 
 Normal writer commands and grading require Bubblewrap. Compilation mounts a
 fresh source copy/output tree writable. Every jail mounts the selected Rust toolchain,
-vendored crates, `/usr`, `/etc/alternatives`, `/nix/store` when present,
+vendored crates, `/usr`, `/etc/alternatives`, the Nix-store closure the toolchains need,
 the small trusted doctest wrapper, and (for Tide) trusted built artifacts
 readable. These mounts are read-only. The host's `/bin`,
 `/lib` and `/lib64` symlinks are recreated; real directories are bound
@@ -166,9 +167,51 @@ loopback), clears inherited environment, and never mounts the repository root,
 other sessions or the repository's suite/reference directories. Setup failure is fatal; there
 is no automatic unsandboxed fallback. The backend uses
 [Bubblewrap's namespace and bind-mount interface](https://github.com/containers/bubblewrap/blob/main/README.md).
-The system/store trees preserve compiler helpers, wrapper scripts and linker
+The system trees preserve compiler helpers, wrapper scripts and linker
 symlink chains. Debian's `cc` resolves through `/etc/alternatives`. The jail does
-not bind `/etc` itself, `/home`, the repository root or host `/tmp`.
+not bind `/etc` itself, `/home`, the repository root, host `/tmp` or the rest of
+`/nix/store`. `base_config` reads every ELF interpreter and run path and every
+script's text under the selected sysroot (and, for Tide, the driver, std and
+dependency directories), then binds `nix-store --query --requisites` of the
+store paths they name: on the recorded host, glibc, zlib and the rustup
+linker wrapper's closure. A store copy of trial files at any revision is
+therefore outside every jail.
+
+Each jail runs in its own delegated `systemd-run --user --scope` (`Delegate=yes`,
+`CPUWeight=1`) and mounts `/tmp` as a 1 GiB tmpfs (`bwrap --size`). Inside the
+scope the trusted `jail_limits.py`, the harness's direct child, moves itself
+into a `reporter/` leaf, enables the memory controller for the scope's children
+and caps a `jail/` leaf at `memory.max` 4 GiB and `memory.swap.max` 0. The
+forked child enters `jail/` before it executes Bubblewrap, so no jail code runs
+outside the leaf, and the tmpfs pages count against the same cap. A cap OOM
+therefore picks victims only among jail processes, never the reporter, whatever
+OOM scores the jail sets. Both arms and both stages use these caps; the identity
+records them with the pinned jobs and the store closure. The scope sits in the
+user manager's `app.slice`, beside every other application unit at the default
+weight 100, not inside its caller's cgroup; so under full CPU contention a jail
+gets about 1/101 of the CPU against each busy sibling, and a starved 10 s test
+or 120 s command times out as a candidate failure. Each jailed result therefore
+records the jail leaf's `cpu_usage_usec` (from `cpu.stat`), so a timeout with
+little CPU use can be audited. The reporter first sets a parent-death `SIGKILL`
+and checks that its parent is still the harness pid it was given, so a killed
+harness takes the reporter and, through `bwrap --die-with-parent`, the jail with
+it; `harness.run` must therefore run on its process's main thread. Before it
+starts Bubblewrap, it checks that the jail leaf has the memory controller, that
+its effective `memory.max` and `memory.swap.max` equal the recorded caps, and
+that `memory.peak`, `memory.events.local` and `cpu.stat` exist; otherwise it
+launches nothing and the run is a setup failure. It raises the jail's
+`oom_score_adj` to 1000, so the first cap victim is normally the outer bwrap,
+whose death ends the whole jail. It then reports the leaf's `memory.peak`,
+`cpu_usage_usec` and local `max`, `oom` and `oom_kill` counts for the run. Each
+jailed result records `memory_peak`, `cpu_usage_usec` and `memory_events`; a
+timed-out jail's reporter is killed with it, so its result records
+`memory_events: null` and no peak. A kill together with local `max` and `oom`
+events (the leaf exhausted its own cap) makes the run exit 137 with
+`memory_limit_exceeded`, even when the killed child's parent exits 0. A kill
+without them (a host or ancestor OOM) is infrastructure, code 2 with
+`external_oom_kill`. A missing or mismatched report is a setup failure. Jails
+therefore need a
+systemd user manager with the memory controller delegated; `--local` runs no jail.
 Boundary tests cover the
 mount policy, merged-usr and real-directory hosts, and an absent Nix store.
 The real self-test requires jailed Cargo exec, rustc link and execution of
@@ -184,7 +227,8 @@ Tide uses the pinned driver and production std. Metadata checks, linked
 writer tests, linked acceptance tests and binary builds each have a separate
 output directory. `--emit=link --test` builds `solution-test` for writer tests.
 The L stage uses `--tide-test-library` to admit the library and compile the
-acceptance suite as a second crate that imports its public API. First-check
+acceptance suite as a second crate that imports its public API through the
+generated `use tide_candidate as solution;` (`extern crate` is FX0912). First-check
 grading uses metadata mode. Full grading builds `acceptance-test` and runs
 each listed test with the same time and result checks as Rust. Binary cases
 run the driver's linked `solution` through the shared process-case loop.
@@ -333,13 +377,34 @@ negative control must reach each path/listener and environment sentinel; no
 probe is skipped. Every jail mounts tmpfs `/tmp` before binding its read-only inputs, so
 executables beneath an external `/tmp` run directory remain visible.
 `TMPDIR=/tmp` applies to all shapes, including
-writer doctests and both arms' B9-shaped runtime fixtures. The Rust canary
-checks the mount type and creates a fixture directory on it.
+writer doctests and both arms' B9-shaped runtime fixtures. Binary cases use
+their recorded environment; without `TMPDIR`, `/tmp` is still the tmpfs. Each
+canary shape checks the mount type and size and creates a fixture directory on
+it, and also opens a store entry outside the toolchain closure, which must fail.
 
 Gate runs require both arm canaries for the current machinery hashes,
 Bubblewrap version and boot ID, plus a matching writer probe and a successful
 pre-run store scan. The scan sizes every regular store file, hashing only size
-matches against tracked trial/design files; any identical content fails.
+matches against tracked trial/design files; any identical content fails. Files
+writers receive or that carry nothing (`rust/Cargo.toml` and `rust/Cargo.lock`,
+`.gitignore`, empty files and the two Tide reference documents) are not byte-matched, since
+unrelated store trees hold thousands of copies. A store file that cannot be
+opened, or a directory that cannot be searched, is listed under
+`unreadable_skipped` and skipped only when the denial is exactly `EACCES` and
+another uid owns it, as with a root-owned 0700 `*.drv.chroot` of a running Nix
+build. That owner is unmapped inside a jail, so no capability a jail regains in
+a nested user namespace reaches it. Search is probed with an errno-preserving
+`O_PATH|O_DIRECTORY` open of `DIR/.`, never `os.access`. Everything else stays
+fatal: content this uid owns but cannot read (a jail runs as this uid and can
+regain owner capabilities over it in a nested user namespace), a searchable
+directory that cannot be listed, and every other errno, including `EIO` at the
+search probe. File types come from an explicit `lstat`. It also
+fails on any store path holding trial content at another revision: a directory or
+store entry named `e1-checked`, or a path whose final components (store hash
+removed) equal a tracked held-out path under `suites/` or `references/`, such
+as `suites/common/<task>.rs`. Writer-visible `rust/` manifests are not path
+rules, since unrelated Rust trees hold `rust/Cargo.lock`. Compressed archives
+are not opened.
 Symlinked store files resolve to other immutable store paths and are visited
 at their regular-file location. A complete run automatically writes and checks
 `store-after.json`. Store errors are fatal. The store-bind experiment is:
@@ -348,11 +413,13 @@ at their regular-file location. A complete run automatically writes and checks
 E1_WITHOUT_STORE_TEST=1 python3 trials/e1-checked/harness_test.py HarnessTests.test_jailed_toolchain_executes_and_links
 ```
 
-It affects this test only; runtime mounts retain the approved store bind.
+It affects this test only and drops the store closure; runtime mounts keep it.
 `harness.py identity OUTPUT --claude /absolute/claude --jobs 1` writes a
 standalone identity. Run state includes toolchain versions, crates tree,
 lockfile/document/driver/std/machinery hashes, measured suite-tree SHA-256,
-kernel, Python, CPU count, jobs and CLI argv template. The suite-tree measure
+kernel, Python, CPU count, jobs, jail limits (pinned Cargo jobs, memory and tmpfs
+caps, CPU weight, the bwrap and systemd-run paths), each arm's store closure
+and CLI argv template. The suite-tree measure
 is not a freeze. Before each writer the clean tree, HEAD, driver/std hashes,
 CLI path/hash/version and model must still match; a change stops the run.
 

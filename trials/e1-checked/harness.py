@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,19 @@ BINS = {"B1", "B2", "B5", "B8"}
 TASKS = [f"{band}{i}" for band in "ABC" for i in range(1, 11)]
 SESSION_SECONDS = 2400
 GRADE_SECONDS = 480
+# The harness pins these for every writer command and grade; nothing comes from the caller.
+CARGO_BUILD_JOBS = "4"
+# Per-jail caps, identical for both arms and stages, above every reference solution's measured peak.
+MEMORY_MAX = 4 << 30
+TMPFS_SIZE = 1 << 30
+# A jail scope is a sibling cgroup of its caller; weight 1 keeps heavy.sh's lowest CPU priority.
+CPU_WEIGHT = 1
+SYSTEM_PATH = "/usr/bin:/bin"
+TIDE_WRAPPER = "use tide_candidate as solution;\n"
+RUST_WRITER_FILES = ["Cargo.toml", "Cargo.lock"]
+TIDE_WRITER_DOCS = ["reference.md", "reference-companion.md"]
+STORE = Path("/nix/store")
+STORE_REFERENCE = re.compile(rb"/nix/store/[0-9a-z]{32}-[0-9A-Za-z+._?=-]+")
 # Freeze with the suites; candidate output never defines acceptance coverage.
 ACCEPTANCE_TESTS = {
     "A1": "case1 case2 case3 case4 case5",
@@ -177,10 +191,74 @@ def offline_vendor(arm, project, channel):
             shutil.rmtree(tmp)
 
 
+def limits():
+    """The jail limits g.identity records."""
+    return {"cargo_build_jobs": CARGO_BUILD_JOBS, "memory_max": MEMORY_MAX, "memory_swap_max": 0,
+            "tmpfs_size": TMPFS_SIZE, "cpu_weight": CPU_WEIGHT, "bwrap": system_tool("bwrap"),
+            "systemd_run": system_tool("systemd-run")}
+
+
+def system_tool(name):
+    # The jail's own PATH has always resolved bwrap here; identities record this same file.
+    path = shutil.which(name, path=SYSTEM_PATH)
+    if path is None: raise ValueError(f"{name} not found in {SYSTEM_PATH}")
+    return path
+
+
+def loader_references(path):
+    """Store paths a file names for loading: an ELF interpreter and run paths, or a script's text."""
+    with open(path, "rb") as stream:
+        head = stream.read(64)
+        if head.startswith(b"#!"):
+            return STORE_REFERENCE.findall(head + stream.read())
+        if not head.startswith(b"\x7fELF\x02\x01") or len(head) < 64:
+            return []
+        phoff, = struct.unpack_from("<Q", head, 0x20)
+        size, count = struct.unpack_from("<HH", head, 0x36)
+        stream.seek(phoff)
+        table = stream.read(size * count)
+        segments = [struct.unpack_from("<IIQQQQ", table, i * size) for i in range(len(table) // size)] if size >= 56 else []
+        found = []
+        for kind, _, offset, _, _, length in segments:
+            stream.seek(offset)
+            if kind == 3:  # PT_INTERP
+                found.append(stream.read(length))
+            elif kind == 2:  # PT_DYNAMIC: DT_STRTAB names the table that DT_RPATH/DT_RUNPATH index.
+                raw = stream.read(length)
+                entries = [struct.unpack_from("<qQ", raw, i) for i in range(0, len(raw) - 15, 16)]
+                table_at = next((value for tag, value in entries if tag == 5), None)
+                base = next((at + table_at - address for k, _, at, address, _, filesz in segments
+                             if k == 1 and table_at is not None and address <= table_at < address + filesz), None)
+                for tag, value in entries:
+                    if tag in (15, 29) and base is not None:
+                        stream.seek(base + value)
+                        found.append(stream.read(4096).split(b"\0", 1)[0])
+        return [match for text in found for match in STORE_REFERENCE.findall(text)]
+
+
+def store_closure(roots):
+    """The Nix-store closure the toolchain files and their loader need; empty without a store."""
+    names = set()
+    for root in map(Path, roots):
+        files = [root] if root.is_file() else (Path(d) / n for d, _, ns in os.walk(root) for n in ns)
+        for path in files:
+            if not path.is_symlink() and path.is_file():
+                names.update(match.decode().split("/")[3] for match in loader_references(path))
+    if not names:
+        return []
+    nix_store = shutil.which("nix-store")
+    if nix_store is None: raise ValueError("toolchain names Nix-store paths, but nix-store is unavailable")
+    closure = subprocess.check_output([nix_store, "--query", "--requisites", *sorted(str(STORE / n) for n in names)],
+                                      stdin=subprocess.DEVNULL, text=True, timeout=60).split()
+    if not closure or any(Path(p).parent != STORE for p in closure):
+        raise ValueError("unexpected Nix-store closure")
+    return sorted(closure)
+
+
 def environment(config, work):
     return {"PATH": f"{config['sysroot']}/bin:/usr/bin:/bin", "HOME": str(work),
             "CARGO_HOME": str(work / "cargo-home"), "TMPDIR": "/tmp" if config["sandbox"] else str(work),
-            "CARGO_TARGET_DIR": str(build_dir(config, work)), "CARGO_BUILD_JOBS": os.environ.get("CARGO_BUILD_JOBS", "6"), "RUST_BACKTRACE": "0"}
+            "CARGO_TARGET_DIR": str(build_dir(config, work)), "CARGO_BUILD_JOBS": CARGO_BUILD_JOBS, "RUST_BACKTRACE": "0"}
 
 
 def build_dir(config, work):
@@ -188,12 +266,13 @@ def build_dir(config, work):
 
 
 def sandbox_command(cmd, config, work, read_only=()):
-    args = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session",
+    args = [system_tool("bwrap"), "--unshare-all", "--die-with-parent", "--new-session",
             "--cap-drop", "ALL", "--proc", "/proc", "--dev", "/dev"]
-    # Opus chose system/store trees to preserve compiler helpers, scripts and symlink chains.
+    # Opus chose system trees to preserve compiler helpers, scripts and symlink chains.
     # Debian's /usr/bin/cc resolves through /etc/alternatives, which holds only symlinks.
-    reads = [Path(config["sysroot"]), Path("/usr"), Path("/etc/alternatives"),
-             Path("/nix/store"), HERE / "doctest-runner.sh"]
+    # Of /nix/store, only the toolchain loader's closure is visible (fx-ic2.8).
+    store = [] if config.get("without_store") else [Path(p) for p in config.get("store_paths", [])]
+    reads = [Path(config["sysroot"]), Path("/usr"), Path("/etc/alternatives"), *store, HERE / "doctest-runner.sh"]
     if config["arm"] == "rust":
         reads.append(Path(config["vendor"]))
     for name in ["/bin", "/lib", "/lib64"]:
@@ -204,10 +283,8 @@ def sandbox_command(cmd, config, work, read_only=()):
             reads.append(path)
     if config["arm"] == "tide":
         reads.extend([Path(config["driver"]), Path(config["std"])] + [Path(p) for p in config["deps"]])
-    if config.get("without_store"):
-        reads.remove(Path("/nix/store"))
     reads.extend(Path(p) for p in read_only)
-    args += ["--tmpfs", "/tmp"]
+    args += ["--size", str(TMPFS_SIZE), "--tmpfs", "/tmp"]
     for path in dict.fromkeys(reads):
         if path.exists(): args += ["--ro-bind", str(path), str(path)]
     return args + ["--bind", str(work), str(work), "--chdir", str(work), "--"] + cmd
@@ -217,6 +294,8 @@ def run(cmd, config, work, *, cwd=None, timeout=120, input=None, env=None, read_
     timeout = min(timeout, config.get("deadline", time.monotonic() + timeout) - time.monotonic())
     if timeout <= 0:
         return {"command": cmd, "code": 124, "stdout": "", "stderr": "whole run time limit exceeded\n"}
+    env = environment(config, work) if env is None else env
+    argv = cmd
     if config["sandbox"]:
         cmd = sandbox_command(cmd, config, work, read_only)
         # bwrap's chdir applies after namespace setup.
@@ -224,10 +303,18 @@ def run(cmd, config, work, *, cwd=None, timeout=120, input=None, env=None, read_
             at = cmd.index("--chdir") + 1
             cmd[at] = str(cwd)
     # Bubblewrap emits exit-code only after successful exec; writer stderr is not a setup verdict.
-    with tempfile.TemporaryFile() as status:
+    with tempfile.TemporaryFile() as status, tempfile.TemporaryDirectory(prefix="e1-limits-") as limit_dir:
         if config["sandbox"]:
             cmd[1:1] = ["--json-status-fd", str(status.fileno())]
-        proc = subprocess.Popen(cmd, cwd=cwd or work, env=environment(config, work) if env is None else env,
+            # One delegated scope per jail; its trusted reporter caps the jail/ leaf and runs the jail with exactly env.
+            (Path(limit_dir) / "env.json").write_text(json.dumps(env))
+            (Path(limit_dir) / "limits.json").write_text(json.dumps({"memory_max": str(MEMORY_MAX), "memory_swap_max": "0"}))
+            argv = [system_tool("systemd-run"), "--user", "--scope", "--quiet", "--collect",
+                    "-p", "Delegate=yes", "-p", "OOMPolicy=continue",
+                    "-p", f"CPUWeight={CPU_WEIGHT}", "--", sys.executable, "-I", str(HERE / "jail_limits.py"),
+                    str(os.getpid()), limit_dir, "--", *cmd]
+            env = {"PATH": SYSTEM_PATH, "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"}
+        proc = subprocess.Popen(argv, cwd=cwd or work, env=env,
                                 stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
                                 pass_fds=(status.fileno(),) if config["sandbox"] else ())
@@ -236,12 +323,35 @@ def run(cmd, config, work, *, cwd=None, timeout=120, input=None, env=None, read_
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGKILL)
             out, err = proc.communicate()
+            # The killed reporter writes no report: a timed-out jail has no memory or CPU record.
             return {"command": cmd, "code": 124, "stdout": out.decode(errors="replace"),
-                    "stderr": err.decode(errors="replace") + "\ntime limit exceeded\n"}
+                    "stderr": err.decode(errors="replace") + "\ntime limit exceeded\n",
+                    **({"memory_events": None} if config["sandbox"] else {})}
         status.seek(0)
         setup_error = config["sandbox"] and re.search(rb'"exit-code"\s*:\s*\d+', status.read()) is None
-    return {"command": cmd, "code": 2 if setup_error else proc.returncode, "infrastructure": setup_error,
-            "stdout": out.decode(errors="replace"), "stderr": err.decode(errors="replace")}
+        result = {"command": cmd, "code": 2 if setup_error else proc.returncode, "infrastructure": setup_error,
+                  "stdout": out.decode(errors="replace"), "stderr": err.decode(errors="replace")}
+        if config["sandbox"]:
+            try: report = json.loads((Path(limit_dir) / "report.json").read_text())
+            except (OSError, ValueError): report = {}
+            # jail_limits.py starts nothing unless these limits were in force (setup_error otherwise).
+            if report.get("memory_max") != str(MEMORY_MAX) or report.get("memory_swap_max") != "0":
+                result.update(code=2, infrastructure=True)
+                result["stderr"] += "\nE1 jail memory limit was not applied\n"
+            else:
+                result["memory_peak"] = report["memory_peak"]
+                result["cpu_usage_usec"] = report["cpu_usage_usec"]
+                result["memory_events"] = {name: report[name] for name in ["max", "oom", "oom_kill"]}
+                if report["oom_kill"] and report["oom"] and report["max"]:
+                    # The jail leaf's own limit was exhausted: a candidate failure in both arms,
+                    # even when the killed child's parent exits 0.
+                    result.update(code=137, infrastructure=False, memory_limit_exceeded=True, observed_exit=proc.returncode)
+                    result["stderr"] += "\nmemory limit exceeded\n"
+                elif report["oom_kill"]:
+                    # A host or ancestor OOM killed a jail process below its own cap: infrastructure.
+                    result.update(code=2, infrastructure=True, external_oom_kill=True, observed_exit=proc.returncode)
+                    result["stderr"] += "\nE1 jail process killed by an OOM outside its own limit\n"
+    return result
 
 
 def package(work, config, candidate, acceptance=False):
@@ -252,7 +362,7 @@ def package(work, config, candidate, acceptance=False):
     entry = "main.rs" if task in BINS else "lib.rs"
     (dest / "src" / entry).write_text(candidate)
     if arm == "rust":
-        for name in ["Cargo.toml", "Cargo.lock"]:
+        for name in RUST_WRITER_FILES:
             shutil.copyfile(HERE / "rust" / name, dest / name)
         (dest / ".cargo").mkdir()
         (dest / ".cargo/config.toml").write_text('[source.crates-io]\nreplace-with="vendored-sources"\n[source.vendored-sources]\ndirectory=' + json.dumps(config["vendor"]) + '\n')
@@ -280,7 +390,8 @@ def tide_artifacts(config):
 def tide_library_boundary(config, work, pkg, *, link):
     entry = work / "suite/src/lib.rs"
     entry.parent.mkdir(parents=True)
-    entry.write_text("extern crate tide_candidate as solution;\n" + suite(config["task"], "tide"))
+    # The driver passes the candidate as extern `tide_candidate`; `extern crate` is FX0912 (reference 12.2).
+    entry.write_text(TIDE_WRAPPER + suite(config["task"], "tide"))
     out = work / "output/test-acceptance"
     built = run([config["driver"], "--edition=2024", "--test", "--crate-name=acceptance",
                  "--emit=" + ("link" if link else "metadata"), *tide_artifacts(config),
@@ -410,11 +521,11 @@ def prepare(task, arm, dest, config, reference=False, session=None):
     (dest / "src").mkdir()
     (dest / "prompt.md").write_text(task_text(task, arm))
     if arm == "tide":
-        for name in ["reference.md", "reference-companion.md"]:
+        for name in TIDE_WRITER_DOCS:
             shutil.copyfile(ROOT / "design" / name, dest / name)
         (dest / "tide.toml").write_text('[package]\nname="e1/solution"\nversion="0.0.0"\ngrants=[]\n')
     else:
-        for name in ["Cargo.toml", "Cargo.lock"]:
+        for name in RUST_WRITER_FILES:
             shutil.copyfile(HERE / "rust" / name, dest / name)
     entry = dest / ("src/main.rs" if task in BINS else "src/lib.rs")
     entry.write_text(source(task, arm).read_text() if reference else "")
@@ -542,7 +653,7 @@ def base_config(arm, local=False):
         # As rustup's proxy does: build scripts put rustlib/<target>/lib first, whose
         # rustc-dev copy of librustc_driver finds libLLVM only through <sysroot>/lib.
         build_env = {"PATH": config["sysroot"] + "/bin:/usr/bin:/bin", "HOME": str(STATE),
-                     "CARGO_HOME": str(STATE / "cargo-home"), "TMPDIR": str(STATE), "CARGO_BUILD_JOBS": os.environ.get("CARGO_BUILD_JOBS", "6"),
+                     "CARGO_HOME": str(STATE / "cargo-home"), "TMPDIR": str(STATE), "CARGO_BUILD_JOBS": CARGO_BUILD_JOBS,
                      "LD_LIBRARY_PATH": config["sysroot"] + "/lib"}
         built = subprocess.run([config["sysroot"] + "/bin/cargo", "build", "--offline", "--locked",
                                 "-p", "tide-admit", "-p", "tide_std", "--target-dir", str(ROOT / "target"),
@@ -562,6 +673,9 @@ def base_config(arm, local=False):
                     if obj["target"]["name"] == "tide_std": config["std"] = file
                     else: deps.add(str(Path(file).parent))
         config["deps"] = sorted(deps)
+    if not local:
+        roots = [config["sysroot"]] + ([config["driver"], config["std"], *config["deps"]] if arm == "tide" else [])
+        config["store_paths"] = store_closure(roots)
     return config
 
 

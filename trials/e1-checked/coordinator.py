@@ -346,7 +346,7 @@ def run_writer(session, cli, model, dry=False, seconds=None, prompt=None, probe=
     home = session / "config-home"
     home.mkdir()
     env = {"HOME": str(home), "CLAUDE_CONFIG_DIR": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-           "DISABLE_AUTOUPDATER": "1", "MAX_MCP_OUTPUT_TOKENS": "2000000", "CARGO_BUILD_JOBS": "4"}
+           "DISABLE_AUTOUPDATER": "1", "MAX_MCP_OUTPUT_TOKENS": "2000000"}
     for key in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]:
         if key in os.environ: env[key] = os.environ[key]
     argv = ([sys.executable, str(h.HERE / "standin.py"), str(session), str(mcp)] if dry

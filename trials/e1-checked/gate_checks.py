@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Gate identities, content-only store scan and fail-closed jail canaries."""
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -34,12 +36,12 @@ def digest(path):
 
 
 def revision():
-    names = ["harness.py", "doctest-runner.sh", "broker.py", "coordinator.py", "gate_checks.py", "standin.py", "writer_guard.py"]
+    names = ["harness.py", "doctest-runner.sh", "broker.py", "coordinator.py", "gate_checks.py", "standin.py", "writer_guard.py", "jail_limits.py"]
     return {name: digest(h.HERE / name) for name in names}
 
 
 def canary_key():
-    return {"harness": revision(), "bwrap": output(["bwrap", "--version"]),
+    return {"harness": revision(), "bwrap": output([h.system_tool("bwrap"), "--version"]),
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip()}
 
 
@@ -63,6 +65,7 @@ def identity(configs, cli, model=MODEL, jobs=1):
     record = {"cheap": cheap(configs, cli, model), "crates_tree": output(["git", "rev-parse", "HEAD:crates"]),
               "nightly": h.NIGHTLY, "harness": revision(), "host": canary_key(),
               "kernel": platform.release(), "python": sys.version, "cpus": os.cpu_count(), "jobs": jobs,
+              "jail_limits": h.limits(), "store_closure": {arm: config["store_paths"] for arm, config in configs.items()},
               "effort": "default (flag not passed)", "files": {}, "toolchains": {},
               "seed": SEED, "order_hash": order_hash(order()),
               "writer_argv_template": writer_argv(cli, model, Path("SESSION/mcp.json")),
@@ -83,30 +86,79 @@ def identity(configs, cli, model=MODEL, jobs=1):
     return record
 
 
-def store_scan(store=Path("/nix/store"), tracked=None):
+def writer_visible(path, trial=h.HERE):
+    """Files every writer receives or that carry no trial content; byte matches on them prove nothing."""
+    path = Path(path)
+    return (path.name == ".gitignore" or path.stat().st_size == 0
+            or path in {trial / "rust" / name for name in h.RUST_WRITER_FILES}
+            or path in {h.ROOT / "design" / name for name in h.TIDE_WRITER_DOCS})
+
+
+def store_scan(store=h.STORE, tracked=None, trial=h.HERE):
+    """Flag store files byte-identical to held-out trial/design files, and any store path holding
+    trials/e1-checked content at any revision: an e1-checked directory, or a path ending in a
+    tracked held-out path (suites/... or references/...). Writer-visible files are not byte-matched
+    (unrelated trees hold copies of them). A store file that cannot be opened, or a directory that
+    cannot be searched, is recorded and skipped only when the denial is exactly EACCES and another uid
+    owns it (such as a root-owned 0700 Nix build chroot): that owner is unmapped in a jail, so no
+    nested user namespace regains access. Content this uid owns but cannot read is fatal, since a jail
+    can regain owner capabilities over it; so are a searchable directory that cannot be listed and
+    every other error."""
     if tracked is None:
         names = output(["git", "ls-files", "--", "trials/e1-checked", "design"]).splitlines()
         tracked = [h.ROOT / name for name in names]
-    sizes = {}
+    sizes, suffixes = {}, set()
     for path in tracked:
-        sizes.setdefault(path.stat().st_size, {}).setdefault(digest(path), []).append(str(path))
-    matches, checked, sized = [], 0, 0
-    def fail(error):
+        if not writer_visible(path, trial):
+            sizes.setdefault(path.stat().st_size, {}).setdefault(digest(path), []).append(str(path))
+        if path.is_relative_to(trial) and path.relative_to(trial).parts[0] in {"suites", "references"}:
+            suffixes.add(path.relative_to(trial).parts)
+    lengths = {len(parts) for parts in suffixes}
+    matches, checked, sized, holders, unreadable = [], 0, 0, {}, []
+    def foreign_denial(error, owner):
+        return error.errno == errno.EACCES and owner != os.getuid()
+    def search_denied(directory):
+        # An errno-preserving search probe (os.access would turn EIO into "denied").
+        try: os.close(os.open(os.path.join(directory, "."), os.O_PATH | os.O_DIRECTORY))
+        except OSError as error:
+            if foreign_denial(error, os.lstat(directory).st_uid): return True
+            raise
+        return False
+    def listing_failed(error):
+        if isinstance(error, PermissionError) and search_denied(error.filename):
+            unreadable.append(error.filename); return
         raise error
-    for directory, _, files in os.walk(store, onerror=fail):
+    for directory, dirs, files in os.walk(store, onerror=listing_failed):
+        relative = Path(directory).relative_to(store).parts
+        # Compare names without the store hash, so a copy at another revision still matches.
+        named = relative[:1] and (relative[0].partition("-")[2] or relative[0],) + relative[1:]
+        for name in dirs + files:
+            parts = named + (name,) if named else ((name.partition("-")[2] or name),)
+            if parts[-1] == "e1-checked" or any(parts[-n:] in suffixes for n in lengths):
+                entry = str(store / (relative[0] if relative else name))
+                holders.setdefault(entry, "/".join(parts))
+        if search_denied(directory):  # Listable names, but nothing inside can be opened.
+            unreadable.append(directory); dirs[:] = []; continue
         for name in files:
             path = Path(directory) / name
-            if path.is_symlink() or not path.is_file():
-                continue
+            # Explicit lstat: Path.is_file() would swallow EIO and silently skip the file.
+            info = os.lstat(path)
+            if stat.S_ISLNK(info.st_mode): continue  # Store symlinks resolve to paths visited directly.
+            if stat.S_ISDIR(info.st_mode): raise OSError(f"store directory was not walked: {path}")
+            if not stat.S_ISREG(info.st_mode): continue
             sized += 1
-            options = sizes.get(path.stat().st_size)
+            options = sizes.get(info.st_size)
             if options:
                 checked += 1
-                matching = options.get(digest(path))
+                try: matching = options.get(digest(path))
+                except PermissionError as error:
+                    if not foreign_denial(error, info.st_uid): raise
+                    unreadable.append(str(path)); continue
                 if matching:
                     matches.append({"store": str(path), "tracked": matching})
+    matches += [{"store": entry, "trial_path": path} for entry, path in sorted(holders.items())]
     return {"store": str(store), "exists": store.exists(), "files_sized": sized,
-            "files_hashed": checked, "matches": matches, "passed": not matches}
+            "files_hashed": checked, "unreadable_skipped": sorted(unreadable), "matches": matches, "passed": not matches}
 
 
 # Open held-out paths without reading a byte. Only planted controls have their bytes checked.
@@ -140,8 +192,10 @@ tmpfs = any(line.split()[4] == os.environ['TMPDIR'] and line.split(' - ')[1].spl
 with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as fixture:
     Path(fixture, 'fixture-control').write_text('ok')
     tmpfs = tmpfs and Path(fixture).is_relative_to('/tmp')
+size = os.statvfs('/tmp')
 print(json.dumps({'sentinel': 'E1-CANARY', 'checks': checks,
- 'positive': Path('inside').read_text() == spec['token'] and local, 'tmpfs': tmpfs}))
+ 'positive': Path('inside').read_text() == spec['token'] and local, 'tmpfs': tmpfs,
+ 'tmpfs_bytes': size.f_blocks * size.f_frsize}))
 '''
 
 
@@ -160,6 +214,11 @@ def canary(arm, config):
                  "suite": h.HERE / "suites/common/A2.rs", "reference": h.source("A2", arm),
                  "task": h.HERE / "tasks.md", "other_session": other / "secret",
                  "sessions": other}
+        # A store entry outside the toolchain closure must be invisible, as any older trial copy is.
+        closure = set(config.get("store_paths", []))
+        outside = next((h.STORE / name for name in sorted(os.listdir(h.STORE)) if not name.startswith(".")
+                        and str(h.STORE / name) not in closure), None) if h.STORE.is_dir() else None
+        if outside is not None: paths["store_outside_closure"] = outside
         # Host controls prove both host loopback and an address beyond loopback are reachable.
         with socket.socket() as loop, socket.socket() as lan, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
             route.connect(("192.0.2.1", 9))
@@ -182,17 +241,18 @@ def canary(arm, config):
                     raw = json.loads(result["stdout"])
                     expected = set(paths) | set(spec["addresses"]) | {"environment", "dns"}
                     if (result["code"] or token in result["stdout"] or raw["sentinel"] != "E1-CANARY"
-                        or not raw["positive"] or not raw["tmpfs"] or set(raw["checks"]) != expected
+                        or not raw["positive"] or not raw["tmpfs"] or raw.get("tmpfs_bytes") != h.TMPFS_SIZE
+                        or set(raw["checks"]) != expected
                         or any(raw["checks"].values())):
                         raise ValueError(f"{arm}/{shape} isolation canary failed: {result}")
                     outside_env = dict(os.environ, **h.environment(dict(config, sandbox=False), work))
                     control = h.run(cmd, dict(config, sandbox=False), work, timeout=15, env=outside_env)
-                    outside = json.loads(control["stdout"])
-                    if (control["code"] or token in control["stdout"] or not outside["positive"]
-                        or set(outside["checks"]) != expected or not all(outside["checks"].values())):
+                    control_raw = json.loads(control["stdout"])
+                    if (control["code"] or token in control["stdout"] or not control_raw["positive"]
+                        or set(control_raw["checks"]) != expected or not all(control_raw["checks"].values())):
                         raise ValueError(f"{arm}/{shape} negative control failed: {control}")
                 finally:
                     if previous is None: os.environ.pop("E1_CANARY_SECRET", None)
                     else: os.environ["E1_CANARY_SECRET"] = previous
-                records.append({"shape": shape, **raw, "negative_control": outside})
+                records.append({"shape": shape, **raw, "negative_control": control_raw})
     return {"arm": arm, "key": canary_key(), "passed": True, "records": records}
