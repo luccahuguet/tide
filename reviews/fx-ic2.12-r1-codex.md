@@ -1,0 +1,25 @@
+Model: gpt-6.1-sol · Effort: high · Date: 2026-11-14
+Verdict: request_changes
+
+1. **blocking — A determinism failure satisfies `#[should_panic]`.** `crates/tide-std/src/sim/runner.rs:36` and `crates/tide-std/src/test/runner.rs:345`.
+
+   A body can return normally on every evaluation, produce different sink records on replay, and still pass a bare `#[should_panic]` simulation. The self-check converts the mismatch into `Failure::Exit`; `Failure::report` panics with `property returned a failing exit status`. The child's libtest accepts that harness panic, and the parent sees a successful child plus a failed-seed summary and panics too. Both layers therefore report success despite detecting nondeterminism and observing no body panic. An expected panic from an earlier seed can also mask a later self-check failure because only `first_failure` is re-raised.
+
+   Probe: `codex-r1/verdict.rs`, test `nondeterminism_without_user_panic`, calls the same runtime entry/configuration emitted by the macro. Its body creates a simulation, writes an incrementing atomic counter to the simulated sink, and returns `Ok(())`. `verdict.log` records `simulation nondeterminism seed=0`, `cause: determinism self-check failed`, then `test nondeterminism_without_user_panic - should panic ... ok`. The body has no panic. Keep self-check failures separate from expected body panics and make any self-check failure fail the outer test, including after an earlier expected panic. Add this case to the regression test.
+
+2. **blocking — Failure to launch the child passes a quiet panic test.** `crates/tide-std/src/sim/runner.rs:22`.
+
+   `child(...).expect(...)` runs before the new `should_panic` handling. A process/pipe creation error therefore panics in the parent, which bare `#[should_panic]` accepts without executing any seed. This defeats the intended protection against infrastructure failures counting as expected panics.
+
+   Probe: `codex-r1/final_probes.py` admits this complete source through the candidate driver: `#[sim_test(seeds = 1)] #[should_panic] fn quiet(sim: std::sim::SimRoot) { let _ = sim; }`. It runs the resulting executable with `RLIMIT_NOFILE=6`. `final-probes.log` shows `could not run simulation child: ... TooManyOpenFiles`, followed by `test quiet - should panic ... ok`, exit 0. Under normal descriptor limits the equivalent quiet test correctly fails (`verdict.log`). Handle `child()` errors without panicking when `config.should_panic` is set, as already done for timeout/signal/missing-summary verdicts, and test this path.
+
+Reviewed frozen HEAD `48b179d15f0a23ba4bbc6aee8f2deaf43026da1f`, tree `618c2d2eebd095fd89b162044f894c81d0224989`, against `206b4ac`. Confidence: high. The candidate stayed clean and unchanged; all writes were to the authorized report/scratch locations. All builds and executions used heavy.sh serially, with load1 below 12 when submitted, closed stdin, bounded runtimes and four test threads.
+
+Other verification: six focused driver tests passed in an unchanged scratch copy (`focused.log`). The new trace unit test passed, and the conformance stub compiled (`trace-test.log`, `stub-check.log`). The differential scheduler probe exercised every Operation variant and every tail variant, cell-set mutation after recording, deadlines, deadlock, channel variants, raw sink bytes and escaped text: 221 lines were byte-identical to the base implementation. 181 first-difference comparisons matched the old string algorithm, including missing records, and distinct records rendering identical text compared equal (`trace.log`). Equal records render identical text because rendering uses only captured record fields; differing records receive the text fallback.
+
+Cfg probes passed with `deny(unexpected_cfgs)`: the flag was present in the paired library, absent from the suite and ordinary production build, writer `cfg(test)` code stayed disabled, and ordinary sampled clauses remained unchecked. The driver rejected caller-supplied `--cfg`; a paired-library `#[pure]` violation still failed with FX0511 (`final-probes.log`). Existing paired-library tests also retained downstream Pure enforcement. Inspection confirms std/real dependency artifacts are loaded without recompilation, and the cfg changes neither admission callbacks, mono-item checks nor trust-artifact emission.
+
+Mutation checks discriminate: setting `tested_library` back to false failed the new sampled-clause test; removing the parent `should_panic` branch failed the new panic test (`mutant-library.log`, `mutant-panic.log`). Both scratch mutations were restored. Matching payloads and requires failures passed; quiet bodies, wrong messages, aborts and missing summaries failed. A scratch copy shortening only the 300-second timeout to 100 milliseconds also correctly failed a timed-out panic test (`timeout.log`).
+
+Not checked: full workspace/conformance suites, the E1 harness or held-out material, as instructed. The reported remaining acceptance timeout was not independently remeasured; this verdict reviews the authorized partial-progress candidate.
+DONE

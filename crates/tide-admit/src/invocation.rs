@@ -123,6 +123,9 @@ struct Invocation {
     kind: String,
     test: bool,
     test_library: Option<PathBuf>,
+    /// The library a `--tide-test-library` suite tests: its contracts run as in a test build
+    /// (`--cfg __tide_test_library`) while `cfg(test)` stays off.
+    tested_library: bool,
     link: bool,
     profile: String,
     grants: Grants,
@@ -311,6 +314,9 @@ impl Invocation {
         if self.test {
             args.push("--test".into());
         }
+        if self.tested_library {
+            args.extend(["--cfg".into(), "__tide_test_library".into()]);
+        }
         if let Some(std) = &self.std {
             // Tide pins its prelude's Truncate alongside core's unstable inherent truncate.
             // At a pin bump, delete Truncate if core's truncate has stabilized; rebuild the
@@ -457,6 +463,7 @@ impl Invocation {
             // The downstream mono-item backstop needs the rlib's export and MIR metadata.
             link: true,
             profile: self.profile.clone(),
+            tested_library: true,
             ..Invocation::default()
         };
         let library_package = library.package_root(cwd)?;

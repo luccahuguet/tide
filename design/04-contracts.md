@@ -497,7 +497,7 @@ rule CLAUSE-*n*.
 
    Implementation choices recorded on fx-mhd (research/18):
 
-   - Test builds mean `cfg!(test)` in the clause's defining crate; sampled clauses in dependencies are recorded as unchecked when encountered.
+   - Test builds mean `cfg!(test)` in the clause's defining crate, or (fx-ic2.12) that crate admitted as the library of a `--tide-test-library` suite; sampled clauses in other dependencies are recorded as unchecked when encountered.
    - The fixed v0 budget is 10,000 quantifier binder values per evaluation, including nested quantifiers; manifest configuration is planned.
    - Std owns structured violation and unchecked records; runner integration and printing of unchecked clauses are planned.
    - Sampled invariants use §2.4's heads 1–64, 128, 256, and so on.

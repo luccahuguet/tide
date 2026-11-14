@@ -11,6 +11,7 @@ use std::time::Duration;
 mod scheduler {
     include!("task/scheduler.rs");
 }
+pub(crate) use scheduler::Trace;
 use scheduler::{Operation, Pending, Scheduler, Span, TaskId};
 mod limit {
     include!("task/limit.rs");
@@ -190,7 +191,7 @@ impl Runtime {
             }
             if !baton.scheduler.advance(task, pending) {
                 let report = baton.scheduler.deadlock(task, pending);
-                fatal_simulation(&report, &baton.scheduler.trace);
+                fatal_simulation(&report, &baton.scheduler.trace());
             }
             while let Some((class, id)) = self.baton.as_mut().unwrap().scheduler.fire_timer() {
                 if class == 0 {
@@ -1013,8 +1014,17 @@ impl Tasks {
             .as_ref()
             .unwrap()
             .scheduler
-            .trace
-            .clone()
+            .trace()
+    }
+
+    /// Moves the trace out as data, for the runner's determinism check and failure report.
+    pub(crate) fn sim_take_trace(&self) -> Trace {
+        sim_lock(self.simulation.as_ref().unwrap().lock())
+            .baton
+            .as_mut()
+            .unwrap()
+            .scheduler
+            .take_trace()
     }
 
     pub(crate) fn sim_records(&self) -> Vec<crate::sim::Record> {

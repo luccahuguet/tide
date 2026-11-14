@@ -192,7 +192,7 @@ enum Outcome {
 }
 struct Evaluation {
     outcome: Outcome,
-    trace: Option<String>,
+    trace: crate::task::Trace,
 }
 impl Evaluation {
     fn signature(&self) -> String {
@@ -235,7 +235,10 @@ fn evaluate(
     let result = panic::catch_unwind(AssertUnwindSafe(|| body(&mut generator)));
     let location = CAPTURE.replace(previous).flatten();
     let violation = __contract::take_violation();
-    let trace = generator.simulation.as_ref().map(|tasks| tasks.sim_trace());
+    let trace = generator
+        .simulation
+        .as_ref()
+        .map_or_else(Default::default, |tasks| tasks.sim_take_trace());
     let outcome = if generator.replay_overrun {
         Outcome::Passed
     } else {
@@ -313,6 +316,8 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
     let mut generated = 0;
     let mut failures = 0;
     let mut first_failure = None;
+    // A failing case that did not panic: a returned error or a failed determinism self-check.
+    let mut unpanicked = false;
     let mut rejections: Vec<(Clause, u64)> = Vec::new();
     for index in 0..limit {
         if accepted == cases {
@@ -329,11 +334,8 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
         let mut evaluation = evaluate(seed, None, config, &mut body);
         if config.simulation && (index == 0 || matches!(evaluation.outcome, Outcome::Failed(_))) {
             let again = evaluate(seed, None, config, &mut body);
-            let difference = crate::sim::runner::first_difference(
-                evaluation.trace.as_deref().unwrap_or(""),
-                again.trace.as_deref().unwrap_or(""),
-            );
-            if let Some((line, a, b)) = difference {
+            let difference = evaluation.trace.first_difference(&again.trace);
+            if let Some((line, a, b)) = &difference {
                 eprintln!(
                     "simulation nondeterminism seed={seed}: first differing trace line {line}\n  first: {a:?}\n  second: {b:?}"
                 );
@@ -371,7 +373,7 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
                 eprintln!("  replay: {seed_var}={seed} '{executable}' --exact {name}");
                 if config.simulation {
                     eprintln!("simulation failure seed={seed} test={name}");
-                    eprint!("{}", evaluation.trace.as_deref().unwrap_or(""));
+                    eprint!("{}", evaluation.trace.render());
                 }
                 let mut shrinker = Shrinker {
                     seed,
@@ -400,11 +402,22 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
                                 .unwrap_or("non-string panic")
                         ),
                     }
+                    unpanicked |= matches!(failure, Failure::Exit(_));
                     if first_failure.is_none() {
                         first_failure = Some(failure);
                     }
                 } else {
-                    shrinker.best.failure.report();
+                    let failure = shrinker.best.failure;
+                    if config.should_panic
+                        && let Failure::Exit(message) = &failure
+                    {
+                        eprintln!("  cause: {message}");
+                        eprintln!(
+                            "property {name}: the failing case did not panic; should_panic not satisfied"
+                        );
+                        return;
+                    }
+                    failure.report();
                 }
             }
         }
@@ -414,6 +427,14 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
             "simulation {name}: {} passed; {failures} failed ({generated} seeds)",
             accepted - failures
         );
+        if unpanicked && config.should_panic {
+            // A returned error or failed self-check is a failure, not the expected panic, and
+            // another seed's panic does not excuse it. Returning fails the test as "did not panic".
+            eprintln!(
+                "simulation {name}: a failing seed did not panic; should_panic not satisfied"
+            );
+            return;
+        }
         failure.report();
     }
     if accepted != cases {

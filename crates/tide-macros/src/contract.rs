@@ -75,7 +75,8 @@ impl Clause {
     }
     fn enabled(&self) -> TS {
         if self.sampled {
-            quote!(::core::cfg!(debug_assertions) && ::core::cfg!(test))
+            let test = test_build();
+            quote!(::core::cfg!(debug_assertions) && #test)
         } else {
             quote!(::core::cfg!(debug_assertions))
         }
@@ -85,7 +86,8 @@ impl Clause {
         let helper = Ident::new(self.kind, Span::mixed_site());
         let enabled = self.enabled();
         let skip = if self.sampled {
-            quote!(if ::core::cfg!(debug_assertions) && !::core::cfg!(test) {
+            let test = test_build();
+            quote!(if ::core::cfg!(debug_assertions) && !#test {
                 ::std::__contract::unchecked(#metadata, "sampled clause outside test crate");
             })
         } else {
@@ -93,6 +95,12 @@ impl Clause {
         };
         quote! { if (#enabled) && (#schedule) { ::std::__contract::#helper(#metadata, || #expr); } #skip }
     }
+}
+
+/// A test build: the crate under test, or the library a `--tide-test-library` suite tests,
+/// which the driver compiles with `--cfg __tide_test_library` instead of `cfg(test)`.
+fn test_build() -> TS {
+    quote!((::core::cfg!(test) || ::core::cfg!(__tide_test_library)))
 }
 
 fn source(tokens: &TS, span: Span) -> String {
@@ -979,7 +987,8 @@ impl Loops<'_> {
                 quote!(::std::__contract::sampled_head(#head))
             } else if range {
                 let r = Ident::new("__tide_range", Span::mixed_site());
-                quote!(::core::cfg!(test) || #head == 1 || #r.start >= #r.end)
+                let test = test_build();
+                quote!(#test || #head == 1 || #r.start >= #r.end)
             } else {
                 quote!(true)
             };

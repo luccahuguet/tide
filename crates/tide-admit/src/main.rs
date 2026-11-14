@@ -8,7 +8,8 @@
 //! Root naming and whole-value use (`FX0503`), simulation outside test code (`FX0504`), and
 //! handle creation missing its final `&Tasks` (`FX0505`). Ordinary functions in a `--test`
 //! build remain production code unless nested under a test or a test-only cfg. A separate
-//! `--tide-test-library` suite is test code; its candidate library is checked as production.
+//! `--tide-test-library` suite is test code; its candidate library is checked as production,
+//! with `cfg(test)` off, but its contracts run as in a test build.
 //! `walk/habits.rs` and the policy table reject async/await and future/pin APIs (`FX0601`),
 //! unstructured spawning (`FX0602`), Mutex/RwLock habits (`FX0604`), select! (`FX0605`),
 //! catch_unwind (`FX0701`), and Results ignored in statement position (`FX0702`). Explicit

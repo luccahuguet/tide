@@ -215,6 +215,8 @@ and it imports the library as `tide_candidate` under Rust's crate visibility
 rules. The driver admits both crates without grants and builds a fresh library
 archive in private staging. Metadata mode checks the suite and `--emit=link`
 publishes the test executable. The pair publishes no library or trust artifact.
+The library is built without `cfg(test)`, but its contracts run as in a test
+build, sampled clauses included.
 A suite's property tests generate the suite's own types and any library type
 for which the library implements `std::test::Arbitrary`. A property over
 another library type is an error.

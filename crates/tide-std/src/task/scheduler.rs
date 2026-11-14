@@ -44,6 +44,7 @@ pub(super) enum Operation {
     Arc(&'static str, usize),
 }
 
+#[derive(Clone, PartialEq)]
 pub(super) enum ChannelEvent {
     New(Option<usize>),
     Result {
@@ -61,6 +62,179 @@ pub(super) enum ChannelEvent {
 pub(super) struct Pending {
     pub(super) operation: Operation,
     pub(super) span: Span,
+}
+
+// One trace line kept as data: recording copies a few words, and the NDJSON text is written
+// only when the trace is read. `render` is a pure function of the record, so equal records
+// render equal lines, and the determinism check compares records before any text.
+#[derive(Clone, PartialEq)]
+struct Record {
+    step: usize,
+    time: Duration,
+    task: TaskId,
+    kind: &'static str,
+    pending: Pending,
+    // The task's cell set when the record was made, for `cells_acquire`.
+    targets: Option<Box<[usize]>>,
+    wait: Option<&'static str>,
+    tail: Tail,
+}
+
+// Fields after the common ones, before the record's closing brace.
+#[derive(Clone, PartialEq)]
+enum Tail {
+    None,
+    Text(&'static str),
+    Owned(String),
+    Sched {
+        runnable: Vec<TaskId>,
+        chosen: TaskId,
+    },
+    Advance {
+        from: Duration,
+        to: Duration,
+    },
+    Channel(ChannelEvent),
+    Sink {
+        stream: &'static str,
+        message: Vec<u8>,
+    },
+}
+
+impl Record {
+    fn render(&self, out: &mut String) {
+        write!(
+            out,
+            "{{\"step\":{},\"time\":{},\"task\":{},\"kind\":\"{}\"",
+            self.step,
+            self.time.as_nanos(),
+            self.task,
+            self.kind,
+        )
+        .unwrap();
+        operation(out, self.pending, self.targets.as_deref().unwrap_or(&[]));
+        match self.wait {
+            Some(wait) => write!(out, ",\"wait\":\"{wait}\"").unwrap(),
+            None => out.push_str(",\"wait\":null"),
+        }
+        if let Operation::Deadline(_, at) | Operation::SetDeadline(_, at) = self.pending.operation {
+            write!(out, ",\"until\":{}", at.as_nanos()).unwrap();
+        }
+        if matches!(self.pending.operation, Operation::Isolated(_)) {
+            out.push_str(",\"isolated\":true");
+        }
+        if self.kind == "cap" {
+            let extra = match self.pending.operation {
+                Operation::ClockNow => write!(out, ",\"result\":{}", self.time.as_nanos()),
+                Operation::ClockSystemTime(reading) => {
+                    write!(out, ",\"result\":{}", reading.as_nanos())
+                }
+                Operation::Sleep {
+                    until: Some(until), ..
+                } => write!(out, ",\"until\":{}", until.as_nanos()),
+                Operation::Sleep { until: None, .. } => write!(out, ",\"until\":null"),
+                _ => Ok(()),
+            };
+            extra.unwrap();
+        }
+        match &self.tail {
+            Tail::None => {}
+            Tail::Text(text) => out.push_str(text),
+            Tail::Owned(text) => out.push_str(text),
+            Tail::Sched { runnable, chosen } => {
+                out.push_str(",\"runnable\":[");
+                for (index, id) in runnable.iter().enumerate() {
+                    let comma = if index == 0 { "" } else { "," };
+                    write!(out, "{comma}{id}").unwrap();
+                }
+                write!(out, "],\"chosen\":{chosen}").unwrap();
+            }
+            Tail::Advance { from, to } => write!(
+                out,
+                ",\"from\":{},\"to\":{}",
+                from.as_nanos(),
+                to.as_nanos()
+            )
+            .unwrap(),
+            Tail::Channel(event) => match event {
+                ChannelEvent::New(bound) => match bound {
+                    Some(bound) => write!(out, ",\"bound\":{bound}").unwrap(),
+                    None => out.push_str(",\"bound\":null"),
+                },
+                ChannelEvent::Result { result, until, .. } => {
+                    if let Some(until) = until {
+                        write!(out, ",\"until\":{}", until.as_nanos()).unwrap();
+                    }
+                    out.push_str(",\"result\":");
+                    quoted(out, result);
+                }
+                ChannelEvent::Close { end, senders } => {
+                    out.push_str(",\"end\":");
+                    quoted(out, end);
+                    if let Some(senders) = senders {
+                        write!(out, ",\"senders\":{senders}").unwrap();
+                    }
+                }
+            },
+            Tail::Sink { stream, message } => {
+                out.push_str(",\"stream\":");
+                quoted(out, stream);
+                out.push_str(",\"message\":");
+                quoted(out, &String::from_utf8_lossy(message));
+                // Preserve raw bytes as well: lossy display must not erase replay differences.
+                write!(out, ",\"bytes\":{:?}", &message[..]).unwrap();
+            }
+        }
+        out.push_str("}\n");
+    }
+}
+
+/// A simulation's trace as data: NDJSON with one line per record, written on demand.
+#[derive(Default)]
+pub(crate) struct Trace(Vec<Record>);
+
+fn render(records: &[Record]) -> String {
+    let mut out = String::new();
+    for record in records {
+        record.render(&mut out);
+    }
+    out
+}
+
+impl Trace {
+    pub(crate) fn render(&self) -> String {
+        render(&self.0)
+    }
+
+    /// The first line, numbered from 1, whose text differs between two traces, with both lines
+    /// (`<end of trace>` past either end). Records are compared first; text only where they
+    /// differ, so the answer is the one a comparison of the rendered traces gives.
+    pub(crate) fn first_difference(&self, other: &Self) -> Option<(usize, String, String)> {
+        let line = |record: Option<&Record>| {
+            record.map_or_else(
+                || "<end of trace>".to_owned(),
+                |record| {
+                    let mut out = String::new();
+                    record.render(&mut out);
+                    out
+                },
+            )
+        };
+        let (mut first, mut second) = (self.0.iter(), other.0.iter());
+        for number in 1.. {
+            match (first.next(), second.next()) {
+                (None, None) => return None,
+                (a, b) if a == b => {}
+                (a, b) => {
+                    let (a, b) = (line(a), line(b));
+                    if a != b {
+                        return Some((number, a, b));
+                    }
+                }
+            }
+        }
+        unreachable!()
+    }
 }
 
 enum State {
@@ -101,7 +275,7 @@ pub(super) struct Scheduler {
     fs_rng: u64,
     net_rng: u64,
     step: usize,
-    pub(super) trace: String,
+    events: Vec<Record>,
     sink_events: Vec<(&'static str, Vec<u8>, Duration)>,
     // Virtual time moves only in `pick`, when no task is runnable.
     pub(super) now: Duration,
@@ -129,7 +303,7 @@ impl Scheduler {
             fs_rng: seed ^ 0x7469_6465_6669_6c65,  // "tidefile"
             net_rng: seed ^ 0x7469_6465_6e65_7421, // "tidenet!"
             step: 0,
-            trace: String::new(),
+            events: Vec::new(),
             sink_events: Vec::new(),
             now: Duration::ZERO,
             timers: BTreeMap::new(),
@@ -161,13 +335,21 @@ impl Scheduler {
             } else {
                 Operation::CellRelease(id)
             };
-            self.event(task, Pending { operation, span }, "cell", None);
-            self.trace.push_str("}\n");
+            self.event(task, Pending { operation, span }, "cell", None, Tail::None);
             self.step = step;
         }
         if recorded {
             self.step += 1;
         }
+    }
+
+    /// The trace as NDJSON text.
+    pub(super) fn trace(&self) -> String {
+        render(&self.events)
+    }
+
+    pub(super) fn take_trace(&mut self) -> Trace {
+        Trace(std::mem::take(&mut self.events))
     }
 
     /// Simulated wall time, as an offset from the Unix epoch.
@@ -210,8 +392,13 @@ impl Scheduler {
     /// timer waited, so the tasks that keep running are holding virtual time still.
     pub(super) fn point(&mut self, task: TaskId, pending: Pending) -> Result<(), String> {
         self.tasks[task].state = State::Ready(Some(pending));
-        self.event(task, pending, pending.operation.kind(), Some("ready"));
-        self.trace.push_str("}\n");
+        self.event(
+            task,
+            pending,
+            pending.operation.kind(),
+            Some("ready"),
+            Tail::None,
+        );
         if !self.has_operation_timer() {
             return Ok(());
         }
@@ -250,8 +437,13 @@ impl Scheduler {
             self.timers.insert(key, task);
             self.tasks[task].timer = Some(key);
         }
-        self.event(task, pending, pending.operation.kind(), Some("blocked"));
-        self.trace.push_str("}\n");
+        self.event(
+            task,
+            pending,
+            pending.operation.kind(),
+            Some("blocked"),
+            Tail::None,
+        );
     }
 
     pub(super) fn blocked(&self) -> impl Iterator<Item = (TaskId, Pending)> + '_ {
@@ -274,8 +466,13 @@ impl Scheduler {
             }
         }
         self.tasks[task].state = State::Ready(Some(pending));
-        self.event(task, pending, pending.operation.kind(), Some("ready"));
-        self.trace.push_str(",\"action\":\"wake\"}\n");
+        self.event(
+            task,
+            pending,
+            pending.operation.kind(),
+            Some("ready"),
+            Tail::Text(",\"action\":\"wake\""),
+        );
     }
 
     pub(super) fn cancel(&mut self, task: TaskId, scope: usize, span: Span, cause: Cause) {
@@ -287,8 +484,13 @@ impl Scheduler {
             },
             span,
         };
-        self.event(task, pending, "cancel", None);
-        self.trace.push_str(",\"action\":\"cancelled\"}\n");
+        self.event(
+            task,
+            pending,
+            "cancel",
+            None,
+            Tail::Text(",\"action\":\"cancelled\""),
+        );
     }
 
     pub(super) fn finish(&mut self, task: TaskId, outcome: Outcome) -> Pending {
@@ -297,15 +499,14 @@ impl Scheduler {
             operation: Operation::Exit,
             span: self.tasks[task].spawn_span,
         };
-        self.event(task, pending, "exit", None);
         let outcome = match outcome {
-            Outcome::Ok => "ok",
-            Outcome::Error => "error",
-            Outcome::Echo => "echo",
-            Outcome::Deadline => "deadline",
-            Outcome::Panic => "panic",
+            Outcome::Ok => ",\"outcome\":\"ok\"",
+            Outcome::Error => ",\"outcome\":\"error\"",
+            Outcome::Echo => ",\"outcome\":\"echo\"",
+            Outcome::Deadline => ",\"outcome\":\"deadline\"",
+            Outcome::Panic => ",\"outcome\":\"panic\"",
         };
-        writeln!(self.trace, ",\"outcome\":\"{outcome}\"}}").unwrap();
+        self.event(task, pending, "exit", None, Tail::Text(outcome));
         pending
     }
 
@@ -315,13 +516,12 @@ impl Scheduler {
             operation: Operation::Exit,
             span: self.tasks[task].spawn_span,
         };
-        self.event(task, pending, "exit", None);
         let result = if outcome == Outcome::Ok {
-            "ok"
+            ",\"isolated\":true,\"result\":\"ok\""
         } else {
-            "panicked"
+            ",\"isolated\":true,\"result\":\"panicked\""
         };
-        writeln!(self.trace, ",\"isolated\":true,\"result\":\"{result}\"}}").unwrap();
+        self.event(task, pending, "exit", None, Tail::Text(result));
         pending
     }
 
@@ -334,13 +534,11 @@ impl Scheduler {
             },
             "sink",
             None,
+            Tail::Sink {
+                stream,
+                message: message.to_vec(),
+            },
         );
-        self.trace.push_str(",\"stream\":");
-        quoted(&mut self.trace, stream);
-        self.trace.push_str(",\"message\":");
-        quoted(&mut self.trace, &String::from_utf8_lossy(message));
-        // Preserve raw bytes as well: lossy display must not erase replay differences.
-        write!(self.trace, ",\"bytes\":{message:?}}}\n").unwrap();
         self.sink_events.push((stream, message.to_vec(), self.now));
     }
 
@@ -396,9 +594,18 @@ impl Scheduler {
 
     /// Records what a blocking capability operation returned.
     pub(super) fn result(&mut self, task: TaskId, pending: Pending, ok: bool) {
-        self.event(task, pending, pending.operation.kind(), None);
-        let result = if ok { "ok" } else { "cancelled" };
-        writeln!(self.trace, ",\"result\":\"{result}\"}}").unwrap();
+        let result = if ok {
+            ",\"result\":\"ok\""
+        } else {
+            ",\"result\":\"cancelled\""
+        };
+        self.event(
+            task,
+            pending,
+            pending.operation.kind(),
+            None,
+            Tail::Text(result),
+        );
     }
 
     /// The global deadlock report (03 §9.3): every blocked task, what it waits for, and the span
@@ -409,17 +616,16 @@ impl Scheduler {
             operation: Operation::Deadlock,
             span: pending.span,
         };
-        self.event(task, pending, "sched", None);
-        self.trace.push_str(",\"blocked\":[");
+        let mut list = String::from(",\"blocked\":[");
         let mut report = format!(
             "deadlock: no runnable task in the simulator and no timer pending (virtual time {:?})",
             self.now
         );
         for (index, (id, wait)) in blocked.into_iter().enumerate() {
             let comma = if index == 0 { "" } else { "," };
-            write!(self.trace, "{comma}{{\"task\":{id}").unwrap();
-            self.operation(id, wait);
-            self.trace.push('}');
+            write!(list, "{comma}{{\"task\":{id}").unwrap();
+            operation(&mut list, wait, &self.tasks[id].cells);
+            list.push('}');
             write!(
                 report,
                 "\n  task {id} blocked in {} at {}",
@@ -427,7 +633,8 @@ impl Scheduler {
             )
             .unwrap();
         }
-        self.trace.push_str("]}\n");
+        list.push(']');
+        self.event(task, pending, "sched", None, Tail::Owned(list));
         report
     }
 
@@ -452,13 +659,13 @@ impl Scheduler {
                     State::Blocked(_) => Some("blocked"),
                     _ => None,
                 };
-                self.event(task, pending, "sched", wait);
-                self.trace.push_str(",\"runnable\":[");
-                for (index, id) in runnable.iter().enumerate() {
-                    let comma = if index == 0 { "" } else { "," };
-                    write!(self.trace, "{comma}{id}").unwrap();
-                }
-                writeln!(self.trace, "],\"chosen\":{chosen}}}").unwrap();
+                self.event(
+                    task,
+                    pending,
+                    "sched",
+                    wait,
+                    Tail::Sched { runnable, chosen },
+                );
                 Some(chosen)
             }
         };
@@ -485,28 +692,8 @@ impl Scheduler {
             },
             "chan",
             None,
+            Tail::Channel(event),
         );
-        match event {
-            ChannelEvent::New(bound) => match bound {
-                Some(bound) => write!(self.trace, ",\"bound\":{bound}").unwrap(),
-                None => self.trace.push_str(",\"bound\":null"),
-            },
-            ChannelEvent::Result { result, until, .. } => {
-                if let Some(until) = until {
-                    write!(self.trace, ",\"until\":{}", until.as_nanos()).unwrap();
-                }
-                self.trace.push_str(",\"result\":");
-                quoted(&mut self.trace, result);
-            }
-            ChannelEvent::Close { end, senders } => {
-                self.trace.push_str(",\"end\":");
-                quoted(&mut self.trace, end);
-                if let Some(senders) = senders {
-                    write!(self.trace, ",\"senders\":{senders}").unwrap();
-                }
-            }
-        }
-        self.trace.push_str("}\n");
     }
 
     pub(super) fn allocate_limit(&mut self) -> usize {
@@ -542,14 +729,8 @@ impl Scheduler {
             },
             "sched",
             None,
+            Tail::Advance { from: self.now, to },
         );
-        writeln!(
-            self.trace,
-            ",\"from\":{},\"to\":{}}}",
-            self.now.as_nanos(),
-            to.as_nanos()
-        )
-        .unwrap();
         self.now = to;
         self.stalled = 0;
         true
@@ -572,10 +753,15 @@ impl Scheduler {
     }
 
     pub(super) fn event_result(&mut self, task: TaskId, pending: Pending, result: &str) {
-        self.event(task, pending, pending.operation.kind(), None);
-        self.trace.push_str(",\"result\":");
-        quoted(&mut self.trace, result);
-        self.trace.push_str("}\n");
+        let mut tail = String::from(",\"result\":");
+        quoted(&mut tail, result);
+        self.event(
+            task,
+            pending,
+            pending.operation.kind(),
+            None,
+            Tail::Owned(tail),
+        );
     }
 
     fn index(&mut self, bound: u64) -> u64 {
@@ -594,6 +780,8 @@ impl Scheduler {
         span: Span,
         detail: &str,
     ) {
+        let mut tail = String::from(",\"net\":");
+        quoted(&mut tail, detail);
         self.event(
             task,
             Pending {
@@ -602,10 +790,8 @@ impl Scheduler {
             },
             "cap",
             None,
+            Tail::Owned(tail),
         );
-        self.trace.push_str(",\"net\":");
-        quoted(&mut self.trace, detail);
-        self.trace.push_str("}\n");
     }
 
     pub(super) fn file_latency(&mut self) -> Duration {
@@ -626,74 +812,61 @@ impl Scheduler {
         } else {
             "fs"
         };
-        self.event(task, Pending { operation, span }, kind, None);
-        self.trace.push_str(",\"path\":");
-        quoted(&mut self.trace, &path.to_string_lossy());
-        write!(
-            self.trace,
-            ",\"latency\":{},\"result\":",
-            latency.as_nanos()
-        )
-        .unwrap();
-        quoted(&mut self.trace, result);
-        self.trace.push_str("}\n");
+        let mut tail = String::from(",\"path\":");
+        quoted(&mut tail, &path.to_string_lossy());
+        write!(tail, ",\"latency\":{},\"result\":", latency.as_nanos()).unwrap();
+        quoted(&mut tail, result);
+        self.event(
+            task,
+            Pending { operation, span },
+            kind,
+            None,
+            Tail::Owned(tail),
+        );
     }
 
-    fn event(&mut self, task: TaskId, pending: Pending, kind: &str, wait: Option<&str>) {
-        write!(
-            self.trace,
-            "{{\"step\":{},\"time\":{},\"task\":{task},\"kind\":\"{kind}\"",
-            self.step,
-            self.now.as_nanos(),
-        )
-        .unwrap();
+    fn event(
+        &mut self,
+        task: TaskId,
+        pending: Pending,
+        kind: &'static str,
+        wait: Option<&'static str>,
+        tail: Tail,
+    ) {
+        let targets = (pending.operation == Operation::CellsAcquire)
+            .then(|| self.tasks[task].cells.clone().into_boxed_slice());
+        self.events.push(Record {
+            step: self.step,
+            time: self.now,
+            task,
+            kind,
+            pending,
+            targets,
+            wait,
+            tail,
+        });
         self.step += 1;
-        self.operation(task, pending);
-        match wait {
-            Some(wait) => write!(self.trace, ",\"wait\":\"{wait}\"").unwrap(),
-            None => self.trace.push_str(",\"wait\":null"),
-        }
-        if let Operation::Deadline(_, at) | Operation::SetDeadline(_, at) = pending.operation {
-            write!(self.trace, ",\"until\":{}", at.as_nanos()).unwrap();
-        }
-        if matches!(pending.operation, Operation::Isolated(_)) {
-            self.trace.push_str(",\"isolated\":true");
-        }
-        if kind == "cap" {
-            let extra = match pending.operation {
-                Operation::ClockNow => write!(self.trace, ",\"result\":{}", self.now.as_nanos()),
-                Operation::ClockSystemTime(reading) => {
-                    write!(self.trace, ",\"result\":{}", reading.as_nanos())
-                }
-                Operation::Sleep {
-                    until: Some(until), ..
-                } => write!(self.trace, ",\"until\":{}", until.as_nanos()),
-                Operation::Sleep { until: None, .. } => write!(self.trace, ",\"until\":null"),
-                _ => Ok(()),
-            };
-            extra.unwrap();
-        }
     }
+}
 
-    fn operation(&mut self, task: TaskId, pending: Pending) {
-        let (operation, target) = pending.operation.name();
-        write!(self.trace, ",\"operation\":\"{operation}\"").unwrap();
-        if let Some(target) = target {
-            write!(self.trace, ",\"target\":{target}").unwrap();
-        }
-        if pending.operation == Operation::CellsAcquire {
-            write!(self.trace, ",\"targets\":{:?}", self.tasks[task].cells).unwrap();
-        }
-        self.trace.push_str(",\"span\":{\"file\":");
-        quoted(&mut self.trace, pending.span.file());
-        write!(
-            self.trace,
-            ",\"line\":{},\"column\":{}}}",
-            pending.span.line(),
-            pending.span.column(),
-        )
-        .unwrap();
+fn operation(out: &mut String, pending: Pending, cells: &[usize]) {
+    let (operation, target) = pending.operation.name();
+    write!(out, ",\"operation\":\"{operation}\"").unwrap();
+    if let Some(target) = target {
+        write!(out, ",\"target\":{target}").unwrap();
     }
+    if pending.operation == Operation::CellsAcquire {
+        write!(out, ",\"targets\":{cells:?}").unwrap();
+    }
+    out.push_str(",\"span\":{\"file\":");
+    quoted(out, pending.span.file());
+    write!(
+        out,
+        ",\"line\":{},\"column\":{}}}",
+        pending.span.line(),
+        pending.span.column(),
+    )
+    .unwrap();
 }
 
 // Rejection avoids giving lower indices extra weight when 2^64 is not divisible.
@@ -856,6 +1029,49 @@ mod tests {
     }
 
     #[test]
+    fn trace_difference_names_the_first_changed_or_missing_line() {
+        let span = std::panic::Location::caller();
+        let yielding = Pending {
+            operation: Operation::Yield,
+            span,
+        };
+        let run = |values: &[&[u8]]| {
+            let mut scheduler = Scheduler::new(0, span);
+            for value in values {
+                scheduler.point(0, yielding).unwrap();
+                scheduler.sink(0, "out", value, span);
+            }
+            let text = scheduler.trace();
+            (scheduler.take_trace(), text)
+        };
+        let (base, text) = run(&[b"a", b"b"]);
+        let lines: Vec<_> = text.split_inclusive('\n').map(str::to_owned).collect();
+        assert_eq!(lines.len(), 4);
+        assert_eq!(base.first_difference(&run(&[b"a", b"b"]).0), None);
+        let (changed, changed_text) = run(&[b"a", b"c"]);
+        let expected = changed_text
+            .split_inclusive('\n')
+            .nth(3)
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            base.first_difference(&changed),
+            Some((4, lines[3].clone(), expected))
+        );
+        let end = || "<end of trace>".to_owned();
+        let (short, _) = run(&[b"a"]);
+        assert_eq!(
+            short.first_difference(&base),
+            Some((3, end(), lines[2].clone()))
+        );
+        assert_eq!(
+            base.first_difference(&short),
+            Some((3, lines[2].clone(), end()))
+        );
+        assert_eq!(Trace::default().first_difference(&Trace::default()), None);
+    }
+
+    #[test]
     fn cancelling_the_last_sleeper_resets_the_stall_count_before_another_registers() {
         let span = std::panic::Location::caller();
         let mut scheduler = Scheduler::new(0, span);
@@ -921,7 +1137,8 @@ mod tests {
             let pending = Pending { operation, span };
             scheduler.point(0, pending).unwrap();
             scheduler.pick(0, pending).unwrap();
-            let mut events = scheduler.trace.lines();
+            let trace = scheduler.trace();
+            let mut events = trace.lines();
             let capability = events.next().unwrap();
             let decision = events.next().unwrap();
             assert!(capability.contains("\"kind\":\"cap\""), "{capability}");
@@ -960,7 +1177,7 @@ mod tests {
             scheduler.block(second, second_wait, None);
             assert_eq!(scheduler.pick(second, second_wait), None);
             assert_eq!(scheduler.rng, rng);
-            assert!(!scheduler.trace.contains("\"kind\":\"sched\""));
+            assert!(!scheduler.trace().contains("\"kind\":\"sched\""));
             let report = scheduler.deadlock(second, second_wait);
             assert_eq!(report.lines().count(), 3, "{report}");
             for (task, wait) in [(0, first_wait), (second, second_wait)] {
@@ -970,7 +1187,8 @@ mod tests {
                 );
                 assert!(report.contains(&line), "{report}");
             }
-            let last = scheduler.trace.lines().last().unwrap();
+            let trace = scheduler.trace();
+            let last = trace.lines().last().unwrap();
             assert!(
                 last.contains("\"kind\":\"sched\",\"operation\":\"deadlock\"")
                     && last.contains(",\"blocked\":[{\"task\":0,\"operation\":")
@@ -982,8 +1200,7 @@ mod tests {
                 [(0, first_wait), (second, second_wait)]
             );
             assert_eq!(
-                scheduler
-                    .trace
+                trace
                     .lines()
                     .filter(|line| line.contains("\"wait\":\"blocked\""))
                     .count(),

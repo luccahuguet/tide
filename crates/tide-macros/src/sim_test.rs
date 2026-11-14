@@ -38,16 +38,6 @@ pub fn expand(attr: TokenStream, body: ItemFn) -> syn::Result<TokenStream> {
             "sim_test needs a safe `fn name(sim: SimRoot, ...)`",
         ));
     }
-    if let Some(attr) = body
-        .attrs
-        .iter()
-        .find(|attr| attr.path().is_ident("should_panic"))
-    {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "sim_test does not support should_panic; catch the expected panic inside the test",
-        ));
-    }
     crate::test::expand_property(body, Some(seeds))
 }
 
@@ -94,10 +84,6 @@ mod tests {
             ),
             syn::parse_quote!(
                 fn sample<T>(sim: T) {}
-            ),
-            syn::parse_quote!(
-                #[should_panic]
-                fn sample(sim: SimRoot) {}
             ),
         ] {
             assert!(expand(quote!(), body).is_err());

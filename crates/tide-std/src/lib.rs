@@ -6,7 +6,8 @@
 //!
 //! - executable contract attributes (`requires`, `ensures`, `invariants`) and loop
 //!   `invariant!`, with `old`, `result`, implication and bounded quantifiers (04 §1.8).
-//!   Checked clauses run in debug/test builds, sampled clauses only in the crate under test;
+//!   Checked clauses run in debug/test builds, sampled clauses only in the crate under test
+//!   (or the library a driver `--tide-test-library` suite tests);
 //!   release type-checks but executes no clauses or snapshots. Hidden `__contract` helpers
 //!   own violations and unchecked records for runners (limits below);
 //! - the entry: `#[tide::main]`, `Root`, and the runtime entry it calls, which mints the

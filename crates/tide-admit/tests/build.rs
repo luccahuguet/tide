@@ -595,6 +595,38 @@ fn separate_library_tests_require_public_items_and_admit_both_crates() {
 }
 
 #[test]
+fn separate_library_tests_run_the_library_sampled_clauses() {
+    // A clause that calls the library's own method is sampled: the paired suite's run checks it.
+    let suite = r#"
+#[test]
+#[should_panic(expected = "requires violated: !self.full()")]
+fn second_fill() { let mut g = tide_candidate::Gauge::default(); g.fill(); g.fill(); }
+#[test]
+fn one_fill() { let mut g = tide_candidate::Gauge::default(); g.fill(); assert!(g.full()); }
+"#;
+    let dir = package("separate-library-sampled-clauses", suite);
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    std::fs::write(
+        &candidate,
+        r#"
+#[derive(Default)]
+pub struct Gauge { level: u8 }
+impl Gauge {
+    pub fn full(&self) -> bool { self.level == 1 }
+    #[requires(!self.full())]
+    #[ensures(self.full())]
+    pub fn fill(&mut self) { self.level += 1; }
+}
+"#,
+    )
+    .unwrap();
+    checked(&mut paired_test_driver(&dir));
+    let run = checked(&mut Command::new(dir.join("out/demo-test")));
+    assert!(String::from_utf8_lossy(&run.stdout).contains("2 passed"));
+}
+
+#[test]
 fn separate_library_tests_cannot_read_each_others_sources() {
     let dir = package("separate-library-source-reads", "");
     let candidate = dir.join("candidate/src/lib.rs");
@@ -3581,6 +3613,49 @@ fn simulation_tests_find_lost_updates_and_reexecute_seeds() {
     assert!(first.iter().any(|line| line.contains("\"kind\":\"sched\"")));
     assert!(first.iter().any(|line| line.contains("\"kind\":\"sink\"")));
     assert_eq!(first, trace(run("simulation::loses_updates", Some(failed))));
+}
+
+#[test]
+fn sim_test_should_panic_passes_only_when_a_seed_panics_as_expected() {
+    let dir = package(
+        "simulation-should-panic",
+        r#"
+#[sim_test(seeds = 3)]
+#[should_panic]
+fn bare(sim: std::sim::SimRoot) { let _ = sim; panic!("gauge overflow"); }
+#[sim_test(seeds = 3)]
+#[should_panic(expected = "overflow")]
+fn matching(sim: std::sim::SimRoot) { let _ = sim; panic!("gauge overflow"); }
+#[sim_test(seeds = 3)]
+#[should_panic(expected = "underflow")]
+fn mismatched(sim: std::sim::SimRoot) { let _ = sim; panic!("gauge overflow"); }
+#[sim_test(seeds = 3)]
+#[should_panic]
+fn quiet(sim: std::sim::SimRoot) { let _ = sim; }
+#[sim_test(seeds = 3)]
+#[should_panic]
+fn returns_err(sim: std::sim::SimRoot) -> Result<(), String> { let _ = sim; Err("no panic".into()) }
+"#,
+    );
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    for (name, passes) in [
+        ("bare", true),
+        ("matching", true),
+        ("mismatched", false),
+        ("quiet", false),
+        ("returns_err", false),
+    ] {
+        let out = Command::new(dir.join("out/demo-test"))
+            .args(["--exact", name])
+            .env_remove("TIDE_SIM_SEED")
+            .env_remove("__TIDE_SIM_CHILD")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let output = format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(&out));
+        assert_eq!(out.status.success(), passes, "{name}: {output}");
+        assert!(output.contains(if passes { "1 passed" } else { "1 failed" }), "{name}: {output}");
+    }
 }
 
 /// The same file program executes on production real and simulated Fs, then compares results.
