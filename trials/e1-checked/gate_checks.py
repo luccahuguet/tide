@@ -17,6 +17,17 @@ import harness as h
 
 MODEL = "claude-opus-5-5"
 TOOLS = {"Read", "Write", "Edit", "mcp__e1__check", "mcp__e1__test"}
+# Managed Claude Code configuration. Without --safe-mode the CLI reads managed output styles here
+# even under --restricted, and a style named "default" replaces the system prompt while init
+# still passes, so its presence in any form refuses every real writer launch.
+MANAGED_CONFIG = Path("/etc/claude-code")
+
+
+def managed_config_absent():
+    try: os.lstat(MANAGED_CONFIG)
+    except FileNotFoundError: return {"path": str(MANAGED_CONFIG), "exists": False}
+    raise ValueError(f"{MANAGED_CONFIG} exists (directory, file or symlink): managed Claude Code configuration "
+                     "can change the writer's instructions unseen; remove it before any E1 writer launch")
 
 
 def save(path, value):
@@ -69,6 +80,7 @@ def identity(configs, cli, model=MODEL, jobs=1):
               "effort": "default (flag not passed)", "files": {}, "toolchains": {},
               "seed": SEED, "order_hash": order_hash(order()),
               "writer_argv_template": writer_argv(cli, model, Path("SESSION/mcp.json")),
+              "managed_config": managed_config_absent(),
               "canary_records": ["rust-canary.json", "tide-canary.json"],
               "store_scan_records": ["store-before.json", "store-after.json"]}
     for path in [h.ROOT / "Cargo.lock", h.HERE / "rust/Cargo.lock", h.ROOT / "rust-toolchain.toml",

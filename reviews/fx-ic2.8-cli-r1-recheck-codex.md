@@ -1,0 +1,32 @@
+Model: gpt-6.1-sol · Effort: high · Date: 2026-11-14
+Verdict: approve
+
+1. **r1 finding resolved: external managed output styles are excluded before a real writer launches.** `trials/e1-checked/gate_checks.py:26` uses `lstat`, so only an absent path succeeds; existing directories, files and both live and dangling symlinks refuse. Other filesystem errors propagate and refuse. The same owner runs before session reads or writes in `coordinator.py:355`, before probe directories are created in `coordinator.py:686`, and when identity records the precondition in `gate_checks.py:83`. The init assertion is unchanged. No remaining blocking finding from r1.
+
+   **Original repro, rerun against d22b2559:** `codex-cli/managed_probe.py recheck-raw-cli-default --default`, with the pinned CLI and token supplied through the specified environment assignment, again produces an exact passing CLI init under the synthetic managed default style. It was killed at init; no completed model call was needed. This original rig deliberately calls `writer_argv` and starts the CLI directly, so it bypasses the new harness precondition. Its continued passing init is expected, not a failure of the fix. Evidence: `codex-cli/recheck-raw-cli-default/summary.json`.
+
+   **Actual guarded entry points:** I reused that repro's private Bubblewrap namespace and synthetic `/etc/claude-code/.claude/output-styles/default.md`, then invoked the new HEAD's real `run_writer`, `probe`, and `identity` through `codex-cli/recheck_entrypoints.py`. All three raised the expected `/etc/claude-code exists` refusal. No session/probe artifacts were created, and a launch sentinel was never reached. Identity's unrelated external measurements were mocked, not its precondition. Evidence: `codex-cli/recheck-entry-present/result.json` and `recheck-entrypoints.log`. An initial fixture attempt could not create its result directory under the read-only root mount; the successful run added a writable bind for the designated probe directory only. Neither the host's `/etc` nor the candidate was changed.
+
+   **Normal host and errors:** With the actual absent path, the helper and real identity both produced `{"path":"/etc/claude-code","exists":false}`. Injected EACCES and EIO propagated rather than being treated as absence. Evidence: `codex-cli/recheck-entry-absent/result.json` and `recheck-entry-present/result.json`.
+
+   **Regression check:** `python3 -B trials/e1-checked/harness_test.py CliCompatTests </dev/null` passed: one test, four filesystem forms, 0.860 seconds. It verifies refusal by writer and probe before launch/config artifacts. This is plain Python and compiles nothing. The README matches the adopted precondition. In the batch caller, a refusal occurs before the grant callback and therefore raises the existing setup-before-grant error instead of counting a writer attempt.
+
+I checked the other managed/system instruction sources implicated by r1 in the pinned CLI's embedded implementation, rather than assuming the output-style directory was its only source:
+
+| Source | Disposition for this pinned native Linux launch |
+| --- | --- |
+| Managed output styles, skills, agents, commands and workflows | Their managed directories derive from `aw()`, whose Linux root is `/etc/claude-code`; the new whole-root absence check covers them. |
+| Managed CLAUDE.md and rules | Also below that root (`CLAUDE.md` and `.claude/rules`), additionally disabled by the existing CLAUDE.md environment switch. |
+| Local managed settings, drop-ins and MCP | `managed-settings.json`, `managed-settings.d`, and `managed-mcp.json` derive from the same root. A symlink cannot evade the `lstat` check. |
+| Config and policy path overrides | The writer constructs a fresh environment and forwards only its explicit variables plus the two auth variables. Parent `CLAUDE_CODE_MANAGED_SETTINGS_PATH`, `CLAUDE_CODE_REMOTE_SETTINGS_PATH`, XDG and desktop/remote-session overrides are not inherited. The Nix launch wrappers add no alternative managed instruction root. |
+| User/global caches and settings | `HOME` and `CLAUDE_CONFIG_DIR` point to the newly created home; the CLI's global `.claude.json` path also respects that config directory. Restricted mode continues excluding user/project/local configuration. |
+| Remote organization policy | This remains a managed-policy source under safe mode as well. It is not a newly exposed local instruction directory. The new check does not claim to disable remote administrator policy. |
+| Other system path strings | `/etc/claude-desktop` occurs in Desktop policy documentation, not this CLI's customization-root resolver. `/etc/claude/vertex-sa.json` is a credential-field example, not an implicit instruction source. `/var/empty/claude-code-policy-helper` is a sanitized helper-environment sentinel, not a customization discovery directory. None needs the same absence check for this invocation. |
+
+Bounded pinned-source evidence is in `codex-cli/recheck-system-paths-bounded.txt`, generated by `recheck_source.py`; r1's `output-styles-source.js` records the shared managed Markdown loader. I found no second applicable Linux managed instruction root left open by this fix. This is scoped to the pinned CLI on the gate's native Linux host, not a portability assertion for macOS/Windows/WSL or another CLI release.
+
+Reviewed only the r1 fix and its affected boundary: `git diff c25b421 d22b255`, plus the author's `## Codex r1 fix` account. HEAD stayed `d22b25592930900e31ec1fd6636ccaee6841eb3a`, with a clean worktree. Delta SHA-256: `1bcc586bebd6ac487d6ce94e7b2a05db4dc9f9180f2e99fc61f23e4ea523999d`. `git diff --check c25b421 d22b255` passed. Probe artifacts are under `/home/lucca/.cache/eon-agents/tide-e1-gate/codex-cli/`; no candidate, ledger, main-checkout or held-out content was written or opened for this re-check.
+
+Not rerun: the full harness suite, Rust builds, canaries, or gate trials; no heavy run or completed live model call was needed. The accepted precondition detects managed configuration before each launch; it does not make the host filesystem immutable against an administrator creating that directory afterward.
+
+DONE

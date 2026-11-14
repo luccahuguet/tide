@@ -282,10 +282,19 @@ python3 trials/e1-checked/coordinator.py probe "$RUN"
 python3 trials/e1-checked/coordinator.py run "$RUN" --batch 4
 ```
 
-The writer gets the pinned CLI in print/restricted/safe mode, exactly
+The writer gets the pinned CLI in print/restricted mode, exactly
 Read/Write/Edit plus the strict e1 MCP server, dontAsk permissions, no slash
 commands or session persistence, a fresh config home, no effort override and
-`DISABLE_AUTOUPDATER=1`. The init line must report precisely those five tools,
+`DISABLE_AUTOUPDATER=1`. It runs without `--safe-mode`, which in CLI 2.1.321
+also drops `--mcp-config` servers; instead `--settings` disables hooks and the
+CLI's builtin plugins, and the environment disables CLAUDE.md files,
+auto-memory and claude.ai connectors (`WRITER_SETTINGS` and `WRITER_ENV` in
+`coordinator.py`); connectors ignore `--strict-mcp-config` and load after init,
+where the init assertion cannot see them. Managed
+configuration under `/etc/claude-code` would still load (a managed output style
+named `default` replaces the system prompt and passes init), so every real
+writer launch and the probe refuse while that path exists in any form, and the
+identity records its absence. The init line must report precisely those five tools,
 only e1 connected, no plugins and the recorded model. Every tool use and file
 path is audited after exit, as are assistant model identifiers. The probe
 requires successful inside read/write controls and complete, valid outside

@@ -161,11 +161,26 @@ def audit(events, directory, model, probe=False):
             "api_retry_events": [event for event in events if event.get("type") == "system" and event.get("subtype") == "api_retry"]}
 
 
+# CLI 2.1.321: --safe-mode also drops --mcp-config servers, so the writer runs without it. These
+# settings, WRITER_ENV and --disable-slash-commands take over what it disabled: the builtin
+# plugins the pinned CLI loads, hooks, CLAUDE.md, auto-memory and claude.ai connectors (which
+# --strict-mcp-config does not cover and which load after init, out of the init assertion's
+# sight). The init assertion still requires plugins == [], so a plugin added by another CLI
+# fails init rather than loading.
+BUILTIN_PLUGINS = ["cc-plugin-agents-md", "cc-plugin-plugin-authoring", "cc-plugin-privacy", "cc-plugin-telemetry"]
+WRITER_SETTINGS = {"disableAllHooks": True,
+                   "enabledPlugins": {f"{name}@builtin": False for name in BUILTIN_PLUGINS}}
+WRITER_ENV = {"DISABLE_AUTOUPDATER": "1", "MAX_MCP_OUTPUT_TOKENS": "2000000",
+              "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+              "ENABLE_CLAUDEAI_MCP_SERVERS": "0"}
+
+
 def writer_argv(cli, model, mcp):
     return [cli, "-p", "--model", model, "--restricted", "--tools", "Read,Write,Edit",
             "--strict-mcp-config", "--mcp-config", str(mcp), "--allowedTools", *sorted(g.TOOLS),
             "--permission-mode", "dontAsk", "--permission-prompts", "none", "--disable-slash-commands",
-            "--safe-mode", "--no-session-persistence", "--output-format", "stream-json", "--verbose"]
+            "--settings", json.dumps(WRITER_SETTINGS, sort_keys=True),
+            "--no-session-persistence", "--output-format", "stream-json", "--verbose"]
 
 
 def mcp_config(session):
@@ -340,13 +355,14 @@ def classify_session(session, directory, model, *, reason="early_stop", fault=No
 
 
 def run_writer(session, cli, model, dry=False, seconds=None, prompt=None, probe=False, on_started=lambda: None, cancelled=None):
+    if not dry: g.managed_config_absent()
     config = json.loads((session / "session.json").read_text())
     directory = Path(config["directory"])
     mcp = mcp_config(session)
     home = session / "config-home"
     home.mkdir()
     env = {"HOME": str(home), "CLAUDE_CONFIG_DIR": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-           "DISABLE_AUTOUPDATER": "1", "MAX_MCP_OUTPUT_TOKENS": "2000000"}
+           **WRITER_ENV}
     for key in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]:
         if key in os.environ: env[key] = os.environ[key]
     argv = ([sys.executable, str(h.HERE / "standin.py"), str(session), str(mcp)] if dry
@@ -670,6 +686,7 @@ def batch(root, state, count):
 
 def probe(root, state):
     if state["dry_run"]: raise ValueError("probe requires the recorded real CLI")
+    g.managed_config_absent()  # before any probe directory exists, so a refused probe can rerun
     session = root / "probe-session"
     directory = root / "probe-writer"
     directory.mkdir()

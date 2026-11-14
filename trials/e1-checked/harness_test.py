@@ -1890,5 +1890,32 @@ else:
         c.reclaim_writer(root)
 
 
+class CliCompatTests(unittest.TestCase):
+    def test_managed_config_in_any_form_refuses_writer_and_probe_before_launch(self):
+        def make_dir(path): path.mkdir()
+        def make_file(path): path.write_text("{}")
+        def make_dangling(path): path.symlink_to(path.parent / "missing")
+        def make_dir_link(path): (path.parent / "real").mkdir(); path.symlink_to(path.parent / "real")
+        for make in [make_dir, make_file, make_dangling, make_dir_link]:
+            with self.subTest(form=make.__name__), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                managed = root / "etc/claude-code"
+                managed.parent.mkdir()
+                session, writer = root / "session", root / "writer"
+                session.mkdir(); writer.mkdir(); (writer / "prompt.md").write_text("")
+                g.save(session / "session.json", {"directory": str(writer), "started": None, "runs": 0})
+                state = {"dry_run": False, "cli": "unused", "model": g.MODEL, "identity": {"cheap": {}}}
+                with patch.object(g, "MANAGED_CONFIG", managed), \
+                     patch.object(c, "writer_argv", return_value=[sys.executable, "-c", ""]):
+                    self.assertEqual(g.managed_config_absent(), {"path": str(managed), "exists": False})
+                    make(managed)
+                    with self.assertRaisesRegex(ValueError, "claude-code exists"):
+                        c.run_writer(session, "unused", g.MODEL)
+                    with self.assertRaisesRegex(ValueError, "claude-code exists"):
+                        c.probe(root, state)
+                self.assertEqual(sorted(p.name for p in session.iterdir()), ["session.json"])
+                self.assertFalse((root / "probe-session").exists() or (root / "probe-writer").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
