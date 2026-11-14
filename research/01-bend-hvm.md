@@ -14,6 +14,8 @@ See [report 11's dated correction](11-bend-interop.md#correction--2026-11-12)
 for the release cadence and unchanged interop staging. Findings below are
 preserved as dated evidence.
 
+**2026-11-14 update:** [Report 31](31-bend-update.md) updates compiler/company direction and performance evidence, and qualifies the absolute stdin limitation; the findings below remain the October snapshot.
+
 ## Question
 
 What are Bend and HVM, and what do they deliver against native code? Which of their ideas are new and worth keeping? And which of five options should a Rust-like, agent-first language with optional proofs take?

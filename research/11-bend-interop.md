@@ -26,6 +26,8 @@ supersede its repository-home and current-cadence claims:
   F5); neither stage is implemented in Tide, whose tandem remains in the
   Later tier (D16).
 
+**2026-11-14 update:** [Report 31](31-bend-update.md) rechecks D16 and corrects absolute stdin absence, the claim that U32 arithmetic is uniformly proof-opaque, and abbreviated runtime-flag guidance; the findings below remain the October snapshot.
+
 ## Question
 
 Ferox must not compete with Bend 2 (HigherOrderCO); it should work alongside it or be a plain Rust replacement. What is Bend 2's interop surface today, which division of labor is most valuable, what must Ferox's design include to make it smooth, where should the languages deliberately differ, and what are the risks?
