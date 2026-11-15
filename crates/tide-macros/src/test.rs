@@ -34,7 +34,13 @@ pub(super) fn expand_property(
         body.attrs.extend(copied);
     }
     let allow_vacuous = allow_vacuous(&body)?;
-    if body.sig.inputs.is_empty() && simulation.is_none() && generated.is_none() {
+    let plain = body.sig.inputs.is_empty() && simulation.is_none() && generated.is_none();
+    // Keep process entry in place for ROOT-5's forbidden harness call.
+    // Const ordinary tests stay const-callable and cannot reach replayable effects.
+    if plain && (body.sig.constness.is_some()
+        || (body.sig.ident == "main"
+            && body.attrs.iter().any(|a| a.path().segments.last().is_some_and(|s| s.ident == "main"))))
+    {
         return Ok(quote!(#[::core::prelude::v1::test] #body));
     }
     if !body.sig.generics.params.is_empty() || body.sig.generics.where_clause.is_some() {
@@ -232,7 +238,12 @@ pub(super) fn expand_property(
 
     let value = syn::Ident::new("__tide_result", Span::mixed_site());
     let error = syn::Ident::new("__tide_error", Span::mixed_site());
-    let mut finish = quote!(::std::test::property_result(#value));
+    // Ordinary tests return the original value; inspect Result layers by borrowing it.
+    let mut finish = if plain {
+        quote!(::core::result::Result::Ok(()))
+    } else {
+        quote!(::std::test::property_result(#value))
+    };
     for _ in 0..results {
         finish = quote! {
             match #value {
@@ -247,7 +258,7 @@ pub(super) fn expand_property(
         let sim = &args[0];
         quote!(let #sim = #generator.simulation();)
     });
-    let cases = simulation.unwrap_or(100);
+    let cases = simulation.unwrap_or(if plain { 1 } else { 100 });
     let simulated = simulation.is_some();
     let runner = if simulated {
         quote!(::std::sim::__run)
@@ -256,21 +267,34 @@ pub(super) fn expand_property(
     };
     let call = quote_spanned!(name.span()=> #name(#(#args),*));
 
+    let replay_config = [
+        format!("__tide_replay_config:cases:{cases}"),
+        format!("__tide_replay_config:plain:{plain}"),
+        format!("__tide_replay_config:simulation:{simulated}"),
+        format!("__tide_replay_config:fixed_seed:{fixed_seed}"),
+        format!("__tide_replay_config:should_panic:{should_panic}"),
+        format!("__tide_replay_config:allow_vacuous:{allow_vacuous:?}"),
+    ];
     let allow_vacuous = match allow_vacuous {
         Some(reason) => quote!(::core::option::Option::Some(#reason)),
         None => quote!(::core::option::Option::None),
     };
-    let body = crate::contract::property_body(body)?;
-    // The driver reads this nested function's resolved signature during test synthesis.
-    Ok(quote! {
-        #[::core::prelude::v1::test]
-        #(#harness_attrs)*
-        #visibility fn #name() {
-            #[doc = "__tide_property_body"]
-            #body
+    let config = quote!(::std::test::Config { cases: #cases, plain: #plain, body: #body_source, call: #call_source, excluded: &[#(#excluded),*], should_panic: #should_panic, simulation: #simulated, fixed_seed: #fixed_seed, allow_vacuous: #allow_vacuous });
+    let signature = if plain { body.sig.clone() } else { syn::parse_quote!(fn #name()) };
+    let tracked = body.attrs.iter().filter(|a| plain && a.path().is_ident("track_caller"));
+    let tracked = quote!(#(#tracked)*);
+    let invocation = if plain {
+        quote! {
+            ::std::test::run_plain(
+                ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#name)),
+                #config, #name, |#value| { #finish },
+            )
+        }
+    } else {
+        quote! {
             #runner(
                 ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#name)),
-                ::std::test::Config { cases: #cases, body: #body_source, call: #call_source, excluded: &[#(#excluded),*], should_panic: #should_panic, simulation: #simulated, fixed_seed: #fixed_seed, allow_vacuous: #allow_vacuous },
+                #config,
                 |#generator| {
                     #capabilities
                     #(#(#draws)*)*
@@ -278,7 +302,20 @@ pub(super) fn expand_property(
                     let #value = #call;
                     #finish
                 },
-            );
+            )
+        }
+    };
+    let body = crate::contract::property_body(body)?;
+    // The driver reads this nested function's resolved signature during test synthesis.
+    Ok(quote! {
+        #[::core::prelude::v1::test]
+        #(#harness_attrs)*
+        #(#[doc = #replay_config])*
+        #tracked
+        #visibility #signature {
+            #[doc = "__tide_property_body"]
+            #body
+            #invocation
         }
     })
 }

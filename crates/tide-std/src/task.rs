@@ -57,6 +57,7 @@ struct Runtime {
     baton: Option<Baton>,
     simulation_ended: bool,
     inputs: crate::env::Inputs,
+    replay_journal: Option<(Arc<Mutex<crate::sim::manifest::Journal>>, usize)>,
 }
 
 struct Baton {
@@ -704,8 +705,14 @@ pub(crate) struct Simulation {
 }
 
 impl Simulation {
+    #[cfg(test)]
     #[track_caller]
     pub(crate) fn new(seed: u64) -> Self {
+        Self::new_at(seed, None)
+    }
+
+    #[track_caller]
+    pub(crate) fn new_at(seed: u64, origin: Option<crate::test::Source>) -> Self {
         assert!(
             Context::current().is_none(),
             "a task runtime is already active"
@@ -719,6 +726,7 @@ impl Simulation {
             }),
             ..Runtime::default()
         }));
+        runtime.lock().unwrap().baton.as_mut().unwrap().scheduler.main_origin = origin;
         let main = Enter::new(Context {
             runtime: runtime.clone(),
             at: None,
@@ -918,6 +926,15 @@ pub(crate) fn observe_cancellation() -> bool {
 }
 
 impl Tasks {
+    pub(crate) fn sim_recording(&self, journal: Arc<Mutex<crate::sim::manifest::Journal>>, ordinal: usize) {
+        sim_lock(self.simulation.as_ref().unwrap().lock()).replay_journal = Some((journal, ordinal));
+    }
+
+    pub(crate) fn replay_input(&self, kind: &str, key: Vec<u8>, value: Vec<u8>) {
+        let journal = sim_lock(self.simulation.as_ref().unwrap().lock()).replay_journal.clone();
+        if let Some((journal, ordinal)) = journal { journal.lock().unwrap().input(ordinal, kind, key, value); }
+    }
+
     /// Process inputs take one scheduling point, no time and no random draw.
     #[track_caller]
     pub(crate) fn input_op<T>(&self, name: &'static str, f: impl FnOnce(&mut crate::env::Inputs) -> T) -> T {

@@ -343,7 +343,11 @@ generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile
 the driver's `tests/build.rs`; parameterized property tests also execute through
 that driver suite. The fixture includes production's `sim.rs` and runner and uses its
 `#[sim_test]` macro: `tasks/simulation_runner.rs` also executes through the driver,
-covering seeded scopes, the split-update bug and ordered sink traces. Later world/fault/node
+covering seeded scopes, the split-update bug and ordered sink traces. Production driver
+runtime tests also record `tide-replay/1` manifests, compare two replay traces to
+the original, refuse source/build/dependency/configuration mismatches before launch,
+and exercise strict tapes, root ordinals and user task-0 origins. The fixture's
+shared surface alone cannot establish those runtime replay guarantees. Later world/fault/node
 operations remain fixture stubs. `contracts/guided_properties.rs` reaches the same
 requires guidance, vacuity floor, fixed case seed and simulation-parameter shrinking items;
 the driver suite executes its passing and failing entries and checks replay.

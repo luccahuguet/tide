@@ -103,7 +103,14 @@
 //!   causes, and traces; success emits only a single summary, captured by libtest.
 //!   Signal/timeout or a missing summary names the last seed started; ordinary failures name
 //!   the failing seeds. `TIDE_SIM_SEED` selects one fresh decimal u64 seed through the internal
-//!   runner hook, without source/build identity checks;
+//!   runner hook, without source/build identity checks. `tide-admit --tide-run-test NAME`
+//!   records `tide-replay/1` manifests under the operator output's `target/sim`, pairing
+//!   the original evaluation's typed choices, inline root setup, exact trace and outcome.
+//!   Its printed `--replay` command validates source/build/artifact/configuration identity
+//!   before launch, consumes choices strictly without shrinking, and compares against that
+//!   recording. Fresh `--seed` and `--replay` are separate modes. Direct binary execution
+//!   has no verified-manifest guarantee. Ordinary Tide tests record ordered Root::sim calls;
+//!   runtime children have cleared environments plus explicit harness controls;
 //! - the prelude's sealed `convert::{Truncate, RoundFrom, TryFromFloat}` traits: same-signedness
 //!   low bits, nearest/ties-to-even float conversion (overflow can yield infinity), and exact
 //!   finite/in-range float-to-integer conversion, with `TryFromFloatError` on failure;
@@ -115,7 +122,12 @@
 //!   `Error::provide`, and requires a message on every variant if any has one (including
 //!   transparent variants), even with a manual Display;
 //! - the prelude's `#[test]`: ordinary libtest entries for parameterless tests and
-//!   deterministic generation and shrinking for tests with parameters. Replay a
+//!   deterministic generation and shrinking for tests with parameters. Ordinary tests keep
+//!   their signatures and return values; calls within an evaluation share its recording.
+//!   Their manifest records body return (`returned`), borrowed Result errors, or panic;
+//!   native libtest owns the returned value's `Termination::report` and final test status.
+//!   Const ordinary tests stay const-callable in native libtest form without recording.
+//!   Freshly rerun a
 //!   failing case with `TIDE_TEST_SEED` set to the reported seed. Requires guide recognized
 //!   shapes and filter every candidate, including in release test binaries. With runtime
 //!   contracts enabled, direct callee requires failures discard a case;
@@ -230,7 +242,7 @@
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! unsized Arc/Weak payloads (`Arc<dyn Trait>`, `Arc<str>`, `Arc<[T]>`);
 //! other `sync` items,
-//! `ptr`; other world setup, faults, nodes, replay manifests,
+//! `ptr`; other world setup, faults, nodes,
 //! and laws. A
 //! program that uses one fails to compile, as for any missing item.
 //! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a

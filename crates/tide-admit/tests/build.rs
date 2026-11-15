@@ -3946,7 +3946,7 @@ fn tcp_backpressure_deadlock_names_the_connection() {
         stderr(&out)
     );
     assert!(
-        stderr(&out).contains("tcp-deadlock/package/src/demo.rs"),
+        stderr(&out).contains("tide-source/demo.rs"),
         "{}",
         stderr(&out)
     );
@@ -4284,4 +4284,558 @@ fn concurrency_and_error_cases_use_production_std() {
             }
         }
     }
+}
+
+
+// Use the production reader to edit fixtures without a second JSON implementation.
+use std::collections;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/codec.rs"]
+mod __codec;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/json.rs"]
+mod json;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/replay.rs"]
+mod replay_wire;
+
+#[test]
+fn ordinary_const_tests_keep_direct_and_const_context_calls() {
+    let dir = package("ordinary-const-calls", r#"
+#[test]
+const fn check() { assert!(2 + 2 == 4); }
+#[test]
+fn composed() {
+    check();
+    const _: () = check();
+}
+"#);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let out = checked(Command::new(dir.join("out/demo-test")).args(["--test-threads=4"]));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("2 passed"));
+}
+
+#[test]
+fn ordinary_result_tests_keep_their_signature_and_direct_calls() {
+    let dir = package("ordinary-result-calls", r#"
+#[test]
+fn check() -> Result<(), String> { Ok(()) }
+#[test]
+#[ignore]
+fn failed() -> Result<(), String> { Err("returned error".into()) }
+struct Status;
+impl std::process::Termination for Status {
+    fn report(self) -> std::process::ExitCode { std::process::ExitCode::SUCCESS }
+}
+#[test]
+fn custom() -> Status { Status }
+#[test]
+fn composed() {
+    let callable: fn() -> Result<(), String> = check;
+    callable().unwrap();
+    check().unwrap();
+    assert_eq!(failed().unwrap_err(), "returned error");
+    let _: Status = custom();
+}
+"#);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    checked(Command::new(dir.join("out/demo-test")).args(["--test-threads=4"]));
+    let failed = Command::new(dir.join("out/demo-test")).args(["--exact", "failed", "--ignored", "--nocapture", "--test-threads=4"])
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(!failed.status.success());
+    assert!(stderr(&failed).contains("returned error"), "{}", stderr(&failed));
+}
+
+#[test]
+fn ordinary_unit_tests_compose_in_one_recorded_and_replayed_evaluation() {
+    use replay_wire::{Manifest, read};
+    let dir = package("ordinary-unit-calls", r#"
+#[test]
+fn check() {
+    let sim = Root::sim(17);
+    println!("nested call");
+    sim.tasks.checkpoint().unwrap();
+}
+#[test]
+fn leaf() { println!("child call"); }
+#[test]
+fn composed() {
+    check(); check();
+    let sim = Root::sim(29);
+    sim.tasks.scope::<_, std::task::TaskError, _>(|scope| {
+        scope.spawn(|| { leaf(); Ok(()) });
+        Ok(())
+    }).unwrap();
+}
+"#);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let direct = Command::new(dir.join("out/demo-test")).args(["--exact", "composed", "--test-threads=4"])
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(direct.status.success(), "{}{}", String::from_utf8_lossy(&direct.stdout), stderr(&direct));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    for (name, seeds) in [("check", vec!["17"]), ("composed", vec!["17", "17", "29"])] {
+        let before = if dir.join("out/target/sim").is_dir() { manifests() } else { vec![] };
+        checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", name, "--seed", "47"]));
+        let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+        assert_eq!(added.len(), 1, "one manifest per harness evaluation");
+        let recorded: Manifest = read(&added[0]).unwrap();
+        recorded.validate().unwrap();
+        assert_eq!(recorded.test, name);
+        assert!(recorded.complete);
+        assert_eq!(recorded.outcome, "returned");
+        assert_eq!(recorded.roots.iter().map(|r| r.seed.as_str()).collect::<Vec<_>>(), seeds);
+        assert_eq!(recorded.trace.matches("\"kind\":\"sink\"").count(), seeds.len());
+        for _ in 0..2 {
+            let before = manifests();
+            let run = checked(driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&added[0]));
+            assert!(stderr(&run).contains("replay reproduced"), "{}", stderr(&run));
+            let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+            assert_eq!(added.len(), 1);
+            let replayed: Manifest = read(&added[0]).unwrap();
+            replayed.validate().unwrap();
+            assert_eq!(replayed.roots, recorded.roots);
+            assert_eq!(replayed.trace.as_bytes(), recorded.trace.as_bytes());
+            assert_eq!(replayed.outcome, recorded.outcome);
+        }
+    }
+}
+
+fn nested_evaluation_stays_in_its_caller(name: &str, caller: &str, seeds: &[&str]) {
+    use replay_wire::{Manifest, read};
+    let source = format!(r#"
+#[test]
+fn property(value: u8) {{ assert!(u32::from(value) <= 255); println!("{{value}}"); }}
+#[sim_test(seeds = 1)]
+fn simulation(sim: std::sim::SimRoot, value: bool) {{
+    let _ = value;
+    sim.tasks.checkpoint().unwrap();
+}}
+{caller}
+"#);
+    let dir = package(name, &source);
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    checked(Command::new(dir.join("out/demo-test")).args(["--exact", "caller", "--test-threads=4"]));
+    // Seed-start records stay internal: a nested simulation reports none of its seeds, so a
+    // sim-child caller's parent tracks only the caller's own: seed 0 of `seeds = 1` and its
+    // determinism re-run.
+    let starts = |output: &Output| [&output.stdout, &output.stderr].iter()
+        .flat_map(|bytes| String::from_utf8_lossy(bytes).lines()
+            .filter(|line| line.starts_with("TIDE_SIM_SEED_START")).map(str::to_owned).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let child = checked(Command::new(dir.join("out/demo-test"))
+        .args(["--exact", "caller", "--nocapture"]).env("__TIDE_SIM_CHILD", "demo::caller"));
+    let own: &[&str] = if caller.contains("#[sim_test") { &["TIDE_SIM_SEED_START 0"; 2] } else { &[] };
+    assert_eq!(starts(&child), own, "{}", String::from_utf8_lossy(&child.stdout));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    let run = checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "caller", "--seed", "47"]));
+    assert_eq!(starts(&run), Vec::<String>::new(), "{}", String::from_utf8_lossy(&run.stdout));
+    let paths = manifests();
+    assert_eq!(paths.len(), 1, "one manifest per harness evaluation: {paths:?}");
+    assert!(!stderr(&run).contains("  replay: "), "{}", stderr(&run));
+    let recorded: Manifest = read(&paths[0]).unwrap();
+    recorded.validate().unwrap();
+    assert_eq!(recorded.test, "caller");
+    // Nested generators and simulator roots are not part of the outer input tape.
+    assert!(recorded.choices.is_empty());
+    assert_eq!(recorded.roots.iter().map(|r| r.seed.as_str()).collect::<Vec<_>>(), seeds);
+    for _ in 0..2 {
+        let before = manifests();
+        checked(driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&paths[0]));
+        let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+        assert_eq!(added.len(), 1);
+        let replayed: Manifest = read(&added[0]).unwrap();
+        replayed.validate().unwrap();
+        assert_eq!(replayed.roots, recorded.roots);
+        assert_eq!(replayed.trace, recorded.trace);
+        assert_eq!(replayed.outcome, recorded.outcome);
+    }
+}
+
+#[test]
+fn replay_nested_property_from_test_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-property", "#[test] fn caller() { property(); let sim = Root::sim(31); sim.tasks.checkpoint().unwrap(); }", &["31"]);
+}
+
+#[test]
+fn replay_nested_property_from_simulated_task_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-task-property", r#"
+#[test] fn caller() {
+    let sim = Root::sim(29);
+    sim.tasks.scope::<_, std::task::TaskError, _>(|scope| {
+        scope.spawn(|| { property(); Ok(()) });
+        Ok(())
+    }).unwrap();
+}
+"#, &["29"]);
+}
+
+#[test]
+fn replay_nested_sim_from_test_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-simulation", "#[test] fn caller() { simulation(); let sim = Root::sim(31); sim.tasks.checkpoint().unwrap(); }", &["31"]);
+}
+
+#[test]
+fn replay_nested_sim_from_simulated_task_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-task-simulation", r#"
+#[test] fn caller() {
+    let sim = Root::sim(29);
+    let panic = sim.tasks.spawn_isolated(|| simulation()).unwrap_err();
+    // A nested Root::sim remains forbidden; its wrapper must not launch or record a child.
+    assert!(panic.message.contains("a task runtime is already active"));
+}
+"#, &["29"]);
+}
+
+#[test]
+fn replay_nested_property_from_sim_child_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-child-property", r#"
+#[sim_test(seeds = 1)] fn caller(sim: std::sim::SimRoot) { drop(sim); property(); }
+"#, &["47"]);
+}
+
+#[test]
+fn replay_nested_sim_from_sim_child_uses_callers_evaluation() {
+    nested_evaluation_stays_in_its_caller("nested-child-simulation", r#"
+#[sim_test(seeds = 1)] fn caller(sim: std::sim::SimRoot) { drop(sim); simulation(); }
+"#, &["47"]);
+}
+
+#[test]
+fn replay_hints_only_accompany_failures() {
+    let dir = package("replay-hints", r#"
+#[test] fn plain() {}
+#[test]
+#[requires(false)]
+fn rejected(value: u16) { let _ = value; }
+"#);
+    for name in ["plain", "rejected"] {
+        let out = driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", name, "--seed", "0"])
+            .stdin(Stdio::null()).output().unwrap();
+        assert!(!stderr(&out).contains("  replay: "), "{}", stderr(&out));
+        if name == "rejected" {
+            assert!(!out.status.success());
+            assert!(stderr(&out).contains("vacuous"), "{}", stderr(&out));
+        } else {
+            assert!(out.status.success(), "{}", stderr(&out));
+        }
+    }
+}
+
+#[test]
+fn replay_refusal_preserves_existing_outputs() {
+    use replay_wire::{Manifest, Receipt, read, encoded};
+    for paired in [false, true] {
+        let dir = package(&format!("replay-refusal-outputs-{paired}"), "#[test] fn check() {}");
+        if paired {
+            std::fs::create_dir_all(dir.join("candidate/src")).unwrap();
+            std::fs::write(dir.join("candidate/src/lib.rs"), "pub fn value() -> u8 { 1 }").unwrap();
+        }
+        let invoke = || {
+            if paired { paired_test_driver(&dir) } else {
+                let mut command = driver(&dir);
+                command.args(["--crate-type=lib", "--test"]);
+                command
+            }
+        };
+        checked(invoke().args(["--tide-run-test", "check", "--seed", "1"]));
+        let path = std::fs::read_dir(dir.join("out/target/sim")).unwrap().next().unwrap().unwrap().path().join("run.manifest.json");
+        let manifest: Manifest = read(&path).unwrap();
+        let paths = ["out/demo-test", "out/demo-test.build.json", "out/demo.interface.json"];
+        if paired { std::fs::write(dir.join(paths[2]), b"previously published interface").unwrap(); }
+        let before = paths.map(|p| std::fs::read(dir.join(p)).unwrap());
+        let unchanged = || {
+            for (path, bytes) in paths.iter().zip(&before) {
+                assert_eq!(&std::fs::read(dir.join(path)).unwrap(), bytes, "{path}");
+            }
+        };
+        for component in ["compiler", "configuration"] {
+            let mut bad = manifest.clone();
+            if component == "compiler" { bad.build.compiler.push_str("changed"); }
+            else { bad.config.insert("scheduler".into(), "changed".into()); }
+            bad.seal();
+            let bad_path = dir.join("bad.json");
+            std::fs::write(&bad_path, encoded(&bad)).unwrap();
+            let refused = invoke().arg("--replay").arg(bad_path).stdin(Stdio::null()).output().unwrap();
+            assert_eq!(refused.status.code(), Some(2), "{}", stderr(&refused));
+            assert!(stderr(&refused).contains(component), "{}", stderr(&refused));
+            unchanged();
+        }
+        if !paired {
+            let entry = std::fs::read_dir(dir.join("out/.tide-cache")).unwrap()
+                .map(|e| e.unwrap().path()).find(|p| read::<Receipt>(&p.join("build.json"))
+                    .is_ok_and(|r| r.build == manifest.build)).unwrap();
+            let executable = entry.join("executable");
+            let mut corrupt = std::fs::read(&executable).unwrap();
+            corrupt.push(0);
+            std::fs::write(executable, corrupt).unwrap();
+            let refused = invoke().arg("--replay").arg(path).stdin(Stdio::null()).output().unwrap();
+            assert_eq!(refused.status.code(), Some(2), "{}", stderr(&refused));
+            assert!(stderr(&refused).contains("executable/receipt mismatch"), "{}", stderr(&refused));
+            unchanged();
+        }
+    }
+}
+
+#[test]
+fn replay_remapping_keeps_diagnostics_and_non_test_locations_real() {
+    // Panic Locations are embedded; Config.call comes from proc-macro Span::file.
+    let source = r#"
+#[tide::main]
+fn main() { panic!("real location"); }
+#[sim_test(seeds = 1)]
+fn check(sim: std::sim::SimRoot) { sim.tasks.checkpoint().unwrap(); panic!("test location"); }
+"#;
+    let dir = package("replay-remapping", source);
+    checked(&mut driver(&dir));
+    let out = Command::new(dir.join("out/demo")).stdin(Stdio::null()).output().unwrap();
+    let real = dir.join("package/src/demo.rs").display().to_string();
+    assert!(stderr(&out).contains(&format!("{real}:3:")), "{}", stderr(&out));
+    let run = driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "check", "--seed", "1"])
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(!run.status.success());
+    assert!(stderr(&run).contains("tide-source/demo.rs:5:"), "{}", stderr(&run));
+    let path = std::fs::read_dir(dir.join("out/target/sim")).unwrap().next().unwrap().unwrap().path().join("run.manifest.json");
+    let manifest: replay_wire::Manifest = replay_wire::read(&path).unwrap();
+    let exit = manifest.trace.lines().find(|l| l.contains("\"kind\":\"exit\"") && l.contains("\"task\":0")).unwrap();
+    assert!(exit.contains("\"file\":\"tide-source/demo.rs\",\"line\":5"), "{exit}");
+    std::fs::write(dir.join("package/src/demo.rs"), "#[tide::main] fn main() { let x: u32 = \"s\"; let _ = x; }").unwrap();
+    for args in [vec!["--emit=metadata"], vec!["--emit=link"], vec!["--emit=link", "--test"]] {
+        let out = driver(&dir).args(args).stdin(Stdio::null()).output().unwrap();
+        assert!(!out.status.success());
+        assert!(stderr(&out).contains(&format!("{real}:1:")), "{}", stderr(&out));
+        assert!(!stderr(&out).contains("tide-source"), "{}", stderr(&out));
+    }
+}
+
+#[test]
+fn replay_manifests_validate_identity_and_reproduce_exact_evaluations() {
+    use replay_wire::{Manifest, encoded, read};
+    let original_source = include_str!("../../../conformance/cases/tasks/simulation_runner.rs");
+    let dir = package("replay ' quoted", original_source);
+    let output = |out: &Output| format!("{}{}", String::from_utf8_lossy(&out.stdout), stderr(out));
+    let invoke = |manifest: &Path| {
+        driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(manifest)
+            .stdin(Stdio::null()).output().unwrap()
+    };
+    let fresh = driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "simulation::loses_updates"])
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(!fresh.status.success(), "{}", output(&fresh));
+    assert!(output(&fresh).contains("simulation failure seed="), "{}", output(&fresh));
+    let printed = output(&fresh).lines().find_map(|line| line.strip_prefix("  replay: ")).expect("printed replay command").to_string();
+    // The operator paths contain both spaces and a quote: execute the actual printed command.
+    let mut replays = Vec::new();
+    let manifests = || {
+        std::fs::read_dir(dir.join("out/target/sim")).unwrap().filter_map(|entry| {
+            let path = entry.unwrap().path().join("run.manifest.json");
+            path.is_file().then_some(path)
+        }).collect::<Vec<_>>()
+    };
+    let recorded = manifests().into_iter().find(|path| {
+        let manifest: Manifest = read(path).unwrap();
+        manifest.complete && manifest.outcome.starts_with("panic:")
+    }).expect("complete failure manifest");
+    let recording: Manifest = read(&recorded).unwrap();
+    recording.validate().unwrap();
+    assert!(recording.trace.contains("\"kind\":\"sched\""));
+    assert!(recording.trace.contains("\"kind\":\"sink\""));
+    let task_zero_exit = recording.trace.lines().find(|line| line.contains("\"task\":0") && line.contains("\"kind\":\"exit\"")).unwrap();
+    assert!(task_zero_exit.contains("tide-source/demo.rs"), "{task_zero_exit}");
+    assert!(!task_zero_exit.contains("runner.rs"));
+    let before_printed = manifests();
+    let printed_output = Command::new("bash").args(["-c", &printed]).stdin(Stdio::null()).output().unwrap();
+    assert!(!printed_output.status.success());
+    assert!(output(&printed_output).contains("replay reproduced"), "{}", output(&printed_output));
+    assert!(manifests().len() > before_printed.len());
+    for _ in 0..2 {
+        let before = manifests();
+        let run = invoke(&recorded);
+        assert!(!run.status.success()); // A reproduced panic remains a failing test.
+        assert!(output(&run).contains("replay reproduced"), "{}", output(&run));
+        let added: Vec<_> = manifests().into_iter().filter(|p| !before.contains(p)).collect();
+        assert_eq!(added.len(), 1);
+        let replay: Manifest = read(&added[0]).unwrap();
+        assert_eq!(replay.trace.as_bytes(), recording.trace.as_bytes());
+        assert_eq!(replay.outcome, recording.outcome);
+        assert_eq!(std::fs::read(added[0].with_file_name("trace.ndjson")).unwrap(), recording.trace.as_bytes());
+        replays.push(replay.trace);
+    }
+    assert_eq!(replays[0].as_bytes(), replays[1].as_bytes());
+    let refuse = |manifest: &Manifest, component: &str| {
+        let bad = dir.join("mismatch.json");
+        let mut manifest = manifest.clone(); manifest.seal();
+        std::fs::write(&bad, encoded(&manifest)).unwrap();
+        let run = invoke(&bad);
+        assert_eq!(run.status.code(), Some(2), "{}", output(&run));
+        assert!(stderr(&run).contains(component), "{}", output(&run));
+        assert!(run.stdout.is_empty(), "candidate process started: {}", output(&run));
+    };
+    for component in ["format", "incomplete", "source", "compiler", "target", "profile", "options", "dependency", "configuration"] {
+        let mut bad = recording.clone();
+        match component {
+            "format" => bad.format = "tide-replay/2".into(),
+            "incomplete" => bad.complete = false,
+            "source" => { bad.build.source.insert("file:demo.rs".into(), "changed".into()); }
+            "compiler" => bad.build.compiler.push_str("changed"),
+            "target" => bad.build.target.push_str("changed"),
+            "profile" => bad.build.profile = "release".into(),
+            "options" => bad.build.options.push("--changed".into()),
+            "dependency" => { bad.build.dependencies[0].insert("std".into(), "changed".into()); }
+            "configuration" => { bad.config.insert("scheduler".into(), "changed".into()); }
+            _ => unreachable!(),
+        }
+        refuse(&bad, component);
+    }
+    // A same-length dirty edit with its old mtime also invalidates the content snapshot.
+    let source = dir.join("package/src/demo.rs");
+    let modified = std::fs::metadata(&source).unwrap().modified().unwrap();
+    std::fs::write(&source, original_source.replace("lost update", "lost updatf")).unwrap();
+    std::fs::File::options().write(true).open(&source).unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(modified)).unwrap();
+    let refused = invoke(&recorded);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(stderr(&refused).contains("source mismatch"), "{}", output(&refused));
+    assert!(refused.stdout.is_empty());
+    let fresh = driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "simulation::loses_updates", "--seed", &recording.seed])
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(!fresh.status.success());
+    assert!(output(&fresh).contains("lost updatf"), "{}", output(&fresh));
+    std::fs::write(source, original_source).unwrap();
+    // Dependency identity hashes actual supplied directory bytes, with physical roots normalized.
+    let dependencies = dir.join("operator-dependencies");
+    std::fs::create_dir(&dependencies).unwrap();
+    for entry in std::fs::read_dir(std_dir()).unwrap() {
+        let entry = entry.unwrap();
+        std::fs::hard_link(entry.path(), dependencies.join(entry.file_name())).unwrap();
+    }
+    std::fs::write(dependencies.join("operator-config"), b"changed dependency input").unwrap();
+    let original = driver(&dir);
+    let mut changed_deps = Command::new(original.get_program());
+    for arg in original.get_args() {
+        changed_deps.arg(if arg == std_dir().as_os_str() { dependencies.as_os_str() } else { arg });
+    }
+    let refused = changed_deps.args(["--crate-type=lib", "--test", "--replay"]).arg(&recorded)
+        .stdin(Stdio::null()).output().unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(stderr(&refused).contains("dependency artifact mismatch"), "{}", output(&refused));
+    assert!(refused.stdout.is_empty());
+    let combined = driver(&dir).args(["--crate-type=lib", "--test", "--seed", "0", "--replay"]).arg(&recorded)
+        .stdin(Stdio::null()).output().unwrap();
+    assert_eq!(combined.status.code(), Some(2));
+    assert!(stderr(&combined).contains("configuration override"));
+
+    // Parameter tapes belong to the original evaluation, not the later shrink result.
+    let parameters = package("replay-parameters", r#"
+#[sim_test(seeds = 1)]
+fn parameters(sim: std::sim::SimRoot, values: Vec<u16>) {
+    sim.world.args(["demo", "quoted argument"]);
+    sim.world.env_var("MODE", "test");
+    sim.world.stdin([0, 255, 10]);
+    sim.world.file("/config", [0, 255]);
+    println!("{:?}", values);
+    sim.tasks.checkpoint().unwrap();
+    panic!("parameter witness");
+}
+#[test]
+#[should_panic]
+fn expected_panic(value: bool) {
+    let sim = Root::sim(47);
+    println!("value={value}");
+    sim.tasks.checkpoint().unwrap();
+    panic!("expected witness");
+}
+#[test]
+fn sequential_roots() {
+    { let sim = Root::sim(17); sim.tasks.checkpoint().unwrap(); }
+    { let sim = Root::sim(29); sim.tasks.checkpoint().unwrap(); }
+    panic!("plain witness");
+}
+"#);
+    for name in ["parameters", "sequential_roots", "expected_panic"] {
+        let fresh = driver(&parameters).args(["--crate-type=lib", "--test", "--tide-run-test", name, "--seed", "47"])
+            .stdin(Stdio::null()).output().unwrap();
+        assert_eq!(fresh.status.success(), name == "expected_panic", "{}", output(&fresh));
+        let path = std::fs::read_dir(parameters.join("out/target/sim")).unwrap()
+            .filter_map(|e| { let p = e.unwrap().path().join("run.manifest.json"); p.is_file().then_some(p) })
+            .find(|p| read::<Manifest>(p).unwrap().test == name).unwrap();
+        let manifest: Manifest = read(&path).unwrap();
+        if name == "sequential_roots" {
+            assert_eq!(manifest.roots.iter().map(|r| r.seed.as_str()).collect::<Vec<_>>(), ["17", "29"]);
+        } else if name == "parameters" {
+            assert!(!manifest.choices.is_empty());
+            assert_eq!(manifest.roots[0].inputs.len(), 5);
+            assert_eq!(manifest.roots[0].inputs[4].value, [0, 255]);
+        }
+        let run = driver(&parameters).args(["--crate-type=lib", "--test", "--replay"]).arg(&path)
+            .stdin(Stdio::null()).output().unwrap();
+        assert_eq!(run.status.success(), name == "expected_panic", "{}", output(&run));
+        assert!(output(&run).contains("replay reproduced"), "{}", output(&run));
+        if name == "parameters" || name == "expected_panic" {
+            for extra in [false, true] {
+                let mut bad = manifest.clone();
+                if extra { bad.choices.push(replay_wire::Choice { kind: "bool".into(), bound: "1".into(), value: "0".into() }); }
+                else { bad.choices.clear(); }
+                bad.seal(); std::fs::write(parameters.join("bad.json"), encoded(&bad)).unwrap();
+                let run = driver(&parameters).args(["--crate-type=lib", "--test", "--replay"]).arg(parameters.join("bad.json"))
+                    .stdin(Stdio::null()).output().unwrap();
+                assert_eq!(run.status.code(), Some(2), "{}", output(&run));
+                assert!(output(&run).contains(if extra { "tape has leftovers" } else { "tape exhausted" }), "{}", output(&run));
+                assert!(!output(&run).contains("replay reproduced"));
+            }
+            for component in ["trace", "outcome"] {
+                let mut bad = manifest.clone();
+                if component == "trace" { bad.trace.push_str("extra event\n"); }
+                else { bad.outcome = "different outcome".into(); }
+                bad.seal(); std::fs::write(parameters.join("bad.json"), encoded(&bad)).unwrap();
+                let run = driver(&parameters).args(["--crate-type=lib", "--test", "--replay"]).arg(parameters.join("bad.json"))
+                    .stdin(Stdio::null()).output().unwrap();
+                assert_eq!(run.status.code(), Some(2), "{}", output(&run));
+                assert!(output(&run).contains(if component == "trace" { "first differing trace line" } else { "outcome mismatch" }), "{}", output(&run));
+                assert!(!output(&run).contains("replay reproduced"));
+            }
+        }
+    }
+
+    let paired = package("replay-paired", r#"
+#[sim_test(seeds = 1)]
+fn paired(sim: std::sim::SimRoot) {
+    println!("{}", tide_candidate::value());
+    sim.tasks.checkpoint().unwrap();
+    panic!("paired witness");
+}
+"#);
+    std::fs::create_dir_all(paired.join("candidate/src")).unwrap();
+    let library = paired.join("candidate/src/lib.rs");
+    std::fs::write(&library, "pub fn value() -> u32 { 1 }").unwrap();
+    let fresh = paired_test_driver(&paired).args(["--tide-run-test", "paired"]).output().unwrap();
+    assert!(!fresh.status.success());
+    let path = std::fs::read_dir(paired.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).find(|p| p.is_file()).unwrap();
+    let replay = paired_test_driver(&paired).arg("--replay").arg(&path).output().unwrap();
+    assert!(output(&replay).contains("replay reproduced"), "{}", output(&replay));
+    std::fs::write(&library, "pub fn value() -> u32 { 2 }").unwrap();
+    let refused = paired_test_driver(&paired).arg("--replay").arg(&path).output().unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(stderr(&refused).contains("paired-library source mismatch"), "{}", output(&refused));
+    assert!(refused.stdout.is_empty());
+
+    let cache = std::fs::read_dir(dir.join("out/.tide-cache")).unwrap()
+        .map(|e| e.unwrap().path()).find(|entry| {
+            read::<replay_wire::Receipt>(&entry.join("build.json")).is_ok_and(|r| r.build == recording.build)
+        }).unwrap();
+    let executable = cache.join("executable");
+    let original = std::fs::read(&executable).unwrap();
+    let mut modified = original.clone(); modified.push(0);
+    std::fs::write(&executable, modified).unwrap();
+    let refused = invoke(&recorded);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(stderr(&refused).contains("executable/receipt mismatch"), "{}", output(&refused));
+    assert!(refused.stdout.is_empty());
+    std::fs::write(executable, original).unwrap();
+
+    let relocated = package("replay-relocated", original_source);
+    let replay = driver(&relocated).args(["--crate-type=lib", "--test", "--replay"]).arg(&recorded)
+        .stdin(Stdio::null()).output().unwrap();
+    assert!(output(&replay).contains("replay reproduced"), "{}", output(&replay));
 }

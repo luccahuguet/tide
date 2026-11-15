@@ -29,6 +29,8 @@ use crate::diag::{Code, Diagnostics, RustcLabels};
 use crate::synthesis::{self, Insertions};
 use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
+mod replay;
+
 const TEST_LIBRARY_NAME: &str = "tide_candidate";
 
 struct Admission {
@@ -49,6 +51,7 @@ struct Admission {
     test_ice: bool,
     synthesize: bool,
     insertions: Insertions,
+    test_configs: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl Callbacks for Admission {
@@ -82,6 +85,7 @@ impl Callbacks for Admission {
                 return Compilation::Stop;
             }
         }
+        self.test_configs = replay::test_configs(tcx);
         self.holes = check_crate(
             tcx,
             self.grants,
@@ -136,6 +140,10 @@ struct Invocation {
     /// writes no report.
     test_ice: bool,
     compile: Option<String>,
+    replay: Option<PathBuf>,
+    seed: Option<u64>,
+    run_test: Option<String>,
+    remap: Vec<(PathBuf, String)>,
 }
 
 impl Invocation {
@@ -177,6 +185,9 @@ impl Invocation {
                     | "--tide-test-library"
                     | "--tide-compile"
                     | "--tide-profile"
+                    | "--replay"
+                    | "--seed"
+                    | "--tide-run-test"
             ) {
                 let value = inline
                     .or_else(|| args.next().map(String::as_str))
@@ -185,6 +196,9 @@ impl Invocation {
                     return Err(format!("invalid value for `{flag}`"));
                 }
                 match flag {
+                    "--replay" if this.replay.is_none() => this.replay = Some(value.into()),
+                    "--seed" if this.seed.is_none() => this.seed = Some(value.parse().map_err(|_| "--seed requires a decimal u64")?),
+                    "--tide-run-test" if this.run_test.is_none() => this.run_test = Some(value.into()),
                     "--edition" if value == "2024" => (),
                     "--crate-type" if matches!(value, "lib" | "bin") => this.kind = value.into(),
                     "--emit" if matches!(value, "metadata" | "link") => this.link = value == "link",
@@ -254,6 +268,15 @@ impl Invocation {
                 ));
             }
         }
+        if this.replay.is_some() && (this.seed.is_some() || this.run_test.is_some()) {
+            return Err("--replay accepts no --seed or --tide-run-test configuration override".into());
+        }
+        if this.seed.is_some() && this.run_test.is_none() {
+            return Err("fresh --seed requires --tide-run-test NAME".into());
+        }
+        if (this.replay.is_some() || this.run_test.is_some()) && (!this.link || !this.test || this.std.is_none() || this.grants.unsafe_ || this.backstop_only || this.test_ice) {
+            return Err("replay/test execution requires --test --emit=link --tide-std and full admission without grants".into());
+        }
         Ok(this)
     }
 
@@ -311,6 +334,12 @@ impl Invocation {
         } else {
             args.extend(["--out-dir".into(), out.display().to_string()]);
         }
+        if self.link && (self.test || self.tested_library) {
+            args.push("--remap-path-scope=macro,object".into());
+            for (root, role) in &self.remap {
+                args.push(format!("--remap-path-prefix={}={role}", root.display()));
+            }
+        }
         if self.test {
             args.push("--test".into());
         }
@@ -366,8 +395,9 @@ impl Invocation {
             test_ice: self.test_ice,
             synthesize: self.test && self.std.is_some(),
             insertions: Insertions::default(),
+            test_configs: BTreeMap::new(),
         };
-        rustc_driver::catch_with_exit_code(|| {
+        let status = rustc_driver::catch_with_exit_code(|| {
             rustc_driver::run_compiler(&rustc_args, &mut admission);
             if !admission.insertions.is_empty() {
                 // The edits depend only on the snapshot, compiler, std and paired library.
@@ -377,7 +407,14 @@ impl Invocation {
                 admission.synthesize = false;
                 rustc_driver::run_compiler(&rustc_args, &mut admission);
             }
-        })
+        });
+        if status == ExitCode::SUCCESS && self.link && self.test {
+            if let Err(e) = fs::write(out.join("test-config.json"), crate::replay::encoded(&admission.test_configs)) {
+                eprintln!("cannot write test configuration receipt: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+        status
     }
 
     fn package_root(&mut self, cwd: &Path) -> Result<PathBuf, String> {
@@ -441,15 +478,18 @@ impl Invocation {
     }
 
     fn clear_outputs(&self) -> Result<(), String> {
+        // A refused replay must leave previously published outputs intact.
+        if self.replay.is_some() { return Ok(()); }
         // Failed builds leave neither an earlier interface nor their requested executable.
         if self.link {
             remove_if_present(&self.executable())?;
+            remove_if_present(&self.receipt_path())?;
         }
         remove_if_present(&self.out.join(format!("{}.interface.json", self.name)))
     }
 
     fn compile_with_library(
-        &self,
+        &mut self,
         cwd: &Path,
         package: &Path,
         library: PathBuf,
@@ -484,8 +524,14 @@ impl Invocation {
         library.trusted_inputs(&library_package)?;
         let sources = source_snapshot(&suite_root, &suite_source, &mut Vec::new())?;
         let library_sources = source_snapshot(&root, &source, &mut Vec::new())?;
+        self.test_library = Some(library.source.clone());
+        library.remap = vec![(root.clone(), "tide-library".into())];
+        self.remap = vec![(suite_root.clone(), "tide-source".into()), (root, "tide-library".into())];
+        let build = self.build_identity(&sources, Some((&library, &library_sources)))?;
+        let manifest = self.validate_replay(&build)?;
+        let replaying = manifest.is_some();
         let staging = create_test_staging(&self.out)?;
-        let result = (|| {
+        let result: Result<ExitCode, String> = (|| {
             let status = library.compile(&staging, library_sources, None, false);
             if status != ExitCode::SUCCESS {
                 return Ok(status);
@@ -493,13 +539,16 @@ impl Invocation {
             let artifact = staging.join(format!("lib{TEST_LIBRARY_NAME}.rlib"));
             let status = self.compile(&staging, sources, Some(&artifact), false);
             if status == ExitCode::SUCCESS && self.link {
-                fs::rename(staging.join("executable"), self.executable())
-                    .map_err(|e| e.to_string())?;
+                self.publish_receipt(&staging, &build)?;
+                if replaying { return self.run_test_process(manifest, &build, Some(&staging)); }
+                fs::rename(staging.join("executable"), self.executable()).map_err(|e| e.to_string())?;
+                fs::rename(staging.join("build.json"), self.receipt_path()).map_err(|e| e.to_string())?;
             }
             Ok(status)
         })();
         let _ = fs::remove_dir_all(staging);
-        result
+        let status = result?;
+        if status == ExitCode::SUCCESS && !replaying { self.run_test_process(None, &build, None) } else { Ok(status) }
     }
 }
 
@@ -611,6 +660,7 @@ fn destination(path: &Path) -> io::Result<PathBuf> {
 #[derive(Clone)]
 struct Sources {
     files: Arc<BTreeMap<PathBuf, String>>,
+    logical: Arc<BTreeMap<String, String>>,
     intent: Arc<Mutex<SourceIntent>>,
     insertions: Arc<Insertions>,
 }
@@ -628,6 +678,7 @@ impl Sources {
             dir: &Path,
             seen: &mut BTreeSet<PathBuf>,
             files: &mut BTreeMap<PathBuf, String>,
+            logical: &mut BTreeMap<String, String>,
             key: &mut Vec<u8>,
         ) -> io::Result<()> {
             let mut entries: Vec<_> = fs::read_dir(dir)?
@@ -642,14 +693,17 @@ impl Sources {
                 if !canonical.starts_with(root) {
                     continue;
                 }
+                let name = entry.strip_prefix(root).unwrap().to_str().ok_or_else(|| io::Error::other("non-UTF-8 source name"))?.to_string();
+                let target = canonical.strip_prefix(root).unwrap().to_str().ok_or_else(|| io::Error::other("non-UTF-8 source alias"))?;
                 if canonical.is_dir() {
+                    logical.insert(format!("directory:{name}"), target.into());
                     record(
                         key,
                         entry.as_os_str().as_encoded_bytes(),
                         canonical.as_os_str().as_encoded_bytes(),
                     );
                     if seen.insert(canonical.clone()) {
-                        walk(root, &entry, seen, files, key)?;
+                        walk(root, &entry, seen, files, logical, key)?;
                     }
                 } else if entry.extension().is_some_and(|ext| ext == "rs")
                     && canonical.extension().is_some_and(|ext| ext == "rs")
@@ -658,21 +712,25 @@ impl Sources {
                         continue;
                     };
                     record(key, entry.as_os_str().as_encoded_bytes(), source.as_bytes());
+                    logical.insert(format!("file:{name}"), format!("{target}:{}", crate::replay::digest(source.as_bytes())));
                     files.insert(canonical, source);
                 }
             }
             Ok(())
         }
         let mut files = BTreeMap::new();
+        let mut logical = BTreeMap::new();
         walk(
             root,
             root,
             &mut BTreeSet::from([root.into()]),
             &mut files,
+            &mut logical,
             key,
         )?;
         Ok(Self {
             files: Arc::new(files),
+            logical: Arc::new(logical),
             intent: Arc::default(),
             insertions: Arc::default(),
         })
@@ -722,9 +780,20 @@ impl FileLoader for Sources {
     fn read_file(&self, path: &Path) -> io::Result<String> {
         let canonical = fs::canonicalize(path).ok();
         // Whether a trusted crate's imported source file has this name.
-        let foreign = get_source_map().is_some_and(|sm| sm.files().iter().any(|file| {
-            file.is_imported() && matches!(&file.name, FileName::Real(name) if name.local_path().unwrap_or_else(|| name.path(RemapPathScopeComponents::DIAGNOSTICS)) == path)
-        }));
+        let foreign = get_source_map().is_some_and(|sm| {
+            // Trusted dependencies may remap their own paths. rustc reverses that mapping
+            // when requesting imported diagnostic source. Match
+            // its mapped identity too; this still supplies only empty text, never a host read.
+            let requested = sm
+                .path_mapping()
+                .to_real_filename(&rustc_span::RealFileName::empty(), path);
+            sm.files().iter().any(|file| {
+                file.is_imported() && matches!(&file.name, FileName::Real(name)
+                    if name.local_path() == Some(path)
+                        || name.path(RemapPathScopeComponents::DIAGNOSTICS)
+                            == requested.path(RemapPathScopeComponents::DIAGNOSTICS))
+            })
+        });
         if let Some(canonical) = &canonical
             && let Some(source) = self.files.get(canonical)
         {
@@ -982,6 +1051,15 @@ pub fn run() -> Result<ExitCode, String> {
         );
         return Ok(ExitCode::SUCCESS);
     }
+    if args == ["--help"] {
+        println!("tide-admit [fixed build options] SOURCE.rs
+  --test --emit=link --tide-std PATH --tide-dep-dir DIR --out-dir DIR
+  --tide-run-test NAME [--seed U64]  run one exact recorded test (excludes const tests and test main)
+  --replay MANIFEST                 identity-checked replay of one recorded evaluation
+Replay is a partial precursor to tide sim, for reviewed code with modeled effects.
+Replay accepts no configuration overrides and has no force option. Artifacts: OUT/target/sim.");
+        return Ok(ExitCode::SUCCESS);
+    }
     let mut invocation = Invocation::parse(&args)?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     // Even direct invocation of the internal compiler mode gets a clean process.
@@ -1009,6 +1087,7 @@ pub fn run() -> Result<ExitCode, String> {
     }
     invocation.clear_outputs()?;
     let (source_root, source) = invocation.source_paths(&package)?;
+    invocation.remap = vec![(source_root.clone(), "tide-source".into())];
     if reject_build_script(&package) {
         return Ok(ExitCode::FAILURE);
     }
@@ -1048,6 +1127,8 @@ pub fn run() -> Result<ExitCode, String> {
     );
     record(&mut key, b"test ice", &[u8::from(invocation.test_ice)]);
     let sources = source_snapshot(&source_root, &source, &mut key)?;
+    let build = invocation.build_identity(&sources, None)?;
+    let manifest = invocation.validate_replay(&build)?;
     let key: String = SourceFileHash::new_in_memory(SourceFileHashAlgorithm::Sha256, &key)
         .hash_bytes()
         .iter()
@@ -1072,7 +1153,9 @@ pub fn run() -> Result<ExitCode, String> {
         // A killed earlier run with this pid may have left its staging directory.
         let _ = fs::remove_dir_all(&out);
         fs::create_dir(&out).map_err(|e| e.to_string())?;
-        return Ok(invocation.compile(&out, sources, None, true));
+        let status = invocation.compile(&out, sources, None, true);
+        if status == ExitCode::SUCCESS && invocation.link { invocation.publish_receipt(&out, &build)?; }
+        return Ok(status);
     }
     // Granted assembly and native links can read inputs the source snapshot cannot key.
     let cacheable = !invocation.link || !invocation.grants.unsafe_;
@@ -1112,9 +1195,12 @@ pub fn run() -> Result<ExitCode, String> {
             entry = staging;
         }
     }
+    // Replay checks and runs private artifacts without replacing any published outputs.
+    if manifest.is_some() { return invocation.run_test_process(manifest, &build, Some(&entry)); }
     for file in fs::read_dir(&entry).map_err(|e| e.to_string())? {
         let file = file.map_err(|e| e.to_string())?.path();
         let executable = invocation.link && file.file_name().is_some_and(|n| n == "executable");
+        if file.file_name().is_some_and(|n| n == "test-config.json") { continue; }
         if executable
             || file
                 .extension()
@@ -1123,7 +1209,11 @@ pub fn run() -> Result<ExitCode, String> {
             let dest = if executable {
                 invocation.executable()
             } else {
-                invocation.out.join(file.file_name().unwrap())
+                if file.file_name().is_some_and(|n| n == "build.json") {
+                    invocation.receipt_path()
+                } else {
+                    invocation.out.join(file.file_name().unwrap())
+                }
             };
             let tmp = invocation
                 .out
@@ -1141,5 +1231,5 @@ pub fn run() -> Result<ExitCode, String> {
     if !cacheable {
         fs::remove_dir_all(entry).map_err(|e| e.to_string())?;
     }
-    Ok(ExitCode::SUCCESS)
+    invocation.run_test_process(None, &build, None)
 }

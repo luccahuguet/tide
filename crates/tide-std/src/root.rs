@@ -40,6 +40,7 @@ pub use tide_macros::{Decode, Encode, Error, dbg, debug, eprint, eprintln, error
 pub mod __codec;
 pub use __codec::{Decode, Encode};
 pub mod json;
+pub(crate) mod replay;
 
 /// Support for the toolchain Error derive; shared by production and conformance.
 #[doc(hidden)]

@@ -146,11 +146,11 @@ and the mono-item backstop, then invokes fixed `/usr/bin/cc` with `/usr/bin/ld`
 `<out-dir>/<crate-name>`, or `<crate-name>-test` for `--test`, only on success;
 it removes that invocation's previous executable
 before checking, so a rejected rebuild leaves no stale executable at that path.
-The shared `<crate-name>.interface.json` describes the latest invocation. Use
+Replay leaves published outputs intact. The shared `<crate-name>.interface.json` describes the latest invocation. Use
 separate `--out-dir` values for profiles and bin/test modes to retain their
 artifact pairs. rustc's codegen and link temporaries stay in private cache staging;
-host tools may use their own temporary paths. The driver never executes either
-output. For reviewed demo code:
+host tools may use their own temporary paths. Building alone never executes an
+output; the explicit test/replay modes below run reviewed code. For a demo build:
 
 ```bash
 mapfile -t TIDE_LIBRARIES < <(
@@ -187,7 +187,7 @@ discards that case when runtime contracts are enabled. The run
 fails as `vacuous` if fewer than 100 cases are accepted within 10,000 generated
 cases, naming the conjunct with the most first rejections. Passing runs report
 accepted/generated. Its parameters need `Debug`; a user-defined generator
-implements `std::test::Arbitrary`. List tests with `--list`. To replay a case,
+implements `std::test::Arbitrary`. List tests with `--list`. For a fresh rerun of a case,
 set `TIDE_TEST_SEED` to the reported seed and run the test binary with
 `--exact <test-name>`.
 Structural generators are inserted into the defining modules before the final
@@ -362,15 +362,71 @@ causes, and traces on failure. Success emits at most one summary line, captured
 by libtest; seed-start records stay internal. Signal/timeout or a missing summary
 names the last started seed; ordinary failures name the failing seeds. The
 internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
-the test binary; it does no build/source identity validation. Replay manifests
-and their identity checks, simulated HTTP/randomness, other world setup,
-and faults remain planned. Extra parameters, such as
+the test binary; it does no build/source identity validation. Simulated HTTP/randomness,
+other world setup and faults remain planned. Extra parameters, such as
 `#[sim_test] fn t(sim: SimRoot, sizes: Vec<u16>)`, use the property runner's
 guidance, filtering, vacuity floor and shrinking. Each case and shrink attempt
 gets a fresh simulator with the same case seed; only the parameters shrink.
 A plain property's parameter spelled `seed: u64` also receives the case seed
 and keeps it while shrinking.
 These test processes are for reviewed/trusted code; they have no OS sandbox.
+
+The driver supplies a partial precursor to `tide sim` for one exact test:
+
+```sh
+tide-admit --test --crate-type=lib --emit=link \
+  --tide-std /operator/libtide_std.rlib --tide-dep-dir /operator/artifacts \
+  --out-dir /operator/out package/src/lib.rs \
+  --tide-run-test module::test_name --seed 47
+```
+
+`--seed` selects a fresh evaluation of current source; omit it to use the test's
+normal case range. Driver execution clears child environments and supplies only
+explicit harness controls. Each evaluation writes an exclusively reserved
+`OUT/target/sim/<run>/run.manifest.json` in format `tide-replay/1`, with a sibling
+`trace.ndjson`. The initial manifest precedes user evaluation; choices and
+source-defined root setup (arguments, environment, stdin and file bytes) append
+before application. An aborted evaluation keeps an incomplete manifest.
+Ordinary tests record ordered `Root::sim` calls without replacing source-written seeds.
+Nested property and simulation test calls run within the caller's evaluation;
+their generated choices and roots do not create a separate manifest or enter the
+caller's input tape. Nested calls use their configured deterministic case range;
+driver seed/replay controls select only the outer evaluation. A nested simulation
+root's events are not part of the caller's trace, and its seed-start records stay
+internal. Const tests and a test-decorated `main` retain native libtest
+execution without recording and cannot run through `--tide-run-test` or `--replay`.
+A `#[sim_test]` called from inside a simulated task fails with "a task runtime is
+already active".
+
+Linked test builds (including a paired test library) remap embedded source paths
+to `tide-source` and `tide-library`: this covers panic locations and
+macro-supplied trace spans, so moving a source tree preserves replay locations.
+The scope is `--remap-path-scope=macro,object`; candidate diagnostics, debug-info
+and coverage paths retain real spellings, as do non-test builds. This is path
+normalization for same-machine replay, not a promise to remove all physical paths.
+
+Failures print an executable, shell-quoted `tide-admit ... --replay <manifest>`
+command using the same explicit build arguments. Replay validates format and
+digests, current source snapshots (including a paired library), compiler,
+target, profile, semantic options, dependency artifact hashes, and test
+configuration before starting any candidate process. The driver pairs each
+executable with a `<crate>[-test].build.json` receipt and verifies its bytes.
+Replay runs private build artifacts and leaves published outputs unchanged,
+including on refusal.
+Replay consumes the exact typed parameter choice tape once, without generation
+or shrinking, and compares the exact NDJSON bytes and stable outcome with the
+recording. A reproduced failure remains a failing test and prints `replay reproduced`.
+The primary artifact belongs to the original evaluation, independently of the
+minimized input reported afterward. Tape exhaustion, leftovers, changed kinds,
+or divergent root setup, trace or outcome fail replay.
+
+`--replay` accepts neither `--seed` nor a test/configuration override; there is no
+force option. Use fresh `--seed` after edits. Direct test-binary invocation has
+no driver-verified manifest guarantee. Replay currently promises the same
+machine with identical pinned trusted artifacts, sysroot and C runtime;
+dependency hashes describe supplied artifact contents, not source provenance.
+Fault plans, durability, crash models, signing, the RUN-3 sandbox and the
+`tide sim` frontend remain outside this path.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with

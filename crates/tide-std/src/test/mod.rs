@@ -1,7 +1,7 @@
 //! Property tests for driver-built libtest binaries.
 //!
 //! Parameterized tests accept 100 deterministic cases under their requires, or fail as
-//! vacuous after 10,000 generated cases. `TIDE_TEST_SEED` replays one case.
+//! vacuous after 10,000 generated cases. `TIDE_TEST_SEED` selects one fresh case without identity checks.
 //! `#[sim_test]` uses the same runner in a child process, with a fresh simulator per
 //! evaluation and fixed seed during parameter shrinking. `TIDE_SIM_SEED` selects one case.
 //! The crate-level docs own supported guidance shapes and generation/shrinking limits.
@@ -13,14 +13,14 @@ mod runner;
 pub use arbitrary::{Arbitrary, Borrowed};
 #[doc(hidden)]
 pub use guided::{range, sequence, sequence_with};
-pub use runner::{Config, Source, attempt, reject_generation, property_result, run_config};
+pub use runner::{Config, Source, attempt, reject_generation, property_result, run_config, run_plain};
 pub use tide_macros::{sim_test, test};
 
 use std::collections::VecDeque;
 use std::fmt::{Debug, Write};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Kind {
+pub(crate) enum Kind {
     Integer(u128),
     Signed(u32),
     Float(u8),
@@ -30,9 +30,32 @@ enum Kind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Choice {
+pub(crate) struct Choice {
     value: u128,
     kind: Kind,
+}
+
+impl Choice {
+    pub(crate) fn wire(&self) -> crate::replay::Choice {
+        let (kind, bound) = match self.kind {
+            Kind::Integer(max) => ("integer", max),
+            Kind::Signed(bits) => ("signed", bits as u128),
+            Kind::Float(bits) => ("float", bits as u128),
+            Kind::Index(bound) => ("index", bound as u128),
+            Kind::Bool => ("bool", 1), Kind::More => ("more", 1),
+        };
+        crate::replay::Choice { kind: kind.into(), bound: bound.to_string(), value: self.value.to_string() }
+    }
+    pub(crate) fn from_wire(choice: &crate::replay::Choice) -> Self {
+        choice.validate().unwrap_or_else(|e| panic!("{e}"));
+        let bound: u128 = choice.bound.parse().unwrap();
+        let kind = match choice.kind.as_str() {
+            "integer" => Kind::Integer(bound), "signed" => Kind::Signed(bound as u32),
+            "float" => Kind::Float(bound as u8), "index" => Kind::Index(bound as usize),
+            "bool" => Kind::Bool, "more" => Kind::More, _ => unreachable!(),
+        };
+        Self { kind, value: choice.value.parse().unwrap() }
+    }
 }
 
 /// The source of choices for an [`Arbitrary`] implementation (provisional).
@@ -41,7 +64,6 @@ struct Choice {
 /// runner can shrink it by asking the implementation to draw again.
 pub struct Gen {
     seed: u64,
-    simulation: Option<crate::task::Tasks>,
     random: u64,
     replay: Option<VecDeque<Choice>>,
     choices: Vec<Choice>,
@@ -49,6 +71,9 @@ pub struct Gen {
     collection_depth: u8,
     replay_remaining: usize,
     replay_overrun: bool,
+    strict: bool,
+    strict_error: Option<String>,
+    origin: Option<Source>,
 }
 
 struct ReplayOverrun;
@@ -61,7 +86,6 @@ impl Gen {
             .map_or(0, |choices| choices.len().saturating_add(128));
         Self {
             seed,
-            simulation: None,
             random: seed,
             replay: replay.map(VecDeque::from),
             choices: Vec::new(),
@@ -69,6 +93,9 @@ impl Gen {
             collection_depth: 0,
             replay_remaining,
             replay_overrun: false,
+            strict: false,
+            strict_error: None,
+            origin: None,
         }
     }
 
@@ -79,9 +106,7 @@ impl Gen {
 
     #[doc(hidden)]
     pub fn simulation(&mut self) -> crate::sim::SimRoot {
-        let sim = crate::Root::sim(self.seed);
-        self.simulation = Some(sim.tasks.clone());
-        sim
+        crate::sim::SimRoot::new_at(self.seed, self.origin)
     }
 
     /// Choose one index in `0..choices`. Panics if there are no choices.
@@ -107,6 +132,18 @@ impl Gen {
 
     fn draw(&mut self, kind: Kind, generate: impl FnOnce(&mut Self) -> u128) -> u128 {
         let value = if let Some(replay) = &mut self.replay {
+            if self.strict {
+                match replay.pop_front() {
+                    Some(choice) if choice.kind == kind => {
+                        self.choices.push(choice);
+                        crate::sim::manifest::choice(&choice);
+                        return choice.value;
+                    }
+                    Some(_) => self.strict_error = Some("replay choice kind/bound mismatch".into()),
+                    None => self.strict_error = Some("replay choice tape exhausted".into()),
+                }
+                std::panic::panic_any(ReplayOverrun);
+            }
             if self.replay_remaining == 0 {
                 self.replay_overrun = true;
                 std::panic::panic_any(ReplayOverrun);
@@ -122,7 +159,9 @@ impl Gen {
         } else {
             generate(self)
         };
-        self.choices.push(Choice { value, kind });
+        let choice = Choice { value, kind };
+        self.choices.push(choice);
+        crate::sim::manifest::choice(&choice);
         value
     }
 

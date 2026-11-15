@@ -74,6 +74,7 @@ struct Record {
     task: TaskId,
     kind: &'static str,
     pending: Pending,
+    origin: Option<crate::test::Source>,
     // The task's cell set when the record was made, for `cells_acquire`.
     targets: Option<Box<[usize]>>,
     wait: Option<&'static str>,
@@ -112,7 +113,7 @@ impl Record {
             self.kind,
         )
         .unwrap();
-        operation(out, self.pending, self.targets.as_deref().unwrap_or(&[]));
+        operation(out, self.pending, self.targets.as_deref().unwrap_or(&[]), self.origin);
         match self.wait {
             Some(wait) => write!(out, ",\"wait\":\"{wait}\"").unwrap(),
             None => out.push_str(",\"wait\":null"),
@@ -202,6 +203,8 @@ fn render(records: &[Record]) -> String {
 }
 
 impl Trace {
+    pub(crate) fn append(&mut self, other: Self) { self.0.extend(other.0); }
+
     pub(crate) fn render(&self) -> String {
         render(&self.0)
     }
@@ -267,6 +270,7 @@ const STALL_LIMIT: usize = 1_000_000;
 pub(super) struct Scheduler {
     tasks: Vec<TaskState>,
     pub(super) current: Option<TaskId>,
+    pub(super) main_origin: Option<crate::test::Source>,
     next_cell: usize,
     next_limit: usize,
     next_channel: usize,
@@ -295,6 +299,7 @@ impl Scheduler {
                 cells: Vec::new(),
             }],
             current: Some(0),
+            main_origin: None,
             next_cell: 0,
             next_limit: 0,
             next_channel: 0,
@@ -624,7 +629,7 @@ impl Scheduler {
         for (index, (id, wait)) in blocked.into_iter().enumerate() {
             let comma = if index == 0 { "" } else { "," };
             write!(list, "{comma}{{\"task\":{id}").unwrap();
-            operation(&mut list, wait, &self.tasks[id].cells);
+            operation(&mut list, wait, &self.tasks[id].cells, None);
             list.push('}');
             write!(
                 report,
@@ -841,6 +846,7 @@ impl Scheduler {
             task,
             kind,
             pending,
+            origin: (task == 0 && pending.operation == Operation::Exit).then_some(self.main_origin).flatten(),
             targets,
             wait,
             tail,
@@ -849,7 +855,7 @@ impl Scheduler {
     }
 }
 
-fn operation(out: &mut String, pending: Pending, cells: &[usize]) {
+fn operation(out: &mut String, pending: Pending, cells: &[usize], origin: Option<crate::test::Source>) {
     let (operation, target) = pending.operation.name();
     write!(out, ",\"operation\":\"{operation}\"").unwrap();
     if let Some(target) = target {
@@ -859,12 +865,12 @@ fn operation(out: &mut String, pending: Pending, cells: &[usize]) {
         write!(out, ",\"targets\":{cells:?}").unwrap();
     }
     out.push_str(",\"span\":{\"file\":");
-    quoted(out, pending.span.file());
+    quoted(out, origin.map_or(pending.span.file(), |s| s.file));
     write!(
         out,
         ",\"line\":{},\"column\":{}}}",
-        pending.span.line(),
-        pending.span.column(),
+        origin.map_or(pending.span.line(), |s| s.start.0),
+        origin.map_or(pending.span.column(), |s| s.start.1),
     )
     .unwrap();
 }

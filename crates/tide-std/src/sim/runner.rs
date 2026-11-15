@@ -15,7 +15,8 @@ const TIMEOUT: Duration = Duration::from_secs(300);
 #[doc(hidden)]
 pub fn __run(path: &str, config: Config, body: fn(&mut Gen) -> Result<(), String>) {
     let name = path.split_once("::").map_or(path, |(_, name)| name);
-    if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
+    if crate::sim::manifest::active()
+        || std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
         crate::test::run_config(path, config, body);
         return;
     }
@@ -117,7 +118,12 @@ struct ChildOutput {
 }
 
 fn child(path: &str, name: &str, timeout: Duration) -> io::Result<ChildOutput> {
-    let mut process = Command::new(std::env::current_exe()?)
+    let mut command = Command::new(std::env::current_exe()?);
+    command.env_clear();
+    for key in crate::replay::CONTROLS {
+        if let Some(value) = std::env::var_os(key) { command.env(key, value); }
+    }
+    let mut process = command
         .args(["--exact", name, "--nocapture", "--include-ignored"])
         .env(CHILD, path)
         .stdin(Stdio::null())
@@ -239,6 +245,7 @@ mod tests {
             "::missing_summary_reports_the_last_started_seed"
         );
         if std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
+            assert!(std::env::vars_os().all(|(key, _)| key == CHILD || crate::replay::CONTROLS.iter().any(|allowed| key == *allowed)), "simulation child inherited ambient environment");
             println!("\n{START}47");
             io::stdout().flush().unwrap();
             return;

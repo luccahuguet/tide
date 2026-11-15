@@ -1,8 +1,12 @@
 // Seeded simulation for tests (03 §9). Tasks, Arc/Weak, Shared, channels, files, TCP loopback, process inputs, clocks and sinks are modeled.
-// Other capability operations/setup, faults, nodes and replay manifests are pending.
+// Driver-backed evaluation manifests use the private harness below.
+// Other capability operations/setup, faults and nodes are pending.
 
 use crate::task::{Simulation, Tasks};
 use crate::time::Duration;
+
+#[path = "sim/manifest.rs"]
+pub(crate) mod manifest;
 
 pub(crate) mod runner {
     include!("sim/runner.rs");
@@ -29,8 +33,14 @@ pub struct SimRoot {
 impl SimRoot {
     #[track_caller]
     pub(crate) fn new(seed: u64) -> Self {
-        let simulation = Simulation::new(seed);
+        Self::new_at(seed, None)
+    }
+
+    #[track_caller]
+    pub(crate) fn new_at(seed: u64, origin: Option<crate::test::Source>) -> Self {
+        let simulation = Simulation::new_at(seed, origin);
         let tasks = simulation.tasks().clone();
+        manifest::root(seed, tasks.clone());
         let fs = crate::fs::Fs::simulated(&tasks);
         Self {
             fs: fs.clone(),
@@ -77,6 +87,7 @@ impl World {
     /// Appends arguments, including the program name when desired.
     pub fn args(&self, args: impl IntoIterator<Item: AsRef<std::ffi::OsStr>>) {
         let args: Vec<_> = args.into_iter().map(|s| s.as_ref().to_owned()).collect();
+        for arg in &args { self.tasks.replay_input("arg", vec![], arg.as_encoded_bytes().to_vec()); }
         self.tasks.world_inputs(|inputs| inputs.args.extend(args));
     }
     /// Sets or replaces a variable. Inputs start empty.
@@ -91,6 +102,7 @@ impl World {
             "environment key must be nonempty and contain neither '=' nor NUL"
         );
         let (key, value) = (key.to_owned(), value.as_ref().to_owned());
+        self.tasks.replay_input("environment", key.as_encoded_bytes().to_vec(), value.as_encoded_bytes().to_vec());
         self.tasks.world_inputs(|inputs| {
             inputs.env.insert(key, value);
         });
@@ -98,12 +110,14 @@ impl World {
     /// Appends bytes to a pipe whose writer has closed. Reads have zero latency.
     pub fn stdin(&self, bytes: impl AsRef<[u8]>) {
         let bytes = bytes.as_ref();
+        self.tasks.replay_input("stdin", vec![], bytes.to_vec());
         self.tasks.world_inputs(|inputs| inputs.stdin.extend(bytes));
     }
     /// Immediately creates or replaces a file and creates its parents, from simulated `/`.
     /// Takes no virtual time and does not schedule. Panics on invalid setup paths.
     #[track_caller]
     pub fn file(&self, path: impl AsRef<std::path::Path>, contents: impl AsRef<[u8]>) {
+        self.tasks.replay_input("file", path.as_ref().as_os_str().as_encoded_bytes().to_vec(), contents.as_ref().to_vec());
         self.fs.world_file(path.as_ref(), contents.as_ref());
     }
 }

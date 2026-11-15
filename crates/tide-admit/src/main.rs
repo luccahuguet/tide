@@ -29,9 +29,17 @@
 //! the installed C toolchain/start files/libraries, like the sysroot, must remain immutable.
 //! Unsafe-granted link builds are uncached: assembly/native inputs bypass the source snapshot.
 //! Only a successful compilation publishes `<out-dir>/<crate-name>` (or `<crate-name>-test`),
-//! beside its trust artifact. A linked build removes its previous executable before checking.
+//! beside its trust artifact. A linked build removes its previous executable before checking,
+//! except replay, whose refusal preserves published outputs.
 //! The shared `<crate-name>.interface.json` belongs to the latest invocation; separate output
-//! directories retain bin/test/profile artifact pairs. The driver never runs an output.
+//! directories retain bin/test/profile artifact pairs. `--tide-run-test NAME [--seed N]` runs
+//! one exact test with fresh inputs; `--replay MANIFEST` validates source/build/artifact/configuration
+//! identity first. Const tests and a test-decorated main stay native libtest entries and cannot
+//! run through either driver mode. Linked test builds, including a paired library, remap embedded
+//! paths to tide-source/tide-library; diagnostics and non-test builds keep real paths. Replay checks
+//! identity with no force/override option. Both require trusted std and an admitted linked
+//! test build. Only these explicit modes execute an output, with a cleared environment.
+//! Executables carry a driver-owned `.build.json` receipt; run artifacts live under OUT/target/sim.
 //! `--test --tide-test-library SOURCE.rs` admits a library from a separate package, then
 //! compiles the test crate with that library available as `tide_candidate`. Both use full
 //! admission without grants. Both modes build a fresh library rlib in private staging.
@@ -74,6 +82,17 @@ mod crates;
 mod diag;
 mod interface;
 mod invocation;
+// The driver and trusted harness read exactly the same private wire format.
+use std::collections;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/codec.rs"]
+mod __codec;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/json.rs"]
+mod json;
+#[allow(dead_code)]
+#[path = "../../tide-std/src/replay.rs"]
+mod replay;
 mod policy;
 mod pure;
 mod synthesis;

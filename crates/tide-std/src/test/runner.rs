@@ -24,7 +24,7 @@ const STALLED_BUDGET: usize = 128;
 
 /// Source bounds used to distinguish direct calls from deeper contract failures.
 #[doc(hidden)]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Source {
     pub file: &'static str,
     pub start: (u32, u32),
@@ -41,6 +41,7 @@ impl Source {
 #[derive(Clone, Copy)]
 pub struct Config {
     pub cases: u64,
+    pub plain: bool,
     pub body: Source,
     pub call: Source,
     pub excluded: &'static [Source],
@@ -53,6 +54,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             cases: CASES,
+            plain: false,
             body: Source::default(),
             call: Source::default(),
             excluded: &[],
@@ -223,8 +225,27 @@ fn evaluate(
     config: Config,
     body: &mut impl FnMut(&mut Gen) -> Result<(), String>,
 ) -> Evaluation {
+    evaluate_inner(seed, replay, config, body, None, false)
+}
+
+fn evaluate_inner(
+    seed: u64,
+    replay: Option<Vec<Choice>>,
+    config: Config,
+    body: &mut impl FnMut(&mut Gen) -> Result<(), String>,
+    recording: Option<(&str, u64)>,
+    strict: bool,
+) -> Evaluation {
+    let nested = crate::sim::manifest::active();
+    let _suspended = nested.then(crate::sim::manifest::suspend);
     let mut generator = Gen::new(seed, replay);
-    if config.simulation {
+    generator.strict = strict;
+    generator.origin = (!config.call.file.is_empty()).then_some(config.call);
+    if !nested {
+        crate::sim::manifest::begin(recording.map_or("", |r| r.0), seed, recording.map_or(0, |r| r.1), config, recording.is_some());
+    }
+    // Seed-start records belong to the outermost simulation; a nested one would mislead the parent.
+    if config.simulation && !nested {
         crate::sim::runner::start(seed);
     }
     if config.simulation || config.fixed_seed {
@@ -235,10 +256,11 @@ fn evaluate(
     let result = panic::catch_unwind(AssertUnwindSafe(|| body(&mut generator)));
     let location = CAPTURE.replace(previous).flatten();
     let violation = __contract::take_violation();
-    let trace = generator
-        .simulation
-        .as_ref()
-        .map_or_else(Default::default, |tasks| tasks.sim_take_trace());
+    if strict {
+        assert!(generator.strict_error.is_none(), "{}", generator.strict_error.as_deref().unwrap_or(""));
+        assert!(generator.replay.as_ref().is_none_or(|r| r.is_empty()), "replay choice tape has leftovers");
+    }
+    let choices = generator.choices.clone();
     let outcome = if generator.replay_overrun {
         Outcome::Passed
     } else {
@@ -255,7 +277,7 @@ fn evaluate(
             Err(payload) => {
                 // A caught earlier clause must not turn a later, unrelated panic into a discard.
                 let rejected = violation.as_ref().filter(|v| {
-                    !config.should_panic
+                    !config.should_panic && !config.plain
                         && v.clause.kind == ContractKind::Requires
                         && (config.body.contains(v) || config.call.contains(v))
                         && !config.excluded.iter().any(|source| source.contains(v))
@@ -284,7 +306,60 @@ fn evaluate(
             }
         }
     };
-    Evaluation { outcome, trace }
+    let mut evaluation = Evaluation { outcome, trace: Default::default() };
+    // Native libtest owns Termination::report after an ordinary function returns its value.
+    let signature = if config.plain && matches!(evaluation.outcome, Outcome::Passed) {
+        "returned".into()
+    } else {
+        evaluation.signature()
+    };
+    if !nested {
+        evaluation.trace = crate::sim::manifest::finish(&choices, &signature, matches!(evaluation.outcome, Outcome::Failed(_)));
+    }
+    evaluation
+}
+
+/// Record an ordinary test without consuming its return value or intercepting nested calls.
+#[doc(hidden)]
+pub fn run_plain<R>(path: &str, config: Config, body: fn() -> R, classify: fn(&R) -> Result<(), String>) -> R {
+    if crate::sim::manifest::active() {
+        return body();
+    }
+    let expected = crate::sim::manifest::context().and_then(|c| c.replay);
+    let seed = selected_seed(config, expected.as_ref()).unwrap_or_else(|| case_seed(path, config, 0));
+    let tape = expected.as_ref().map(|m| m.choices.iter().map(Choice::from_wire).collect());
+    install_hook();
+    let mut value = None;
+    let evaluation = evaluate_inner(seed, tape, config, &mut |_| {
+        let returned = body();
+        let outcome = classify(&returned);
+        value = Some(returned);
+        outcome
+    }, Some((path, expected.as_ref().map_or(0, |m| m.evaluation))), expected.is_some());
+    if let Outcome::Failed(FailedCase { failure: failure @ Failure::Panic { .. }, .. }) = evaluation.outcome {
+        failure.report();
+    }
+    value.expect("ordinary test must return or panic")
+}
+
+fn seed_var(config: Config) -> &'static str {
+    if config.simulation { "TIDE_SIM_SEED" } else { "TIDE_TEST_SEED" }
+}
+
+fn selected_seed(config: Config, expected: Option<&crate::replay::Manifest>) -> Option<u64> {
+    let seed_var = seed_var(config);
+    let fresh = std::env::var_os(seed_var).map(|seed| {
+        seed.to_str().and_then(|seed| seed.parse::<u64>().ok())
+            .unwrap_or_else(|| panic!("{seed_var} must be a decimal u64"))
+    });
+    expected.map(|m| m.seed.parse::<u64>().unwrap()).or(fresh)
+}
+
+fn case_seed(path: &str, config: Config, index: u64) -> u64 {
+    let path_hash = path.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    });
+    if config.simulation { index } else { mix(RUN_SEED ^ path_hash ^ mix(index)) }
 }
 
 /// One owner for accepted-case counting, requires discards, replay and shrinking.
@@ -292,25 +367,17 @@ fn evaluate(
 #[doc(hidden)]
 pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(), String>) {
     let name = path.split_once("::").map_or(path, |(_, name)| name);
-    let seed_var = if config.simulation {
-        "TIDE_SIM_SEED"
-    } else {
-        "TIDE_TEST_SEED"
-    };
-    let replay = std::env::var_os(seed_var).map(|seed| {
-        seed.to_str()
-            .and_then(|seed| seed.parse::<u64>().ok())
-            .unwrap_or_else(|| panic!("{seed_var} must be a decimal u64"))
-    });
-    let cases = if replay.is_some() { 1 } else { config.cases };
-    let limit = if replay.is_some() {
+    let seed_var = seed_var(config);
+    let nested = crate::sim::manifest::active();
+    let expected = if nested { None } else { crate::sim::manifest::context().and_then(|c| c.replay) };
+    // Driver controls select the outer evaluation, not a nested test's case range.
+    let selected_seed = if nested { None } else { selected_seed(config, expected.as_ref()) };
+    let cases = if selected_seed.is_some() { 1 } else { config.cases };
+    let limit = if selected_seed.is_some() {
         1
     } else {
         cases.saturating_mul(100)
     };
-    let path_hash = path.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-    });
     install_hook();
     let mut accepted = 0;
     let mut generated = 0;
@@ -323,16 +390,11 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
         if accepted == cases {
             break;
         }
-        let seed = replay.unwrap_or_else(|| {
-            if config.simulation {
-                index
-            } else {
-                mix(RUN_SEED ^ path_hash ^ mix(index))
-            }
-        });
+        let seed = selected_seed.unwrap_or_else(|| case_seed(path, config, index));
         generated += 1;
-        let mut evaluation = evaluate(seed, None, config, &mut body);
-        if config.simulation && (index == 0 || matches!(evaluation.outcome, Outcome::Failed(_))) {
+        let tape = expected.as_ref().map(|m| m.choices.iter().map(Choice::from_wire).collect());
+        let mut evaluation = evaluate_inner(seed, tape, config, &mut body, Some((path, expected.as_ref().map_or(index, |m| m.evaluation))), expected.is_some());
+        if !nested && expected.is_none() && config.simulation && (index == 0 || matches!(evaluation.outcome, Outcome::Failed(_))) {
             let again = evaluate(seed, None, config, &mut body);
             let difference = evaluation.trace.first_difference(&again.trace);
             if let Some((line, a, b)) = &difference {
@@ -366,11 +428,17 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
                 failures += 1;
                 eprintln!("property failed: {name}");
                 eprintln!("  seed: {seed}");
-                eprintln!("  replay: tide test {name} --seed {seed}");
-                let executable = std::env::current_exe()
-                    .map(|path| path.to_string_lossy().replace('\'', "'\\''"))
-                    .unwrap_or_else(|_| "<test-binary>".into());
-                eprintln!("  replay: {seed_var}={seed} '{executable}' --exact {name}");
+                eprintln!("  fresh rerun (planned frontend): tide test {name} --seed {seed}");
+                if let Some(context) = crate::sim::manifest::context() {
+                    let mut command = context.command;
+                    command.extend(["--tide-run-test".into(), name.into(), "--seed".into(), seed.to_string()]);
+                    eprintln!("  fresh rerun: {}", command.iter().map(|s| crate::replay::shell(s)).collect::<Vec<_>>().join(" "));
+                } else {
+                    let executable = std::env::current_exe()
+                        .map(|path| path.to_string_lossy().replace('\'', "'\\''"))
+                        .unwrap_or_else(|_| "<test-binary>".into());
+                    eprintln!("  fresh rerun: {seed_var}={seed} '{executable}' --exact {name}");
+                }
                 if config.simulation {
                     eprintln!("simulation failure seed={seed} test={name}");
                     eprint!("{}", evaluation.trace.render());
@@ -383,7 +451,7 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
                     evaluations: 0,
                     last_improvement: 0,
                 };
-                shrinker.shrink();
+                if expected.is_none() { shrinker.shrink(); }
                 eprintln!("  input: {}", shrinker.best.input);
                 eprintln!("  shrink evaluations: {}", shrinker.evaluations);
                 if shrinker.exhausted() {
@@ -469,7 +537,7 @@ pub fn run_config(path: &str, config: Config, mut body: fn(&mut Gen) -> Result<(
         eprintln!(
             "simulation {name}: {accepted} passed; 0 failed ({generated} seeds); {accepted}/{generated} cases passed (accepted/generated)"
         );
-    } else {
+    } else if !config.plain {
         eprintln!("property {name}: {accepted}/{generated} cases passed (accepted/generated)");
     }
 }

@@ -215,8 +215,8 @@ already implements them; `--tide-print-codes` names the enforced subset.
 - SUSP-1 (03:1357): compile-time may-suspend classification that rejects nothing.
 - SUSP-2 (03:1368): compile-time per-instance classification that rejects nothing.
 - SUSP-3 (03:1371): codegen refinement.
-- REPLAY-1 (03:1662): simulator manifest.
-- REPLAY-2 (03:1671): `tide sim --replay` identity check (tooling).
+- REPLAY-1 (03 §9.6): driver/harness evaluation manifests (runtime proof in tide-admit tests).
+- REPLAY-2 (03 §9.6): `tide-admit --replay` identity validation (tooling/runtime proof); `tide sim` frontend planned.
 - CLAUSE-5 (04:451): compile-time class assignment that rejects nothing.
 - CLAUSE-6 (04:460): runtime check schedule. Only its name-resolution part is a row above.
   `contracts/generated_tests.rs` is also executed by the driver build tests to check generated

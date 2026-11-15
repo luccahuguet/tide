@@ -1957,9 +1957,34 @@ output. Failures print seeds, causes and traces; signal/timeout or a missing
 summary names the last started seed. Ordinary failures name the failing seeds;
 success emits at most one libtest-captured summary, with seed-start records kept
 internal. `TIDE_SIM_SEED` is an internal hook for one fresh seed, without
-REPLAY-2 identity validation. Tasks, `Shared`, files, file setup,
+REPLAY-2 identity validation. The driver precursor `tide-admit --tide-run-test NAME
+[--seed N]` records one manifest per evaluation; `tide-admit --replay MANIFEST`,
+with the same explicit build inputs, validates source/build/dependency/configuration
+identity before candidate launch and compares the original exact trace and outcome.
+The version is `tide-replay/1`; manifests and trace exports live under the
+operator output's `target/sim`. Replay consumes typed parameter choices strictly,
+without generation or shrinking. Ordinary Tide tests retain their ordered,
+source-written `Root::sim` seeds. Nested property and simulation test calls run
+inside the caller's evaluation; their choices and roots stay outside its input
+tape and create no separate manifest. Nested calls keep their configured
+deterministic case range; driver seed/replay controls select only the outer
+evaluation. Const tests and a test-decorated `main`
+remain native libtest entries, unrecorded and unavailable through
+`--tide-run-test` or `--replay`. A `#[sim_test]` called from inside a
+simulated task fails with "a task runtime is already active".
+Runtime children have cleared environments.
+Linked test builds, including the paired test library, remap embedded source
+paths to `tide-source` and `tide-library`. Panic locations and the
+macro's `Span::file()` trace origins use these logical paths. The scope is
+`macro,object`; candidate diagnostics, debug-info and coverage paths, and non-test builds,
+keep real spellings. This does not remove every physical path.
+[Replay research/32](../research/32-replay-manifests.md) records the adopted
+recommendations and the original-evaluation artifact decision.
+This promises same-machine replay with identical pinned trusted artifacts,
+sysroot and C runtime; it adds no signing or sandbox. Direct binary execution
+has no verified-manifest guarantee. Tasks, `Shared`, files, file setup,
 clocks, TCP loopback, process inputs and sinks are modeled; other capabilities carry simulated identities but
-their operations, other world setup, faults, nodes, manifests and the `tide` commands
+their operations, other world setup, faults, nodes and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,
 requires guidance and filtering, and shrinking with the simulator seed kept fixed.
 The child has no RUN-3 sandbox.
@@ -1976,8 +2001,8 @@ The child has no RUN-3 sandbox.
   accessors take no point or time. A pre-cancelled call draws nothing, advances no
   time and has no effect. Shielded `File::close` still takes one point and
   draw. Each completed or pre-cancelled call records one `fs` event with its task,
-  operation, span, path, latency and result kind; names are provisional until
-  replay manifests. Sync calls validate and take time without a durability
+  operation, span, path, latency and result kind, in the versioned `trace/1`
+  format used by replay manifests. Sync calls validate and take time without a durability
   split, since crashes and disk faults are not modeled yet.
   These latency rules are provisional. Simulated
   standard input behaves as a pipe. Without faults, each network packet takes
