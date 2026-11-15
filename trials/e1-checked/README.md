@@ -1,9 +1,11 @@
 # E1 readiness machinery
 
 This directory implements bead `fx-o8o` against the frozen `protocol.md` and
-`tasks.md`. It contains no gate-writer output and reports no E1 gate result.
-The suites and renderer are drafts: **not frozen**. `fx-ic2` owns their
-pre-session freeze and tree SHA-256.
+`tasks.md`. The suites, structure checks and renderer were frozen before the
+`fx-ic2` gate run. [The gate report](gate-report.md) records that freeze, the
+paired results, limitations, stored snapshots and reproduction commands.
+`gate-results/` holds the measured records and snapshot archive;
+`gate_reproduce.py` unpacks them or regrades the report's seeded sample.
 
 ## Contents
 
@@ -254,7 +256,7 @@ the Rust-arm pin. No unstable Rust flags or source rewriting are used.
 ## Gate machinery (fx-rpwp)
 
 `broker.py`, `coordinator.py`, `gate_checks.py` and `standin.py` use only
-Python's standard library. No gate writer has been run by this implementation.
+Python's standard library.
 The following commands are for the gate coordinator, after its prerequisites
 and machine scheduling checks. Compilation, canaries and dry runs require a
 cleared machine slot. Do not use `--local` for any of them.

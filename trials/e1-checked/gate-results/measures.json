@@ -1,0 +1,295 @@
+{
+  "all_thresholds_met": true,
+  "arms": {
+    "rust": {
+      "F": 0.9833333333333333,
+      "I": 1.0172413793103448,
+      "P": 0.9666666666666667,
+      "all_trials_I_failures_as_20": 1.65,
+      "final_passes": 58,
+      "first_passes": 59,
+      "trials": 60
+    },
+    "tide": {
+      "F": 0.9333333333333333,
+      "I": 1.4827586206896552,
+      "P": 0.9666666666666667,
+      "all_trials_I_failures_as_20": 2.1,
+      "final_passes": 58,
+      "first_passes": 56,
+      "trials": 60
+    }
+  },
+  "bootstrap": {
+    "information_only": true,
+    "interpolation": "linear, index (n - 1) * p",
+    "intervals": {
+      "F": {
+        "difference": {
+          "defined_resamples": 10000,
+          "lower": -0.1333333333333333,
+          "undefined_resamples": 0,
+          "upper": 0.01666666666666672,
+          "width": 0.15000000000000002
+        },
+        "ratio": {
+          "defined_resamples": 10000,
+          "lower": 0.8620689655172414,
+          "undefined_resamples": 0,
+          "upper": 1.0178571428571428,
+          "width": 0.15578817733990136
+        }
+      },
+      "I": {
+        "difference": {
+          "defined_resamples": 10000,
+          "lower": 0.2931034482758621,
+          "undefined_resamples": 0,
+          "upper": 0.6379310344827587,
+          "width": 0.3448275862068966
+        },
+        "ratio": {
+          "defined_resamples": 10000,
+          "lower": 1.2857142857142858,
+          "undefined_resamples": 0,
+          "upper": 1.6379310344827587,
+          "width": 0.35221674876847286
+        }
+      },
+      "P": {
+        "difference": {
+          "defined_resamples": 10000,
+          "lower": 0.0,
+          "undefined_resamples": 0,
+          "upper": 0.0,
+          "width": 0.0
+        },
+        "ratio": {
+          "defined_resamples": 10000,
+          "lower": 1.0,
+          "undefined_resamples": 0,
+          "upper": 1.0,
+          "width": 0.0
+        }
+      }
+    },
+    "percentiles": [
+      2.5,
+      97.5
+    ],
+    "resamples": 10000,
+    "seed": 20261031,
+    "undefined": "Omitted from percentiles and counted per interval; all undefined yields null bounds and width.",
+    "unit": "task, both replicates and arms together; random.Random(seed).choices(sorted_tasks, k=task_count)"
+  },
+  "counts": {
+    "rust": {
+      "confinement_breaches": 0,
+      "denied_outside_requests": 0,
+      "infrastructure_reruns": 0,
+      "second_fault_failures": 0,
+      "structure_comment_only_trials": 0,
+      "tools_outside_set": 0
+    },
+    "tide": {
+      "confinement_breaches": 0,
+      "denied_outside_requests": 0,
+      "infrastructure_reruns": 0,
+      "second_fault_failures": 0,
+      "structure_comment_only_trials": 0,
+      "tools_outside_set": 0
+    }
+  },
+  "definitions": {
+    "difference": "Tide - Rust",
+    "iterations": "All check/test runs in the retained attempt, including runs after green; rerun attempts are recorded separately.",
+    "ratio": "Tide / Rust",
+    "session_confinement_breach_files": "Count of sessions/*/confinement-breach.json files, including sessions absent from slot records; separate from per-arm audit-event counts, without adding duplicates.",
+    "structure_comment_only_trials": "Trials whose recorded structure check passes but harness.structure fails after masking comments, retaining string literals.",
+    "thresholds": "Verdicts (met and all_thresholds_met) are null, meaning not applicable, unless the sample has 30 tasks with both replicates and both arms.",
+    "tokens": "All four cumulative totals from each session's last type=result event in writer.jsonl; no audit-token fallback.",
+    "turns": "Distinct assistant message IDs, coordinator.audit turns; not CLI result.num_turns.",
+    "unnamed_lint_warnings": "Count of short-format warning lines without a diagnostic code, per run or grade. Short-format warnings omit lint names and notes; tide-admit forces --error-format=short."
+  },
+  "grader_reviews_sha256": "586485dad7da36fc795a22df4963a1d5387fc96f78a8353297ba056982749b0f",
+  "point_comparisons": {
+    "F": {
+      "difference": -0.04999999999999993,
+      "ratio": 0.9491525423728814
+    },
+    "I": {
+      "difference": 0.4655172413793105,
+      "ratio": 1.457627118644068
+    },
+    "P": {
+      "difference": 0.0,
+      "ratio": 1.0
+    }
+  },
+  "sample": {
+    "protocol_sample": true,
+    "tasks": 30,
+    "trials_per_arm": 60
+  },
+  "schema": 1,
+  "session_confinement_breach_files": 0,
+  "suite_removals": 0,
+  "thresholds": [
+    {
+      "inequality": "F(Tide) >= 0.8 * F(Rust)",
+      "left": 0.9333333333333333,
+      "met": true,
+      "right": 0.7866666666666666
+    },
+    {
+      "inequality": "P(Tide) >= P(Rust)",
+      "left": 0.9666666666666667,
+      "met": true,
+      "right": 0.9666666666666667
+    },
+    {
+      "inequality": "I(Tide) <= 1.5 * I(Rust)",
+      "left": 1.4827586206896552,
+      "met": true,
+      "right": 1.5258620689655171
+    }
+  ],
+  "unavailable": [
+    {
+      "field": "run_1.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        34,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        34,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        38,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        38,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        42,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        42,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        47,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        66,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        66,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        70,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        70,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        77,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        77,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        84,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        84,
+        1
+      ]
+    },
+    {
+      "field": "first_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        88,
+        1
+      ]
+    },
+    {
+      "field": "final_grade.lint_names",
+      "reason": "Short-format warnings omit lint names and notes; tide-admit forces --error-format=short.",
+      "slot_attempt": [
+        88,
+        1
+      ]
+    }
+  ]
+}
