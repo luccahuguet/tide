@@ -5,13 +5,16 @@ reference for the v0 core. Load it when you want a Rust habit's fix, a
 complete program, the reading the reference takes where the design documents
 disagree, the simulator's fault injection and crashable nodes, what a sealed
 interface allows, when another agent's branch is safe to test without a VM,
-how process handles work, or what v0 leaves out. Its sections continue the
-core's numbering, and a bare section number below 14 refers to the core.
-Sections 14–16 tabulate or illustrate rules the core states; 17–20 and
+how process handles work, the HTTP API, or what v0 leaves out. Its sections
+continue the core's numbering, and a bare section number below 14 refers to
+the core.
+Sections 14–16 tabulate or illustrate rules the core states; 17–21 and
 Appendix A hold what the core only points to. It is outside the core's
-25,000-token budget (D14).
+25,000-token budget (D14). **(planned)** and **(partial)** mean what they
+mean in the core: a v0 surface not built yet, or built in part. The core's
+blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,987 tokens, recounted on 2026-11-12 with
+Core count: 24,961 tokens, recounted on 2026-11-16 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -29,7 +32,7 @@ Rerun it after any change to the core and update this line.
 | `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
 | `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
 | `debug_assert_eq!` | `debug_assert!(a == b)` | `FX0103` |
-| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)`; `fs.exists(path)?` | `FX0520` |
+| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)` (planned); `fs.exists(path)?` | `FX0520` |
 | `x as u8` (lossy), `n as f64` (`usize`) | `u8::try_from(x)?`, `x.truncate()`, `f64::round_from(n)` | `FX0301` |
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
 | `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
@@ -52,7 +55,7 @@ Rerun it after any change to the core and update this line.
 | `Err(RecvError)` | `Err(RecvError::Disconnected)`, or `Err(e)` and `e.is_cancelled()`: the bare name is now a binding that also catches `Cancelled` | rustc warning only (`non_snake_case`) |
 | `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `FX0913` safe |
 | A pipeline stage returning `Err` when its channel disconnects | return `Ok`: a disconnect alone is not an echo, so the `Err` could outrank the failure that dropped the peer (7.1, 7.3) | — |
-| An `Rc<Cell<u32>>` counter captured by a `world.http` peer | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
+| An `Rc<Cell<u32>>` counter captured by a `world.http` peer (planned) | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `FX0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `FX0610`, `FX0611` |
 | `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `FX0612` |
@@ -78,11 +81,11 @@ Rerun it after any change to the core and update this line.
 | `t.elapsed()` | `clock.now().duration_since(t)`; for `SystemTime`, `clock.system_time().duration_since(t)` |
 | `std::thread::sleep(d)` | `clock.sleep(d)?` |
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
-| `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once |
+| `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once (planned) |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
-| `Command::new("git")` | `proc.command("git")` |
+| `Command::new("git")` | `proc.command("git")` (planned) |
 | `TcpStream::connect(a)` | `net.connect(a)` |
-| `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` |
+| `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` (planned) |
 
 ### 14.3 Porting async Rust (7)
 
@@ -185,6 +188,8 @@ mod tests {
 ```
 
 ### 15.2 Bounded concurrent fetcher with a deadline
+
+Planned: it needs `Net::get` and `sim.world.http`.
 
 ```rust
 // src/main.rs
@@ -308,7 +313,8 @@ sorted inputs are generated rather than filtered.
 
 `Log` follows 6.3's durability rules and cuts a torn tail; the test crashes
 and restarts its node (17) and checks that every acknowledged line
-survived.
+survived. `Log` uses only built `Fs` and `File` operations; its test is
+planned, since it needs nodes and faults.
 
 ```rust
 pub struct Log { file: File }
@@ -422,10 +428,15 @@ The recorded std choices (research/19-files.md S1–S12; 03 §1.1 and §9) are:
 ## 17. Simulation: faults, nodes, crashes
 
 The rest of 6.8's simulator: fault injection, network time, setup types,
-crashable nodes, records, and replay.
+crashable nodes, records, and replay. Records, the setup types of `args`,
+`env_var`, `stdin`, and `file`, and the per-packet TCP latency are built,
+and so, in part, is the replay manifest (README Status); everything else
+here, `Net::get` timing and packet faults included, is planned.
 
 | Item | Effect |
 | --- | --- |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.faults.net_drop(p: f64)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | per-packet network faults (below) |
 | `sim.faults.partition(&[&a], &[&b])`, `heal()` | cut links between node groups |
 | `sim.faults.disk_error("/data", p, io::ErrorKind::Other)` | I/O errors on paths with that prefix |
@@ -437,7 +448,7 @@ crashable nodes, records, and replay.
 | `node.fs() -> Fs` | the node's disk, for inspection after a crash |
 | `sim.run_for(d)`, `sim.run_until(&node_task) -> Result<T, E>` | drive the world |
 
-(`SimNode` and `NodeTask` are provisional.)
+(`Request`, `SimNode`, and `NodeTask` are provisional.)
 
 - **Network time.** Without faults, each packet takes 1–10 ms, drawn from
   the seed, and a `Net::get` is one round trip (2–20 ms, connection setup
@@ -502,7 +513,7 @@ crashable nodes, records, and replay.
 
 15.4 is a complete crash test.
 
-## 18. Sealed interfaces
+## 18. Sealed interfaces (planned)
 
 An orchestrator that hands you an interface to implement may seal it in
 `tide.seal` (04 §11.1). You may change the bodies of functions sealed by
@@ -529,7 +540,11 @@ needs a capability the signature does not take, do not route around it in
 unsealed code: restore the item and report what the interface needs to
 whoever sealed it.
 
-## 19. Testing an unreviewed branch
+## 19. Testing an unreviewed branch (planned)
+
+Nothing below exists yet: the sandbox is RUN-3 (bead `fx-ip4x`), and no
+`tide` command is built. Until then nothing prints `run: covered`, so
+review another agent's branch before testing it, or test it in a VM.
 
 `tide check`, `tide test`, and `tide sim` on a branch no one has reviewed
 reach nothing outside the run except through the holes 03 §2.6 lists. Test
@@ -559,7 +574,7 @@ exhaust CPU, memory, or output, so set time and memory limits. This covers
 `tide eval`, a built binary, and anything else the branch asks you to
 execute still need your session's sandbox.
 
-## 20. Process handles
+## 20. Process handles (planned)
 
 A `Command`, like a `File`, is a resource handle: it carries the authority
 of the `Proc` that made it, because `output()`, `status()`, and `spawn()`
@@ -621,6 +636,19 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
   method. Handles keep Rust's receivers, except `wait_with_output`; of
   Tide's own handle methods, `File::sync`, `read_owned`, `write_owned`,
   and `Signals::recv` take `&self`, and `File::close` takes `self`.
+
+## 21. Network: HTTP (planned)
+
+`Net::get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>` performs
+an HTTP(S) GET and returns the body. `NetError` has
+`Timeout` (the operation's deadline passed), `Cancelled`, `Denied` (a host
+outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
+response), and `Io(io::Error)`; `is_cancelled()` and `is_transient()`
+(`Timeout`, `Reset`, `Refused`, and `Status` 408, 429, or 5xx) classify
+them. `NetError` is not `PartialEq`: test it with `matches!`.
+`Url::parse(&str) -> Result<Url, UrlError>`; `Url` has the `url` crate's
+accessors (`host_str`, `port_or_known_default`, `path`, `as_str`) and
+`Display`. Simulated HTTP peers are in 17.
 
 ## Appendix A. Later tiers (not in v0)
 

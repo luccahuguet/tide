@@ -11,6 +11,9 @@ Budget: under 25,000 tokens (D14).
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
+**(planned)** marks a v0 surface not built yet, **(partial)** one built in
+part (README's Status). The `tide` commands are planned; `tide-admit`
+checks, tests, and replays today.
 Diagnostic codes (`FX0201`, ...) are placeholders.
 
 ## 0. How to use this document
@@ -18,9 +21,9 @@ Diagnostic codes (`FX0201`, ...) are placeholders.
 You know Rust. Write Rust. A Tide program is a valid Rust 2024 crate: Tide's
 checker admits it, then a pinned nightly rustc builds it against Tide's std
 (D18). Each Rust habit that would mean something different fails with a
-stable code and, usually, a machine-applicable fix. What you hit first: no
-ambient I/O (capabilities passed down from `main`, 6), no `async` (scopes,
-7), three lifetime forms gone (3.2), overflow traps in every build and
+stable code and, usually, a machine-applicable fix (planned). What you hit
+first: no ambient I/O (capabilities passed down from `main`, 6), no
+`async` (scopes, 7), three lifetime forms gone (3.2), overflow traps in every build and
 lossless-only `as` (4), `Shared<T>` instead of `Arc<Mutex<T>>` (7.4), and
 only allowlisted library items (6.9).
 
@@ -34,7 +37,8 @@ admitted (6.9). `static` is immutable only (6.4); `unsafe` needs a grant
 
 **Standard types** keep their Rust API: scalars, `str`, `String`, slices,
 arrays, tuples, `Option`, `Result`, `Vec`, `Box`, `Rc`, `Arc` (created with
-`&Tasks`, minus count observers, 6.4), `Weak`, `Cell`, `RefCell`,
+`&Tasks`, minus count observers, 6.4), `Weak` (both partial, e.g. no `ptr_eq` or
+unsized payloads yet), `Cell`, `RefCell`,
 `VecDeque`, `HashMap`, `HashSet`, `BTreeMap`, `BTreeSet`, `BinaryHeap`,
 `Cow`, `Path`, `PathBuf`, `OsStr`, `OsString`, `Duration`, `Instant`,
 `SystemTime`, `std::{cmp, ops, mem, fmt, convert}`, and the `std::io` traits
@@ -57,8 +61,8 @@ a lint in libraries); `format!`, `write!`, `writeln!`, `vec!`, `matches!`;
 (also a typed hole, 13), `unimplemented!`, `unreachable!`; `dbg!` (an
 error in release builds, `FX0507`); and the log sink (6.5) `error!`,
 `warn!`, `info!`, `debug!`, `trace!`, with no `use` (`log::info!` and
-`tracing::info!` are also accepted; provisional). Tide adds `invariant!`
-(10.1) and `hole!` (13), not imported. The `unsafe` grant (11) admits
+`tracing::info!` are also accepted; provisional, planned). Tide adds `invariant!`
+(10.1) and `hole!` (13, planned), not imported. The `unsafe` grant (11) admits
 `asm!`, `global_asm!`, and `naked_asm!` (`FX0520` without it).
 
 Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
@@ -108,7 +112,7 @@ error or a string.
 - Tide attributes: `#[error]`, `#[from]`, `#[source]`, `#[codec]`,
   `#[tide::main]` (6.2), `#[pure]` (6.6), `#[sim_test]` (6.8),
   `#[requires]`, `#[ensures]`, `#[invariants]` (10.1), `#[protected]` and
-  `#[trusted_pure]` (11): toolchain proc macros and their derives' helper
+  `#[trusted_pure]` (11, planned): toolchain proc macros and their derives' helper
   attributes, not user macros.
 - `#[tokio::main]`, `#[async_trait]`, `#[path]`, `#[macro_export]`, and
   `#[proc_macro*]` are errors with fixes.
@@ -152,7 +156,7 @@ Traps, all as in Rust:
 
 Lifetime parameters on traits, explicit `for<'a>`, and generic associated
 types are not in Tide (5.1). An elided output that cannot be resolved, or that
-elision ties to the wrong input, is `FX0202`; its fix suggests the named
+elision ties to the wrong input (today rustc's own error), is `FX0202`; its fix suggests the named
 lifetime (often the impl's `'a`).
 
 ### 3.3 Borrowing structs and enums
@@ -331,17 +335,17 @@ do, in every dependency.
 | Capability (path) | Main methods | Attenuation |
 | --- | --- | --- |
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
-| `Net` (`std::net`) | `get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>`, `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `bind_udp(addr)`, `resolve(host)` | `only(hosts) -> Net`, `no_bind() -> Net` |
+| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`; planned: `get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>`, `bind_udp(addr)`, `resolve(host)` | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
-| `Rand` (`std::rand`) | `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
+| `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
-| `Proc` (`std::process`) | `command(prog) -> Command` (a handle: companion 20), `exit(code: i32) -> !` | `only(["git", ..])` |
-| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (`false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
+| `Proc` (`std::process`; planned) | `command(prog) -> Command` (a handle: companion 20), `exit(code: i32) -> !` | `only(["git", ..])` |
+| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (planned; `false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
 - Their methods take `&self` (provisional; handles' receivers: companion
   20): `&Rand` or `&Stdin` is enough. For many draws take `let mut
-  rng = rand.rng();` once: a `Pcg64` is an ordinary `Pure` value with
+  rng = rand.rng();` once: a `Pcg64` (planned) is an ordinary `Pure` value with
   `&mut self` methods (`next_u64`, `gen_range`, `gen_bool`, `shuffle`);
   `Pcg64::seed_from_u64(n)` needs no capability.
 - Capabilities are not `Copy` or `Pure` (6.6). They are `Clone` (same
@@ -427,7 +431,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 - **Torn tails.** A crash can leave a partial last record. Cut it off
   (`set_len`, then `sync`) before appending again, or the next acknowledged
   record is glued to the torn bytes and lost on the next read. Companion
-  15.4 is a crash-safe log built this way, with its crash test.
+  15.4 is a crash-safe log built this way, with its crash test (planned).
 
 ### 6.4 No globals; deterministic hashing
 
@@ -439,7 +443,8 @@ at compile time by `const fn`. Build a value that needs run-time work in
 
 `HashMap::new()` uses a fixed hash key, so iteration order is deterministic
 (but unspecified). For untrusted keys use
-`HashMap::with_hasher(RandomState::from_rand(&rand))`. `Arc` has no
+`HashMap::with_hasher(RandomState::from_rand(&rand))` (partial: a simulated
+`Rand` panics). `Arc` has no
 `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, or `into_inner`,
 because their results depend on other tasks; `make_mut` stays.
 
@@ -447,7 +452,7 @@ because their results depend on other tasks; `make_mut` stays.
 
 `print!`, `println!`, `eprint!`, `eprintln!`, `dbg!`, `error!`..`trace!`,
 `std::io::stdout()`/`stderr()` (write-only `impl Write`, always `Ok`), and
-`std::trace::span(name)` (guard closing on drop) write task-owned sinks:
+`std::trace::span(name)` (guard closing on drop; planned) write task-owned sinks:
 no reads, capability, or suspension, so functions stay authority-free; a pure decoder may
 `warn!("legacy row {}", row.id)`.
 
@@ -459,7 +464,7 @@ no reads, capability, or suspension, so functions stay authority-free; a pure de
   `Level::{Error, Warn, Info, Debug, Trace}` and `Format::{Text, Json}`.
   Defaults: `println!` to stdout; `eprintln!` and `info!` upward to stderr;
   `dbg!` to stderr in debug builds (2.1). Library `println!` is lint `FX0508`.
-- `Secret<T>` has no `Debug`/`Display`; read with `expose()`.
+- `Secret<T>` (planned) has no `Debug`/`Display`; read with `expose()`.
 
 ### 6.6 `Pure` and authority-free functions
 
@@ -497,23 +502,18 @@ require `Pure`.
 
 ### 6.7 Network
 
-`Net::get` performs an HTTP(S) GET and returns the body. `NetError` has
-`Timeout` (the operation's deadline passed), `Cancelled`, `Denied` (a host
-outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
-response), and `Io(io::Error)`; `is_cancelled()` and `is_transient()`
-(`Timeout`, `Reset`, `Refused`, and `Status` 408, 429, or 5xx) classify
-them. `NetError` is not `PartialEq`: test it with `matches!`.
-`Url::parse(&str) -> Result<Url, UrlError>`; `Url` has the `url` crate's
-accessors (`host_str`, `port_or_known_default`, `path`, `as_str`) and
-`Display`. `TcpStream` is `io::Read + io::Write`, also for `&TcpStream`.
+`Net::get` (planned) performs an HTTP(S) GET and returns the body;
+`NetError`, `Url`, and `UrlError` are in companion 21. `TcpStream` is
+`io::Read + io::Write`, also for `&TcpStream`.
 
 ### 6.8 Simulation
 
-Every capability has a deterministic simulated version. `Root::sim(seed)`
+Every capability has a deterministic simulated version (partial: not yet
+`Rand` or `Proc`). `Root::sim(seed)`
 returns a `SimRoot` (`std::sim`) with `Root`'s capability fields, all
 simulated (pass `&sim.fs` and the rest to the code under test), plus
-`sim.world` (setup), `sim.faults` and `sim.node(name)` (faults and crashable
-nodes, companion 17), and inspection methods. It works in any test, plain or
+`sim.world` (setup), `sim.faults` and `sim.node(name)` (faults, crashable
+nodes and HTTP peers: companion 17; planned), and inspection methods. It works in any test, plain or
 property: the test body runs as the simulation's main task, so it can spawn,
 wait, and read virtual time.
 
@@ -522,11 +522,9 @@ wait, and read virtual time.
 | `#[sim_test(seeds = 200)] fn t(sim: SimRoot)` | runs the test once per seed with a fresh `SimRoot`; plain `#[sim_test]` runs 100 seeds; more parameters are generated (10.2) |
 | `sim.world.file(path: impl AsRef<Path>, contents: impl AsRef<[u8]>)` | create a file (parents included) |
 | `sim.world.args(["prog", "a.txt"])`, `env_var(k, v)`, `stdin("text")` | program inputs; `args` as `env.args()` returns them |
-| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
-| `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.elapsed() -> Duration`, `sim.records() -> Vec<Record>`, `sim.trace()` | virtual time; sink records; the event trace |
 
-(`Request` and `Record` are provisional.)
+(`Record` is provisional.)
 
 - **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
   time advances only when every task is blocked, jumping to the next timer.
@@ -538,7 +536,7 @@ wait, and read virtual time.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
   interleaving. Parallel regions (8) run sequentially. Each run writes a
-  replay manifest that reproduces it bit for bit (companion 17).
+  replay manifest that reproduces it bit for bit (companion 17; partial).
 - **Records.** Every sink record, `println!` output included, enters
   `sim.records()` with its node (fields: companion 17).
 
@@ -642,6 +640,8 @@ pub struct Panicked { pub message: String }          // (provisional)
 - The task, not the OS thread, is the isolation unit: values that never
   leave a task need not be `Send` (an `Rc` inside one task is fine).
 
+`Net::get`, used below, is planned (6.1).
+
 ```rust
 fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
     -> Result<(Vec<u8>, Vec<u8>), FetchError>          // FetchError: #[from] TaskError, #[from] NetError
@@ -722,8 +722,8 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   `sync::Weak`, and atomics let tasks observe each other's timing (D7), so
   every constructor takes `&Tasks`, last: `Shared::new(v, tasks)`,
   `channel(tasks)`, `Arc::new(v, tasks)`, `Arc::downgrade(&a, tasks)`,
-  `AtomicU64::new(0, tasks)` (`FX0505` without it; `tide fix --thread
-  Tasks`). Cloning needs nothing. Authority-free code can neither create
+  `AtomicU64::new(0, tasks)` (planned); `FX0505` without it (`tide fix
+  --thread Tasks`). Cloning needs nothing. Authority-free code can neither create
   nor receive a handle. A test takes `&sim.tasks` from `Root::sim(seed)`.
 - `with2` and `with_all` acquire all their cells atomically in a global
   order, so they cannot deadlock. If two operands are the same cell, the
@@ -741,6 +741,7 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   write.
 - Atomics (`std::sync::atomic`) are sequentially consistent only and meant
   for library authors; `Mutex` and `RwLock` are in `std::sync::raw` (11).
+  Both are planned.
 
 ```rust
 pub fn transfer(from: &Shared<Account>, to: &Shared<Account>, amount: u64) -> Result<(), BankError> {
@@ -760,7 +761,8 @@ pub fn transfer(from: &Shared<Account>, to: &Shared<Account>, amount: u64) -> Re
 ### 7.5 Runtimes
 
 The binary's manifest picks the runtime (`[bin] runtime = "threads"`, the
-default, or `"blocking"`); tests and `tide sim` use the simulator.
+default, or `"blocking"`; planned: today every binary uses `threads`);
+tests and `tide sim` use the simulator.
 Libraries never choose and behave the same under all of them. `threads`
 runs one OS thread per task, so blocked tasks never starve runnable ones.
 
@@ -880,7 +882,8 @@ builds, erased in release, and used to drive property tests.
   the points in the table (debug builds: `for` over `a..b` only at entry
   and exit); `tide test` also checks sampled clauses on every
   call, each under a step budget, so the outcome depends only on the
-  inputs. One that runs over budget is reported as unchecked, not failed.
+  inputs. One that runs over budget counts as unchecked, not failed (reporting it is
+  planned).
   Release builds erase clauses.
 - **Violations.** A clause that is false, or whose evaluation panics, is
   violated, and panics with `requires violated: <clause text>` (or
@@ -942,7 +945,7 @@ pub fn push_all(dst: &mut Vec<i64>, src: &[i64]) { for x in src { dst.push(*x); 
 
 ### 10.3 Contracts in review
 
-A contract's hash covers the bodies of every function its clauses call,
+Planned. A contract's hash covers the bodies of every function its clauses call,
 transitively. v0 has no solver, so any change to a public item's contract
 needs human approval (11), except adding one where there was none.
 
@@ -951,20 +954,21 @@ needs human approval (11), except adding one where there was none.
 | Hole | Spelling | Rule |
 | --- | --- | --- |
 | Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
-| A type the checker finds not `Pure` but that is authority-free | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
-| `std::sync::raw` locks, weaker atomic orderings | — | `unsafe` grant (`FX0520` without it) |
+| A type the checker finds not `Pure` but that is authority-free (planned) | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
+| `std::sync::raw` locks, weaker atomic orderings (planned) | — | `unsafe` grant (`FX0520` without it) |
 | Addresses | `*const T`, `*mut T`, `{:p}`; a function pointer's integer casts, ordering, hashing, `Debug` | `unsafe` grant (`FX0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
-authority (12.4), contracts, trust holes, and grants. Changes that need a human
-approval, recorded outside the agent's write scope and verified by CI:
-widening authority, weakening or removing a contract (10.3), adding a trust
-hole, and changing a `#[protected]` test. Sealed items (`tide.seal`) are
-fixed, except bodies it leaves free (`FX0920`, companion 18). Never make
-one of these to get a green check: if a contract, sealed item, or
-`#[protected]` test looks wrong, stop and report it. Test another agent's
+authority (12.4), contracts, trust holes, and grants (partial). Changes
+that need a human approval, recorded outside the agent's write scope and
+verified by CI (planned): widening authority, weakening or removing a
+contract (10.3), adding a trust hole, and changing a `#[protected]` test.
+Sealed items (`tide.seal`, planned) are fixed, except bodies it leaves
+free (`FX0920`, companion 18). Never make one of these to get a green
+check: if a contract, sealed item, or `#[protected]` test looks wrong,
+stop and report it. Test another agent's
 branch without its own VM only if `tide review` against a reviewed base
-prints `run: covered` (companion 19).
+prints `run: covered` (companion 19; planned, so not yet).
 
 ## 12. Modules and packages
 
@@ -998,7 +1002,7 @@ it too (provisional). Import everything else:
 | `Fs`, `Mode`, `File`, `OpenOptions`, `Metadata` | `std::fs` |
 | `Net`, `NetError`, `Url`, `UrlError`, `TcpStream`, `TcpListener`, `UdpSocket` | `std::net` |
 | `Clock`, `Duration`, `Instant`, `SystemTime` | `std::time` |
-| `Rand`, `Pcg64`; `RandomState` | `std::rand`; `std::collections::hash_map` |
+| `Rand`, `Pcg64` (planned); `RandomState` | `std::rand`; `std::collections::hash_map` |
 | `Env`, `VarError` | `std::env` |
 | `Stdin`, and `io::{self, Read, Write, BufRead, ..}` | `std::io` |
 | `Proc`, `Command`, `ExitCode` | `std::process` |
@@ -1014,11 +1018,12 @@ it too (provisional). Import everything else:
 | `Ordering`, `HashMap`, `BTreeMap`, `PathBuf`, ... | as Rust |
 
 `Faults` is the type of `sim.faults`; there is no `Faults { .. }` literal.
+A path whose items this reference marks planned does not exist yet.
 
 ### 12.4 Manifest and grants
 
 ```toml
-# tide.toml (provisional file name and keys)
+# tide.toml (planned; provisional file name and keys)
 [package]
 name = "acme/linecount"          # namespaced
 version = "0.1.0"
@@ -1042,6 +1047,8 @@ only = ["crate::net::*"]         # no other module may declare Net
 - **Authority policies** are checked against declared authority (the
   capability types a function's parameters and captures can reach):
   violations are `FX0516`; policy changes appear in the trust diff.
+- Nothing reads `tide.toml` or `tide.lock` yet: the driver builds one
+  crate, granted `unsafe` by `--tide-grant=unsafe`.
 - Escape hatches are granted per dependency. `tide.lock` is on by default,
   with content hashes, and records each package's public authority and trust
   holes; an upgrade that widens either fails until a human approves. A
@@ -1050,7 +1057,7 @@ only = ["crate::net::*"]         # no other module may declare Net
   (`FX0915`; generators: 2.1). Tide's driver runs rustc itself, not Cargo;
   `RUSTFLAGS` and unstable features do not apply.
 
-## 13. Toolchain loop
+## 13. Toolchain loop (planned)
 
 - `tide check`: one verdict plus NDJSON diagnostics with fixes marked
   `safe` or `suggest`; `tide fix` applies safe fixes (`--thread <Cap>

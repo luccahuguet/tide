@@ -2,39 +2,53 @@
 
 **A capability-safe, replayable subset of Rust.**
 
-Tide is a checked subset of valid Rust 2024 in which code can't overreach and
-programs replay bit for bit. It is for software that AI agents write and
-humans have to trust: code cannot do more than its signature says, programs
-replay from a seed when every foreign effect they reach has a simulator
-model, and reviews show what changed in what code may do, with Rust's speed
-and safety.
+Tide is a checked subset of valid Rust 2024 for software that AI agents
+write and humans have to trust. In the part of a program written in Tide,
+a function's signature bounds what it can do, tests replay from a seed, and
+reviews show what changed in what code may do, with Rust's speed and
+safety. Each crate's trust artifact lists its `unsafe` sites, and the
+bullets below state the other limits.
 
-- **No ambient authority.** No code, in any dependency, can touch files, the
-  network, or the clock unless it is handed that authority, so a function's
-  signature bounds what it can do. Against a malicious dependency this rests
-  on rustc's soundness, which has open `I-unsound` issues: the checker closes
-  only the `fn`-pointer route of rust-lang/rust#25860 (`FX0206`), and the
-  kernel sandbox for test and simulation runs (RUN-3) is pending.
-- **Every program replays.** Any Tide program, dependencies included, runs
-  under a seeded simulator and reproduces bit for bit, provided every foreign
-  effect it reaches has a simulator model (the build lists any that do not),
-  so concurrency bugs become ordinary failing tests.
-- **Review what changed in what code may do.** The compiler diffs authority,
-  contracts, and `unsafe` holes between revisions, so reviewers see the risk
-  before reading the code.
+- **No accidental ambient authority.** Code the checker admits can touch
+  files, the network, or the clock only through authority it is handed, so
+  a function's signature bounds what it can do, and every site an `unsafe`
+  grant admits is listed as a trust hole. Against a malicious dependency
+  this rests on rustc's soundness, which has open `I-unsound` issues: the
+  checker closes only the `fn`-pointer route of rust-lang/rust#25860
+  (`FX0206`), and the kernel sandbox for test and simulation runs (RUN-3)
+  is pending. Today the driver admits a single crate against Tide's std;
+  packages and dependencies (`tide.toml`, `tide.lock`) are planned.
+- **Tests replay.** A test that takes a simulated root (`Root::sim(seed)`,
+  `#[sim_test]`) runs under a seeded simulator of tasks, channels,
+  `Shared`, files, TCP loopback, the clock, the environment, and stdin.
+  A run through `tide-admit --tide-run-test` records a manifest, and
+  `--replay` reproduces it bit for bit on the same machine, so concurrency
+  bugs in Tide-written logic become ordinary failing tests. The simulator
+  reproduces what it models: CPU time and real kernel behaviour are not
+  modeled. Simulated HTTP, randomness and processes, fault injection,
+  crashable nodes, and `tide sim` for whole programs are planned;
+  production record and replay is v1.
+- **Review what changed in what code may do.** `tide-admit --tide-diff`
+  compares two builds' declared authority and `unsafe` holes, so reviewers
+  see the risk before reading the code. Contracts and grants in the diff
+  (`tide review`) are planned.
 - **As safe and fast as Rust.** The same memory safety and data-race freedom
   without a garbage collector, and generics specialized like Rust's.
   Integer overflow never wraps silently, and no package code runs at build
   time beyond the toolchain's own proc macros and, from v1, the sandboxed
   build scripts of imported Rust crates.
-- **Fast feedback.** Edits check in tens of milliseconds: no user proc
-  macros, no build scripts, no inference across signatures, no unbounded trait solver.
+- **Built for fast feedback.** No user proc macros, no build scripts, no
+  inference across signatures, no unbounded trait solver. Checking an edit
+  in tens of milliseconds is the target of Tide's incremental front end
+  (D12), which is not built; today each check is a rustc run.
 - **Already familiar.** Rust syntax wherever the meaning is the same,
   including lifetimes, without macros or `async`/`await`. Contracts run as
   checks and tests today and become proofs later.
 
-*Tide is in the design phase: the guarantees are what the design commits to,
-and the speed figures are targets, not measurements.*
+*Tide is in the design phase. The bullets above state what the checker and
+std deliver today, and Status below details it; the v0 core tier lists what
+the design commits to, and `design/reference.md` labels each taught
+surface not built yet.*
 
 ## Status
 
@@ -339,7 +353,7 @@ with their count. Closed stdout exits quietly with 141. `main` uses Rust's
 `root.log: std::log::LogConfig` has `&self` setters `level(Level)`, `format(Format)`,
 and `to_file(File)` for the log sink. Defaults are Info/text/stderr. Arguments
 always format before filtering. Text is `level: message`; JSON has fixed
-`level`/`message` keys and no timestamp (provisional). `dbg!`, the trace sink,
+`level`/`message` keys and no timestamp (provisional). The trace sink,
 `log::`/`tracing::`-prefixed log macros, and `release-max-level` remain unimplemented.
 
 Production std includes a seeded scheduler for structured tasks,
@@ -532,7 +546,8 @@ from the first design, which does not implement Tide, is kept in
 - [design/01-design.md](design/01-design.md): the decision record (D0–D18)
   and the tier table; it owns every decision.
 - [design/reference.md](design/reference.md): the agent-facing reference for
-  the v0 core, written as a delta from Rust, within a 25,000-token budget;
+  the v0 core, written as a delta from Rust, within a 25,000-token budget,
+  labelling what is not built yet;
   [design/reference-companion.md](design/reference-companion.md) holds its
   on-demand tables, examples, and later tiers.
 - [design/02-memory.md](design/02-memory.md): ownership, origins, variance,
@@ -629,7 +644,13 @@ Cited evidence behind the decisions, in [research/](research/):
   sealed delegation boundaries; unreviewed branches tested without a VM
   per run, in a fixed OS sandbox on Linux; per-dependency grants; the admission
   allowlist; the agent toolchain on rustc builds gated by the admission
-  driver, then Tide's incremental front end (D18).
+  driver, then Tide's incremental front end (D18). The largest parts not
+  built yet: the `tide` commands and the incremental front end; packages
+  (`tide.toml`, `tide.lock`, per-dependency grants, authority policies)
+  and sealed interfaces; HTTP, UDP, `Rand` draws, and `Proc` operations; the
+  simulator's faults, crashes, and nodes; the test sandbox and the
+  unreviewed-branch guarantee (RUN-3, RUN-5); and contracts in the trust
+  diff. `design/reference.md` labels each one **(planned)**.
 - **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the
   evented runtime, FFI, direct Rust crate import and Rust consumers of Tide
   crates,
