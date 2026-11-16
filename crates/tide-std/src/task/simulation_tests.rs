@@ -53,6 +53,366 @@ impl From<TaskError> for Ended {
     }
 }
 
+struct OnDrop<F: Fn()>(F);
+impl<F: Fn()> Drop for OnDrop<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
+// Effect rules map to these tests in research/34-effect-interruption-oracle.md.
+#[test]
+fn effect_oracle_nested_scope_close_order() {
+    bounded(|| {
+        for seed in 0..20 {
+            for cancel in [false, true] {
+                let simulation = Simulation::new(seed);
+                let (tasks, clock) = (simulation.tasks(), simulation.clock());
+                let events = &Mutex::new(Vec::new());
+                let (ready, started) = crate::sync::mpsc::channel(tasks);
+                let result = tasks.scope::<_, Ended, _>(|outer| {
+                    drop(outer.spawn(|| {
+                        let _parent = OnDrop(|| events.lock().unwrap().push("parent-drop"));
+                        let result = tasks.scope::<_, Ended, _>(|inner| {
+                            drop(inner.spawn(|| {
+                                let _first = OnDrop(|| events.lock().unwrap().push("first-drop"));
+                                let _second = OnDrop(|| events.lock().unwrap().push("second-drop"));
+                                ready.send(()).unwrap();
+                                clock.sleep(SECOND).map_err(|_| Ended::Child)
+                            }));
+                            Ok(())
+                        });
+                        events.lock().unwrap().push("inner-closed");
+                        result
+                    }));
+                    started.recv().unwrap();
+                    if cancel { Err(Ended::Body) } else { Ok(()) }
+                });
+                assert_eq!(result, if cancel { Err(Ended::Body) } else { Ok(()) });
+                events.lock().unwrap().push("outer-closed");
+                assert_eq!(
+                    *events.lock().unwrap(),
+                    [
+                        "second-drop",
+                        "first-drop",
+                        "inner-closed",
+                        "parent-drop",
+                        "outer-closed"
+                    ]
+                );
+                assert_eq!(
+                    simulation.tasks().sim_elapsed(),
+                    if cancel { Duration::ZERO } else { SECOND }
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_passed_scope_outlives_spawning_task_but_not_scope() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let (tasks, clock) = (simulation.tasks(), simulation.clock());
+            let parent_done = &AtomicBool::new(false);
+            let child_done = &AtomicBool::new(false);
+            tasks
+                .scope::<_, TaskError, _>(|outer| {
+                    outer
+                        .spawn(move || {
+                            // A passed scope owns this child, even after its spawning task returns.
+                            drop(outer.spawn(move || {
+                                clock.sleep(SECOND).unwrap();
+                                assert!(parent_done.load(Ordering::SeqCst));
+                                child_done.store(true, Ordering::SeqCst);
+                                Ok(())
+                            }));
+                            parent_done.store(true, Ordering::SeqCst);
+                            Ok(())
+                        })
+                        .join()?;
+                    assert!(!child_done.load(Ordering::SeqCst));
+                    Ok(())
+                })
+                .unwrap();
+            assert!(child_done.load(Ordering::SeqCst));
+            assert_eq!(simulation.tasks().sim_elapsed(), SECOND);
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_cancel_is_level_triggered_and_join_waits_for_cleanup() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let (tasks, clock) = (simulation.tasks(), simulation.clock());
+            let finished = &AtomicBool::new(false);
+            let (ready, started) = crate::sync::mpsc::channel(tasks);
+            let result = tasks.scope::<_, Ended, _>(|scope| {
+                let child = scope.spawn(|| {
+                    let _drop = OnDrop(|| finished.store(true, Ordering::SeqCst));
+                    ready.send(()).unwrap();
+                    assert_eq!(clock.sleep(Duration::MAX), Err(Cancelled));
+                    assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                    assert_eq!(clock.sleep(Duration::ZERO), Err(Cancelled));
+                    tasks.shield(|| clock.sleep(2 * SECOND).unwrap());
+                    assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                    Err::<(), _>(Ended::Child)
+                });
+                started.recv().unwrap();
+                scope.cancel();
+                assert_eq!(simulation.tasks().sim_elapsed(), Duration::ZERO);
+                assert!(!finished.load(Ordering::SeqCst));
+                assert_eq!(child.join(), Err(Ended::Task(TaskError::Cancelled)));
+                assert!(finished.load(Ordering::SeqCst));
+                assert_eq!(simulation.tasks().sim_elapsed(), 2 * SECOND);
+                Ok(())
+            });
+            assert_eq!(result, Err(Ended::Child));
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_cancel_during_drop_runs_remaining_destructors() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let tasks = simulation.tasks();
+            let stage = &Shared::new(0, tasks);
+            let events = &Mutex::new(Vec::new());
+            tasks
+                .scope::<_, TaskError, _>(|scope| {
+                    scope.spawn(|| {
+                        let _last = OnDrop(|| events.lock().unwrap().push("last-drop"));
+                        let _first = OnDrop(|| {
+                            events.lock().unwrap().push("drop-start");
+                            // Drop waits on a Shared handle to force the overlap.
+                            stage.with(|n| *n = 1).unwrap();
+                            while stage.with(|n| *n).unwrap() != 2 {}
+                            events.lock().unwrap().push("drop-end");
+                        });
+                        Ok(())
+                    });
+                    scope.spawn(move || {
+                        while stage.with(|n| *n).unwrap() != 1 {}
+                        scope.cancel();
+                        events.lock().unwrap().push("cancel");
+                        stage.with(|n| *n = 2).unwrap();
+                        assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                        Ok(())
+                    });
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(
+                *events.lock().unwrap(),
+                ["drop-start", "cancel", "drop-end", "last-drop"]
+            );
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_cancel_during_shielded_cleanup_keeps_inner_deadline() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let (tasks, clock) = (simulation.tasks(), simulation.clock());
+            let start = clock.now();
+            let (ready, started) = crate::sync::mpsc::channel(tasks);
+            tasks
+                .scope::<_, TaskError, _>(|outer| {
+                    let child = outer.spawn(|| {
+                        tasks.shield(|| {
+                            tasks
+                                .scope::<_, TaskError, _>(|cleanup| {
+                                    cleanup.set_deadline(start + 2 * SECOND);
+                                    ready.send(()).unwrap();
+                                    assert_eq!(clock.sleep(3 * SECOND), Err(Cancelled));
+                                    assert_eq!(clock.now(), start + 2 * SECOND);
+                                    assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                                    Ok(())
+                                })
+                                .unwrap();
+                            tasks.checkpoint().unwrap();
+                        });
+                        assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                        Ok(19)
+                    });
+                    started.recv().unwrap();
+                    clock.sleep(SECOND).unwrap();
+                    outer.cancel();
+                    assert_eq!(child.join(), Ok(19));
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(clock.now(), start + 2 * SECOND);
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_child_panics_during_parent_cancellation_drain_all_children() {
+    bounded(|| {
+        for seed in 0..20 {
+            for body_panics in [false, true] {
+                let simulation = Simulation::new(seed);
+                let (tasks, clock) = (simulation.tasks(), simulation.clock());
+                let dropped = &Mutex::new(Vec::new());
+                let (ready, started) = crate::sync::mpsc::channel(tasks);
+                let panic = catch_unwind(AssertUnwindSafe(|| {
+                    let _: Result<(), Ended> = tasks.scope(|scope| {
+                        for (name, delay) in
+                            [("first-child", 2), ("second-child", 1), ("survivor", 3)]
+                        {
+                            let ready = ready.clone();
+                            scope.spawn(move || {
+                                let _drop = OnDrop(|| dropped.lock().unwrap().push(name));
+                                ready.send(()).unwrap();
+                                assert_eq!(clock.sleep(Duration::MAX), Err(Cancelled));
+                                tasks.shield(|| clock.sleep(delay * SECOND).unwrap());
+                                if name != "survivor" {
+                                    panic!("{name}");
+                                }
+                                Err::<(), _>(Ended::Child)
+                            });
+                        }
+                        for _ in 0..3 {
+                            started.recv().unwrap();
+                        }
+                        if body_panics {
+                            panic!("body-panic");
+                        }
+                        Err(Ended::Body)
+                    });
+                }))
+                .unwrap_err();
+                assert_eq!(
+                    message(&*panic),
+                    Some(if body_panics {
+                        "body-panic"
+                    } else {
+                        "first-child"
+                    })
+                );
+                assert_eq!(
+                    *dropped.lock().unwrap(),
+                    ["second-child", "first-child", "survivor"]
+                );
+                assert_eq!(simulation.tasks().sim_elapsed(), 3 * SECOND);
+                tasks.checkpoint().unwrap();
+            }
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_deadline_expires_while_children_clean_up() {
+    bounded(|| {
+        for seed in 0..20 {
+            for fail in [false, true] {
+                let simulation = Simulation::new(seed);
+                let (tasks, clock) = (simulation.tasks(), simulation.clock());
+                let start = clock.now();
+                let dropped = &AtomicBool::new(false);
+                let result = tasks.scope::<_, Ended, _>(|scope| {
+                    scope.set_deadline(start + SECOND);
+                    scope.spawn(|| {
+                        let _drop = OnDrop(|| dropped.store(true, Ordering::SeqCst));
+                        // Ordinary Err propagation performs explicit I/O cleanup before return.
+                        let work = if fail { Err(Ended::Child) } else { Ok(23) };
+                        tasks.shield(|| clock.sleep(3 * SECOND).unwrap());
+                        assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                        work
+                    });
+                    Ok(7)
+                });
+                assert_eq!(
+                    result,
+                    if fail {
+                        Err(Ended::Task(TaskError::DeadlineExceeded))
+                    } else {
+                        Ok(7)
+                    }
+                );
+                assert!(dropped.load(Ordering::SeqCst));
+                assert_eq!(clock.now(), start + 3 * SECOND);
+            }
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_deadline_during_panic_unwind_preserves_panic() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let (tasks, clock) = (simulation.tasks(), simulation.clock());
+            let start = clock.now();
+            let dropped = &AtomicBool::new(false);
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                let _: Result<(), TaskError> = tasks.scope(|scope| {
+                    scope.set_deadline(start + SECOND);
+                    scope.spawn(|| -> Result<(), TaskError> {
+                        let _drop = OnDrop(|| {
+                            // A shielded delay in Drop forces expiry while Rust is unwinding.
+                            assert!(thread::panicking());
+                            tasks.shield(|| clock.sleep(3 * SECOND).unwrap());
+                            // Nothing requested cancellation. This runtime counts the child's
+                            // panic only after unwinding (TASK-1/2 leave that timing open),
+                            // so here the cancellation seen is the deadline's.
+                            assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                            dropped.store(true, Ordering::SeqCst);
+                        });
+                        panic!("child-unwinding");
+                    });
+                    Ok(())
+                });
+            }))
+            .unwrap_err();
+            assert_eq!(message(&*panic), Some("child-unwinding"));
+            assert!(dropped.load(Ordering::SeqCst));
+            assert_eq!(clock.now(), start + 3 * SECOND);
+            tasks.checkpoint().unwrap();
+        }
+    });
+}
+
+#[test]
+fn effect_oracle_cancel_after_task_completion_preserves_value_and_drops_once() {
+    bounded(|| {
+        for seed in 0..20 {
+            let simulation = Simulation::new(seed);
+            let tasks = simulation.tasks();
+            let drops = &Mutex::new(0);
+            tasks
+                .scope::<_, TaskError, _>(|scope| {
+                    let child = scope.spawn(|| {
+                        let _drop = OnDrop(|| *drops.lock().unwrap() += 1);
+                        Ok(31)
+                    });
+                    // Observe actual completion, without consuming the handle in join.
+                    // The destructor alone precedes completion publication.
+                    while !child.done.ready() {
+                        tasks.yield_now().unwrap();
+                    }
+                    scope.cancel();
+                    scope.cancel();
+                    assert_eq!(child.join(), Ok(31));
+                    assert_eq!(*drops.lock().unwrap(), 1);
+                    assert_eq!(tasks.checkpoint(), Err(Cancelled));
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(*drops.lock().unwrap(), 1);
+            assert_eq!(simulation.tasks().sim_elapsed(), Duration::ZERO);
+        }
+    });
+}
+
 fn two_tasks(seed: u64) -> (String, u32, u32) {
     let simulation = Simulation::new(seed);
     let tasks = simulation.tasks();
