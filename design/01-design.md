@@ -81,7 +81,7 @@ later-tier feature, the tier table wins.
 | Tier | Contents |
 | --- | --- |
 | v0 core | Rust surface and ownership, with lifetimes checked as origins; traits with the power ceiling; `Result` and `?`; built-in `!` forms and derives (`Encode`/`Decode` for JSON only); capabilities and `Root`; `Pure`; sinks; structured tasks on blocking and thread runtimes; channels and `Shared::with`; `join`, `par_map`, `par_for`; executable contracts (`#[requires]`, `#[ensures]`, loop `invariant!`, `old`, `result`, bounded quantifiers) as runtime checks and property-test drivers; the simulator with crash, restart, and durability; declared authority and trust holes in the trust diff; sealed delegation boundaries (D11); the unreviewed-branch guarantee and the test sandbox on Linux (D13); per-dependency grants; `#[trusted_pure]` on types as a trust hole under an `unsafe` grant; the admission allowlist (D7); the agent toolchain on rustc builds gated by the admission driver, then Tide's incremental front end for the edit loop (D12, D18) |
-| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); strict JSON decoding and internally tagged enums (D6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority (D7); behavior diffs in `tide review` (D11) |
+| v1 | `prove` mode with `spec fn`, views, `final`, `decreases`, laws, and proof status; exercised-authority tracking; the evented runtime; trait-method contracts and their inheritance by impls; FFI with `#[trusted_pure]` wrappers; direct Rust crate import with RUST-2 wrappers; the exported `Cargo.toml` for Rust consumers (RUST-6); strict JSON decoding and internally tagged enums (D6); `par_reduce` with canonical grouping; field-borrow declarations; production record and replay, plan roots, and replay queries (D17); kernel enforcement of authority for deployed binaries (D7); behavior diffs in `tide review` (D11) |
 | Later | Bend tandem (D16); deferred overflow traps; automatic parallelization; read-only `Shape` reflection; Polonius-precision borrows; interactive-proof export; modeled child processes, signals and raw PTYs through Proc (D15; 03 §9.9). The API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`) and subscription rules (one live subscription with `AlreadyExists`, default disposition on drop, five-signal set) are Later on both real and simulated backends. |
 
 `prove` stays in v1 (owner delegated the choice, 2026-10-19): v0 contracts
@@ -568,11 +568,20 @@ scanning.
   and lints over-granted capabilities. For each exercised authority it shows
   a witness path, the call chain that uses it. `tide fix` can thread a
   capability through a call chain.
-- **Kernel enforcement** (v1): when `main` attenuates its `Root`, the runtime
-  installs the matching operating-system sandbox (Landlock and seccomp on
-  Linux) and drops what was not kept, so a bug or a malicious dependency
-  that escapes the type system still meets the kernel. A WASI target maps
-  capabilities onto component imports.
+- **Kernel enforcement.** The type system alone cannot bound what admitted
+  code reaches: rustc has open soundness bugs that safe code can exploit to
+  forge a capability (probe `fx-6xi2`). Test and simulation
+  processes therefore get their kernel sandbox in v0 (RUN-3, D13; bead
+  `fx-ip4x`), since agent-written code mostly runs as tests on developer
+  machines. Deployed binaries get theirs in v1: when `main` attenuates its
+  `Root`, the runtime installs the matching operating-system sandbox
+  (Landlock and seccomp on Linux) and drops what was not kept, so a bug or a
+  malicious dependency that escapes the type system still meets the kernel.
+  A WASI target maps capabilities onto component imports. Until RUN-3
+  lands, public claims say that safety against a malicious dependency rests
+  on rustc's soundness, which has open `I-unsound` issues; the checker closes
+  only the `fn`-pointer route of rust-lang/rust#25860 (02 CLOSURE-3).
+  Decided 2026-11-15 (coordinator, owner-delegated; bead `fx-iwjq`).
 
 Rejected: effect rows and effect variables; implicit capability resolution
 through `with` clauses; user-defined handlers and continuations in v1;

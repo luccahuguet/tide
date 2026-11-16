@@ -290,7 +290,7 @@ whole.
 ### 2.8 Precision
 
 **ORIGIN-6.** v0 accepts a body exactly when Rust's NLL borrow checker accepts
-it (§11), apart from CLOSURE-3's `fn`-pointer re-check. The field-borrow
+it (§11), apart from CLOSURE-3's `fn`-pointer rule. The field-borrow
 declarations of §7 (v1) map to Rust exactly.
 
 In NLL terms, subset constraints hold at every point of the body, and a
@@ -538,11 +538,38 @@ the reference's origin. In detail:
   `ρenv ⊆ ρs`, so the
   closure must work for every `ρs` that carries the loans of `'env`.
   Scoped tasks use this (§8.2), as Rust's `std::thread::scope` does.
-- **CLOSURE-3.** When a function item is coerced to a `fn` pointer type, the
-  bounds implied by its signature are checked again at the target
-  instantiation; one that fails is `FX0206`, which rustc accepts. This closes
-  the class of rustc bug rust-lang/rust#25860, where implied bounds are lost
-  through `fn` pointer variance.
+- **CLOSURE-3.** Coercing a function item to a `fn` pointer type is
+  `FX0206` when the item implies an outlives bound that does not hold
+  trivially: one origin outliving another, or a type parameter or an
+  associated type outliving an origin. `&'a &'b ()` implies `'b: 'a`, and
+  `&'a T` implies `T: 'a`. A bound holds trivially when the outliving side
+  is `'static` (`&'a &'static ()`) or the origin itself, when its subject
+  is a concrete type such as `u32`, or when it is a type parameter declared
+  `'static`. The implied bounds are the ones the item's body may assume:
+  those of its argument and return types and, for a method, of its impl
+  header. For a trait method that is the impl that selection picks; when
+  no impl can be selected, as through a type parameter's bound, the
+  coercion is `FX0206` too. A `fn` pointer type cannot carry these bounds
+  and rustc does not check them at the coercion, so rustc accepts such a
+  coercion even where it forges a lifetime (rust-lang/rust#25860). The rule
+  is a syntactic conservative rejection: it looks at the item's
+  declaration, not at the instantiation, so it also rejects coercions that
+  keep the bounds, as in
+  `let f: fn(&'a &'a (), &'a u32) -> &'a u32 = pick;`. Its cost is that no
+  `fn` pointer can be made from a generic function over references such as
+  `first<T>(v: &[T])`, a trait method with a reference receiver such as
+  `Clone::clone` or `Ord::cmp` (`&self` implies `Self: 'a`), a `&self` or
+  `&mut self` method of a type with a lifetime parameter, or a function
+  over nested references such as `fn f(v: &mut Vec<&str>)`. The fix is a
+  closure that calls the item, `|v| first(v)` or `|u, v| pick(u, v)`: a call
+  checks its argument types against the item's signature, so the bounds
+  that signature implies hold. A direct call does not check the bounds an
+  impl header implies (the rust-lang/rust#100051 family), which this rule
+  leaves open. A closure coerced to a `fn` pointer carries the same hole
+  when its expected type has two parameters sharing one higher-ranked
+  origin, and that route stays closed only because such a type needs an
+  explicit `for<'a, 'b>` binder, which is `FX0404` (LIFE-3). A later rule
+  may accept the instantiations that keep the bounds.
 
 ## 6. Drop check
 
@@ -1407,10 +1434,11 @@ compares the two checkers' verdicts.
   value boxed as `dyn Debug` must still pin (round-2 consistency review B8).
 - **R2. Bounded higher-ranked origins (§5.4): low risk.** They come only
   from well-formedness, the encoding that `std::thread::scope` relies on.
-- **R3. Implied bounds through `fn` pointers: low risk once implemented.**
-  Relying on rustc inherits Rust's holes, such as rust-lang/rust#25860, which
-  the build cannot catch because rustc accepts them. §5.4's re-check closes
-  it; known exploits belong in the negative test corpus.
+- **R3. Implied bounds through `fn` pointers: low risk.** Relying on rustc
+  inherits Rust's holes, such as rust-lang/rust#25860, which the build cannot
+  catch because rustc accepts them. §5.4's CLOSURE-3 closes this route
+  conservatively, and its known exploits are in the negative test corpus.
+  rustc has other open soundness bugs, which no Tide rule closes (03 RUN-4).
 - **R4. The audited std set** (`Arena`, `Shared` and its `with` methods,
   channels, `Scope`, the eyepatch containers) has Rust std's trust model and
   is counted in the trust surface.

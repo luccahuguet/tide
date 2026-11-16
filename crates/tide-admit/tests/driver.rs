@@ -62,7 +62,9 @@ fn the_backstop_keeps_exported_library_roots_in_every_profile() {
         ),
         (
             "backstop-exported-reify",
-            "pub fn sorter() -> fn(&mut [fn()]) { <[fn()]>::sort }\n",
+            // A generic std function without references, so FX0206 (CLOSURE-3) has no bound
+            // to reject and the backstop alone finds `Ord for fn()`.
+            "pub fn chooser() -> fn(fn(), fn()) -> fn() { std::cmp::max }\n",
         ),
     ] {
         for profile in ["debug", "release"] {

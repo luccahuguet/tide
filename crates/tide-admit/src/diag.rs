@@ -23,6 +23,9 @@ pub enum Code {
     Fx0202,
     /// A borrowing closure in an owned position (BORROW-3, SCOPE-3).
     Fx0203,
+    /// A fn item coerced to a `fn` pointer although its signature implies outlives bounds
+    /// (CLOSURE-3).
+    Fx0206,
     /// A literal borrows an owner it moves into another field (reference 3.6).
     Fx0210,
     /// A lossy `as` cast (D3).
@@ -135,6 +138,7 @@ impl Code {
         Code::Fx0201,
         Code::Fx0202,
         Code::Fx0203,
+        Code::Fx0206,
         Code::Fx0210,
         Code::Fx0301,
         Code::Fx0401,
@@ -195,6 +199,7 @@ impl Code {
             Code::Fx0201 => "FX0201",
             Code::Fx0202 => "FX0202",
             Code::Fx0203 => "FX0203",
+            Code::Fx0206 => "FX0206",
             Code::Fx0210 => "FX0210",
             Code::Fx0301 => "FX0301",
             Code::Fx0401 => "FX0401",

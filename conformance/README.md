@@ -115,6 +115,23 @@ applies only to unsafe blocks, with or without the grant: a `// SAFETY:` line
 in the comment lines directly above the block or its statement, never a
 trailing same-line comment or a requirement on unsafe impls.
 
+`FX0206` (CLOSURE-3) is an error at every coercion of a function item to a
+`fn` pointer, whether implicit, an `as` cast, or the arms of an `if` or
+`match`, for local and std items, methods and constructors alike, when the
+implied bounds that rustc computes for the item's argument and return types,
+and a method's impl header, include an outlives bound that does not hold
+trivially: an origin other than `'static` outliving a different origin, or
+a type parameter (unless it is declared `'static`) or associated type
+outliving an origin. A trait method also counts its selected impl's method
+and header; when selection finds no single impl, as through a type
+parameter's bound, the coercion is rejected. The verdict depends only on the
+item, not on the instantiation, so generic functions over references, trait
+methods with a reference receiver such as `Clone::clone`, `&self` methods of
+types with a lifetime parameter, and functions such as
+`fn f(v: &mut Vec<&str>)` do not coerce; a closure that calls the item is
+accepted. For an `if`, rustc reifies each arm's block, so the diagnostic
+points at the block.
+
 The contracts/modules slice enforces `FX0802`, `FX0803`, `FX0902`, and
 `FX0910`–`FX0915` as errors. Module cycles use only `use` items (public uses
 and globs included), targeting the module defining the imported item or the

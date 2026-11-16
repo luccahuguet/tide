@@ -11,7 +11,10 @@ and safety.
 
 - **No ambient authority.** No code, in any dependency, can touch files, the
   network, or the clock unless it is handed that authority, so a function's
-  signature bounds what it can do.
+  signature bounds what it can do. Against a malicious dependency this rests
+  on rustc's soundness, which has open `I-unsound` issues: the checker closes
+  only the `fn`-pointer route of rust-lang/rust#25860 (`FX0206`), and the
+  kernel sandbox for test and simulation runs (RUN-3) is pending.
 - **Every program replays.** Any Tide program, dependencies included, runs
   under a seeded simulator and reproduces bit for bit, provided every foreign
   effect it reaches has a simulator model (the build lists any that do not),
@@ -61,9 +64,14 @@ lifetime parameters on traits (`FX0201`), unresolved output elision, including
 function types and `Fn` sugar (`FX0202`, LIFE-4), and lossy numeric casts (`FX0301`). It labels rustc's borrow errors for closures in
 owned positions when the evidence is certain (`FX0203`) and struct literals that
 move an owner into one field and borrow it in another (`FX0210`). Wrong-input elision keeps rustc's
-region error. It enforces the trait power ceiling (`FX0401`–`FX0408`): impl
-placement, specialization and overlap, generic associated types, explicit
-higher-ranked binders, negative impls and user auto traits, structural impl
+region error. It rejects coercing a function item to a `fn` pointer when the item implies an
+outlives bound that does not hold trivially (`FX0206`, CLOSURE-3), whatever the instantiation,
+which closes the `fn`-pointer route of rust-lang/rust#25860. Generic functions over references,
+trait methods with a reference receiver such as `Clone::clone`, `&self` methods of types with a
+lifetime parameter, and functions such as `fn f(v: &mut Vec<&str>)` therefore do not coerce; a
+closure that calls the item is accepted. It enforces the trait power ceiling
+(`FX0401`–`FX0408`): impl placement, specialization and overlap, generic associated types,
+explicit higher-ranked binders, negative impls and user auto traits, structural impl
 bounds, polymorphic recursion and duplicate inherent method names. Definition
 checks reject expanding cycles between function type parameters, including
 selected local trait impls. Unresolved dispatch retains rustc's checks;

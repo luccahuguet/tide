@@ -42,7 +42,7 @@ not cite is a best mapping that a case must confirm.
 | ORIGIN-3 | §2.7 Bodies, 02:275 | A body may use inclusions between signature origins only from declared or implied bounds | rustc | "lifetime may not live long enough" |
 | ORIGIN-4 | §2.7, 02:281 | A local loan reaching a placeholder origin (a returned reference to a local) is an error | rustc | E0515 |
 | ORIGIN-5 | §2.7, 02:284 | An impl method's signature must be at least as general as the trait's | rustc | E0195; uncoded "`impl` item signature doesn't match" |
-| ORIGIN-6 | §2.8, 02:290 | v0 accepts a body exactly when NLL accepts it (no Polonius), apart from CLOSURE-3's `fn`-pointer re-check | rustc | NLL |
+| ORIGIN-6 | §2.8, 02:292 | v0 accepts a body exactly when NLL accepts it (no Polonius), apart from CLOSURE-3's `fn`-pointer rule | rustc | NLL |
 | BORROW-1 | §3.1, 02:305 | Every reference, borrowing type, and `dyn` bound in a field uses a declared lifetime or `'static` | rustc | E0106 / E0261 |
 | BORROW-2 | §3.6, 02:360 | In `impl<'a> Lexer<'a>`, `fn new(src: &str) -> Self` is an error | rustc | lifetime error |
 | BORROW-3 | §3.7, 02:375 | `Owned` (`'static`) needed for `Box<dyn Trait>` in a signature or field, `dyn Any`, and `spawn_isolated` closures (SCOPE-3) | both | rustc `'static` errors; FX0203 (ref:207) |
@@ -55,7 +55,7 @@ not cite is a best mapping that a case must confirm.
 | OPAQUE-2 | §5.2, 02:479 | An opaque type is `Send`, `Sync`, or `Pure` only if its bounds state it (no auto-trait leakage) | checker | FX0205 (`Send`/`Sync`, defined in 02 §5.2; rustc accepts it when the hidden type has the trait); FX0517 (`Pure`) |
 | CLOSURE-1 | §5.3, 02:496 | A closure that captures a borrow may be returned or stored only where its origins are named or captured | rustc | E0373 / lifetime errors |
 | CLOSURE-2 | §5.4, 02:514 | With no expected type, a closure cannot return a borrow of a parameter whose annotation elides its lifetime (a named lifetime or inferred types are accepted) | rustc | lifetime error |
-| CLOSURE-3 | §5.4, 02:523 | Coercing a fn item to a `fn` pointer re-checks its implied bounds (closes rust#25860) | checker | FX0206 (defined in 02 §5.4; rustc accepts) |
+| CLOSURE-3 | §5.4, 02:541 | Coercing a fn item to a `fn` pointer is an error when the item (its signature, a method's impl header, a trait method's selected impl) implies an outlives bound that does not hold trivially (not `'static: 'a`, `'a: 'a`, a concrete type, or a type parameter declared `'static`), or when no impl can be selected; a syntactic conservative rejection, independent of the instantiation (closes rust#25860's `fn`-pointer route; the closure route stays closed through FX0404). Cost: no `fn` pointer from generic functions over references such as `first<T>(&[T])`, trait methods with a reference receiver such as `Clone::clone`, `&self` methods of types with a lifetime parameter, or functions such as `fn f(v: &mut Vec<&str>)`; a closure calling the item is accepted | checker | FX0206 (defined in 02 §5.4; rustc accepts) |
 | DROP-1 | §6, 02:530 | "Rule DC": Drop check: every origin in `dropck(T)` must be live where `T` drops | rustc | E0597 / E0713 |
 | DROP-2 | §6, 02:555 | Users cannot write a drop-check exemption (`#[may_dangle]`) | rustc (unstable feature, under ADMIT-2) | E0658 / E0725 |
 | SEND-1 | §8.1, 02:606 (table 02:610) | `Send`/`Sync` are derived structurally per the table | rustc | E0277 |

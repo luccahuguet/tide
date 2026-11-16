@@ -11,8 +11,8 @@
 //! generic args name, those of a trait impl item's own where-clauses, and those of an opaque
 //! type's bounds, decided by `pure.rs`; the reads of raw memory that ROOT-4 bounds by `Pure`;
 //! the rules on items: `static`s (GLOBAL-1 to 3), `const fn` (AFREE-2), `#[pure]` (AFREE-1),
-//! and what needs the `unsafe` grant (UNSAFE-1); and the paths that name the binary's `main`
-//! (ROOT-5).
+//! and what needs the `unsafe` grant (UNSAFE-1); the paths that name the binary's `main`
+//! (ROOT-5); and fn items coerced to `fn` pointers (CLOSURE-3, `reify.rs`).
 
 use std::collections::BTreeMap;
 
@@ -52,6 +52,7 @@ mod contracts;
 mod habits;
 mod modules;
 mod mono;
+mod reify;
 mod sinks;
 mod surface;
 mod traits;
@@ -2047,6 +2048,12 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
                     if let Some(tr) = unsized_trait_ref(self.tcx, src, adj.target) {
                         self.follow(tr, e.span);
                     }
+                }
+                // A fn item coerced to a `fn` pointer (CLOSURE-3).
+                if let (Adjust::Pointer(PointerCoercion::ReifyFnPointer(_)), Some(src)) =
+                    (&adj.kind, source)
+                {
+                    self.reify(e, src, t.hir_owner.def_id);
                 }
                 // An autoderef selects the source's impl of `Deref` or `DerefMut`.
                 if let Adjust::Deref(DerefAdjustKind::Overloaded(od)) = adj.kind {
