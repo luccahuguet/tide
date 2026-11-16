@@ -30,6 +30,39 @@ use crate::synthesis::{self, Insertions};
 use crate::walk::{Grants, Holes, check_crate, check_mono_items};
 
 mod replay;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod sandbox;
+/// Elsewhere RUN-3's level is `none`, and the linked run modes are unavailable (x86_64 Linux).
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+mod sandbox {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    pub(super) struct RunDir {
+        pub(super) path: PathBuf,
+    }
+    impl RunDir {
+        pub(super) fn create(_: &Path) -> Result<Self, String> {
+            Err("test and simulation runs need an x86_64 Linux host (sandbox: none)".into())
+        }
+        pub(super) fn token(&self) -> String {
+            String::new()
+        }
+        pub(super) fn publish(self, _: &Path) -> Result<(), String> {
+            Ok(())
+        }
+        pub(super) fn remove(self) {}
+    }
+    pub(super) struct Sandbox;
+    impl Sandbox {
+        pub(super) fn prepare(_: &RunDir) -> Result<Self, String> {
+            Ok(Self)
+        }
+        pub(super) fn level(&self) -> &str {
+            "none"
+        }
+        pub(super) fn apply(self, _: &mut Command) {}
+    }
+}
 
 const TEST_LIBRARY_NAME: &str = "tide_candidate";
 
@@ -143,6 +176,8 @@ struct Invocation {
     replay: Option<PathBuf>,
     seed: Option<u64>,
     run_test: Option<String>,
+    /// `--tide-eval-timeout SECS`: a simulation test's per-evaluation wall-clock limit (300 s).
+    timeout: Option<u64>,
     remap: Vec<(PathBuf, String)>,
 }
 
@@ -188,6 +223,7 @@ impl Invocation {
                     | "--replay"
                     | "--seed"
                     | "--tide-run-test"
+                    | "--tide-eval-timeout"
             ) {
                 let value = inline
                     .or_else(|| args.next().map(String::as_str))
@@ -199,6 +235,9 @@ impl Invocation {
                     "--replay" if this.replay.is_none() => this.replay = Some(value.into()),
                     "--seed" if this.seed.is_none() => this.seed = Some(value.parse().map_err(|_| "--seed requires a decimal u64")?),
                     "--tide-run-test" if this.run_test.is_none() => this.run_test = Some(value.into()),
+                    "--tide-eval-timeout" if this.timeout.is_none() => {
+                        this.timeout = Some(value.parse().ok().filter(|&s| s > 0).ok_or("--tide-eval-timeout requires a positive number of seconds")?)
+                    }
                     "--edition" if value == "2024" => (),
                     "--crate-type" if matches!(value, "lib" | "bin") => this.kind = value.into(),
                     "--emit" if matches!(value, "metadata" | "link") => this.link = value == "link",
@@ -270,6 +309,9 @@ impl Invocation {
         }
         if this.replay.is_some() && (this.seed.is_some() || this.run_test.is_some()) {
             return Err("--replay accepts no --seed or --tide-run-test configuration override".into());
+        }
+        if this.timeout.is_some() && this.run_test.is_none() && this.replay.is_none() {
+            return Err("--tide-eval-timeout requires --tide-run-test or --replay".into());
         }
         if this.seed.is_some() && this.run_test.is_none() {
             return Err("fresh --seed requires --tide-run-test NAME".into());
@@ -1056,6 +1098,7 @@ pub fn run() -> Result<ExitCode, String> {
   --test --emit=link --tide-std PATH --tide-dep-dir DIR --out-dir DIR
   --tide-run-test NAME [--seed U64]  run one exact recorded test (excludes const tests and test main)
   --replay MANIFEST                 identity-checked replay of one recorded evaluation
+  --tide-eval-timeout SECS          a simulation evaluation's wall-clock limit (default 300)
 Replay is a partial precursor to tide sim, for reviewed code with modeled effects.
 Replay accepts no configuration overrides and has no force option. Artifacts: OUT/target/sim.");
         return Ok(ExitCode::SUCCESS);

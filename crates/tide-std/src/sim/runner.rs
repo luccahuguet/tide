@@ -15,7 +15,11 @@ const TIMEOUT: Duration = Duration::from_secs(300);
 #[doc(hidden)]
 pub fn __run(path: &str, config: Config, body: fn(&mut Gen) -> Result<(), String>) {
     let name = path.split_once("::").map_or(path, |(_, name)| name);
+    // The driver's harness starts each test as its own sandboxed child (RUN-3), which may start
+    // no process, so under its context the simulation runs here; the harness reads the seed
+    // starts and applies the per-evaluation limit.
     if crate::sim::manifest::active()
+        || std::env::var_os(crate::replay::CONTEXT).is_some()
         || std::env::var_os(CHILD).as_deref() == Some(std::ffi::OsStr::new(path)) {
         crate::test::run_config(path, config, body);
         return;

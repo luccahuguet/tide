@@ -81,6 +81,9 @@ dependencies = [
 [[package]]
 name = "tide-admit"
 version = "0.0.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "tide-macros"

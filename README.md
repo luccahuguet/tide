@@ -16,7 +16,7 @@ bullets below state the other limits.
   this rests on rustc's soundness, which has open `I-unsound` issues: the
   checker closes only the `fn`-pointer route of rust-lang/rust#25860
   (`FX0206`), and the kernel sandbox for test and simulation runs (RUN-3)
-  is pending. Today the driver admits a single crate against Tide's std;
+  covers the runs `tide-admit` starts, in part (see the test runs' status). Today the driver admits a single crate against Tide's std;
   packages and dependencies (`tide.toml`, `tide.lock`) are planned.
 - **Tests replay.** A test that takes a simulated root (`Root::sim(seed)`,
   `#[sim_test]`) runs under a seeded simulator of tasks, channels,
@@ -378,7 +378,8 @@ initialization panics until its simulated backend exists.
 Without requires discards, `#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
 `#[sim_test(seeds = 20)]` runs `0..20`. Each entry re-executes its driver-built
 test binary once with an exact libtest filter, empty stdin, and a wall-clock
-backstop of 300 s per evaluation. The child catches panics per seed, checks the first and
+backstop of 300 s per evaluation (under the driver's run modes, the driver
+runs the evaluation in its sandboxed child and keeps the backstop). The child catches panics per seed, checks the first and
 every failing seed twice for identical traces/output, and prints failing seeds,
 causes, and traces on failure. Success emits at most one summary line, captured
 by libtest; seed-start records stay internal. Signal/timeout or a missing summary
@@ -391,7 +392,7 @@ guidance, filtering, vacuity floor and shrinking. Each case and shrink attempt
 gets a fresh simulator with the same case seed; only the parameters shrink.
 A plain property's parameter spelled `seed: u64` also receives the case seed
 and keeps it while shrinking.
-These test processes are for reviewed/trusted code; they have no OS sandbox.
+A test binary run directly gets no OS sandbox; the driver's run modes below do.
 
 The driver supplies a partial precursor to `tide sim` for one exact test:
 
@@ -447,8 +448,54 @@ force option. Use fresh `--seed` after edits. Direct test-binary invocation has
 no driver-verified manifest guarantee. Replay currently promises the same
 machine with identical pinned trusted artifacts, sysroot and C runtime;
 dependency hashes describe supplied artifact contents, not source provenance.
-Fault plans, durability, crash models, signing, the RUN-3 sandbox and the
-`tide sim` frontend remain outside this path.
+Fault plans, durability, crash models, signing, and the `tide sim` frontend
+remain outside this path.
+
+**Sandbox (RUN-3, in part).** `--tide-run-test` and `--replay` start the test
+binary in a new session with core dumps off (soft and hard limits of one byte),
+no inherited descriptor but empty standard input and standard output and error
+on pipes the driver drains, a cleared environment, and, between fork and exec,
+Landlock and seccomp allowlists (`crates/tide-admit/src/invocation/sandbox.rs`).
+Each run gets a fresh private directory under `OUT/.tide-cache`, created and
+opened without following links. Landlock lets the child read and execute only
+the binary's copy there and the loader and libraries it names, read its
+context, and write only in the run directory's `sim/`, creating regular files
+and directories; its scopes keep signals and abstract Unix sockets in the
+child, and no TCP or UDP port is granted. seccomp fails every call the runtime
+does not need with `EPERM`, sockets, process creation, io_uring, links,
+metadata changes, and tracing among them. When the child exits, the driver
+moves to `OUT/target/sim/` only the manifest directories whose names start
+with the run's token, never replacing an existing entry, and removes the run
+directory. A link or file at `target` or `target/sim` fails the publication
+and is left in place, neither followed nor deleted. A `#[sim_test]` runs inside that child
+rather than in a grandchild; the driver reads its seed starts and keeps the
+300 s per-evaluation backstop (`--tide-eval-timeout SECS` sets another), and
+a timeout or a fatal signal names the last started seed, even when whoever
+reads the driver's standard output has stopped reading. Before the child
+starts, the driver prints the level to standard error, with the kernel release
+and Landlock ABI:
+
+- `sandbox: full (Linux 7.2.6-…, Landlock ABI 10)`: Landlock ABI 6 or later
+  and seccomp filters;
+- `sandbox: partial, not enforced: … (…)`: names Landlock (absent or disabled
+  at boot), Landlock's scopes (ABI 1 to 5), or seccomp, whichever the kernel
+  lacks. The run continues under what remains, and RUN-1 then rests on the
+  checker and compiler alone.
+
+A host whose hard core-size limit is zero, a kernel without `close_range` and
+`CLOSE_RANGE_CLOEXEC` (Linux 5.11), or a child that cannot install the level
+the driver reported fails the run before the test starts.
+`run3_kernel_denies_an_unadmitted_test_child_paths_and_sockets` in
+`crates/tide-admit/tests/build.rs` swaps an unadmitted program into the build
+cache and checks that the kernel denies its file reads and writes, a canary
+and another run's artifact behind a planted `target/sim` link, and its TCP
+connect, and that truncating its standard output leaves a redirected file
+intact. The child gets `PR_SET_PDEATHSIG`, so it dies with the driver even
+though its new session puts it outside the caller's process group. Off x86_64
+Linux the driver still builds, with the sandbox compiled out (`none`), and its
+run modes stay unavailable there, as linking already is. Still missing from
+RUN-3: escaping the child's output (RUN-6), the level in `tide check` and
+`tide review`, and RUN-2's build sandbox.
 
 The `std::io` core over in-memory readers and writers is shared with conformance
 through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
@@ -521,9 +568,10 @@ and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.
 This slice provides loader and invocation isolation, with no OS sandbox or protection against concurrent
 filesystem mutation. Granted assembly can read outside the loader (`.include`,
 `.incbin`); native link inputs can read host files, and the linker/toolchain can
-start host tools. Runtime and test-process isolation remain later work: a caller
-running an output gets no Landlock/seccomp policy, descriptor/environment/core-dump
-controls, simulated Root, or snapshot/coverage gate from this driver. Builds and
+start host tools. A caller running an output directly gets no Landlock/seccomp
+policy, descriptor/environment/core-dump controls, simulated Root, or
+snapshot/coverage gate from this driver; only the run modes' children get
+RUN-3's sandbox. Builds and
 runs are for reviewed/trusted demo code only: the operator must review source,
 grants and dependencies, including granted assembly/native inputs, and trust the
 toolchain and host. Admission is partial. This mode does **not** satisfy RUN-5 or
@@ -648,8 +696,8 @@ Cited evidence behind the decisions, in [research/](research/):
   built yet: the `tide` commands and the incremental front end; packages
   (`tide.toml`, `tide.lock`, per-dependency grants, authority policies)
   and sealed interfaces; HTTP, UDP, `Rand` draws, and `Proc` operations; the
-  simulator's faults, crashes, and nodes; the test sandbox and the
-  unreviewed-branch guarantee (RUN-3, RUN-5); and contracts in the trust
+  simulator's faults, crashes, and nodes; the rest of the test sandbox and
+  the unreviewed-branch guarantee (RUN-3, RUN-5); and contracts in the trust
   diff. `design/reference.md` labels each one **(planned)**.
 - **v1**: `prove` mode with SMT proofs, exercised-authority tracking, the
   evented runtime, FFI, direct Rust crate import and Rust consumers of Tide

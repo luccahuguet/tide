@@ -73,6 +73,8 @@ object!(Context {
     receipt: Receipt,
     directory: String,
     completion: String,
+    published: String,
+    run: String,
     command: Vec<String>,
     replay: Option<Manifest>,
 });

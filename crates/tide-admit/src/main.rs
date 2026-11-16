@@ -48,10 +48,13 @@
 //!
 //! This is a partial build path for reviewed/trusted demo code only: the operator must review
 //! source, grants and dependencies before building/running, including granted assembly and native
-//! link inputs. There is no assembler/linker OS sandbox, snapshot execution gate, or RUN-5
+//! link inputs. There is no assembler/linker OS sandbox (RUN-2), snapshot execution gate, or RUN-5
 //! coverage verdict. Tide std supplies plain/property `#[test]`, `Root::sim`, and process-isolated
-//! `#[sim_test]` entries in libtest; simulation children have no OS sandbox. The `tide test` and `tide sim` commands
-//! are planned.
+//! `#[sim_test]` entries in libtest. The child that `--tide-run-test` and `--replay` start runs in
+//! RUN-3's Landlock and seccomp sandbox (`invocation/sandbox.rs`), a `#[sim_test]` in it in
+//! process, its output on pipes the driver drains and its run directory fresh and private, and
+//! prints its `sandbox:` level first; a test binary run directly gets no sandbox.
+//! The `tide test` and `tide sim` commands are planned.
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --test --tide-test-library SOURCE.rs [options] <suite.rs>

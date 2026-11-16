@@ -4839,3 +4839,304 @@ fn paired(sim: std::sim::SimRoot) {
         .stdin(Stdio::null()).output().unwrap();
     assert!(output(&replay).contains("replay reproduced"), "{}", output(&replay));
 }
+
+/// Compiles `source` with rustc outside the driver: a program that never passed admission.
+fn unadmitted(dir: &Path, source: &str) -> PathBuf {
+    let (code, binary) = (dir.join("unadmitted.rs"), dir.join("unadmitted"));
+    std::fs::write(&code, source).unwrap();
+    checked(Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["--edition=2024", "-o"]).arg(&binary).arg(&code));
+    binary
+}
+
+/// Replaces the cached admitted test executable with `binary`, and the receipt that names its
+/// digest, as code that reaches RUN-4's holes 1 or 5 could.
+fn swap_cached_executable(dir: &Path, binary: &Path) {
+    use replay_wire::{Receipt, encoded, read};
+    let entry = std::fs::read_dir(dir.join("out/.tide-cache")).unwrap()
+        .map(|e| e.unwrap().path()).find(|p| p.join("executable").is_file()).unwrap();
+    let bytes = std::fs::read(binary).unwrap();
+    std::fs::write(entry.join("executable"), &bytes).unwrap();
+    let mut receipt: Receipt = read(&entry.join("build.json")).unwrap();
+    receipt.executable = replay_wire::digest(&bytes);
+    std::fs::write(entry.join("build.json"), encoded(&receipt)).unwrap();
+}
+
+/// Runs `command` (stderr piped, stdout as configured) and fails if it outlives `seconds`.
+fn bounded(command: &mut Command, seconds: u64) -> (std::process::ExitStatus, String) {
+    use std::io::Read;
+    let mut child = command.stdin(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut pipe = child.stderr.take().unwrap();
+    let reader = std::thread::spawn(move || { let mut s = String::new(); let _ = pipe.read_to_string(&mut s); s });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() { break status; }
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("hang guard: the driver outlived {seconds} s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    (status, reader.join().unwrap())
+}
+
+/// RUN-3 kernel denial (fx-ip4x): the kernel, not admission, stops a test child that reaches
+/// outside its grants. Since `FX0206` rejects the fx-6xi2 forging pattern at admission, the child
+/// here never passed admission at all: a plain Rust program replaces the cached admitted
+/// executable. It truncates its standard output, reads and writes paths outside the run, reads
+/// through a planted `target/sim` link a canary and another run's artifact, connects to a
+/// listener, and writes a directory named like another run's published artifact. Run directly
+/// it reaches all of them; started by `--tide-run-test` it gets Landlock's `EACCES` for the
+/// paths, seccomp's `EPERM` for the socket, and a pipe the harness owns as standard output
+/// (`EINVAL`); the planted link is neither followed nor deleted, and the published artifact keeps
+/// its bytes. Needs a host whose level is `full`.
+#[test]
+fn run3_kernel_denies_an_unadmitted_test_child_paths_and_sockets() {
+    let dir = package("run3-kernel-denial", "#[test]\nfn reaches() {}\n");
+    let run = || {
+        let mut command = driver(&dir);
+        command.args(["--crate-type=lib", "--test", "--tide-run-test", "reaches"]);
+        command
+    };
+    let (status, admitted) = bounded(&mut run().stdout(Stdio::null()), 300);
+    assert!(status.success(), "{admitted}");
+    let level = admitted.lines().find(|l| l.starts_with("sandbox: ")).expect("the run reports its level").to_owned();
+    assert!(level.starts_with("sandbox: full (Linux ") && level.contains("Landlock ABI"), "{level}");
+
+    let canary = dir.join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+    let escaped = dir.join("escaped.txt");
+    // `target/sim` is planted as a link to a directory holding a canary and another run's artifact.
+    let elsewhere = dir.join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("other-run")).unwrap();
+    std::fs::write(elsewhere.join("canary.txt"), "canary").unwrap();
+    std::fs::write(elsewhere.join("other-run/run.manifest.json"), "{}").unwrap();
+    let sim = dir.join("out/target/sim");
+    std::fs::remove_dir_all(&sim).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &sim).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let reach = unadmitted(&dir, &format!(r#"
+fn main() {{
+    // SAFETY: standard output stays open; the handle is never dropped.
+    let out = std::mem::ManuallyDrop::new(unsafe {{ <std::fs::File as std::os::fd::FromRawFd>::from_raw_fd(1) }});
+    let truncate = out.set_len(0).map_err(|e| e.raw_os_error());
+    let read = std::fs::read({canary:?}).map(|b| b.len()).map_err(|e| e.raw_os_error());
+    let write = std::fs::write({escaped:?}, "out").map_err(|e| e.raw_os_error());
+    let socket = std::net::TcpStream::connect({address:?}).map(drop).map_err(|e| e.raw_os_error());
+    let sim = std::fs::read({sim_canary:?}).map(|b| b.len()).map_err(|e| e.raw_os_error());
+    let other = std::fs::read({other:?}).map(|b| b.len()).map_err(|e| e.raw_os_error());
+    println!("RUN3 truncate={{truncate:?}} read={{read:?}} write={{write:?}} socket={{socket:?}} sim={{sim:?}} other={{other:?}}");
+    // In the harness, claim another run's published name inside the writable directory.
+    if let Ok(context) = std::env::var("__TIDE_REPLAY_CONTEXT") {{
+        let context = std::fs::read_to_string(context).unwrap();
+        let directory = context.split("\"directory\":\"").nth(1).unwrap().split('"').next().unwrap();
+        let forged = std::path::Path::new(directory).join("other-run");
+        std::fs::create_dir_all(&forged).unwrap();
+        std::fs::write(forged.join("run.manifest.json"), "forged").unwrap();
+        println!("FORGED");
+    }}
+}}
+"#, address = listener.local_addr().unwrap().to_string(), sim_canary = sim.join("canary.txt"),
+        other = sim.join("other-run/run.manifest.json")));
+    // Standard output goes to a file that already holds a line, opened for appending.
+    let redirected = |name: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, "kept\n").unwrap();
+        (path.clone(), std::fs::OpenOptions::new().append(true).open(path).unwrap())
+    };
+    let report = |path: &Path| std::fs::read_to_string(path).unwrap().lines()
+        .find(|l| l.starts_with("RUN3 ")).map(str::to_owned).unwrap_or_default();
+    // Control: outside the sandbox, the same program reaches every canary.
+    let (direct_out, file) = redirected("direct.out");
+    checked(Command::new(&reach).stdout(file));
+    assert_eq!(report(&direct_out),
+        "RUN3 truncate=Ok(()) read=Ok(6) write=Ok(()) socket=Ok(()) sim=Ok(6) other=Ok(2)");
+    assert!(!std::fs::read_to_string(&direct_out).unwrap().starts_with("kept"));
+    drop(listener.accept().unwrap());
+    std::fs::remove_file(&escaped).unwrap();
+
+    swap_cached_executable(&dir, &reach);
+    listener.set_nonblocking(true).unwrap();
+    let (sandboxed_out, file) = redirected("sandboxed.out");
+    let (_, errors) = bounded(run().stdout(file), 300);
+    assert!(errors.contains(&level), "{errors}");
+    assert_eq!(report(&sandboxed_out),
+        "RUN3 truncate=Err(Some(22)) read=Err(Some(13)) write=Err(Some(13)) socket=Err(Some(1)) sim=Err(Some(13)) other=Err(Some(13))",
+        "{errors}");
+    assert!(std::fs::read_to_string(&sandboxed_out).unwrap().starts_with("kept\n"));
+    assert!(!escaped.exists());
+    assert_eq!(listener.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+    // The planted link is neither followed nor deleted: publication fails and says why.
+    assert!(std::fs::symlink_metadata(&sim).unwrap().file_type().is_symlink());
+    assert!(errors.contains("is a symbolic link or not a directory"), "{errors}");
+    let mut planted: Vec<_> = std::fs::read_dir(&elsewhere).unwrap().map(|e| e.unwrap().file_name()).collect();
+    planted.sort();
+    assert_eq!(planted, ["canary.txt", "other-run"]);
+
+    // A real published artifact keeps its bytes when the child claims its name.
+    std::fs::remove_file(&sim).unwrap();
+    std::fs::create_dir_all(sim.join("other-run")).unwrap();
+    std::fs::write(sim.join("other-run/run.manifest.json"), "original").unwrap();
+    let (claimed_out, file) = redirected("claimed.out");
+    let (status, errors) = bounded(run().stdout(file), 300);
+    assert!(status.success(), "{errors}");
+    assert!(std::fs::read_to_string(&claimed_out).unwrap().contains("FORGED"), "{errors}");
+    assert_eq!(std::fs::read_to_string(sim.join("other-run/run.manifest.json")).unwrap(), "original");
+}
+
+/// The harness owns a driver-run simulation's per-evaluation limit and its crash report, since
+/// the evaluation runs in the sandboxed child itself (RUN-3, RUN-4 hole 6).
+#[test]
+fn run3_harness_times_out_and_reports_signalled_simulations() {
+    let dir = package("run3-harness-limits", r#"
+#[sim_test(seeds = 1)]
+fn spins(sim: std::sim::SimRoot) { drop(sim); loop {} }
+fn deep(n: u64) -> u64 { if n == u64::MAX { n } else { deep(n + 1) + 1 } }
+#[sim_test(seeds = 1)]
+fn overflows(sim: std::sim::SimRoot) { drop(sim); assert!(deep(0) > 0); }
+"#);
+    let run = |name: &str, extra: &[&str]| bounded(driver(&dir)
+        .args(["--crate-type=lib", "--test", "--tide-run-test", name, "--seed", "47"]).args(extra)
+        .stdout(Stdio::null()), 300);
+    let (status, errors) = run("spins", &["--tide-eval-timeout", "2"]);
+    assert!(!status.success());
+    assert!(errors.contains("test spins failed: per-evaluation wall-clock timeout (last started seed: 47)"), "{errors}");
+    let (status, errors) = run("overflows", &[]);
+    assert!(!status.success());
+    assert!(errors.contains("test overflows failed: child terminated by signal")
+        && errors.contains("(last started seed: 47)"), "{errors}");
+}
+
+/// A consumer that stops reading the driver's standard output delays neither seed observation
+/// nor the limit's report: the child floods its stdout and spins, and the driver still stops it,
+/// reports on standard error, and exits.
+#[test]
+fn run3_stalled_stdout_does_not_hold_the_limit() {
+    let dir = package("run3-stalled-stdout", "#[sim_test(seeds = 1)]\nfn floods(sim: std::sim::SimRoot) { drop(sim); }\n");
+    let run = || {
+        let mut command = driver(&dir);
+        command.args(["--crate-type=lib", "--test", "--tide-run-test", "floods", "--tide-eval-timeout", "2"]);
+        command
+    };
+    let (status, errors) = bounded(run().stdout(Stdio::null()), 300);
+    assert!(status.success(), "{errors}");
+    let flood = unadmitted(&dir, r#"
+fn main() {
+    println!("\nTIDE_SIM_SEED_START 47");
+    for i in 0..100_000 { println!("flood line {i} ........................................................"); }
+    loop { std::thread::sleep(std::time::Duration::from_millis(100)); }
+}
+"#);
+    swap_cached_executable(&dir, &flood);
+    let (stalled, unread) = std::io::pipe().unwrap();
+    let (status, errors) = bounded(run().stdout(unread), 120);
+    drop(stalled);
+    assert!(!status.success());
+    assert!(errors.contains("test floods failed: per-evaluation wall-clock timeout (last started seed: 47)"), "{errors}");
+}
+
+/// The same for standard error: once the run's `sandbox:` line is read, nobody reads the driver's
+/// stderr, the child floods it and spins, and the driver still stops it and exits with failure.
+#[test]
+fn run3_stalled_stderr_does_not_hold_the_limit() {
+    use std::io::BufRead;
+    let dir = package("run3-stalled-stderr", "#[sim_test(seeds = 1)]\nfn floods(sim: std::sim::SimRoot) { drop(sim); }\n");
+    let run = || {
+        let mut command = driver(&dir);
+        command.args(["--crate-type=lib", "--test", "--tide-run-test", "floods", "--tide-eval-timeout", "2"]);
+        command
+    };
+    let (status, errors) = bounded(run().stdout(Stdio::null()), 300);
+    assert!(status.success(), "{errors}");
+    let flood = unadmitted(&dir, r#"
+fn main() {
+    println!("\nTIDE_SIM_SEED_START 47");
+    for i in 0..100_000 { eprintln!("flood line {i} ........................................................"); }
+    loop { std::thread::sleep(std::time::Duration::from_millis(100)); }
+}
+"#);
+    swap_cached_executable(&dir, &flood);
+    let mut child = run().stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let drained = std::thread::spawn(move || std::io::copy(&mut stdout, &mut std::io::sink()));
+    // Read up to the level line, then hold the pipe open without reading it.
+    let mut stderr = std::io::BufReader::new(child.stderr.take().unwrap());
+    let mut line = String::new();
+    while stderr.read_line(&mut line).unwrap() != 0 && !line.starts_with("sandbox: ") {
+        line.clear();
+    }
+    assert!(line.starts_with("sandbox: "), "{line}");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() { break status; }
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("hang guard: the driver outlived 120 s with its stderr stalled");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    drop(stderr);
+    drained.join().unwrap().unwrap();
+    assert!(!status.success());
+}
+
+/// RUN-3's new session takes the child out of the caller's process group, so the child instead
+/// dies with the driver (`PR_SET_PDEATHSIG`): killing the driver's process group, as `timeout`
+/// and a terminal interrupt do, leaves no sandboxed child running.
+#[test]
+fn run3_child_dies_with_the_driver() {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+    use std::time::{Duration, Instant};
+    let dir = package("run3-child-lifetime", "#[test]\nfn spins() {}\n");
+    let run = || {
+        let mut command = driver(&dir);
+        command.args(["--crate-type=lib", "--test", "--tide-run-test", "spins"]);
+        command
+    };
+    let (status, errors) = bounded(run().stdout(Stdio::null()), 300);
+    assert!(status.success(), "{errors}");
+    let spin = unadmitted(&dir, r#"
+fn main() {
+    println!("PID {}", std::process::id());
+    loop { std::hint::spin_loop(); }
+}
+"#);
+    swap_cached_executable(&dir, &spin);
+    let mut driven = run().process_group(0).stdin(Stdio::null()).stdout(Stdio::piped())
+        .stderr(Stdio::null()).spawn().unwrap();
+    let group = driven.id() as i32;
+    let stdout = driven.stdout.take().unwrap();
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines() {
+            if let Some(pid) = line.ok().and_then(|l| l.strip_prefix("PID ")?.trim().parse::<i32>().ok()) {
+                let _ = send.send(pid);
+            }
+        }
+    });
+    // SAFETY: signals only the driver's own process group.
+    let kill_group = || unsafe { libc::kill(-group, libc::SIGKILL) };
+    let Ok(child) = receive.recv_timeout(Duration::from_secs(120)) else {
+        kill_group();
+        panic!("hang guard: the sandboxed child never reported its pid");
+    };
+    kill_group();
+    let _ = driven.wait();
+    // Gone, or a zombie awaiting its new parent's reap.
+    let gone = || std::fs::read_to_string(format!("/proc/{child}/stat"))
+        .map_or(true, |stat| stat.rsplit(')').next().is_some_and(|rest| rest.trim_start().starts_with('Z')));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !gone() {
+        if Instant::now() > deadline {
+            // SAFETY: the hang guard ends the child it found, not only the driver.
+            unsafe { libc::kill(child, libc::SIGKILL) };
+            panic!("the sandboxed child {child} outlived its driver");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+

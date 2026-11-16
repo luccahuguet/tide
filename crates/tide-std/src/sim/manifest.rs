@@ -91,7 +91,9 @@ pub(crate) fn begin(path: &str, seed: u64, ordinal: u64, config_value: Config, p
     let artifact = manifest.as_ref().map(|m| {
         let build = digest(encoded(&m.build).as_bytes());
         let name = digest(name.as_bytes());
-        let base = format!("{}-{seed}-{ordinal}-{}", &name[..16], &build[..16]);
+        // The harness publishes only names that start with the run's token.
+        let run = &context.as_ref().unwrap().run;
+        let base = format!("{run}-{}-{seed}-{ordinal}-{}", &name[..16], &build[..16]);
         // Reserve a private directory exclusively, so even concurrent identical runs cannot
         // replace each other's artifacts. Replacements below stay within this reservation.
         for suffix in 0u64.. {
@@ -223,8 +225,13 @@ pub(crate) fn finish(choices: &[Choice], signature: &str, failed: bool) -> crate
         fs::write(path.with_file_name("trace.ndjson"), &rendered)
             .expect("write replay trace export");
         if failed {
-            let mut command = recording.context.as_ref().unwrap().command.clone();
-            command.extend(["--replay".into(), path.display().to_string()]);
+            // The harness publishes the run's artifacts here once the child exits.
+            let context = recording.context.as_ref().unwrap();
+            let published = std::path::Path::new(&context.published)
+                .join(path.parent().and_then(|p| p.file_name()).unwrap_or_default())
+                .join(path.file_name().unwrap_or_default());
+            let mut command = context.command.clone();
+            command.extend(["--replay".into(), published.display().to_string()]);
             eprintln!(
                 "  replay: {}",
                 command
@@ -294,6 +301,8 @@ mod tests {
                 tests: BTreeMap::new(),
             },
             directory: directory.display().to_string(),
+            published: directory.display().to_string(),
+            run: "test".into(),
             command: vec![],
             completion: String::new(),
             replay: None,

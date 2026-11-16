@@ -245,9 +245,10 @@
 //! `ptr`; other world setup, faults, nodes,
 //! and laws. A
 //! program that uses one fails to compile, as for any missing item.
-//! Executable tests use rustc's harness; only `#[sim_test]` entries isolate their run in a
-//! child process. They are for reviewed/trusted demos, without RUN-3's OS sandbox or RUN-5's
-//! unreviewed-branch guarantee.
+//! Executable tests use rustc's harness; run directly, only `#[sim_test]` entries isolate their
+//! run in a child process, without an OS sandbox. Under the driver's run modes the driver starts
+//! the test in RUN-3's sandboxed child and a `#[sim_test]` runs in that process. Neither gives
+//! RUN-5's unreviewed-branch guarantee.
 //!
 //! `root.rs` (with `convert.rs`, `arena.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`,
 //! `task.rs` (including its scheduler, channel and network adapters), `net.rs` (with its

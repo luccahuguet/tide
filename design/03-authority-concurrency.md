@@ -1988,7 +1988,8 @@ clocks, TCP loopback, process inputs and sinks are modeled; other capabilities c
 their operations, other world setup, faults, nodes and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,
 requires guidance and filtering, and shrinking with the simulator seed kept fixed.
-The child has no RUN-3 sandbox.
+The driver starts that child in RUN-3's Landlock and seccomp sandbox and reports
+its level; the README's status lists the parts of RUN-3 still missing.
 
 ### 9.3 Time and scheduling
 
