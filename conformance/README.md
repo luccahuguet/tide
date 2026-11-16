@@ -14,6 +14,16 @@ conformance/run.sh [case ...]   # check cases (default: all of cases/)
 conformance/run.sh --trace      # each rule in rules.md and the cases that name it
 ```
 
+By default, the driver builds in the repository's `target/`, the stable
+oracle stub std in `conformance/target/`, the pinned-nightly stub std in
+`conformance/target/admit/`, and case outputs in `conformance/target/conformance/`.
+Set `CARGO_TARGET_DIR` to place the driver build there and use its
+`conformance/` subdirectory instead of `conformance/target/` for both stub
+builds and case outputs. The toolchains keep separate target directories.
+Relative values resolve from the caller's working directory; an empty value
+uses the defaults. Give each checkout its own target directory: two checkouts
+sharing one would overwrite each other's driver and case outputs.
+
 A case is named by its path under `cases/` (`authority/lock_accept`) or by an
 absolute path. The runner type- and borrow-checks each case with stable rustc
 twice, as in the E1 trial: as a 2024-edition library (a binary when a line
@@ -56,7 +66,8 @@ files, constructs its own metadata invocation, and runs the compiler with an
 environment holding only `RUSTC_ICE=0`, so a crash writes no report file.
 Candidate Cargo and toolchain files do not configure it.
 Its source snapshot is the case's source directory; output and successful
-content-addressed cache entries live outside it, under `target/conformance`.
+content-addressed cache entries live outside it, under the case output directory
+described above.
 This remains a compile-time stub oracle, without an OS build/test sandbox:
 the stub never runs. Live outside-file and environment canaries belong to
 the driver's integration tests, since the stable oracle would read them.

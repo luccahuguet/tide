@@ -13,6 +13,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$HERE/.." && pwd -P)"
 CASES="$HERE/cases"
 TARGET="$HERE/target"
+DRIVER_TARGET="$ROOT/target"
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+  DRIVER_TARGET="$CARGO_TARGET_DIR"
+  [[ "$DRIVER_TARGET" == /* ]] || DRIVER_TARGET="$(pwd -P)/$DRIVER_TARGET"
+  TARGET="$DRIVER_TARGET/conformance"
+fi
 OUT="$TARGET/conformance"
 # The oracle is stable rustc, whatever toolchain the working directory pins; the
 # driver, and the stub std it reads, build with the repository's pinned nightly.
@@ -42,8 +48,8 @@ oracle cargo build --quiet --offline --manifest-path "$HERE/rustc/std/Cargo.toml
 RLIB="$TARGET/debug/libtide_std_stub.rlib"
 DEPS="$TARGET/debug/deps"
 
-pinned cargo build --quiet --offline -p tide-admit --target-dir "$ROOT/target" || exit 2
-DRIVER="$ROOT/target/debug/tide-admit"
+pinned cargo build --quiet --offline -p tide-admit --target-dir "$DRIVER_TARGET" || exit 2
+DRIVER="$DRIVER_TARGET/debug/tide-admit"
 # The FX codes the driver decides, as an extended regex alternation.
 CODES="$("$DRIVER" --tide-print-codes | paste -sd '|')" && [[ -n "$CODES" ]] || exit 2
 # The stub std again, for the driver; each library it loads is in a directory
