@@ -4,9 +4,11 @@
 //! failing seed's replay under rust-gdb. `demo/README.md` is the guide.
 //!
 //! `cargo run -p tide-demo` builds the admission driver and Tide's std with the pinned toolchain
-//! into `$CARGO_TARGET_DIR` (default: `<repo>/target`) and works in its `tide-demo/` directory,
-//! which each run replaces. It exits 0 when every step shows what it should, 1 when one does not,
-//! and 2 on a setup error. `tests/demo.rs` runs it in the workspace suite.
+//! (through rustup, or, when `PATH` has no rustup, with the rustc and cargo on `PATH` once both
+//! match the pinned toolchain's recorded identity) into `$CARGO_TARGET_DIR` (default: `<repo>/target`) and works in
+//! its `tide-demo/` directory, which each run replaces. It exits 0 when every step shows what it
+//! should, 1 when one does not, and 2 on a setup error. `tests/demo.rs` runs it in the workspace
+//! suite.
 //!
 //! Each check reads what the driver gives as data where it gives it: exit statuses, the
 //! `tide-replay/2` manifests and their traces (with the driver's own decoder), Cargo's artifact
@@ -16,7 +18,7 @@
 //! that exits 101 may have timed out or been killed instead.
 
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -255,34 +257,132 @@ fn pinned_toolchain(root: &Path) -> Result<String, Failure> {
         .ok_or_else(|| setup(format!("{} names no channel", path.display())))
 }
 
-/// `program` from the pinned toolchain, whatever toolchain built or runs the demo: `rustup run`
-/// selects it for the program and for every rustc and cargo the program starts.
-fn pinned(root: &Path, toolchain: &str, program: &str) -> Command {
-    let mut command = Command::new("rustup");
+/// The toolchain `rust-toolchain.toml` pins, as its `rustc -vV` and `cargo -vV` identify it: what
+/// a run without rustup checks the programs it would use against. The workspace suite's
+/// `the_recorded_identity_is_the_pinned_toolchain` compares it with rustup's toolchain for the
+/// pinned channel, so moving the pin without it fails the suite.
+pub const PINNED: Pin = Pin {
+    channel: "nightly-2026-08-09",
+    rustc: &[
+        ("release", "1.99.0-nightly"),
+        ("commit-hash", "771916f9028e7fe56d2685f2c4f698de5d7d6a45"),
+    ],
+    cargo: &[
+        ("release", "1.99.0-nightly"),
+        ("commit-hash", "b07e5a08651da80108eb65d7dc769ee04589f9bf"),
+    ],
+};
+
+/// A pinned toolchain's channel, and the `key: value` lines its rustc's and cargo's `-vV` print.
+pub struct Pin {
+    pub channel: &'static str,
+    pub rustc: &'static [(&'static str, &'static str)],
+    pub cargo: &'static [(&'static str, &'static str)],
+}
+
+/// How the demo runs the pinned toolchain's programs.
+enum Toolchain {
+    /// `rustup run <channel>`, which selects the pin for the program and for every rustc and
+    /// cargo the program starts, whatever toolchain built or runs the demo.
+    Rustup(String),
+    /// When `PATH` has no rustup, as in the flake's dev shell: this rustc and cargo, as absolute
+    /// paths, which `check_path_toolchain` found to be the pinned ones. Every program the demo
+    /// starts gets `RUSTC` set to that rustc, which Cargo takes over its other compiler settings
+    /// (`CARGO_BUILD_RUSTC`, `build.rustc`).
+    Path { rustc: OsString, cargo: OsString },
+}
+
+/// `program` from the pinned toolchain.
+fn pinned(root: &Path, toolchain: &Toolchain, program: &str) -> Command {
+    let mut command = match toolchain {
+        Toolchain::Rustup(channel) => {
+            let mut command = Command::new("rustup");
+            command
+                .env_remove("RUSTUP_TOOLCHAIN")
+                .args(["run", channel, program]);
+            command
+        }
+        Toolchain::Path { rustc, cargo } => {
+            let mut command = match program {
+                "cargo" => Command::new(cargo),
+                _ => Command::new(program),
+            };
+            command.env("RUSTC", rustc);
+            command
+        }
+    };
+    command.current_dir(root).stdin(Stdio::null());
     command
-        .current_dir(root)
-        .env_remove("RUSTUP_TOOLCHAIN")
-        .args(["run", toolchain, program])
-        .stdin(Stdio::null());
-    command
+}
+
+/// Checks, for a run without rustup, that `rustc` and `cargo` are the toolchain `channel` names,
+/// by the identity `PINNED` records, and returns rustc's `-V` line.
+pub fn check_path_toolchain(channel: &str, rustc: &OsStr, cargo: &OsStr) -> Result<String, String> {
+    if channel != PINNED.channel {
+        return Err(format!(
+            "there is no rustup, and rust-toolchain.toml pins {channel}, but tide-demo records \
+             the identity of {} (`PINNED` in crates/tide-demo/src/lib.rs), so it cannot check \
+             the toolchain on PATH; install rustup",
+            PINNED.channel
+        ));
+    }
+    let mut version = String::new();
+    for (tool, program, fields) in [
+        ("rustc", rustc, PINNED.rustc),
+        ("cargo", cargo, PINNED.cargo),
+    ] {
+        let shown = Path::new(program).display();
+        let out = Command::new(program)
+            .arg("-vV")
+            .stdin(Stdio::null())
+            .stderr(Stdio::inherit())
+            .output()
+            .map_err(|e| format!("there is no rustup, and {shown} cannot run: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "there is no rustup, and `{shown} -vV` failed ({})",
+                out.status
+            ));
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        for (key, wanted) in fields {
+            let reported = text
+                .lines()
+                .find_map(|line| line.strip_prefix(key)?.strip_prefix(": "));
+            if reported != Some(wanted) {
+                return Err(format!(
+                    "there is no rustup, and {shown} is not the {tool} of the pinned {channel}: \
+                     its `-vV` reports {key}: {}, not {wanted}; install rustup, or run the demo \
+                     in the flake's dev shell (`nix develop`)",
+                    reported.unwrap_or("nothing")
+                ));
+            }
+        }
+        if tool == "rustc" {
+            version = text.lines().next().unwrap_or_default().to_owned();
+        }
+    }
+    Ok(version)
 }
 
 /// The artifacts Cargo reported building, for one `cargo build` that succeeded.
 fn cargo_build(
     root: &Path,
-    toolchain: &str,
+    toolchain: &Toolchain,
     target: &Path,
     package: &str,
 ) -> Result<Vec<CargoMessage>, Failure> {
     // Diagnostics render to standard error; standard output carries one JSON message per line.
-    let out = pinned(root, toolchain, "cargo")
+    let mut cargo = pinned(root, toolchain, "cargo");
+    let program = Path::new(cargo.get_program()).display().to_string();
+    let out = cargo
         .args(["build", "--quiet", "--locked", "-p", package])
         .arg("--message-format=json-render-diagnostics")
         .arg("--target-dir")
         .arg(target)
         .stderr(Stdio::inherit())
         .output()
-        .map_err(|e| setup(format!("cannot run rustup: {e}")))?;
+        .map_err(|e| setup(format!("cannot run {program}: {e}")))?;
     if !out.status.success() {
         return Err(setup(format!("cannot build {package} ({})", out.status)));
     }
@@ -363,7 +463,7 @@ struct Run {
     root: PathBuf,
     target: PathBuf,
     work: PathBuf,
-    toolchain: String,
+    toolchain: Toolchain,
     driver: PathBuf,
     std: PathBuf,
     deps: Vec<PathBuf>,
@@ -394,16 +494,34 @@ impl Run {
             first_line(git().args(["rev-parse", "HEAD"]))
         );
         // The pinned compiler's identity; without it, nothing can be built.
-        let toolchain = pinned_toolchain(&root)?;
-        let version = pinned(&root, &toolchain, "rustc")
-            .arg("--version")
-            .output()
-            .map_err(|e| setup(format!("cannot run rustup: {e}")))?;
-        let version = String::from_utf8(version.stdout)
-            .ok()
-            .filter(|_| version.status.success())
-            .and_then(|text| text.lines().next().map(str::to_owned))
-            .ok_or_else(|| setup(format!("the pinned toolchain {toolchain} is not installed")))?;
+        let channel = pinned_toolchain(&root)?;
+        let (toolchain, version) = if on_path(OsStr::new("rustup")).is_some() {
+            let toolchain = Toolchain::Rustup(channel.clone());
+            let version = pinned(&root, &toolchain, "rustc")
+                .arg("--version")
+                .output()
+                .map_err(|e| setup(format!("cannot run rustup: {e}")))?;
+            let version = String::from_utf8(version.stdout)
+                .ok()
+                .filter(|_| version.status.success())
+                .and_then(|text| text.lines().next().map(str::to_owned))
+                .ok_or_else(|| setup(format!("the pinned toolchain {channel} is not installed")))?;
+            (toolchain, version)
+        } else {
+            // The rustc: `$RUSTC`, as the flake's dev shell sets it, else `rustc` on `PATH`.
+            let rustc = std::env::var_os("RUSTC")
+                .filter(|rustc| !rustc.is_empty())
+                .unwrap_or_else(|| "rustc".into());
+            let found = |program: &OsStr| {
+                resolve(program).ok_or_else(|| {
+                    let shown = Path::new(program).display();
+                    setup(format!("there is no rustup, and no {shown} on PATH"))
+                })
+            };
+            let (rustc, cargo) = (found(&rustc)?, found(OsStr::new("cargo"))?);
+            let version = check_path_toolchain(&channel, &rustc, &cargo).map_err(setup)?;
+            (Toolchain::Path { rustc, cargo }, version)
+        };
         println!("toolchain: {version}");
         let driver = cargo_build(&root, &toolchain, &target, "tide-admit")?
             .into_iter()
@@ -1168,27 +1286,37 @@ impl Access {
     }
 }
 
+/// The first file `name` on `PATH`, as an absolute path.
+fn on_path(name: &OsStr) -> Option<OsString> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(name))
+        .find(|file| file.is_file())
+        .and_then(|file| std::path::absolute(file).ok())
+        .map(PathBuf::into_os_string)
+}
+
+/// `program` as an absolute path, as a shell would run it: a path is taken from the working
+/// directory, and a bare name is looked up on `PATH`.
+fn resolve(program: &OsStr) -> Option<OsString> {
+    match Path::new(program).components().count() {
+        0 => None,
+        1 => on_path(program),
+        _ => std::path::absolute(program)
+            .ok()
+            .map(PathBuf::into_os_string),
+    }
+}
+
 /// The gdb rust-gdb runs, as an absolute path, since rust-gdb runs in the repository rather than
 /// the caller's directory, and whether `RUST_GDB` named it: `$RUST_GDB`, else `gdb` on `PATH`. A
 /// `RUST_GDB` naming a path is taken from the caller's directory, and a bare name is looked up on
 /// `PATH`; one that is not found is passed on as given, so a configured debugger that does not
 /// exist fails step 5 instead of skipping it. `None` when `RUST_GDB` is unset or empty and `PATH`
 /// has no `gdb`.
-fn find_gdb() -> Option<(std::ffi::OsString, bool)> {
-    let on_path = |name: &OsStr| {
-        let paths = std::env::var_os("PATH")?;
-        std::env::split_paths(&paths)
-            .map(|dir| dir.join(name))
-            .find(|file| file.is_file())
-            .and_then(|file| std::path::absolute(file).ok())
-            .map(PathBuf::into_os_string)
-    };
+fn find_gdb() -> Option<(OsString, bool)> {
     match std::env::var_os("RUST_GDB").filter(|gdb| !gdb.is_empty()) {
-        Some(gdb) if Path::new(&gdb).components().count() > 1 => Some((
-            std::path::absolute(&gdb).map_or(gdb, PathBuf::into_os_string),
-            true,
-        )),
-        Some(gdb) => Some((on_path(&gdb).unwrap_or(gdb), true)),
+        Some(gdb) => Some((resolve(&gdb).unwrap_or(gdb), true)),
         None => on_path(OsStr::new("gdb")).map(|gdb| (gdb, false)),
     }
 }

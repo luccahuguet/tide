@@ -9,7 +9,8 @@ You need an x86_64 Linux machine with `curl`, `xz` and `git` (on Debian or
 Ubuntu, `sudo apt-get update && sudo apt-get install curl xz-utils git`) and
 about 10 GB of free disk space, 7 GB of it for `/nix`. Nothing else: Nix
 provides the Rust toolchain and the C linker, so no step uses rustup or the
-system's C compiler.
+system's C compiler. On macOS or Windows, [docker.md](docker.md) runs this
+route in a Linux container.
 
 ## 1. Install Nix
 

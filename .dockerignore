@@ -1,0 +1,30 @@
+# The image's build context is an allowlist: what building and trying Tide reads, as a public
+# clone has it. Everything else stays out: .git and its local configuration, the .beads ledger,
+# agent and editor state, credentials such as .env files, and build outputs. Untracked files
+# without a leading dot under the allowed directories do reach the builder, so build images to
+# publish from a fresh clone.
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!flake.nix
+!flake.lock
+!LICENSE
+!NOTICE
+!README.md
+!crates
+!conformance
+!examples
+!benchmarks
+!demo
+!docs
+
+# Local and ignored files inside the allowed directories (.gitignore's patterns, and dotfiles).
+**/target
+**/debug
+**/result
+**/result-*
+**/*.rs.bk
+**/*.pdb
+**/mutants.out*
+**/.*

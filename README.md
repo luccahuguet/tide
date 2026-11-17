@@ -158,6 +158,7 @@ oracle uses.
 
 To install the driver through Nix and run a first example, follow
 [docs/install.md](docs/install.md).
+On macOS or Windows, try it in a Linux container: [docs/docker.md](docs/docker.md).
 
 The trusted build caller invokes the driver directly, for example:
 
