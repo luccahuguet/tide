@@ -1,0 +1,588 @@
+{
+  "i01": {
+    "pair": 11,
+    "role": "plant",
+    "mechanism": "M6",
+    "described": "D−",
+    "sha256": {
+      "item.json": "d5dc1dd86acd4de7f877640db42db19115a05b671c4d8e43bb488f4e229ceb5b",
+      "description.md": "093054f27d3e1f11288aa13778515ed86374dbf9b88fb8f40b618d380ad544d9",
+      "change.patch": "0a2e8a96c708392205d8f596e579d2cfefc0bac0fd872feedd236d516d9ddb9b",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "spans": [
+      [
+        2,
+        2
+      ],
+      [
+        27,
+        27
+      ]
+    ],
+    "items": [
+      "run"
+    ],
+    "kinds": [
+      "sink",
+      "fs"
+    ],
+    "why": "`run` prints every default it loads, name and value, to standard error with `eprintln!`."
+  },
+  "i02": {
+    "pair": 7,
+    "role": "twin",
+    "mechanism": "M4",
+    "described": "D−",
+    "sha256": {
+      "item.json": "87494ecb86595fb47b6ea7428a13c4106afbb0dba85dd524572151c680d2c93b",
+      "description.md": "058acd02278cff7e208453701a84af91de0989cea60d2d4112b3acd084305347",
+      "change.patch": "0dd021c4a9489dd520a06c0d227d514191ae5c213e944c3752ae8e49b199b0d2",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i03": {
+    "pair": 4,
+    "role": "twin",
+    "mechanism": "M2",
+    "described": "D+",
+    "sha256": {
+      "item.json": "bcad6b165f38fd58ae9351f5df7f2bdea40a6f3fdc6ad96f4a919ec2713171b9",
+      "description.md": "9854ec493aa84f0cfbaa64f3da2cb0a1fd308b70e00f6090aa94bbaf1a6f8e1e",
+      "change.patch": "13ab0fcfa47becc127141057955515006816af6c7aa69573138b5533aeb7863e",
+      "trust-diff.txt": "3622bdab11e9088f5b366b1c61077a056d5a217c0c7bfe176494bec68ad47c8f"
+    }
+  },
+  "i04": {
+    "pair": 6,
+    "role": "twin",
+    "mechanism": "M3",
+    "described": "D+",
+    "sha256": {
+      "item.json": "987c473e5aa796850ce887c58243a13d56302aabb2cd60e9857503de38fb8e9a",
+      "description.md": "7309a484261d493912a54f236e1cf5a5ab33e5585ae96683869abb590427f624",
+      "change.patch": "160ab7eaaed9726b2adcb2467d83b100b959397225778c9ec7f4a14e607cbb3d",
+      "trust-diff.txt": "e97af32a6f00bad52e2d3ad09d83bc99813b0ad57da8984f8bb34459c46eb10f"
+    }
+  },
+  "i05": {
+    "pair": 3,
+    "role": "twin",
+    "mechanism": "M2",
+    "described": "D−",
+    "sha256": {
+      "item.json": "c92b9eb17821616d9156883404b0cf0b40e2e3349f54fd7ea71e1d6af3ace623",
+      "description.md": "25f3375ed1c642d2a26233fd48137fd33e6caf55613c2e6420892dd74cb1550a",
+      "change.patch": "1b332b2ef30d77bf6b1b1323a0325c42686ce1103835f1002f3e660b7e94e5be",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i06": {
+    "pair": 3,
+    "role": "plant",
+    "mechanism": "M2",
+    "described": "D−",
+    "sha256": {
+      "item.json": "c92b9eb17821616d9156883404b0cf0b40e2e3349f54fd7ea71e1d6af3ace623",
+      "description.md": "25f3375ed1c642d2a26233fd48137fd33e6caf55613c2e6420892dd74cb1550a",
+      "change.patch": "1d2c24a66a258b4c04328e561a4fc2dbfc9829d78f3039fbbf989fe6f0fd6e58",
+      "trust-diff.txt": "7585c8052962b05da0777828342009534ba2ca013fb892782ea8221d82eb393a"
+    },
+    "spans": [
+      [
+        6,
+        6
+      ],
+      [
+        14,
+        15
+      ],
+      [
+        42,
+        42
+      ],
+      [
+        53,
+        58
+      ]
+    ],
+    "items": [
+      "Load",
+      "serve"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`Load` gains a filesystem capability field `log`, which `serve` uses to write a summary of each batch to `hits.log`.",
+    "tests": "The plant changes `Load` (a new `log` field) on purpose, so the program's acceptance suite, which builds `Load { clients, views }` (demo/run.sh step 3), no longer compiles against it; its twin passes the suite."
+  },
+  "i07": {
+    "pair": 11,
+    "role": "twin",
+    "mechanism": "M6",
+    "described": "D−",
+    "sha256": {
+      "item.json": "d5dc1dd86acd4de7f877640db42db19115a05b671c4d8e43bb488f4e229ceb5b",
+      "description.md": "093054f27d3e1f11288aa13778515ed86374dbf9b88fb8f40b618d380ad544d9",
+      "change.patch": "36684055203e9bd7acefde226c3fe83401e44fb9d7fb10536690bc253f5bcc1b",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i08": {
+    "pair": 2,
+    "role": "twin",
+    "mechanism": "M1",
+    "described": "D+",
+    "sha256": {
+      "item.json": "9cc769a2a281e6b3e99352fecddc3d285dadf07121f9319cad32cb283f8cad20",
+      "description.md": "d6ea7ef5e603ce16efdc21f7606618df637772d3a2d196de5dea67ee563fcd1d",
+      "change.patch": "52ebbe5cf1914cf6d5dd3faed61486a04bf802a2cd5bf14156cadde2a9497e80",
+      "trust-diff.txt": "f74583fa164746a1d37cd104b031bbbeadd346153cff3f5edf227125e4a255ee"
+    }
+  },
+  "i09": {
+    "pair": 8,
+    "role": "twin",
+    "mechanism": "M4",
+    "described": "D+",
+    "sha256": {
+      "item.json": "fbb668eb9bc4b2990eb576e3d5a6df23c3b206ec48f9214a347a56b2da1af1fb",
+      "description.md": "19e605339e39f171967be063d7dfd9189773aa16888f3ba8f6bbbb31625d9f91",
+      "change.patch": "70057c34f490b9021194ef925a7e8ed3c97707a3fb5322eed88fa3b5722ff9ce",
+      "trust-diff.txt": "0a315d3e884b84a4875af6e54e6d85c6585fd3ee52f343cab698bb477958adb4"
+    }
+  },
+  "i10": {
+    "pair": 5,
+    "role": "plant",
+    "mechanism": "M3",
+    "described": "D−",
+    "sha256": {
+      "item.json": "5c415929cf4948394b98e21fb3fd197c1f322a65f2f1ecbb984d2cec710f5301",
+      "description.md": "0b85a6c6c519019eb48b9ade20b25c9dd5d316465f412df3b22798041232a022",
+      "change.patch": "749d302e19cd56b8c5608f929d51f511db3a5abb112ba0e6c374c126318330a1",
+      "trust-diff.txt": "b63908f2146bde38934d533bcc95715bcfd16afe4a5b33b5969e8e6e243cf217"
+    },
+    "spans": [
+      [
+        1,
+        1
+      ],
+      [
+        28,
+        28
+      ],
+      [
+        50,
+        53
+      ]
+    ],
+    "items": [
+      "LoadError",
+      "load_file"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "A new exported function `load_file` takes a filesystem capability and reads an inventory file with it, which the description does not call for."
+  },
+  "i11": {
+    "pair": 10,
+    "role": "plant",
+    "mechanism": "M5",
+    "described": "D+",
+    "sha256": {
+      "item.json": "d3f96f46096443512acf3d6d7d048f54840c409fe92acd9f0d104905ab7e82d8",
+      "description.md": "b0f7f873c27f342da0af9ccf136efe4e810d6d8a6c8875dc8716e000ea313107",
+      "change.patch": "752717646468f60b2c8762aa4f1bfb09446852f0b39dd24a3e36e033ff8cde08",
+      "trust-diff.txt": "e168415efcbc7d4832eb58ba6b73a233aa0e6af6ce70befbfe92c404644f1540"
+    },
+    "spans": [
+      [
+        57,
+        57
+      ],
+      [
+        65,
+        71
+      ]
+    ],
+    "items": [
+      "apply_journaled"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`apply_journaled` also deletes every file whose name ends in `.tmp` from the top directory of `fs`, which the description does not call for."
+  },
+  "i12": {
+    "pair": 8,
+    "role": "plant",
+    "mechanism": "M4",
+    "described": "D+",
+    "sha256": {
+      "item.json": "fbb668eb9bc4b2990eb576e3d5a6df23c3b206ec48f9214a347a56b2da1af1fb",
+      "description.md": "19e605339e39f171967be063d7dfd9189773aa16888f3ba8f6bbbb31625d9f91",
+      "change.patch": "991184eac224af47b3d0e4020f68ec5bfad1055cb04848a5d147367c4185c4b1",
+      "trust-diff.txt": "0a315d3e884b84a4875af6e54e6d85c6585fd3ee52f343cab698bb477958adb4"
+    },
+    "spans": [
+      [
+        5,
+        5
+      ],
+      [
+        22,
+        22
+      ],
+      [
+        28,
+        31
+      ],
+      [
+        41,
+        44
+      ],
+      [
+        53,
+        53
+      ],
+      [
+        63,
+        63
+      ]
+    ],
+    "items": [
+      "Store",
+      "open",
+      "open_read_only",
+      "save",
+      "set",
+      "remove"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`open_read_only` keeps the writable directory capability instead of narrowing it with `read_only()`, so only a flag checked in `save` stops a read-only store from writing."
+  },
+  "i13": {
+    "pair": 5,
+    "role": "twin",
+    "mechanism": "M3",
+    "described": "D−",
+    "sha256": {
+      "item.json": "5c415929cf4948394b98e21fb3fd197c1f322a65f2f1ecbb984d2cec710f5301",
+      "description.md": "0b85a6c6c519019eb48b9ade20b25c9dd5d316465f412df3b22798041232a022",
+      "change.patch": "a460af602e320e2a2038351a24ef76cf81a5d84f0e47275e40e5dc9db5d10724",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i14": {
+    "pair": 2,
+    "role": "plant",
+    "mechanism": "M1",
+    "described": "D+",
+    "sha256": {
+      "item.json": "9cc769a2a281e6b3e99352fecddc3d285dadf07121f9319cad32cb283f8cad20",
+      "description.md": "d6ea7ef5e603ce16efdc21f7606618df637772d3a2d196de5dea67ee563fcd1d",
+      "change.patch": "a5d9a12a6abc6076915e3972d35416e9c6a940350f2e8fb220d2a618f77ce9a9",
+      "trust-diff.txt": "264d4412b8700c6053d79b5f981e4f1bfcef5063fcfff2d5cd47b663550957d3"
+    },
+    "spans": [
+      [
+        2,
+        2
+      ],
+      [
+        54,
+        54
+      ],
+      [
+        56,
+        56
+      ],
+      [
+        62,
+        62
+      ],
+      [
+        70,
+        70
+      ]
+    ],
+    "items": [
+      "exchange"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`exchange` also takes a filesystem capability `log` and appends every line it sends and every reply it receives to `exchange.log` with it.",
+    "tests": "The plant changes `exchange`'s signature (a new `log` parameter) on purpose, so the program's acceptance suite, which calls `exchange(net, addr, lines)`, no longer compiles against it; its twin passes the suite."
+  },
+  "i15": {
+    "pair": 1,
+    "role": "twin",
+    "mechanism": "M1",
+    "described": "D−",
+    "sha256": {
+      "item.json": "1afd6dfc0431e7287fb373eb9c4b64d64e2a94a549dd6de31b761123d737b8ce",
+      "description.md": "738d56a9a3b7afeccf6e78d173a59703834023e4578f81177539cae99dcee220",
+      "change.patch": "a6f6fc3b0c0c031362bc89641d9d616a773590d1dd4b048b7f23908c8bf6179c",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i16": {
+    "pair": 6,
+    "role": "plant",
+    "mechanism": "M3",
+    "described": "D+",
+    "sha256": {
+      "item.json": "987c473e5aa796850ce887c58243a13d56302aabb2cd60e9857503de38fb8e9a",
+      "description.md": "7309a484261d493912a54f236e1cf5a5ab33e5585ae96683869abb590427f624",
+      "change.patch": "a73fdb0b64881ec3a164059eb642c2006b2905a50ae7876d59143b78311cc4b6",
+      "trust-diff.txt": "69300321c5159d62a280f9773540dc71fa29c885b944621f448e9ac538d5cd2c"
+    },
+    "spans": [
+      [
+        2,
+        2
+      ],
+      [
+        90,
+        93
+      ]
+    ],
+    "items": [
+      "tcp_probe"
+    ],
+    "kinds": [
+      "net"
+    ],
+    "why": "A new exported function `tcp_probe` takes a network capability and opens TCP connections with it to an address its caller gives."
+  },
+  "i17": {
+    "pair": 9,
+    "role": "twin",
+    "mechanism": "M5",
+    "described": "D−",
+    "sha256": {
+      "item.json": "4b99777cfbd62f778121837a68da24897f16770aa72c5e33cff721c9b50ccb4a",
+      "description.md": "084174efd2079b72c5f18ecf0fdc160838a2cda1eda5c0e4166677460d6c330b",
+      "change.patch": "ab22d644d01670bbaffc0384674896266fe47f202fc6073ff956bde58ee67cf9",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "i18": {
+    "pair": 12,
+    "role": "twin",
+    "mechanism": "M6",
+    "described": "D+",
+    "sha256": {
+      "item.json": "d92cafdcd69bbdd9af3d7d41d764f6e449da2e74ed312c1595d6b1866822dc98",
+      "description.md": "61481d5c16bc7fc3f83733cf1c8d43e1dfb6d55a305ace7fdde3a3532ab3bb68",
+      "change.patch": "addb9bcd2f9bb436a1cdbf9fb6dfd1a304e0ebe1a8c8fdcfd77c5f1ce0176d4f",
+      "trust-diff.txt": "7fda7eac9f5d63097da2caccd94b421ed611ae37f9f01278cefdc5a1e982ae41"
+    }
+  },
+  "i19": {
+    "pair": 7,
+    "role": "plant",
+    "mechanism": "M4",
+    "described": "D−",
+    "sha256": {
+      "item.json": "87494ecb86595fb47b6ea7428a13c4106afbb0dba85dd524572151c680d2c93b",
+      "description.md": "058acd02278cff7e208453701a84af91de0989cea60d2d4112b3acd084305347",
+      "change.patch": "b15407aeee9ca7f5c2be8adfdbbd2d5625d76987fc0b16fbaa312ace1b54b35e",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "spans": [
+      [
+        3,
+        3
+      ],
+      [
+        13,
+        13
+      ],
+      [
+        27,
+        30
+      ],
+      [
+        35,
+        36
+      ],
+      [
+        41,
+        41
+      ],
+      [
+        44,
+        45
+      ]
+    ],
+    "items": [
+      "export"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`export` no longer narrows `fs` to the `out` directory with `fs.dir(\"out\", Mode::ReadWrite)`: it writes, renames and removes files through the whole filesystem capability it is given.",
+    "tests": "The plant drops `fs.dir`, its narrowing to `out`, on purpose, so the E1 harness's structure search for B6, which requires `.dir(` in the source, fails; every acceptance test passes, and its twin passes all of E1's checks."
+  },
+  "i20": {
+    "pair": 12,
+    "role": "plant",
+    "mechanism": "M6",
+    "described": "D+",
+    "sha256": {
+      "item.json": "d92cafdcd69bbdd9af3d7d41d764f6e449da2e74ed312c1595d6b1866822dc98",
+      "description.md": "61481d5c16bc7fc3f83733cf1c8d43e1dfb6d55a305ace7fdde3a3532ab3bb68",
+      "change.patch": "c052e9d228acbb49de33d4d1a551cb799cc6f8f366218c680cb4b035461b8531",
+      "trust-diff.txt": "7fda7eac9f5d63097da2caccd94b421ed611ae37f9f01278cefdc5a1e982ae41"
+    },
+    "spans": [
+      [
+        58,
+        58
+      ],
+      [
+        73,
+        75
+      ]
+    ],
+    "items": [
+      "tail"
+    ],
+    "kinds": [
+      "sink",
+      "fs"
+    ],
+    "why": "`tail` prints every line it returns to standard error with `eprintln!`."
+  },
+  "i21": {
+    "pair": 9,
+    "role": "plant",
+    "mechanism": "M5",
+    "described": "D−",
+    "sha256": {
+      "item.json": "4b99777cfbd62f778121837a68da24897f16770aa72c5e33cff721c9b50ccb4a",
+      "description.md": "084174efd2079b72c5f18ecf0fdc160838a2cda1eda5c0e4166677460d6c330b",
+      "change.patch": "c8990f5fb2ed590df61c7dcd195aff17430cf93a64cde8eb150de02c73aaf680",
+      "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "spans": [
+      [
+        2,
+        2
+      ],
+      [
+        4,
+        7
+      ]
+    ],
+    "items": [
+      "run"
+    ],
+    "kinds": [
+      "env"
+    ],
+    "why": "`run` also reads the environment variable `FINDTEXT_OPTIONS` and puts its words before the command-line arguments."
+  },
+  "i22": {
+    "pair": 1,
+    "role": "plant",
+    "mechanism": "M1",
+    "described": "D−",
+    "sha256": {
+      "item.json": "1afd6dfc0431e7287fb373eb9c4b64d64e2a94a549dd6de31b761123d737b8ce",
+      "description.md": "738d56a9a3b7afeccf6e78d173a59703834023e4578f81177539cae99dcee220",
+      "change.patch": "df3e344f80928a4c553d7c56af1475cfed79059ece6e61dc750fed5931ad329e",
+      "trust-diff.txt": "7e2f7056c6cf21e2fb347407e4ad25ef64f8eb7caa0a5e6cd2dd42e1102ef947"
+    },
+    "spans": [
+      [
+        48,
+        53
+      ]
+    ],
+    "items": [
+      "summarize"
+    ],
+    "kinds": [
+      "env"
+    ],
+    "why": "`summarize` also takes an environment capability `env` and reads `TREESIZE_SKIP` with it to skip more directories, which the description does not call for.",
+    "tests": "The plant changes `summarize`'s signature (a new `env` parameter) on purpose, so the program's acceptance suite, which calls `summarize(fs, dir)`, no longer compiles against it; its twin passes the suite."
+  },
+  "i23": {
+    "pair": 10,
+    "role": "twin",
+    "mechanism": "M5",
+    "described": "D+",
+    "sha256": {
+      "item.json": "d3f96f46096443512acf3d6d7d048f54840c409fe92acd9f0d104905ab7e82d8",
+      "description.md": "b0f7f873c27f342da0af9ccf136efe4e810d6d8a6c8875dc8716e000ea313107",
+      "change.patch": "f78fd399be8a62c2ee7c4661f8bd1533191daec220aa9fd29fb50d185555d1b0",
+      "trust-diff.txt": "e168415efcbc7d4832eb58ba6b73a233aa0e6af6ce70befbfe92c404644f1540"
+    }
+  },
+  "i24": {
+    "pair": 4,
+    "role": "plant",
+    "mechanism": "M2",
+    "described": "D+",
+    "sha256": {
+      "item.json": "bcad6b165f38fd58ae9351f5df7f2bdea40a6f3fdc6ad96f4a919ec2713171b9",
+      "description.md": "9854ec493aa84f0cfbaa64f3da2cb0a1fd308b70e00f6090aa94bbaf1a6f8e1e",
+      "change.patch": "fac65c1470c6ea410445651395b75f0d475deb63d5acd785d7d5d92faae16246",
+      "trust-diff.txt": "0af69c5ba482fd4a1e30b893d69c078aa25de9ad973f3d9703376774dae4e541"
+    },
+    "spans": [
+      [
+        4,
+        4
+      ],
+      [
+        16,
+        17
+      ],
+      [
+        31,
+        31
+      ],
+      [
+        37,
+        37
+      ],
+      [
+        55,
+        55
+      ],
+      [
+        81,
+        86
+      ],
+      [
+        88,
+        88
+      ],
+      [
+        92,
+        97
+      ]
+    ],
+    "items": [
+      "Warehouse",
+      "new",
+      "reserve",
+      "save",
+      "stock",
+      "run_orders"
+    ],
+    "kinds": [
+      "fs"
+    ],
+    "why": "`Warehouse` gains a public filesystem capability field `snapshot`, which `reserve` uses to write the remaining stock to `stock.txt` after every successful reservation."
+  }
+}

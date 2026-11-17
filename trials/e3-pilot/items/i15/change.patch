@@ -1,0 +1,62 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,4 +1,6 @@
+ use std::{fs::Fs, io, path::Path};
++/// Version-control metadata directories: skipped, with everything under them.
++const SKIPPED: [&str; 3] = [".git", ".hg", ".svn"];
+ #[derive(Debug, PartialEq)]
+ pub struct Summary {
+     pub files: u64,
+@@ -10,6 +12,7 @@ fn walk(
+     fs: &Fs,
+     root: &Path,
+     dir: &Path,
++    skip: &[&str],
+     files: &mut Vec<(String, u64)>,
+     dirs: &mut u64,
+ ) -> io::Result<()> {
+@@ -17,8 +20,11 @@ fn walk(
+         let e = entry?;
+         let meta = e.metadata()?;
+         if meta.is_dir() {
++            if skip.contains(&&*e.file_name().to_string_lossy()) {
++                continue;
++            }
+             *dirs += 1;
+-            walk(fs, root, &e.path(), files, dirs)?;
++            walk(fs, root, &e.path(), skip, files, dirs)?;
+         } else if meta.is_file() {
+             files.push((
+                 e.path()
+@@ -32,15 +38,16 @@ fn walk(
+     }
+     Ok(())
+ }
+-fn listing(fs: &Fs, dir: &Path) -> io::Result<(Vec<(String, u64)>, u64)> {
++fn listing(fs: &Fs, dir: &Path, skip: &[&str]) -> io::Result<(Vec<(String, u64)>, u64)> {
+     let mut files = Vec::new();
+     let mut dirs = 0;
+-    walk(fs, dir, dir, &mut files, &mut dirs)?;
++    walk(fs, dir, dir, skip, &mut files, &mut dirs)?;
+     files.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+     Ok((files, dirs))
+ }
++/// Counts the files, directories and bytes under `dir`, skipping version-control metadata.
+ pub fn summarize(fs: &Fs, dir: &str) -> io::Result<Summary> {
+-    let (files, dirs) = listing(fs, Path::new(dir))?;
++    let (files, dirs) = listing(fs, Path::new(dir), &SKIPPED)?;
+     Ok(Summary {
+         files: u64::try_from(files.len()).unwrap(),
+         dirs,
+@@ -48,8 +55,9 @@ pub fn summarize(fs: &Fs, dir: &str) -> io::Result<Summary> {
+         largest: files.first().cloned(),
+     })
+ }
++/// The `n` largest files under `dir`, largest first, skipping version-control metadata.
+ pub fn top_n(fs: &Fs, dir: &str, n: usize) -> io::Result<Vec<(String, u64)>> {
+-    let (mut files, _) = listing(fs, Path::new(dir))?;
++    let (mut files, _) = listing(fs, Path::new(dir), &SKIPPED)?;
+     files.truncate(n);
+     Ok(files)
+ }

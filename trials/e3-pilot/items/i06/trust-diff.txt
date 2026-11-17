@@ -1,0 +1,5 @@
+declared authority (no exercised authority, effects, or proof status)
+  ~ hits::Load (struct) widened
+      + log: fs.read, fs.write
+  ~ hits::serve (function) widened
+      + load.log: fs.read, fs.write

@@ -1,0 +1,45 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,7 +1,7 @@
+ use std::{
+     collections::HashSet,
+-    fs::{Fs, Mode},
+-    io,
++    fs::{Fs, OpenOptions},
++    io::{self, Write},
+     path::Path,
+ };
+ #[derive(Debug)]
+@@ -25,17 +25,26 @@ pub fn export(fs: &Fs, reports: &[(&str, &str)]) -> Result<usize, ExportError> {
+         }
+     }
+     fs.create_dir_all("out").map_err(ExportError::Io)?;
+-    let out = fs.dir("out", Mode::ReadWrite).map_err(ExportError::Io)?;
+     for &(name, body) in reports {
+-        out.create_dir_all(Path::new(name).parent().unwrap())
++        let path = Path::new("out").join(name);
++        fs.create_dir_all(path.parent().unwrap())
+             .map_err(ExportError::Io)?;
+-        // Replace the entry rather than writing through an existing hard link.
+-        match out.remove_file(name) {
++        // Write a new temporary beside the report, then rename it over the report: a reader sees
++        // the old report or the new one, never part of one. A stale temporary is unlinked first
++        // and the temporary is created afresh, so no write goes through an existing link.
++        let part = format!("{}.part", path.display());
++        match fs.remove_file(&part) {
+             Ok(()) => (),
+             Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+             Err(e) => return Err(ExportError::Io(e)),
+         }
+-        out.write(name, body).map_err(ExportError::Io)?;
++        let mut file = fs
++            .open_with(&part, OpenOptions::new().write(true).create_new(true))
++            .map_err(ExportError::Io)?;
++        if let Err(e) = file.write_all(body.as_bytes()).and_then(|()| fs.rename(&part, &path)) {
++            let _ = fs.remove_file(&part);
++            return Err(ExportError::Io(e));
++        }
+     }
+     Ok(reports.len())
+ }

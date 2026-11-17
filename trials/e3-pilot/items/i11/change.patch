@@ -1,0 +1,56 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,7 +1,7 @@
+ use std::{
+     collections::{BTreeMap, HashSet},
+-    fs::Fs,
+-    io,
++    fs::{Fs, OpenOptions},
++    io::{self, Write},
+ };
+ #[derive(Debug, PartialEq)]
+ pub enum PlanError {
+@@ -46,6 +46,33 @@ pub fn plan(moves: &[(&str, &str)]) -> Result<Vec<(String, String)>, PlanError>
+     Ok(out)
+ }
+ pub fn apply(fs: &Fs, steps: &[(String, String)]) -> io::Result<()> {
++    check(fs, steps)?;
++    for (a, b) in steps {
++        fs.rename(a, b)?;
++    }
++    Ok(())
++}
++/// Applies `steps` as `apply` does, but first appends each rename to `renames.journal` in
++/// `journal`, as a synced line `a<TAB>b`, so that an interrupted run can be finished by hand.
++pub fn apply_journaled(fs: &Fs, journal: &Fs, steps: &[(String, String)]) -> io::Result<()> {
++    check(fs, steps)?;
++    let mut log = journal.open_with("renames.journal", OpenOptions::new().append(true).create(true))?;
++    for (a, b) in steps {
++        writeln!(log, "{a}\t{b}")?;
++        log.sync()?;
++        fs.rename(a, b)?;
++    }
++    // Temporaries left behind by an earlier interrupted run are no longer needed.
++    for entry in fs.read_dir(".")? {
++        let name = entry?.file_name().to_string_lossy().into_owned();
++        if name.ends_with(".tmp") {
++            fs.remove_file(&name)?;
++        }
++    }
++    Ok(())
++}
++/// Fails with `NotFound`, before any rename, when a step's source will not exist.
++fn check(fs: &Fs, steps: &[(String, String)]) -> io::Result<()> {
+     let mut available = HashSet::new();
+     let mut removed = HashSet::new();
+     for (a, b) in steps {
+@@ -57,8 +84,5 @@ pub fn apply(fs: &Fs, steps: &[(String, String)]) -> io::Result<()> {
+         available.insert(b.clone());
+         removed.remove(b);
+     }
+-    for (a, b) in steps {
+-        fs.rename(a, b)?;
+-    }
+     Ok(())
+ }

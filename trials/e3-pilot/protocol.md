@@ -802,4 +802,6 @@ The paper and the launch cite that sentence.
 
 - Protocol, prompt, and harness: the commit that lands `fx-1vwf.1`.
 - Seed: 20261117.
-- Sealed manifest SHA-256: appended by `fx-1vwf.2`.
+- Sealed manifest SHA-256: appended by `fx-1vwf.2`:
+  `d152252045d135a3556077302804f655975cfabb5017157fe00ac5b622d9ab35`
+  (`trials/e3-pilot/sealed/manifest.json`).

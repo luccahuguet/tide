@@ -1,0 +1,4 @@
+declared authority (no exercised authority, effects, or proof status)
+  + heartbeat::watch_for (function)
+      + clock: clock
+      + probe: opaque(impl FnMut() -> bool)

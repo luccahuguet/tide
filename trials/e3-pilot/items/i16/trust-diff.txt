@@ -1,0 +1,6 @@
+declared authority (no exercised authority, effects, or proof status)
+  + heartbeat::tcp_probe (function)
+      + net: net
+  + heartbeat::watch_for (function)
+      + clock: clock
+      + probe: opaque(impl FnMut() -> bool)

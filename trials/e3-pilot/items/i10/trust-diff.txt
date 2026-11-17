@@ -1,0 +1,3 @@
+declared authority (no exercised authority, effects, or proof status)
+  + stock::load_file (function)
+      + fs: fs.read, fs.write

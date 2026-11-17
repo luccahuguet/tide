@@ -1,0 +1,3 @@
+declared authority (no exercised authority, effects, or proof status)
+  + rotlog::tail (function)
+      + dir: fs.read, fs.write

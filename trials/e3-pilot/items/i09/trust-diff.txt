@@ -1,0 +1,5 @@
+declared authority (no exercised authority, effects, or proof status)
+  + kvstore::Store::keys (method)
+      + self.dir: fs.read, fs.write
+  + kvstore::Store::open_read_only (associated function)
+      + dir: fs.read, fs.write

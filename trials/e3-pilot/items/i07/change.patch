@@ -1,0 +1,43 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -3,7 +3,8 @@ fn run(env: &std::env::Env, fs: &std::fs::Fs) -> Result<(String, u8), String> {
+     let mut args = env.args().skip(1);
+     let mut names: Vec<String> = args.by_ref().collect();
+     let mut defaults = HashMap::new();
+-    if names.first().is_some_and(|s| s == "--defaults") {
++    // `--defaults` may be repeated: a later file's defaults override an earlier one's.
++    while names.first().is_some_and(|s| s == "--defaults") {
+         if names.len() < 3 {
+             return Err("usage: envreport [--defaults FILE] NAME...".into());
+         }
+@@ -16,10 +17,13 @@ fn run(env: &std::env::Env, fs: &std::fs::Fs) -> Result<(String, u8), String> {
+             .enumerate()
+             .filter(|(_, s)| !s.trim().is_empty() && !s.starts_with('#'))
+         {
++            // Shell-style lines: `export NAME=value`, the value optionally quoted.
++            let line = line.strip_prefix("export ").unwrap_or(line);
+             let (k, v) = line
+                 .split_once('=')
+                 .filter(|(k, _)| !k.trim().is_empty())
+                 .ok_or_else(|| format!("envreport: {path}:{}: invalid default", i + 1))?;
++            let v = unquote(v);
+             defaults.insert(k.trim().to_string(), v.to_string());
+         }
+         names.drain(..2);
+@@ -39,6 +43,15 @@ fn run(env: &std::env::Env, fs: &std::fs::Fs) -> Result<(String, u8), String> {
+     }
+     Ok((out, code))
+ }
++/// `v` without one pair of surrounding double or single quotes, if it has them.
++fn unquote(v: &str) -> &str {
++    for q in ['"', '\''] {
++        if let Some(inner) = v.strip_prefix(q).and_then(|v| v.strip_suffix(q)) {
++            return inner;
++        }
++    }
++    v
++}
+ #[tide::main]
+ fn main(root: Root) -> ExitCode {
+     match run(&root.env, &root.fs) {

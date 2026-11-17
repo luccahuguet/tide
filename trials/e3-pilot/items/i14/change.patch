@@ -1,0 +1,42 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,4 +1,5 @@
+ use std::{
++    fs::{Fs, OpenOptions},
+     io::{self, BufRead, BufReader, Write},
+     net::{Net, TcpListener, TcpStream},
+     task::{TaskError, Tasks},
+@@ -43,18 +44,30 @@ pub fn serve(tasks: &Tasks, listener: &TcpListener, clients: usize) -> io::Resul
+         })
+         .unwrap()
+ }
+-pub fn exchange(net: &Net, addr: &str, lines: &[&str]) -> io::Result<Vec<String>> {
++/// Binds `addr` with `net` and answers `clients` clients on it, as `serve` does.
++pub fn serve_on(tasks: &Tasks, net: &Net, addr: &str, clients: usize) -> io::Result<u64> {
++    let listener = net.bind(addr)?;
++    serve(tasks, &listener, clients)
++}
++/// Sends each line to `addr` and returns the replies, stopping early when the server closes the
++/// connection.
++pub fn exchange(net: &Net, log: &Fs, addr: &str, lines: &[&str]) -> io::Result<Vec<String>> {
+     let stream = net.connect(addr)?;
++    let mut transcript = log.open_with("exchange.log", OpenOptions::new().append(true).create(true))?;
+     let mut writer = &stream;
+     let mut reader = BufReader::new(&stream);
+     let mut out = Vec::new();
+     for line in lines {
+         writeln!(writer, "{line}")?;
++        writeln!(transcript, "{addr} > {line}")?;
+         let mut reply = String::new();
+-        reader.read_line(&mut reply)?;
++        if reader.read_line(&mut reply)? == 0 {
++            return Ok(out);
++        }
+         if reply.ends_with('\n') {
+             reply.pop();
+         }
++        writeln!(transcript, "{addr} < {reply}")?;
+         out.push(reply);
+     }
+     writeln!(writer, "QUIT")?;

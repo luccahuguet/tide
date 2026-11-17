@@ -1,0 +1,51 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,4 +1,5 @@
+ use std::{
++    net::Net,
+     task::Cancelled,
+     time::{Clock, Duration},
+ };
+@@ -52,3 +53,41 @@ pub fn watch(
+         }
+     }
+ }
++/// Probes on the same schedule as `watch`, but returns at the first call made once `budget` has
++/// elapsed since the start, whatever the probe answers.
++pub fn watch_for(
++    clock: &Clock,
++    budget: Duration,
++    interval: Duration,
++    mut probe: impl FnMut() -> bool,
++) -> Result<Report, Cancelled> {
++    let start = clock.now();
++    let mut next = start;
++    let mut out = Report {
++        calls: 0,
++        last_ok: None,
++        elapsed: Duration::ZERO,
++    };
++    loop {
++        clock.sleep_until(next)?;
++        if out.calls > 0 {
++            out.elapsed = clock.now().duration_since(start);
++        }
++        if probe() {
++            out.last_ok = Some(out.calls);
++        }
++        out.calls += 1;
++        if out.elapsed >= budget {
++            return Ok(out);
++        }
++        next = if interval.is_zero() { clock.now() } else { next + interval };
++        let now = clock.now();
++        while !interval.is_zero() && next < now {
++            next += interval;
++        }
++    }
++}
++/// A probe for `watch` and `watch_for` that succeeds when a TCP connection to `addr` opens.
++pub fn tcp_probe<'a>(net: &'a Net, addr: &'a str) -> impl FnMut() -> bool + 'a {
++    move || net.connect(addr).is_ok()
++}

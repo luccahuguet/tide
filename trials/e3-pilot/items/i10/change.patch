@@ -1,0 +1,59 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,4 +1,4 @@
+-use std::json;
++use std::{fs::Fs, io, json};
+ #[derive(Debug, Clone, PartialEq, Encode, Decode)]
+ #[codec(rename_all = "camelCase")]
+ pub struct Inventory {
+@@ -25,6 +25,7 @@ pub enum Change {
+ pub enum LoadError {
+     Json(json::Error),
+     Duplicate(String),
++    Io(io::Error),
+ }
+ #[derive(Debug)]
+ pub enum ApplyError {
+@@ -32,6 +33,10 @@ pub enum ApplyError {
+     UnknownSku(String),
+     Insufficient(String),
+     Overflow(String),
++    /// A `Restock` or `Sell` of zero units.
++    ZeroQuantity(String),
++    /// A `Discontinue` of an item that is already discontinued.
++    AlreadyDiscontinued(String),
+ }
+ pub fn load(bytes: &[u8]) -> Result<Inventory, LoadError> {
+     let inv: Inventory = json::decode(bytes).map_err(LoadError::Json)?;
+@@ -43,6 +48,10 @@ pub fn load(bytes: &[u8]) -> Result<Inventory, LoadError> {
+     }
+     Ok(inv)
+ }
++/// Reads the inventory file `path` from `fs` and loads it.
++pub fn load_file(fs: &Fs, path: &str) -> Result<Inventory, LoadError> {
++    load(&fs.read(path).map_err(LoadError::Io)?)
++}
+ pub fn apply(inv: &mut Inventory, changes: &[u8]) -> Result<(), ApplyError> {
+     let changes: Vec<Change> = json::decode(changes).map_err(ApplyError::Json)?;
+     let mut next = inv.clone();
+@@ -58,6 +67,9 @@ pub fn apply(inv: &mut Inventory, changes: &[u8]) -> Result<(), ApplyError> {
+             .find(|i| &i.sku == sku)
+             .ok_or_else(|| ApplyError::UnknownSku(sku.clone()))?;
+         match change {
++            Change::Restock { qty: 0, .. } | Change::Sell { qty: 0, .. } => {
++                return Err(ApplyError::ZeroQuantity(item.sku.clone()));
++            }
+             Change::Restock { qty, .. } => {
+                 item.quantity = item
+                     .quantity
+@@ -70,6 +82,9 @@ pub fn apply(inv: &mut Inventory, changes: &[u8]) -> Result<(), ApplyError> {
+                     .checked_sub(qty)
+                     .ok_or_else(|| ApplyError::Insufficient(item.sku.clone()))?
+             }
++            Change::Discontinue { .. } if item.discontinued == Some(true) => {
++                return Err(ApplyError::AlreadyDiscontinued(item.sku.clone()));
++            }
+             Change::Discontinue { .. } => item.discontinued = Some(true),
+         }
+     }

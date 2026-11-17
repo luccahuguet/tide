@@ -1,0 +1,28 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -43,6 +43,13 @@ pub fn serve(tasks: &Tasks, listener: &TcpListener, clients: usize) -> io::Resul
+         })
+         .unwrap()
+ }
++/// Binds `addr` with `net` and answers `clients` clients on it, as `serve` does.
++pub fn serve_on(tasks: &Tasks, net: &Net, addr: &str, clients: usize) -> io::Result<u64> {
++    let listener = net.bind(addr)?;
++    serve(tasks, &listener, clients)
++}
++/// Sends each line to `addr` and returns the replies, stopping early when the server closes the
++/// connection.
+ pub fn exchange(net: &Net, addr: &str, lines: &[&str]) -> io::Result<Vec<String>> {
+     let stream = net.connect(addr)?;
+     let mut writer = &stream;
+@@ -51,7 +58,9 @@ pub fn exchange(net: &Net, addr: &str, lines: &[&str]) -> io::Result<Vec<String>
+     for line in lines {
+         writeln!(writer, "{line}")?;
+         let mut reply = String::new();
+-        reader.read_line(&mut reply)?;
++        if reader.read_line(&mut reply)? == 0 {
++            return Ok(out);
++        }
+         if reply.ends_with('\n') {
+             reply.pop();
+         }

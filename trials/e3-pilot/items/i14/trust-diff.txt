@@ -1,0 +1,6 @@
+declared authority (no exercised authority, effects, or proof status)
+  ~ linesrv::exchange (function) widened
+      + log: fs.read, fs.write
+  + linesrv::serve_on (function)
+      + net: net
+      + tasks: tasks

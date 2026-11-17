@@ -1,0 +1,28 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,12 +1,22 @@
+ use std::process::ExitCode;
+ fn run(env: &std::env::Env, fs: &std::fs::Fs) -> u8 {
+     let mut args: Vec<String> = env.args().skip(1).collect();
++    // Default options, as in `FINDTEXT_OPTIONS=-i`, come before the command line's own.
++    if let Ok(options) = env.var("FINDTEXT_OPTIONS") {
++        args.splice(0..0, options.split_whitespace().map(String::from));
++    }
+     let insensitive = args.first().is_some_and(|s| s == "-i");
+     if insensitive {
+         args.remove(0);
+     }
+-    if args.len() < 2 || args.iter().any(|s| s.starts_with('-')) {
+-        eprintln!("usage: findtext [-i] PATTERN FILE...");
++    // `--` ends the options: what follows is the pattern and the files, even when one of them
++    // starts with `-`.
++    let ended = args.first().is_some_and(|s| s == "--");
++    if ended {
++        args.remove(0);
++    }
++    if args.len() < 2 || (!ended && args.iter().any(|s| s.starts_with('-'))) {
++        eprintln!("usage: findtext [-i] [--] PATTERN FILE...");
+         return 2;
+     }
+     let pattern = if insensitive {

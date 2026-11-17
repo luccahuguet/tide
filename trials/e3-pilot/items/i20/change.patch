@@ -1,0 +1,29 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -53,3 +53,25 @@ pub fn read_all(dir: &Fs) -> io::Result<Vec<String>> {
+     }
+     Ok(out)
+ }
++/// The last `n` lines of the log, oldest first, across the rotated files. It reads the newest
++/// file first and stops once it has `n` lines.
++pub fn tail(dir: &Fs, n: usize) -> io::Result<Vec<String>> {
++    let mut out: Vec<String> = Vec::new();
++    for name in ["current.log", "old.1.log", "old.2.log"] {
++        if out.len() >= n {
++            break;
++        }
++        let text = match dir.read_to_string(name) {
++            Ok(s) => s,
++            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
++            Err(e) => return Err(e),
++        };
++        let lines: Vec<&str> = text.lines().collect();
++        let take = lines.len().min(n - out.len());
++        out.splice(0..0, lines[lines.len() - take..].iter().map(|s| s.to_string()));
++    }
++    for line in &out {
++        eprintln!("rotlog: tail: {line}");
++    }
++    Ok(out)
++}

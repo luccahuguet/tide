@@ -1,0 +1,33 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,5 +1,7 @@
+ use std::{
+     collections::BTreeMap,
++    env::Env,
++    io,
+     sync::Shared,
+     task::{TaskError, Tasks},
+ };
+@@ -31,6 +33,21 @@ impl Warehouse {
+                 .collect(),
+         }
+     }
++    /// Builds a warehouse from the environment variable `key`: comma-separated `name=count`
++    /// entries, with empty entries skipped. Any other entry is `ErrorKind::InvalidData`.
++    pub fn from_env(tasks: &Tasks, env: &Env, key: &str) -> io::Result<Self> {
++        let text = env.var(key).map_err(|_| io::ErrorKind::NotFound)?;
++        let mut stock = Vec::new();
++        for entry in text.split(',').map(str::trim) {
++            if entry.is_empty() {
++                continue;
++            }
++            let (name, count) = entry.split_once('=').ok_or(io::ErrorKind::InvalidData)?;
++            let count: u32 = count.trim().parse().map_err(|_| io::ErrorKind::InvalidData)?;
++            stock.push((name.trim(), count));
++        }
++        Ok(Self::new(tasks, &stock))
++    }
+     pub fn reserve(&self, order: &[(&str, u32)]) -> Result<(), ReserveError> {
+         let lines = aggregate(order);
+         let names: Vec<_> = self

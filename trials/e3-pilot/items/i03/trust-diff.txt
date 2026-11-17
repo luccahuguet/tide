@@ -1,0 +1,4 @@
+declared authority (no exercised authority, effects, or proof status)
+  + reserve::Warehouse::from_env (associated function)
+      + env: env
+      + tasks: tasks

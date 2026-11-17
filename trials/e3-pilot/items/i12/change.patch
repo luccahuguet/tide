@@ -1,0 +1,41 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fs::Fs, io};
+ pub struct Store {
+     dir: Fs,
+     data: BTreeMap<String, String>,
++    read_only: bool,
+ }
+ impl Store {
+     pub fn open(dir: &Fs) -> io::Result<Self> {
+@@ -18,12 +19,29 @@ impl Store {
+         Ok(Self {
+             dir: dir.clone(),
+             data,
++            read_only: false,
+         })
+     }
++    /// Opens the store in `dir` for lookups only: it loads as `open` does, and a `set` or `remove`
++    /// that would save a change fails with `ErrorKind::PermissionDenied` without changing the
++    /// directory. Invalid input and removing a missing key behave as for any store.
++    pub fn open_read_only(dir: &Fs) -> io::Result<Self> {
++        let mut store = Self::open(dir)?;
++        store.read_only = true;
++        Ok(store)
++    }
++    /// The keys in the store, in sorted order: with `get`, a reader can list every entry.
++    /// They reflect the last successful `set` or `remove` through this store.
++    pub fn keys(&self) -> impl Iterator<Item = &str> {
++        self.data.keys().map(String::as_str)
++    }
+     pub fn get(&self, key: &str) -> Option<&str> {
+         self.data.get(key).map(String::as_str)
+     }
+     fn save(&self, data: &BTreeMap<String, String>) -> io::Result<()> {
++        if self.read_only {
++            return Err(io::ErrorKind::PermissionDenied.into());
++        }
+         let mut text = String::new();
+         for (k, v) in data {
+             text.push_str(&format!("{k}\t{v}\n"));

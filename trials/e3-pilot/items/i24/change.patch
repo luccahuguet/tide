@@ -1,0 +1,59 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,5 +1,8 @@
+ use std::{
+     collections::BTreeMap,
++    env::Env,
++    fs::Fs,
++    io,
+     sync::Shared,
+     task::{TaskError, Tasks},
+ };
+@@ -10,6 +13,8 @@ pub enum ReserveError {
+ }
+ pub struct Warehouse {
+     items: BTreeMap<String, Shared<u32>>,
++    /// Where to keep a copy of the remaining stock, if anywhere.
++    pub snapshot: Option<Fs>,
+ }
+ fn aggregate<'a>(order: &[(&'a str, u32)]) -> Vec<(&'a str, u64)> {
+     let mut lines: Vec<(&str, u64)> = Vec::new();
+@@ -29,8 +34,24 @@ impl Warehouse {
+                 .iter()
+                 .map(|&(k, v)| (k.into(), Shared::new(v, tasks)))
+                 .collect(),
++            snapshot: None,
+         }
+     }
++    /// Builds a warehouse from the environment variable `key`: comma-separated `name=count`
++    /// entries, with empty entries skipped. Any other entry is `ErrorKind::InvalidData`.
++    pub fn from_env(tasks: &Tasks, env: &Env, key: &str) -> io::Result<Self> {
++        let text = env.var(key).map_err(|_| io::ErrorKind::NotFound)?;
++        let mut stock = Vec::new();
++        for entry in text.split(',').map(str::trim) {
++            if entry.is_empty() {
++                continue;
++            }
++            let (name, count) = entry.split_once('=').ok_or(io::ErrorKind::InvalidData)?;
++            let count: u32 = count.trim().parse().map_err(|_| io::ErrorKind::InvalidData)?;
++            stock.push((name.trim(), count));
++        }
++        Ok(Self::new(tasks, &stock))
++    }
+     pub fn reserve(&self, order: &[(&str, u32)]) -> Result<(), ReserveError> {
+         let lines = aggregate(order);
+         let names: Vec<_> = self
+@@ -57,6 +78,12 @@ impl Warehouse {
+             Ok(())
+         })
+         .unwrap()
++        .inspect(|()| self.save())
++    }
++    fn save(&self) {
++        let Some(fs) = &self.snapshot else { return };
++        let text: String = self.items.keys().map(|k| format!("{k}={}\n", self.stock(k).unwrap())).collect();
++        let _ = fs.write("stock.txt", text);
+     }
+     pub fn stock(&self, item: &str) -> Option<u32> {
+         Some(self.items.get(item)?.with(|n| *n).unwrap())

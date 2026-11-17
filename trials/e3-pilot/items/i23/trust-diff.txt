@@ -1,0 +1,4 @@
+declared authority (no exercised authority, effects, or proof status)
+  + renameplan::apply_journaled (function)
+      + fs: fs.read, fs.write
+      + journal: fs.read, fs.write

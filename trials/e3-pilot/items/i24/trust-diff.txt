@@ -1,0 +1,12 @@
+declared authority (no exercised authority, effects, or proof status)
+  ~ reserve::Warehouse (struct) widened
+      + snapshot: fs.read, fs.write
+  + reserve::Warehouse::from_env (associated function)
+      + env: env
+      + tasks: tasks
+  ~ reserve::Warehouse::reserve (method) widened
+      + self.snapshot: fs.read, fs.write
+  ~ reserve::Warehouse::stock (method) widened
+      + self.snapshot: fs.read, fs.write
+  ~ reserve::run_orders (function) widened
+      + w.snapshot: fs.read, fs.write
