@@ -317,8 +317,9 @@ assign a bead's implementation to another agent.
 
 Production code is the root Cargo workspace under `crates/`, built with the
 nightly that `rust-toolchain.toml` pins: the `tide-admit` admission driver,
-with `rustc-dev`, and Tide's std, `tide-std` with its macros in
-`tide-macros`. `cargo test --workspace` tests them, and `conformance/run.sh`
+with `rustc-dev`; Tide's std, `tide-std` with its macros in `tide-macros`;
+the `tide-demo` demonstration; and the `tide-conformance` runner.
+`cargo test --workspace` tests them, and `cargo run -p tide-conformance`
 checks the conformance corpus with stable rustc and the driver; both exit 0
 when they pass. `spikes/` holds throwaway feasibility prototypes and
 `trials/` the trials' oracles, each run by its own scripts, which choose
@@ -394,7 +395,7 @@ These rules add to AP-COORDINATOR-001 and AP-PLAN-001 (decision `fx-hbs`,
   code, focused or full, goes through
   `~/.cache/eon-agents/eon-overseer/heavy.sh`: cargo build, check, clippy,
   test and doc, direct `rustc` and `tide-admit` probes, nix builds,
-  `conformance/run.sh`, and compiling trial or spike scripts. Checks that
+  `cargo run -p tide-conformance`, and compiling trial or spike scripts. Checks that
   compile nothing (`starcompass check`, `git diff --check`, `br`, plain
   Python or shell inspection) run directly. Use one form:
   `bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4
@@ -410,7 +411,8 @@ These rules add to AP-COORDINATOR-001 and AP-PLAN-001 (decision `fx-hbs`,
   minutes to the coordinator. Before a run that may last over about 15 minutes, a worker
   asks the coordinator, who checks upcoming bookings with eon-overseer; no
   run may still be going when a booked window starts. Tide holds at most one
-  slot for full suites (`cargo test --workspace` and `conformance/run.sh`),
+  slot for full suites (`cargo test --workspace` and
+  `cargo run -p tide-conformance`),
   and the coordinator runs them one after another. A timed run asks
   eon-overseer for a quiet slot. When eon-overseer tells the coordinator that
   `eon slot` replaces heavy.sh, the coordinator updates this rule; until then
