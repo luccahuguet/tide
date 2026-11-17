@@ -48,4 +48,4 @@ pub fn projected() -> (Box<dyn Fn() -> usize>, &'static str) {
 }
 pub fn projection_alias() -> (Box<dyn Fn() -> usize>, &'static str) { let text = String::from("x"); let parts = ("static", text.as_str()); let s = parts.0; (Box::new(move || s.len()), parts.1) } //~ E0515
 pub fn projection_assignment() -> (Box<dyn Fn() -> usize>, &'static str) { let text = String::from("x"); let parts = ("static", text.as_str()); let s; s = parts.0; (Box::new(move || s.len()), parts.1) } //~ E0515
-pub fn projection_borrow() -> Box<dyn Fn() -> usize> { let pair = (String::from("x"),); Box::new(|| pair.0.len()) } //~ E0373 FX0203
+pub fn projection_borrow() -> Box<dyn Fn() -> usize> { let pair = (String::from("x"),); Box::new(|| pair.0.len()) } //~ E0373 TD0203

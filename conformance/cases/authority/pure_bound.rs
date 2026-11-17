@@ -9,5 +9,5 @@ pub struct Holder {
 fn needs_pure<T: Pure>(_t: &T) {}
 
 pub fn check(h: &Holder) {
-    needs_pure(h); //~ FX0517
+    needs_pure(h); //~ TD0517
 }

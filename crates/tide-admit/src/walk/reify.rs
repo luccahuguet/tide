@@ -1,4 +1,4 @@
-//! CLOSURE-3 (`FX0206`, 02 §5.4): a function item coerced to a `fn` pointer, under a syntactic
+//! CLOSURE-3 (`TD0206`, 02 §5.4): a function item coerced to a `fn` pointer, under a syntactic
 //! conservative rule. A `fn` pointer type does not carry the outlives bounds that the item's
 //! body may assume, and rustc does not check them at the coercion (rust-lang/rust#25860), so the
 //! coercion is rejected whenever the item implies an outlives bound that does not hold
@@ -40,7 +40,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                         "`{name}` cannot become a `fn` pointer here: the impl it runs is not \
                          known, so the bounds that impl implies cannot be checked (CLOSURE-3)"
                     );
-                    self.fx0206(e.span, message);
+                    self.td0206(e.span, message);
                     return;
                 }
             }
@@ -53,15 +53,15 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 "`{name}` cannot become a `fn` pointer: it implies `{bound}`, which a `fn` \
                  pointer does not keep (CLOSURE-3)"
             );
-            self.fx0206(e.span, message);
+            self.td0206(e.span, message);
         }
     }
 
-    fn fx0206(&mut self, span: Span, message: String) {
+    fn td0206(&mut self, span: Span, message: String) {
         self.diags.report(
             self.tcx,
             span.source_callsite(),
-            Code::Fx0206,
+            Code::Td0206,
             message,
             Some(HELP),
         );

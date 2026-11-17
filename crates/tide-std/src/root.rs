@@ -250,7 +250,7 @@ pub struct Root {
 }
 
 /// The runtime entry. Only the `main` that `#[tide::main]` generates may name it: the admission
-/// driver rejects any other use (ADMIT-1, `FX0520`).
+/// driver rejects any other use (ADMIT-1, `TD0520`).
 #[doc(hidden)]
 pub mod __rt {
     use std::process::{ExitCode, Termination};

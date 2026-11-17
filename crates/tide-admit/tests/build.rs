@@ -47,7 +47,7 @@ fn main(root: Root) {
     );
     let dir = package("reference-allowlist", &source);
     let build = checked(&mut driver(&dir));
-    assert!(!stderr(&build).contains("FX0520:"), "{}", stderr(&build));
+    assert!(!stderr(&build).contains("TD0520:"), "{}", stderr(&build));
     let out = checked(&mut Command::new(dir.join("out/demo")));
     assert_eq!(out.stdout, b"REFERENCE_ALLOWLIST_RAN\n");
     assert!(out.stderr.is_empty(), "{}", stderr(&out));
@@ -71,7 +71,7 @@ fn main() { let _ = std::io::Error::last_os_error(); }
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
         stderr(&out)
-            .contains("error: FX0520: `tide_std::io::Error::last_os_error` is not admitted"),
+            .contains("error: TD0520: `tide_std::io::Error::last_os_error` is not admitted"),
         "{}",
         stderr(&out)
     );
@@ -581,7 +581,7 @@ fn separate_library_tests_require_public_items_and_admit_both_crates() {
         std::fs::write(dir.join("package/src/demo.rs"), suite).unwrap();
         let out = test("link").output().unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-        assert!(stderr(&out).contains("FX0901"), "{}", stderr(&out));
+        assert!(stderr(&out).contains("TD0901"), "{}", stderr(&out));
         assert!(!executable.exists());
     }
 
@@ -645,7 +645,7 @@ fn separate_library_tests_cannot_read_each_others_sources() {
         let out = paired_test_driver(&dir).output().unwrap();
         let diagnostic = stderr(&out);
         assert_eq!(out.status.code(), Some(1), "{diagnostic}");
-        assert!(diagnostic.contains("FX0520"), "{diagnostic}");
+        assert!(diagnostic.contains("TD0520"), "{diagnostic}");
         assert!(
             !diagnostic.contains("foreign source canary"),
             "{diagnostic}"
@@ -701,7 +701,7 @@ fn check_clause() { tide_candidate::require_pure::<std::time::Clock>(); }
         diagnostic
             .lines()
             .any(|line| line.contains("demo.rs:")
-                && line.contains("FX0517: `Clock` is never `Pure`")),
+                && line.contains("TD0517: `Clock` is never `Pure`")),
         "{diagnostic}"
     );
     assert!(!dir.join("out/demo-test").exists());
@@ -774,7 +774,7 @@ fn main(root: Root) {
     let dir = package("arc-weak", &source);
     for profile in ["debug", "release"] {
         let build = checked(driver(&dir).arg(format!("--tide-profile={profile}")));
-        assert!(!stderr(&build).contains("FX0520"), "{}", stderr(&build));
+        assert!(!stderr(&build).contains("TD0520"), "{}", stderr(&build));
         checked(&mut Command::new(dir.join("out/demo")));
     }
 }
@@ -783,13 +783,13 @@ fn main(root: Root) {
 fn arc_and_weak_rejections_use_production_std() {
     for (name, source, code) in [
         ("count", include_str!("../../../conformance/cases/authority/global_arc_count.rs").to_owned(), "E0599"),
-        ("payload", include_str!("../../../conformance/cases/authority/global_arc_payload.rs").to_owned(), "FX0606"),
-        ("weak-pure", "fn pure(_: impl Pure) {} fn f(a: std::sync::Weak<u32>) { pure(a); }".into(), "FX0517"),
-        ("new-tasks", "fn f() { let _ = std::sync::Arc::new(1u32); }".into(), "FX0505"),
-        ("downgrade-tasks", "fn f(a: &std::sync::Arc<u32>) { let _ = std::sync::Arc::downgrade(a); }".into(), "FX0505"),
+        ("payload", include_str!("../../../conformance/cases/authority/global_arc_payload.rs").to_owned(), "TD0606"),
+        ("weak-pure", "fn pure(_: impl Pure) {} fn f(a: std::sync::Weak<u32>) { pure(a); }".into(), "TD0517"),
+        ("new-tasks", "fn f() { let _ = std::sync::Arc::new(1u32); }".into(), "TD0505"),
+        ("downgrade-tasks", "fn f(a: &std::sync::Arc<u32>) { let _ = std::sync::Arc::downgrade(a); }".into(), "TD0505"),
         ("arc-send", "fn send<T: Send>() {} fn f() { send::<std::sync::Arc<std::rc::Rc<u32>>>(); }".into(), "E0277"),
         ("weak-sync", "fn sync<T: Sync>() {} fn f() { sync::<std::sync::Weak<std::cell::Cell<u32>>>(); }".into(), "E0277"),
-        ("pointer", "fn f(a: std::sync::Arc<u32>) { let _ = format!(\"{:p}\", a); }".into(), "FX0520"),
+        ("pointer", "fn f(a: std::sync::Arc<u32>) { let _ = format!(\"{:p}\", a); }".into(), "TD0520"),
     ].into_iter().chain(["weak_count", "get_mut", "try_unwrap", "into_inner"].map(|method| (
         method,
         format!("fn f(mut a: std::sync::Arc<u32>) {{ let _ = std::sync::Arc::{method}(&mut a); }}"),
@@ -846,7 +846,7 @@ fn simulated_dbg() {
     );
     let dir = package("dbg", &source);
     let build = checked(&mut driver(&dir));
-    assert!(!stderr(&build).contains("FX0520"), "{}", stderr(&build));
+    assert!(!stderr(&build).contains("TD0520"), "{}", stderr(&build));
     let out = checked(&mut Command::new(dir.join("out/demo")));
     assert!(out.stdout.is_empty());
     let lines: Vec<_> = stderr(&out).lines().map(str::to_owned).collect();
@@ -886,8 +886,8 @@ fn simulated_dbg() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0507"), "{}", stderr(&out));
-    assert!(!stderr(&out).contains("FX0520"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0507"), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("TD0520"), "{}", stderr(&out));
 }
 
 #[test]
@@ -1236,27 +1236,27 @@ fn parallel_pure_rejections_use_the_existing_owner() {
         (
             "join",
             "pub fn run(clock: std::time::Clock) { std::par::join(move || clock.now(), || 1); }",
-            "FX0610",
+            "TD0610",
         ),
         (
             "capture",
             "pub fn run(clock: &std::time::Clock) { [1].par_map(|_| clock.now()); }",
-            "FX0611",
+            "TD0611",
         ),
         (
             "for",
             "pub fn run(clock: std::time::Clock) { [1].par_for(move |_| { clock.now(); }); }",
-            "FX0610",
+            "TD0610",
         ),
         (
             "elements",
             "pub fn run(xs: &[std::time::Clock]) { xs.par_map(|_| 1); }",
-            "FX0612",
+            "TD0612",
         ),
         (
             "sort",
             include_str!("../../../conformance/cases/tasks/par_sort_reject.rs"),
-            "FX0612",
+            "TD0612",
         ),
     ] {
         let dir = package(&format!("parallel-reject-{name}"), source);
@@ -1310,7 +1310,7 @@ fn main() {
     );
     let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0901"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0901"), "{}", stderr(&out));
     assert!(!dir.join("out/demo").exists());
     checked(driver(&dir).arg("--tide-grant=unsafe"));
     checked(&mut Command::new(dir.join("out/demo")));
@@ -1358,7 +1358,7 @@ fn collections_cannot_draw_ambient_keys_through_a_generic_hasher() {
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
         assert!(
             stderr(&out).contains(
-                "FX0520: `impl core::default::Default for std::hash::random::RandomState`"
+                "TD0520: `impl core::default::Default for std::hash::random::RandomState`"
             ),
             "{}",
             stderr(&out)
@@ -1596,7 +1596,7 @@ fn main() {
                 stderr(&out)
             );
             assert!(
-                stderr(&out).contains("FX0520: `impl core::cmp::PartialOrd for fn()`"),
+                stderr(&out).contains("TD0520: `impl core::cmp::PartialOrd for fn()`"),
                 "{emit}/{profile}: {}",
                 stderr(&out)
             );
@@ -2302,7 +2302,7 @@ fn property_generation_diagnoses_unsupported_fields_and_attribute_arguments() {
         (
             "admission",
             "#[derive(Debug)] struct Value(u8); #[test] fn check(v: Value) { unsafe { let _ = v; } }",
-            "FX0901",
+            "TD0901",
             "demo.rs:1:",
         ),
         (
@@ -2314,7 +2314,7 @@ fn property_generation_diagnoses_unsupported_fields_and_attribute_arguments() {
         (
             "contract-admission",
             "#[requires({ let p = 0usize as *const u8; let _ = unsafe { *p }; true })]\n#[ensures(result == n)]\nfn identity(n: u8) -> u8 { n }",
-            "FX0901",
+            "TD0901",
             "demo.rs:1:",
         ),
         (
@@ -2568,31 +2568,31 @@ fn rejected_source_never_links_or_runs_and_removes_stale_outputs() {
             "#[tide::main] fn main() { println!(\"REJECTED_RAN\"); let _ = std::__rt::enter(|_| ()); }",
             vec![],
             "demo",
-            "FX0520",
+            "TD0520",
         ),
         (
             "fn f() {}\n#[tide::main] fn main() { println!(\"REJECTED_RAN {:?}\", f as fn()); }",
             vec!["--tide-test-backstop"],
             "demo",
-            "FX0520",
+            "TD0520",
         ),
         (
             "#[tide::main] fn main() { println!(\"REJECTED_RAN\"); }\n#[test] fn calls_entry() { main(); }",
             vec!["--test"],
             "demo-test",
-            "FX0506",
+            "TD0506",
         ),
         (
             "fn main() { println!(\"REJECTED_RAN\"); }",
             vec![],
             "demo",
-            "FX0512",
+            "TD0512",
         ),
         (
             "core::arch::global_asm!(\".error \\\"ASSEMBLER_RAN\\\"\");\nfn need<T: Pure>(_: T) {}\n#[tide::main] fn main(root: Root) { need(root.clock); }",
             vec!["--tide-grant=unsafe", "--tide-test-backstop"],
             "demo",
-            "FX0517",
+            "TD0517",
         ),
         (
             "unsafe extern \"C\" { safe fn tide_missing_link_symbol_for_test(); }\n#[tide::main] fn main() { tide_missing_link_symbol_for_test(); }",
@@ -2751,7 +2751,7 @@ fn main(root: Root) {
 "#);
     let out = driver(&dir).stdin(Stdio::null()).output().unwrap();
     assert!(!out.status.success());
-    assert!(stderr(&out).contains("FX0517"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0517"), "{}", stderr(&out));
     assert!(stderr(&out).contains("StdinReader"), "{}", stderr(&out));
     assert!(stderr(&out).contains("LogConfig"), "{}", stderr(&out));
 }
@@ -3003,7 +3003,7 @@ fn float_math_builds_and_executes_against_production_std() {
 }
 
 #[test]
-fn float_banned_methods_still_report_fx0520_with_production_std() {
+fn float_banned_methods_still_report_td0520_with_production_std() {
     // Each rejection is isolated so one diagnostic cannot conceal an unguarded method.
     for ty in ["f32", "f64"] {
         for (method, args) in [
@@ -3070,7 +3070,7 @@ fn float_banned_methods_still_report_fx0520_with_production_std() {
                 stderr(&out)
             );
             assert!(
-                stderr(&out).contains("FX0520:"),
+                stderr(&out).contains("TD0520:"),
                 "{ty}::{method}: {}",
                 stderr(&out)
             );
@@ -3453,7 +3453,7 @@ fn main(root: Root) { let _ = Bounded::Value { value: root.net }; }
     );
     let out = driver(&dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0517"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0517"), "{}", stderr(&out));
     assert!(!dir.join("out/demo").exists());
 }
 
@@ -3696,7 +3696,7 @@ fn main(_: Root) { bounce(0u8); }
         error.contains("reached the recursion limit while instantiating"),
         "{error}"
     );
-    assert!(!error.contains("FX0407"), "{error}");
+    assert!(!error.contains("TD0407"), "{error}");
     assert!(!dir.join("out/demo").exists());
 }
 
@@ -3724,11 +3724,11 @@ mod generated {
     assert_eq!(output.status.code(), Some(1), "{error}");
     let labels: Vec<_> = error
         .lines()
-        .filter(|line| line.contains("error: FX"))
+        .filter(|line| line.contains("error: TD"))
         .collect();
     assert_eq!(labels.len(), 1, "{error}");
     assert!(
-        labels[0].contains("demo.rs:8:") && labels[0].contains("FX0406:"),
+        labels[0].contains("demo.rs:8:") && labels[0].contains("TD0406:"),
         "{error}"
     );
 }
@@ -3758,7 +3758,7 @@ fn finite_trait_dispatch_chain_keeps_rustcs_limit_failure_without_a_growth_label
             .unwrap();
         let error = stderr(&output);
         assert_eq!(output.status.success(), success, "{error}");
-        assert!(!error.contains("FX0407"), "{error}");
+        assert!(!error.contains("TD0407"), "{error}");
         if !success {
             assert!(
                 error.contains("reached the recursion limit while instantiating"),
@@ -3813,22 +3813,22 @@ fn arena_and_pure_rejections_use_the_existing_driver_rules() {
         (
             "arena",
             include_str!("../../../conformance/cases/memory/arena_pure_reject.rs"),
-            &["FX0517", "FX0511"][..],
+            &["TD0517", "TD0511"][..],
         ),
         (
             "capability",
             include_str!("../../../conformance/cases/authority/afree_pure_capability.rs"),
-            &["FX0511"][..],
+            &["TD0511"][..],
         ),
         (
             "generic",
             include_str!("../../../conformance/cases/authority/afree_pure_generic.rs"),
-            &["FX0511"][..],
+            &["TD0511"][..],
         ),
         (
             "nested",
             include_str!("../../../conformance/cases/authority/afree_pure_nested.rs"),
-            &["FX0511"][..],
+            &["TD0511"][..],
         ),
     ] {
         let dir = package(&format!("arena-pure-{name}"), source);
@@ -3988,17 +3988,17 @@ fn tcp_incoming_carries_network_authority() {
         (
             "pure",
             "fn pure_value(_: impl Pure) {}\npub fn run(i: std::net::Incoming<'_>) { pure_value(i); }",
-            "FX0517",
+            "TD0517",
         ),
         (
             "shared",
             "pub fn run(i: std::net::Incoming<'_>, tasks: &std::task::Tasks) { let _ = std::sync::Shared::new(i, tasks); }",
-            "FX0606",
+            "TD0606",
         ),
         (
             "pure-function",
             "#[pure]\npub fn run(mut i: std::net::Incoming<'_>) { let _ = i.next(); }",
-            "FX0511",
+            "TD0511",
         ),
     ] {
         let dir = package(&format!("tcp-incoming-{name}"), source);
@@ -4029,22 +4029,22 @@ fn authority_rules_reject_at_error_severity_against_production_std() {
         (
             "ambient",
             "pub fn inspect() { let _ = std::time::Instant::now(); }",
-            "FX0501",
+            "TD0501",
         ),
         (
             "root",
             "#[tide::main] fn main(root: Root) { let _all = root; }",
-            "FX0503",
+            "TD0503",
         ),
         (
             "simulation",
             "pub fn setup() { let _ = Root::sim(1); }",
-            "FX0504",
+            "TD0504",
         ),
         (
             "handle",
             "pub fn setup() { let _ = std::sync::Shared::new(1u64); }",
-            "FX0505",
+            "TD0505",
         ),
     ] {
         let dir = package(&format!("authority-{name}"), source);
@@ -4100,7 +4100,7 @@ fn authority_simulation_is_available_to_separate_suites_but_not_the_candidate() 
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0504"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0504"), "{}", stderr(&out));
 }
 
 #[test]
@@ -4122,7 +4122,7 @@ fn authority_field_patterns_and_import_sources_use_production_std() {
             "root-helper-pattern",
             include_str!("../../../conformance/cases/authority/root_parameter_pattern_reject.rs"),
             "lib",
-            Some("FX0503"),
+            Some("TD0503"),
         ),
         (
             "local-rng",
@@ -4134,19 +4134,19 @@ fn authority_field_patterns_and_import_sources_use_production_std() {
             "aliased-denial",
             include_str!("../../../conformance/cases/authority/admit_std_alias_reject.rs"),
             "lib",
-            Some("FX0520"),
+            Some("TD0520"),
         ),
         (
             "thread-timers",
             include_str!("../../../conformance/cases/authority/cap_thread_timers_reject.rs"),
             "lib",
-            Some("FX0501"),
+            Some("TD0501"),
         ),
         (
             "root-match-binding",
             include_str!("../../../conformance/cases/authority/root_match_binding_reject.rs"),
             "bin",
-            Some("FX0503"),
+            Some("TD0503"),
         ),
         (
             "root-pattern-capture",
@@ -4164,7 +4164,7 @@ fn authority_field_patterns_and_import_sources_use_production_std() {
             "ambient-command",
             include_str!("../../../conformance/cases/authority/cap_ambient_import_reject.rs"),
             "lib",
-            Some("FX0501"),
+            Some("TD0501"),
         ),
     ] {
         let dir = package(&format!("authority-{name}"), source);
@@ -4194,37 +4194,37 @@ fn concurrency_and_error_cases_use_production_std() {
         (
             "async",
             include_str!("../../../conformance/cases/tasks/async_reject.rs"),
-            Some("FX0601"),
+            Some("TD0601"),
         ),
         (
             "future-pin",
             include_str!("../../../conformance/cases/tasks/future_pin_reject.rs"),
-            Some("FX0601"),
+            Some("TD0601"),
         ),
         (
             "spawn",
             include_str!("../../../conformance/cases/tasks/spawn_reject.rs"),
-            Some("FX0602"),
+            Some("TD0602"),
         ),
         (
             "mutex",
             include_str!("../../../conformance/cases/tasks/mutex_reject.rs"),
-            Some("FX0604"),
+            Some("TD0604"),
         ),
         (
             "select",
             include_str!("../../../conformance/cases/tasks/select_reject.rs"),
-            Some("FX0605"),
+            Some("TD0605"),
         ),
         (
             "catch",
             include_str!("../../../conformance/cases/errors/catch_unwind_reject.rs"),
-            Some("FX0701"),
+            Some("TD0701"),
         ),
         (
             "result",
             include_str!("../../../conformance/cases/errors/ignored_result_reject.rs"),
-            Some("FX0702"),
+            Some("TD0702"),
         ),
         (
             "ordinary",
@@ -4883,7 +4883,7 @@ fn bounded(command: &mut Command, seconds: u64) -> (std::process::ExitStatus, St
 }
 
 /// RUN-3 kernel denial (fx-ip4x): the kernel, not admission, stops a test child that reaches
-/// outside its grants. Since `FX0206` rejects the fx-6xi2 forging pattern at admission, the child
+/// outside its grants. Since `TD0206` rejects the fx-6xi2 forging pattern at admission, the child
 /// here never passed admission at all: a plain Rust program replaces the cached admitted
 /// executable. It truncates its standard output, reads and writes paths outside the run, reads
 /// through a planted `target/sim` link a canary and another run's artifact, connects to a

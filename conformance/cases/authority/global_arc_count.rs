@@ -3,5 +3,5 @@
 use std::sync::Arc;
 
 pub fn owners(a: &Arc<u32>) -> usize {
-    Arc::strong_count(a) //~ E0599 FX0520
+    Arc::strong_count(a) //~ E0599 TD0520
 }

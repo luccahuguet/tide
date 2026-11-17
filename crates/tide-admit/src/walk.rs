@@ -327,7 +327,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             None if unlisted_admitted => Ok(Admitted::Free),
             _ => Err(Rejection {
                 key,
-                code: rule.map_or(Code::Fx0520, |r| r.code),
+                code: rule.map_or(Code::Td0520, |r| r.code),
                 help: rule.and_then(|r| r.help),
             }),
         }
@@ -355,7 +355,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         match role {
             Role::Other => Err(Rejection {
                 key,
-                code: Code::Fx0520,
+                code: Code::Td0520,
                 help: None,
             }),
             _ => self.decide(key.clone(), policy::lookup(&key), role == Role::TideStd),
@@ -538,7 +538,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         self.holes.insert((holder, what, span));
     }
 
-    /// UNSAFE-1: what needs the `unsafe` grant is a trust hole with it and `FX0901` without it.
+    /// UNSAFE-1: what needs the `unsafe` grant is a trust hole with it and `TD0901` without it.
     fn granted(&mut self, span: Span, what: &str) {
         if !self.user_written(span) {
             return;
@@ -546,7 +546,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if self.grants.unsafe_ {
             self.hole(span, what.into(), true);
         } else {
-            self.report(span, Code::Fx0901, format!("{what} {GRANT}"));
+            self.report(span, Code::Td0901, format!("{what} {GRANT}"));
         }
     }
 
@@ -889,9 +889,9 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     /// PAR-5 to PAR-7: a closure that `join` (`JoinClosure`) or a slice method (`SharedClosure`)
     /// runs in parallel branches, passed as it is or through `&`, `&mut`, or `Box`. Shared data
-    /// it captures, a `&T` borrowed or moved in, must be `Pure + Sync` (`FX0611`, in place of
-    /// `FX0610`); the callable must be `Pure + Send`, and a shared one also `Sync` and meet its
-    /// `Fn` bound `fn_bound` (`FX0610`), as rustc checks too except for `Pure`.
+    /// it captures, a `&T` borrowed or moved in, must be `Pure + Sync` (`TD0611`, in place of
+    /// `TD0610`); the callable must be `Pure + Send`, and a shared one also `Sync` and meet its
+    /// `Fn` bound `fn_bound` (`TD0610`), as rustc checks too except for `Pure`.
     fn parallel_closure(
         &mut self,
         ty: Ty<'tcx>,
@@ -965,7 +965,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                      {why}",
                     cap.to_string(tcx)
                 );
-                self.flag(span, Code::Fx0611, message);
+                self.flag(span, Code::Td0611, message);
                 return;
             }
         }
@@ -1041,7 +1041,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
     /// `Box<dyn Error + Send + Sync>`, which is `Pure` only because the conversion their
     /// `E: Into<..>` bound performs must reach, through core's `impl<T, U: From<T>> Into<U> for
     /// T`, one of alloc's four `From` impls for that box: from an `E: Error + Send + Sync` that is
-    /// `Pure`, or from `String`, `&str`, or `Cow<'_, str>`. Anything else is `FX0517`.
+    /// `Pure`, or from `String`, `&str`, or `Cow<'_, str>`. Anything else is `TD0517`.
     ///
     /// `tr` is the constructor's `E: Into<Box<dyn Error + Send + Sync>>`.
     fn io_error_payload(&mut self, tr: ty::TraitRef<'tcx>, span: Span) {
@@ -1099,7 +1099,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         };
         self.flag(
             span,
-            Code::Fx0517,
+            Code::Td0517,
             format!("an `io::Error` payload must be `Pure`: {why}"),
         );
     }
@@ -1170,7 +1170,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if mutability.is_mut() {
             self.flag(
                 span,
-                Code::Fx0502,
+                Code::Td0502,
                 "a `static mut` is a mutable global".into(),
             );
             return;
@@ -1183,7 +1183,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let env = TypingEnv::non_body_analysis(tcx, def.to_def_id());
         if let Err(e) = pure.check(env, ty) {
             let message = format!("a `static` must be `Pure`: {}", e.message(ty));
-            self.flag(span, Code::Fx0502, message);
+            self.flag(span, Code::Td0502, message);
         }
     }
 
@@ -1244,7 +1244,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let Some(pure) = &self.pure else { return };
         if marked && tcx.is_foreign_item(def) {
             let message = "a foreign function is never authority-free, so it cannot be `#[pure]`";
-            self.flag(span, Code::Fx0511, message.into());
+            self.flag(span, Code::Td0511, message.into());
             return;
         }
         if !is_const && !marked {
@@ -1267,7 +1267,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             let not_pure = pure.check(env, input).err().map(|e| e.message(input));
             if marked && let Some(why) = &not_pure {
                 failures.push((
-                    Code::Fx0511,
+                    Code::Td0511,
                     format!("a `#[pure]` function's parameter types must be `Pure`: {why}"),
                 ));
             }
@@ -1294,7 +1294,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 };
                 if let Some(why) = why {
                     failures.push((
-                        Code::Fx0518,
+                        Code::Td0518,
                         format!(
                             "a `const fn`'s parameters must be `Pure + Sync` and not `&mut`: {why}"
                         ),
@@ -1447,7 +1447,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             )));
             let rejection = Rejection {
                 key,
-                code: Code::Fx0520,
+                code: Code::Td0520,
                 help: None,
             };
             self.reject(span, rejection, " (its obligations nest too deep to check)");
@@ -1504,7 +1504,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             let message = "`main` does not carry `#[tide::main]`, which starts the runtime".into();
             let help = Some("write `#[tide::main] fn main` in the crate root");
             self.diags
-                .report(tcx, span.source_callsite(), Code::Fx0512, message, help);
+                .report(tcx, span.source_callsite(), Code::Td0512, message, help);
         }
         let Some(local) = main.as_local() else { return };
         if self.recovering {
@@ -1532,7 +1532,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             self.diags.report(
                 self.tcx,
                 span.source_callsite(),
-                Code::Fx0506,
+                Code::Td0506,
                 message.into(),
                 help,
             );
@@ -1562,7 +1562,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                         && is_std_attr(self.tcx, self.crates, mac, "trusted_pure")
                     {
                         let message = format!("`#[trusted_pure]` {GRANT}");
-                        self.flag(data.call_site, Code::Fx0901, message);
+                        self.flag(data.call_site, Code::Td0901, message);
                     }
                 }
                 // A macro that did not resolve: Rust's lazy globals and thread-locals, which
@@ -1574,7 +1574,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                         _ => continue,
                     };
                     let message = format!("{what}; Tide has none");
-                    self.flag(data.call_site, Code::Fx0502, message);
+                    self.flag(data.call_site, Code::Td0502, message);
                 }
                 _ => {}
             }
@@ -1941,7 +1941,7 @@ impl<'a, 'tcx> Visitor<'tcx> for Walk<'a, 'tcx> {
         intravisit::walk_fn(self, kind, decl, body, def)
     }
 
-    /// An unsafe block needs the grant (UNSAFE-1) and a SAFETY comment (FX0902).
+    /// An unsafe block needs the grant (UNSAFE-1) and a SAFETY comment (TD0902).
     fn visit_block(&mut self, block: &'tcx hir::Block<'tcx>) {
         if let hir::BlockCheckMode::UnsafeBlock(hir::UnsafeSource::UserProvided) = block.rules {
             self.granted(block.span, "an `unsafe` block");

@@ -5,18 +5,18 @@ pub fn returned<'a>() -> View<'a> { let t = String::from("x"); View { s: &t } } 
 pub fn pushed(v: &mut Vec<View<'static>>) { let t = String::from("x"); v.push(View { s: &t }); } //~ E0597
 
 pub struct Doc<'a> { pub text: String, pub word: &'a str }
-pub fn method<'a>() -> Doc<'a> { let text = String::from("x"); Doc { word: text.as_str(), text } } //~ E0505 E0515 FX0210
-pub fn index<'a>() -> Doc<'a> { let text = String::from("x"); Doc { word: &text[..], text } } //~ E0505 E0515 FX0210
+pub fn method<'a>() -> Doc<'a> { let text = String::from("x"); Doc { word: text.as_str(), text } } //~ E0505 E0515 TD0210
+pub fn index<'a>() -> Doc<'a> { let text = String::from("x"); Doc { word: &text[..], text } } //~ E0505 E0515 TD0210
 pub struct MutDoc<'a> { pub text: String, pub word: &'a mut String }
-pub fn mutable<'a>() -> MutDoc<'a> { let mut text = String::from("x"); MutDoc { word: &mut text, text } } //~ E0505 E0515 FX0210
+pub fn mutable<'a>() -> MutDoc<'a> { let mut text = String::from("x"); MutDoc { word: &mut text, text } } //~ E0505 E0515 TD0210
 pub struct MutStrDoc<'a> { pub text: String, pub word: &'a mut str }
-pub fn mutable_method<'a>() -> MutStrDoc<'a> { let mut text = String::from("x"); MutStrDoc { word: text.as_mut_str(), text } } //~ E0505 E0515 FX0210
+pub fn mutable_method<'a>() -> MutStrDoc<'a> { let mut text = String::from("x"); MutStrDoc { word: text.as_mut_str(), text } } //~ E0505 E0515 TD0210
 pub struct Owner { pub text: String }
 pub struct FieldDoc<'a> { pub owner: Owner, pub word: &'a str }
-pub fn field<'a>() -> FieldDoc<'a> { let owner = Owner { text: String::from("x") }; FieldDoc { word: &owner.text, owner } } //~ E0505 E0515 FX0210
-pub fn field_method<'a>() -> FieldDoc<'a> { let owner = Owner { text: String::from("x") }; FieldDoc { word: owner.text.as_str(), owner } } //~ E0505 E0515 FX0210
+pub fn field<'a>() -> FieldDoc<'a> { let owner = Owner { text: String::from("x") }; FieldDoc { word: &owner.text, owner } } //~ E0505 E0515 TD0210
+pub fn field_method<'a>() -> FieldDoc<'a> { let owner = Owner { text: String::from("x") }; FieldDoc { word: owner.text.as_str(), owner } } //~ E0505 E0515 TD0210
 pub struct BoxDoc<'a> { pub owner: Box<String>, pub word: &'a str }
-pub fn boxed<'a>() -> BoxDoc<'a> { let owner = Box::new(String::from("x")); BoxDoc { word: &*owner, owner } } //~ E0505 E0515 FX0210
+pub fn boxed<'a>() -> BoxDoc<'a> { let owner = Box::new(String::from("x")); BoxDoc { word: &*owner, owner } } //~ E0505 E0515 TD0210
 
 // A Copy value is not moved, and a borrowed foreign field is not the moved owner's data.
 pub struct Copied<'a> { pub value: u32, pub view: &'a u32 }

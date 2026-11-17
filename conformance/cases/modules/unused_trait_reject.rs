@@ -6,5 +6,5 @@ mod extension {
 }
 // The resolver considers this trait, but method resolution uses the inherent method.
 #[allow(unused_imports)]
-use extension::Size; //~ FX0913
+use extension::Size; //~ TD0913
 pub fn measure(x: extension::S) -> u32 { x.size() }

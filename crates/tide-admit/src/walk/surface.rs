@@ -66,7 +66,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if allowed {
                     return false;
                 }
-                Code::Fx0102
+                Code::Td0102
             }
             MacroKind::Bang => {
                 // These forms have other owners, including select! in the habits slice.
@@ -97,7 +97,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if allowed {
                     return false;
                 }
-                Code::Fx0103
+                Code::Td0103
             }
             MacroKind::Attr => return false,
         };
@@ -108,7 +108,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             return false;
         }
-        let message = if code == Code::Fx0102 {
+        let message = if code == Code::Td0102 {
             format!(
                 "derive `{name}` is outside Tide's closed derive set; use Error, Encode or Decode"
             )
@@ -128,7 +128,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             self.report(
                 parameter.span,
-                Code::Fx0201,
+                Code::Td0201,
                 "a trait cannot have lifetime parameters; put the lifetime on a method or impl"
                     .into(),
             );
@@ -152,7 +152,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             if self.user_written(span) {
                 self.report(
                     span,
-                    Code::Fx0202,
+                    Code::Td0202,
                     "output lifetime cannot be elided; name the input lifetime the result borrows"
                         .into(),
                 );
@@ -172,7 +172,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && (self.can_select() || !matches!(from.kind(), ty::Adt(..) | ty::FnDef(..)))
             && !lossless_cast(self.tcx, from, to)
         {
-            self.report(e.span, Code::Fx0301, format!(
+            self.report(e.span, Code::Td0301, format!(
                 "`{from} as {to}` can lose information; use try_from, T::try_from_float(f.trunc()), truncate (same signedness, fixed widths), cast_signed/cast_unsigned, or round_from"));
         }
         if !self.can_select() {

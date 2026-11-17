@@ -14,7 +14,7 @@ reference picks the most Rust-like option consistent with the decisions.
 **(planned)** marks a v0 surface not built yet, **(partial)** one built in
 part (README's Status). The `tide` commands are planned; `tide-admit`
 checks, tests, and replays today.
-Diagnostic codes (`FX0201`, ...) are placeholders.
+Diagnostic codes (`TD0201`, ...) are placeholders.
 
 ## 0. How to use this document
 
@@ -59,17 +59,17 @@ Std supplies exactly these, as in Rust:
 a lint in libraries); `format!`, `write!`, `writeln!`, `vec!`, `matches!`;
 `assert!`, `assert_eq!`, `assert_ne!`, `debug_assert!`; `panic!`, `todo!`
 (also a typed hole, 13), `unimplemented!`, `unreachable!`; `dbg!` (an
-error in release builds, `FX0507`); and the log sink (6.5) `error!`,
+error in release builds, `TD0507`); and the log sink (6.5) `error!`,
 `warn!`, `info!`, `debug!`, `trace!`, with no `use` (`log::info!` and
 `tracing::info!` are also accepted; provisional, planned). Tide adds `invariant!`
 (10.1) and `hole!` (13, planned), not imported. The `unsafe` grant (11) admits
-`asm!`, `global_asm!`, and `naked_asm!` (`FX0520` without it).
+`asm!`, `global_asm!`, and `naked_asm!` (`TD0520` without it).
 
-Any other `!` form is `FX0103`, including `debug_assert_eq!` (write
+Any other `!` form is `TD0103`, including `debug_assert_eq!` (write
 `debug_assert!(a == b)`), `concat!`, and crate macros; `include_str!`,
-`env!`, and `option_env!` are `FX0520` (6.9), `thread_local!` and
-`lazy_static!` `FX0502`; `macro_rules!` and procedural macros are
-`FX0101`: use a generic function or trait, loop over a `const` array
+`env!`, and `option_env!` are `TD0520` (6.9), `thread_local!` and
+`lazy_static!` `TD0502`; `macro_rules!` and procedural macros are
+`TD0101`: use a generic function or trait, loop over a `const` array
 (test tables), or commit a generator's `.rs` output.
 
 ### 2.2 Derives
@@ -78,7 +78,7 @@ The derive set is closed: `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`,
 `Clone`, `Copy`, `Debug`, `Default` (as Rust), `Error`, `Encode`, `Decode`.
 They and the `Error` trait are in the prelude (12.3); remove
 `use thiserror::Error;`, `use std::error::Error;`, and `use serde::..`.
-`Serialize`/`Deserialize`/`thiserror::Error` are `FX0102` with safe fixes.
+`Serialize`/`Deserialize`/`thiserror::Error` are `TD0102` with safe fixes.
 
 - **`Error`** has `thiserror` semantics: `#[error("..")]` on a struct, an
   enum, or each variant generates `Display`; `#[from]` on a single-field
@@ -103,7 +103,7 @@ error or a string.
 ### 2.3 `const fn`, attributes, `cfg`
 
 - `const fn` as Rust, but deterministic and fuel-limited, with
-  `Pure + Sync` parameters (6.6), none `&mut` (`FX0518`).
+  `Pure + Sync` parameters (6.6), none `&mut` (`TD0518`).
 - Kept Rust attributes: `#[derive]`, `#[test]`, `#[should_panic]`, `#[cfg]`,
   `#[allow]`/`#[warn]`/`#[deny]`, `#[inline]`, `#[must_use]`, `#[repr]`,
   `#[non_exhaustive]`, `#[deprecated]`, `#[doc]`. `#[cfg]` accepts `test`,
@@ -156,7 +156,7 @@ Traps, all as in Rust:
 
 Lifetime parameters on traits, explicit `for<'a>`, and generic associated
 types are not in Tide (5.1). An elided output that cannot be resolved, or that
-elision ties to the wrong input (today rustc's own error), is `FX0202`; its fix suggests the named
+elision ties to the wrong input (today rustc's own error), is `TD0202`; its fix suggests the named
 lifetime (often the impl's `'a`).
 
 ### 3.3 Borrowing structs and enums
@@ -211,11 +211,11 @@ fn two(text: &str) -> Option<(Token<'_>, Token<'_>)> {
   `+ use<'a>` captures less.
 - A closure in a `'static` position (`Box<dyn Fn()>` in a signature or
   field, `spawn_isolated`) must capture no borrows: `move` owned values in
-  (`clone()`, `to_string()`), or write `+ 'a` (`FX0203`).
+  (`clone()`, `to_string()`), or write `+ 'a` (`TD0203`).
 
 ### 3.6 What is impossible, and what to write instead
 
-A struct cannot borrow from its own field (`FX0210`):
+A struct cannot borrow from its own field (`TD0210`):
 `struct Doc<'a> { text: String, words: Vec<&'a str> }` cannot be built with
 `words` borrowing its own `text`.
 
@@ -265,7 +265,7 @@ Allowed: same-signed integer widening, unsigned to wider signed,
 `f32 as f64`, fieldless enum to integer holding every discriminant.
 `usize`/`isize` count as 32 to 64 bits: `u32 as usize` and `usize as u64`,
 not `u64 as usize` (provisional). Addresses (11) count as `usize`.
-Lossy `as`: `FX0301`:
+Lossy `as`: `TD0301`:
 
 | Rust | Tide |
 | --- | --- |
@@ -283,7 +283,7 @@ Lossy `as`: `FX0301`:
 IEEE 754 as Rust. Rust leaves NaN bits and math precision unspecified, so
 float methods that read sign or bits (`to_bits`, `is_sign_positive`,
 `is_sign_negative`, `copysign`, `signum`, `total_cmp`, `min`, `max`) and math
-methods (`sin`, `exp`, `powf`, `ln`, ...) are `FX0520`. Use `std::{float,
+methods (`sin`, `exp`, `powf`, `ln`, ...) are `TD0520`. Use `std::{float,
 math}`, generic over `f32` and `f64` (signatures provisional):
 `float::bits(x)` (`u32` for an `f32`; any NaN reads as one canonical NaN),
 `float::min`/`max(a, b)` (-0.0 below +0.0), `float::total_cmp(a, b)`
@@ -302,17 +302,17 @@ are rejected:
 
 | Not allowed | Rust example | Code | Write instead |
 | --- | --- | --- | --- |
-| Specialization, overlapping impls | `default fn` | `FX0402` | one impl per type; a newtype |
-| Generic associated types | `type Item<'a>` | `FX0403` | owned items or indices |
-| Lifetime parameters on traits | `trait Parse<'a>` | `FX0201` | a lifetime on the method or the impl |
-| Higher-ranked bounds beyond elision, HKTs | `for<'a> Fn(&'a T) -> &'a U` | `FX0404` | `Fn(&T) -> &U` |
-| Negative impls, user auto traits | `impl !Send for T` | `FX0405` | a `PhantomData<Rc<()>>` field |
-| Impl where-clause not smaller than its head | `impl<T> Foo for T where Vec<T>: Foo` | `FX0406` | bound `T` directly |
-| Polymorphic recursion | `fn f<T>(x: T) { f(vec![x]) }` | `FX0407` | an enum or `Box<dyn ..>` |
-| Two inherent methods with one name | two `fn new` | `FX0408` | distinct names |
+| Specialization, overlapping impls | `default fn` | `TD0402` | one impl per type; a newtype |
+| Generic associated types | `type Item<'a>` | `TD0403` | owned items or indices |
+| Lifetime parameters on traits | `trait Parse<'a>` | `TD0201` | a lifetime on the method or the impl |
+| Higher-ranked bounds beyond elision, HKTs | `for<'a> Fn(&'a T) -> &'a U` | `TD0404` | `Fn(&T) -> &U` |
+| Negative impls, user auto traits | `impl !Send for T` | `TD0405` | a `PhantomData<Rc<()>>` field |
+| Impl where-clause not smaller than its head | `impl<T> Foo for T where Vec<T>: Foo` | `TD0406` | bound `T` directly |
+| Polymorphic recursion | `fn f<T>(x: T) { f(vec![x]) }` | `TD0407` | an enum or `Box<dyn ..>` |
+| Two inherent methods with one name | two `fn new` | `TD0408` | distinct names |
 
 A missing auto or marker trait never makes impls disjoint:
-`impl<T: Pure> K for T` and `impl K for Net` overlap (`FX0402`). A returned
+`impl<T: Pure> K for T` and `impl K for Net` overlap (`TD0402`). A returned
 `impl Trait` is
 `Send`, `Sync`, or `Pure` only if it names them
 (`-> impl Iterator<Item = u8> + Send`); it is `'static` when it captures no
@@ -321,7 +321,7 @@ borrow or states `+ 'static`.
 ### 5.2 Impl placement
 
 An `impl` lives in the module that defines the type or (for trait impls)
-the trait (`FX0401`, fix moves the block).
+the trait (`TD0401`, fix moves the block).
 
 ## 6. Authority: capabilities
 
@@ -371,7 +371,7 @@ fn main(root: Root) -> Result<(), AppError> {
 
 - `Root` has public fields `fs`, `net`, `clock`, `rand`, `env`, `stdin`,
   `proc`, `tasks`, and `log` (sink configuration, 6.5).
-- Every binary needs the attribute (`FX0512`, safe fix); it mints `root`
+- Every binary needs the attribute (`TD0512`, safe fix); it mints `root`
   via Rust's parameterless entry. `main` takes `root: Root` or nothing,
   returning Rust's `Termination` (taught: `()`, `Result<(), E: Debug>`,
   `ExitCode`). `Err(e)` prints `Error: {e:?}` and exits 1; for `Display`
@@ -379,10 +379,10 @@ fn main(root: Root) -> Result<(), AppError> {
 - Name `Root` only in `main`'s signature or as `Root::sim`.
   Field patterns may destructure `root`, including `main`'s parameter.
   `root` cannot be passed, borrowed into calls, stored, returned, or captured
-  (`FX0503`); move or borrow its fields (`root.fs`, `&root.clock`). Calling
-  `main` is `FX0506`; tests call functions taking capabilities.
+  (`TD0503`); move or borrow its fields (`root.fs`, `&root.clock`). Calling
+  `main` is `TD0506`; tests call functions taking capabilities.
 - `Root::sim(seed)` and everything in `std::sim` exist only in test code
-  (`FX0504`, 6.8).
+  (`TD0504`, 6.8).
 
 ### 6.3 Files: paths, append, durability
 
@@ -407,7 +407,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 ```
 
 - **`OpenOptions`** is Rust's builder without its ambient `open` method
-  (`FX0501`): `fs.open_with("events",
+  (`TD0501`): `fs.open_with("events",
   OpenOptions::new().read(true).append(true).create(true))?`. As in POSIX,
   such a file reads from offset 0, and every write goes to the end. A `File`
   carries the authority of the `Fs` that opened it.
@@ -437,7 +437,7 @@ impl File {        // io::Read, io::Write, io::Seek, also for &File
 
 Safe code has no mutable globals or thread-locals (`static mut`, a
 `static` holding atomics or `Mutex`, `thread_local!`, `lazy_static!`:
-`FX0502`). A `static` must be `'static + Sync + Pure`, its value computed
+`TD0502`). A `static` must be `'static + Sync + Pure`, its value computed
 at compile time by `const fn`. Build a value that needs run-time work in
 `main` and pass it down.
 
@@ -463,7 +463,7 @@ no reads, capability, or suspension, so functions stay authority-free; a pure de
   `to_file(file)`. `std::log` defines
   `Level::{Error, Warn, Info, Debug, Trace}` and `Format::{Text, Json}`.
   Defaults: `println!` to stdout; `eprintln!` and `info!` upward to stderr;
-  `dbg!` to stderr in debug builds (2.1). Library `println!` is lint `FX0508`.
+  `dbg!` to stderr in debug builds (2.1). Library `println!` is lint `TD0508`.
 - `Secret<T>` (planned) has no `Debug`/`Display`; read with `expose()`.
 
 ### 6.6 `Pure` and authority-free functions
@@ -471,7 +471,7 @@ no reads, capability, or suspension, so functions stay authority-free; a pure de
 `Pure` (prelude) means no authority is reachable from the type. Std declares
 it with a blanket impl, so rustc accepts every bound; Tide's checker decides
 it structurally wherever a type meets a `Pure` bound or is coerced to a
-`Pure` trait object (`FX0517`, unless the rule that needs `Pure` has its
+`Pure` trait object (`TD0517`, unless the rule that needs `Pure` has its
 own code). **Not `Pure`**: the capability types and `File`, `Command`, and
 other handles derived from them; synchronization handles (`Shared`, channel
 ends, `Scope`, `Task`, `Arc`, `sync::Weak`, atomics, `std::sync::raw`); raw
@@ -496,7 +496,7 @@ type is `Pure`. It cannot do I/O or observe time, randomness, or other
 tasks; its result depends only on its arguments' memory; it never suspends.
 Generic code is classified per instantiation; require it with a bound,
 `F: Fn(&T) -> U + Pure`. `#[pure]` on a function makes losing
-authority-freedom a compile error (`FX0511`). Statics (6.4), `const fn`
+authority-freedom a compile error (`TD0511`). Statics (6.4), `const fn`
 (2.3), `Shared` (7.4), parallel regions (8), and contract clauses (10.1)
 require `Pure`.
 
@@ -545,11 +545,11 @@ wait, and read virtual time.
 Ambient std calls (`std::fs::read`, `File::open`, `env::args`,
 `Instant::now`, `t.elapsed()`, `thread::sleep`, `rx.recv_timeout(d)` (use
 `recv_deadline`), `thread_rng`, `io::stdin()`, `Command::new`,
-`process::exit`, ...) are `FX0501`; the fix uses a capability in scope or
+`process::exit`, ...) are `TD0501`; the fix uses a capability in scope or
 proposes adding the parameter (companion 14.2).
 
 The checker admits only listed `core`, `alloc`, and std inherent items;
-everything else is `FX0520`, notably: hardware intrinsics (`core::arch`);
+everything else is `TD0520`, notably: hardware intrinsics (`core::arch`);
 addresses without the `unsafe` grant (11); `core::sync::atomic`;
 `OnceLock`, `LazyLock`; float observers and math methods (4.3); I/O
 methods on re-exported std types (`Path::exists`, `metadata`; use `fs`);
@@ -571,7 +571,7 @@ capability it uses.
 ## 7. Concurrency
 
 There is no `async`/`await`, `Future`, `Pin`, or executor choice in library
-code (`FX0601`; the safe fix deletes `async` and `.await`). A function
+code (`TD0601`; the safe fix deletes `async` and `.await`). A function
 suspends only inside a capability or synchronization operation;
 authority-free code never suspends. Companion 14.3 maps async Rust idioms.
 
@@ -598,7 +598,7 @@ pub struct Panicked { pub message: String }          // (provisional)
 ```
 
 - **Structure.** Tasks are spawned into scopes and cannot outlive them;
-  `thread::spawn` and `tokio::spawn` are `FX0602`. `scope` returns only
+  `thread::spawn` and `tokio::spawn` are `TD0602`. `scope` returns only
   after every child has finished; scope exit and `join` wait, never
   cancelled (7.2). Children may borrow anything that outlives the `scope`
   call, capabilities and `Shared` handles included.
@@ -686,7 +686,7 @@ fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)
 ### 7.3 Channels
 
 Channels are Rust's `std::sync::mpsc`, except that creation takes `&Tasks`
-(7.4): `channel(tasks)` (unbounded; a lint in libraries, `FX0608`),
+(7.4): `channel(tasks)` (unbounded; a lint in libraries, `TD0608`),
 `sync_channel(n, tasks)`, `Sender: Clone`, `send`, `try_send`, `recv`,
 `try_recv`, `recv_deadline(t)`, and iteration, which ends at the first
 `recv` error. `recv`, `recv_deadline`, and every `SyncSender::send`
@@ -695,7 +695,7 @@ are checkpoints, so their errors are enums with `is_cancelled()`:
 and `SendError::{Disconnected(v), Cancelled(v)}` (`into_inner()`). A
 disconnect alone is not an echo (7.1). Payloads must be `Send`. A `Receiver` has
 one consumer; for N workers over a list, use `Tasks::limit` (7.1). To wait
-on several sources (Rust's `select!`, `FX0605`), send one enum through one
+on several sources (Rust's `select!`, `TD0605`), send one enum through one
 channel.
 
 ### 7.4 `Shared<T>`
@@ -714,15 +714,15 @@ impl<T: Send + Pure> Shared<T> {                   // std::sync
 pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, PartialEq, Eq, Error (provisional)
 ```
 
-- `Shared<T>` replaces `Arc<Mutex<T>>` and `.lock().unwrap()` (`FX0604`).
+- `Shared<T>` replaces `Arc<Mutex<T>>` and `.lock().unwrap()` (`TD0604`).
   It is a handle (`clone()` names the same cell), `Send + Sync`, not
-  `Pure`. Payloads are `Send + Pure` (`FX0606`), so a cell never holds a
+  `Pure`. Payloads are `Send + Pure` (`TD0606`), so a cell never holds a
   capability, channel end, or another `Shared`.
 - **Creating a handle takes `&Tasks`.** Cells, channel ends, `Arc`,
   `sync::Weak`, and atomics let tasks observe each other's timing (D7), so
   every constructor takes `&Tasks`, last: `Shared::new(v, tasks)`,
   `channel(tasks)`, `Arc::new(v, tasks)`, `Arc::downgrade(&a, tasks)`,
-  `AtomicU64::new(0, tasks)` (planned); `FX0505` without it (`tide fix
+  `AtomicU64::new(0, tasks)` (planned); `TD0505` without it (`tide fix
   --thread Tasks`). Cloning needs nothing. Authority-free code can neither create
   nor receive a handle. A test takes `&sim.tasks` from `Root::sim(seed)`.
 - `with2` and `with_all` acquire all their cells atomically in a global
@@ -732,7 +732,7 @@ pub enum LockError { Aliased, Poisoned }           // Debug, Clone, Copy, Partia
   on an empty slice.
 - `f` must be `Pure`, so it captures no capability, channel end, or
   `Shared` handle and cannot do I/O, suspend, or nest another `with`
-  (`FX0603`). Logging is allowed; printing is a lint (`FX0607`).
+  (`TD0603`). Logging is allowed; printing is a lint (`TD0607`).
 - Acquisition waits FIFO per cell and is not a checkpoint: it still works in
   a cancelled scope.
 - A panic in `f`, an overflow trap included, poisons every cell it held;
@@ -782,11 +782,11 @@ pixels.par_for(|p| *p = p.saturating_add(10));         // over &mut [u8], disjoi
   import): `fn par_map<U: Send>(&self, f: impl Fn(&T) -> U + Pure + Send +
   Sync) -> Vec<U> where T: Pure + Sync` and `fn par_for(&mut self, f: impl
   Fn(&mut T) + Pure + Send + Sync) where T: Pure + Send`; `par_sort` needs `T:
-  Pure + Send` too. The element bounds (`FX0612`) keep every `Shared` cell,
+  Pure + Send` too. The element bounds (`TD0612`) keep every `Shared` cell,
   channel, and capability out of reach of a branch.
 - `join` closures must be `Pure + Send`; the slice methods' closures are
-  shared by branches, so also `Fn` and `Sync` (no owned `Cell`) (`FX0610`).
-  Shared captures must be `Pure + Sync` (`FX0611`: not `&RefCell`, `&Rc`,
+  shared by branches, so also `Fn` and `Sync` (no owned `Cell`) (`TD0610`).
+  Shared captures must be `Pure + Sync` (`TD0611`: not `&RefCell`, `&Rc`,
   `&Arc`, or a capability). Disjoint `&mut` splits are fine.
 - When no branch panics, `join`, `par_map`, and `par_for` equal their
   sequential versions, including sink output order. Under simulation they
@@ -802,14 +802,14 @@ pixels.par_for(|p| *p = p.saturating_add(10));         // over &mut [u8], disjoi
 ## 9. Errors and panics
 
 - Error handling is Rust's, but an ignored `Result` is an error
-  (`FX0702`); `let _ = r;` discards on purpose (provisional: Rust warns).
+  (`TD0702`); `let _ = r;` discards on purpose (provisional: Rust warns).
 - **Panics** (`panic!`, overflow, out-of-bounds, failed `assert!`, `unwrap`
   on `None`, a violated contract) unwind the current task and run
   destructors. A panic during that unwinding, for example in a destructor,
   aborts the process, as does stack overflow, as in Rust. `tide test` and
   `tide sim` then rerun each test and seed in flight alone, report each that
   aborts (a seed with its replay command), and go on in a fresh process; the
-  run fails even if no rerun aborts. There is no `catch_unwind` (`FX0701`);
+  run fails even if no rerun aborts. There is no `catch_unwind` (`TD0701`);
   isolate risky work with `tasks.spawn_isolated` (7.1). A panic in the main
   task exits with code 101.
 
@@ -822,7 +822,7 @@ builds, erased in release, and used to drive property tests.
 
 | Clause | Where | Meaning |
 | --- | --- | --- |
-| `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`FX0802`) | precondition, checked at entry; a failure blames the caller |
+| `#[requires(e)]` | attribute on a fn or inherent method, not a trait or trait-impl method (`TD0802`) | precondition, checked at entry; a failure blames the caller |
 | `#[ensures(e)]` | as `requires` | postcondition, checked at each return; a failure blames the callee |
 | `invariant!(e);` | first statements of a loop body | checked at each loop head: entry (even for zero iterations), every iteration, exit |
 
@@ -842,7 +842,7 @@ builds, erased in release, and used to drive property tests.
   `old(*v)` is its entry value. If `v`'s outer lifetime appears in another
   parameter's type, the result type (a returned `impl Trait` captures it),
   or a bound other than on the right of an outlives bound (`T: 'v`), `v`
-  may be named only inside `old(..)` (`FX0803`, 04 §4.1); the usual fix
+  may be named only inside `old(..)` (`TD0803`, 04 §4.1); the usual fix
   gives the other parameter its own lifetime.
 - **`old(e)`** evaluates `e` at entry and snapshots it: `Copy` values are
   copied, others cloned (a type that is neither is an error), and a reference
@@ -953,10 +953,10 @@ needs human approval (11), except adding one where there was none.
 
 | Hole | Spelling | Rule |
 | --- | --- | --- |
-| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | `unsafe` grant (`FX0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`FX0902`, provisional: error) |
-| A type the checker finds not `Pure` but that is authority-free (planned) | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`FX0901`) |
-| `std::sync::raw` locks, weaker atomic orderings (planned) | — | `unsafe` grant (`FX0520` without it) |
-| Addresses | `*const T`, `*mut T`, `{:p}`; a function pointer's integer casts, ordering, hashing, `Debug` | `unsafe` grant (`FX0520` without it) |
+| Unsafe code | `unsafe { .. }`, `unsafe fn`, `unsafe extern` blocks and items, `unsafe impl`, `#[unsafe(..)]` | `unsafe` grant (`TD0901`); each `unsafe { .. }` block needs a `// SAFETY:` comment (`TD0902`, provisional: error) |
+| A type the checker finds not `Pure` but that is authority-free (planned) | `#[trusted_pure]` with a reason, not `unsafe impl Pure` | `unsafe` grant (`TD0901`) |
+| `std::sync::raw` locks, weaker atomic orderings (planned) | — | `unsafe` grant (`TD0520` without it) |
+| Addresses | `*const T`, `*mut T`, `{:p}`; a function pointer's integer casts, ordering, hashing, `Debug` | `unsafe` grant (`TD0520` without it) |
 
 `tide review <base>` prints the trust diff: public signatures, declared
 authority (12.4), contracts, trust holes, and grants (partial). Changes
@@ -964,7 +964,7 @@ that need a human approval, recorded outside the agent's write scope and
 verified by CI (planned): widening authority, weakening or removing a
 contract (10.3), adding a trust hole, and changing a `#[protected]` test.
 Sealed items (`tide.seal`, planned) are fixed, except bodies it leaves
-free (`FX0920`, companion 18). Never make one of these to get a green
+free (`TD0920`, companion 18). Never make one of these to get a green
 check: if a contract, sealed item, or `#[protected]` test looks wrong,
 stop and report it. Test another agent's
 branch without its own VM only if `tide review` against a reviewed base
@@ -976,17 +976,17 @@ prints `run: covered` (companion 19; planned, so not yet).
 
 - As in Rust: `src/main.rs` and `src/lib.rs` are crate roots, `mod net;`
   declares `src/net.rs` (or `src/net/mod.rs`). `mod foo;` with no file is
-  `FX0910`; `#[path]` is `FX0911`.
+  `TD0910`; `#[path]` is `TD0911`.
 - `tide check path.rs` and `tide test path.rs` treat one file as a crate
   root, for single-file programs and exercises: a binary root if it
   defines `main`, otherwise a library root, where `println!` is lint
-  `FX0508` (provisional).
+  `TD0508` (provisional).
 
 ### 12.2 Imports
 
-- `use` as Rust; `extern crate` is `FX0912`.
-- **Unused imports are errors** (`FX0913`, safe fix). **Import cycles
-  between modules are errors** (`FX0914`): put shared types in leaf modules;
+- `use` as Rust; `extern crate` is `TD0912`.
+- **Unused imports are errors** (`TD0913`, safe fix). **Import cycles
+  between modules are errors** (`TD0914`): put shared types in leaf modules;
   a child's `use super::*` is fine while the parent does not import the
   child.
 
@@ -1046,7 +1046,7 @@ only = ["crate::net::*"]         # no other module may declare Net
 
 - **Authority policies** are checked against declared authority (the
   capability types a function's parameters and captures can reach):
-  violations are `FX0516`; policy changes appear in the trust diff.
+  violations are `TD0516`; policy changes appear in the trust diff.
 - Nothing reads `tide.toml` or `tide.lock` yet: the driver builds one
   crate, granted `unsafe` by `--tide-grant=unsafe`.
 - Escape hatches are granted per dependency. `tide.lock` is on by default,
@@ -1054,7 +1054,7 @@ only = ["crate::net::*"]         # no other module may declare Net
   holes; an upgrade that widens either fails until a human approves. A
   dependency name that does not exist is rejected, never guessed.
 - No `build.rs`, install hooks, or code that runs at fetch or build time
-  (`FX0915`; generators: 2.1). Tide's driver runs rustc itself, not Cargo;
+  (`TD0915`; generators: 2.1). Tide's driver runs rustc itself, not Cargo;
   `RUSTFLAGS` and unstable features do not apply.
 
 ## 13. Toolchain loop (planned)
@@ -1067,7 +1067,7 @@ only = ["crate::net::*"]         # no other module may declare Net
   `tide sim <bin> -- args` runs `main` under many seeds;
   `tide sim --replay <manifest>` replays a run (companion 17).
 - `tide eval '<expr>'` evaluates an expression against the package;
-  `tide explain FX0201` explains a code with a before/after example;
+  `tide explain TD0201` explains a code with a before/after example;
   `tide review <base>` prints the trust diff (11); `tide fmt` is the one
   canonical format.
 

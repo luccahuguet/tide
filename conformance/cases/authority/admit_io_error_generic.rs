@@ -3,5 +3,5 @@
 use std::io;
 
 pub fn wrap<E: Error + Send + Sync + 'static>(e: E) -> io::Error {
-    io::Error::other(e) //~ FX0517
+    io::Error::other(e) //~ TD0517
 }

@@ -26,7 +26,7 @@
 //!   at entry. A kernel-blocked real read waits for
 //!   input/EOF. `Lines<StdinReader>` takes one line per fill, preserving later lines on drop;
 //! - `Pure` (reference 6.6), which the admission driver decides, and the prelude's
-//!   `#[pure]` function attribute, enforced by the existing FX0511 signature check;
+//!   `#[pure]` function attribute, enforced by the existing TD0511 signature check;
 //! - `arena::{Arena, Id}`: generational graph handles, checked disjoint mutable access,
 //!   stale-handle rejection, and provisional slot-order iteration (reference §3.6).
 //!   Handles have no cross-arena identity check; `Id<T>` is `Pure` for every `T`;

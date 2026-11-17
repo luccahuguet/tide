@@ -4,15 +4,15 @@ use std::task::{Panicked, Tasks};
 
 pub fn by_capture(tasks: &Tasks) -> Result<usize, Panicked> {
     let owned = String::from("x");
-    tasks.spawn_isolated(|| owned.len()) //~ E0373 FX0203
+    tasks.spawn_isolated(|| owned.len()) //~ E0373 TD0203
 }
 
 pub fn by_parameter(tasks: &Tasks, name: &str) -> Result<usize, Panicked> {
-    tasks.spawn_isolated(move || name.len()) //~ E0521 FX0203
+    tasks.spawn_isolated(move || name.len()) //~ E0521 TD0203
 }
 
 pub fn named_closure(tasks: &Tasks) -> Result<usize, Panicked> {
     let owned = String::from("x");
-    let job = || owned.len(); //~ E0373 FX0203
+    let job = || owned.len(); //~ E0373 TD0203
     tasks.spawn_isolated(job)
 }

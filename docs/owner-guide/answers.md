@@ -20,9 +20,9 @@ code the checker admits. [1]
 
 **3. "rustc has soundness bugs. Can't malicious code forge a capability?"**
 Through a compiler bug, in principle yes, and we say so. We probed it:
-rust#25860 got through (fx-6xi2), and `FX0206` now closes that route. A red
+rust#25860 got through (fx-6xi2), and `TD0206` now closes that route. A red
 team of over 40 routes (fx-qlek.5) found two forms of one more route,
-rust#57893, both now closed by `FX0402`; every other escape route it lists
+rust#57893, both now closed by `TD0402`; every other escape route it lists
 was rejected. Other soundness bugs may remain. Test runs the driver starts
 (`--tide-run-test`, `--replay`) are inside a Linux kernel sandbox that
 doesn't depend on the compiler; a test binary run directly gets none.

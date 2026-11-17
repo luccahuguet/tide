@@ -20,5 +20,5 @@ impl Value for Deep {
 }
 
 pub fn erase(d: &Deep) -> &dyn PureValue {
-    d //~ FX0517
+    d //~ TD0517
 }

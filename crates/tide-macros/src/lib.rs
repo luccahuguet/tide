@@ -15,10 +15,10 @@ mod test_guidance;
 
 use proc_macro::{Delimiter, Group, Ident, Span, TokenStream, TokenTree};
 
-/// Asserts authority-freedom of a function, checked by the driver's existing FX0511 rule.
+/// Asserts authority-freedom of a function, checked by the driver's existing TD0511 rule.
 /// Arguments and non-function targets are errors. Original tokens retain their spans.
 /// A Rust 2024 `safe fn` foreign declaration gets this macro's generic target error rather
-/// than FX0511 and is still rejected.
+/// than TD0511 and is still rejected.
 #[proc_macro_attribute]
 pub fn pure(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Some(t) = attr.into_iter().next() {
@@ -277,6 +277,6 @@ pub fn invariant(input: TokenStream) -> TokenStream {
             .into_iter()
             .next()
             .map_or(Span::call_site(), |t| t.span()),
-        "FX0806: invariant!(..) must open a loop body in a function with #[invariants], #[requires], or #[ensures]",
+        "TD0806: invariant!(..) must open a loop body in a function with #[invariants], #[requires], or #[ensures]",
     )
 }

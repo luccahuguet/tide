@@ -10,5 +10,5 @@ pub fn poll(rx: &Receiver<u32>, clock: &Clock) -> Result<u32, Box<dyn Error + Se
 }
 
 pub fn poll_ambient(rx: &Receiver<u32>) -> Option<u32> {
-    rx.recv_timeout(Duration::from_millis(10)).ok() //~ E0599 FX0501
+    rx.recv_timeout(Duration::from_millis(10)).ok() //~ E0599 TD0501
 }

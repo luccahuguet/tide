@@ -61,7 +61,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             self.report(
                 self.tcx.def_span(def).source_callsite(),
-                Code::Fx0802,
+                Code::Td0802,
                 "requires and ensures belong on free functions or inherent methods".into(),
             );
         }
@@ -104,7 +104,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                         if self.trait_method && !entry {
                             self.walk.report(
                                 expr.span.source_callsite(),
-                                Code::Fx0802,
+                                Code::Td0802,
                                 "requires and ensures belong on free functions or inherent methods"
                                     .into(),
                             );
@@ -229,7 +229,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 });
             if escapes {
                 for span in spans {
-                    self.report(span, Code::Fx0803,
+                    self.report(span, Code::Td0803,
                         "this mutable parameter can escape the call; name it only inside `old(..)` in ensures".into());
                 }
             }

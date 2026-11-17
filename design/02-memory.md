@@ -186,7 +186,7 @@ Capture      ::= 'use' '<' .. '>'                 placement in LIFE-2
   It lists every type parameter in scope and every lifetime its bounds name,
   so it cannot be written while an argument-position `impl Trait` is in
   scope.
-- **LIFE-3. Not accepted** (`FX0201`, `FX0403`, `FX0404`, with a suggested
+- **LIFE-3. Not accepted** (`TD0201`, `TD0403`, `TD0404`, with a suggested
   rewrite), as beyond D4's power ceiling: lifetime parameters on traits
   (`trait Parse<'a>`), explicit `for<'a>` (higher-ranked lifetimes come from
   elision in `Fn` sugar and `fn` pointer types, §5.4), and generic
@@ -232,7 +232,7 @@ Elision follows Rust's rules exactly.
   every elided output position gets it.
 - **Rule 2.** If the receiver is `&self` or `&mut self`, every elided output
   position gets the receiver reference's origin.
-- **LIFE-4. Otherwise** an elided output lifetime is an error (`FX0202`).
+- **LIFE-4. Otherwise** an elided output lifetime is an error (`TD0202`).
   The fix lists the candidate named lifetimes and `'static`.
 - **Closure-bound sugar.** Inside `Fn(&A) -> &B`, the same rules apply, and
   the argument origins are higher-ranked.
@@ -488,9 +488,9 @@ the reference's origin. In detail:
 - **Type parameters** are captured as in Rust.
 - **OPAQUE-2. Auto traits.** An opaque type is `Send`, `Sync`, or `Pure` only
   if its bounds state it, and the hidden type must then satisfy them. Using
-  one as `Send` or `Sync` that its bounds do not state is `FX0205`, which
+  one as `Send` or `Sync` that its bounds do not state is `TD0205`, which
   rustc accepts when the hidden type has the trait; a missing `Pure` is
-  `FX0517` (§9). Rust's auto-trait leakage would make dependents depend on the
+  `TD0517` (§9). Rust's auto-trait leakage would make dependents depend on the
   function's body, which D12 forbids. In v1 a hidden type that is
   `ThreadBound` must be returned as `impl Trait + ThreadBound`, as a `dyn`
   must carry it through a companion supertrait (`03-authority-concurrency.md`
@@ -539,7 +539,7 @@ the reference's origin. In detail:
   closure must work for every `ρs` that carries the loans of `'env`.
   Scoped tasks use this (§8.2), as Rust's `std::thread::scope` does.
 - **CLOSURE-3.** Coercing a function item to a `fn` pointer type is
-  `FX0206` when the item implies an outlives bound that does not hold
+  `TD0206` when the item implies an outlives bound that does not hold
   trivially: one origin outliving another, or a type parameter or an
   associated type outliving an origin. `&'a &'b ()` implies `'b: 'a`, and
   `&'a T` implies `T: 'a`. A bound holds trivially when the outliving side
@@ -549,7 +549,7 @@ the reference's origin. In detail:
   those of its argument and return types and, for a method, of its impl
   header. For a trait method that is the impl that selection picks; when
   no impl can be selected, as through a type parameter's bound, the
-  coercion is `FX0206` too. A `fn` pointer type cannot carry these bounds
+  coercion is `TD0206` too. A `fn` pointer type cannot carry these bounds
   and rustc does not check them at the coercion, so rustc accepts such a
   coercion even where it forges a lifetime (rust-lang/rust#25860). The rule
   is a syntactic conservative rejection: it looks at the item's
@@ -568,7 +568,7 @@ the reference's origin. In detail:
   leaves open. A closure coerced to a `fn` pointer carries the same hole
   when its expected type has two parameters sharing one higher-ranked
   origin, and that route stays closed only because such a type needs an
-  explicit `for<'a, 'b>` binder, which is `FX0404` (LIFE-3). A later rule
+  explicit `for<'a, 'b>` binder, which is `TD0404` (LIFE-3). A later rule
   may accept the instantiations that keep the bounds.
 
 ## 6. Drop check
@@ -670,7 +670,7 @@ are derived structurally, as in Rust:
 | capabilities, `Scope<'s, 'env, E>`, atomics | yes | yes |
 
 `unsafe impl Send` and `unsafe impl Sync`, like every `unsafe impl`, are
-allowed only in packages granted `unsafe` (`FX0901`, 03 UNSAFE-1), and each
+allowed only in packages granted `unsafe` (`TD0901`, 03 UNSAFE-1), and each
 one is a trust hole. (`SEND-2` is retired.)
 
 **SEND-3. Task boundaries** require `Send` (by value) or `Sync` (by
@@ -740,7 +740,7 @@ impl<'s, 'env, E> Scope<'s, 'env, E> {
   borrows.
 - **SCOPE-2. `Task<'s, U, E>`** has origin `σ`. Because `σ` is higher-ranked,
   neither a `Scope` nor a `Task` can escape through `T`.
-- **SCOPE-3. `spawn_isolated`** takes an `Owned` closure (`FX0203`), so it
+- **SCOPE-3. `spawn_isolated`** takes an `Owned` closure (`TD0203`), so it
   borrows nothing from the caller and has no origin to check.
 - **Grandchildren.** A child may capture the `Scope` (`Scope: σ` holds).
   `σ` is invariant, so it cannot shrink to admit shorter borrows.
@@ -845,7 +845,7 @@ after a panicking child (§8.3).
 declares it with a blanket impl, so rustc accepts every `Pure` bound; the
 checker decides it structurally wherever a type meets a `Pure`-implying
 obligation or is coerced to a `Pure` trait object, not at the blanket impl,
-and reports a failure as 03 §3.1 says (`FX0517` unless the rule that needs
+and reports a failure as 03 §3.1 says (`TD0517` unless the rule that needs
 `Pure` has its own code). Outside std, a type the rule rejects is declared
 `Pure` only by `#[trusted_pure]` with a reason, in a package granted
 `unsafe` (03 UNSAFE-1), and each such attribute is a trust hole; it claims
@@ -864,7 +864,7 @@ depends on other tasks, for the type's own fields: a generic marked type is
 
 **PURE-2.** Coherence never treats a missing auto or marker trait or bound
 (`Send`, `Sync`, `Pure`, `'static`) as making two impls disjoint (D4,
-`FX0402`): `impl<T: Debug + Pure> K for T` and `impl K for Net` overlap,
+`TD0402`): `impl<T: Debug + Pure> K for T` and `impl K for Net` overlap,
 although `Net` is not `Pure`. So a private-field edit that changes a type's
 auto traits cannot create or remove an overlap. rustc agrees (E0119), for
 `Pure` through the blanket impl.
@@ -914,7 +914,7 @@ all `Pure` is authority-free: no I/O, time, randomness, synchronization with
 other tasks, or suspension. Its result is a function of the state of memory
 reachable from its arguments. `Cell`, `RefCell` and `Rc` are `Pure` because
 that state is private to the task. `OnceLock` and `LazyLock` are not
-admitted (ADMIT-1, `FX0520`): shared by `&` in a parallel region, they would
+admitted (ADMIT-1, `TD0520`): shared by `&` in a parallel region, they would
 reveal which branch initialized them, through the value, its sink output,
 or its panic. Build the value before the parallel region; between spawned
 tasks, use a `Shared<Option<T>>`. Creating a synchronization handle takes
@@ -945,7 +945,7 @@ error. The conversion their `E: Into<Box<dyn Error + Send + Sync>>` bound
 performs must reach one of alloc's four `From` impls for
 `Box<dyn Error + Send + Sync>`, by identity (ADMIT-1): from an
 `E: Error + Send + Sync` with `E: Pure`, from `String`, from `&str`, or from
-`Cow<'_, str>`. Anything else is `FX0517`, including a user `From` or `Into`
+`Cow<'_, str>`. Anything else is `TD0517`, including a user `From` or `Into`
 impl and the reflexive `From<T> for T`. A bound on the input alone is not
 enough: a user conversion could turn a `Pure` key into a payload whose type
 has room for a `Shared`, and `get_mut` with `downcast_mut` could put one
@@ -1439,7 +1439,7 @@ compares the two checkers' verdicts.
   catch because rustc accepts them. §5.4's CLOSURE-3 closes this route
   conservatively, and its known exploits are in the negative test corpus.
   rustc has other open soundness bugs; the driver also closes the trait-object
-  route of rust-lang/rust#57893 (`FX0402`), and no Tide rule closes the rest
+  route of rust-lang/rust#57893 (`TD0402`), and no Tide rule closes the rest
   (03 RUN-4).
 - **R4. The audited std set** (`Arena`, `Shared` and its `with` methods,
   channels, `Scope`, the eyepatch containers) has Rust std's trust model and

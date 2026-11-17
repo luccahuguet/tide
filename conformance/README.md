@@ -34,8 +34,8 @@ admission driver does (ADMIT-2); the case's rustc errors are the union of the
 two. It then checks the case the same two ways with the admission driver,
 `crates/tide-admit`, against the stub std built by the pinned nightly, passing
 `--tide-grant=unsafe` for `//@ grants: unsafe` and `--tide-profile=release`
-for `//@ profile: release`. The driver's `FX` codes are
-the ones `tide-admit --tide-print-codes` lists, such as `FX0520`; its diagnostics in
+for `//@ profile: release`. The driver's `TD` codes are
+the ones `tide-admit --tide-print-codes` lists, such as `TD0520`; its diagnostics in
 those codes, with their severity, are the union of the two runs. Library-only lints apply
 to the library build, not its executable test harness. It needs an x86_64 host
 (`authority/admit_hardware` names `core::arch::x86_64`), stable rustc and cargo
@@ -44,9 +44,9 @@ and the crates in `rustc/std/Cargo.lock`, offline. It prints one line per
 case:
 
 - `PASS`: rustc's errors match the case's rustc marks, the driver's diagnostics
-  match its marks in the driver's codes, and the case has no other `FX`
+  match its marks in the driver's codes, and the case has no other `TD`
   marks.
-- `AWAITS CHECKER`: both match, and `FX` marks in other codes remain, which
+- `AWAITS CHECKER`: both match, and `TD` marks in other codes remain, which
   only later slices of the checker produce; the line lists those codes.
 - `FAIL`: rustc's errors differ from the rustc marks (rustc's output
   follows, indented); the driver's diagnostics in its codes differ from those
@@ -72,22 +72,22 @@ This remains a compile-time stub oracle, without an OS build/test sandbox:
 the stub never runs. Live outside-file and environment canaries belong to
 the driver's integration tests, since the stable oracle would read them.
 
-Only the driver's codes are enforced: in any other code, a wrong `FX` mark
-still awaits the checker, and a missing one can let a case pass. The `FX`
+Only the driver's codes are enforced: in any other code, a wrong `TD` mark
+still awaits the checker, and a missing one can let a case pass. The `TD`
 marks are the design's expected verdicts, which each slice of the checker is
 run against.
 
-The surface slice enforces `FX0102`, `FX0103`, `FX0201`, `FX0202`, `FX0203`,
-`FX0210` and `FX0301` as errors. `FX0202` covers LIFE-4's unresolved output
+The surface slice enforces `TD0102`, `TD0103`, `TD0201`, `TD0202`, `TD0203`,
+`TD0210` and `TD0301` as errors. `TD0202` covers LIFE-4's unresolved output
 elision in function signatures, bare function types and `Fn` sugar wherever
-they occur; wrong-input elision stays rustc's region error. `FX0203` labels
+they occur; wrong-input elision stays rustc's region error. `TD0203` labels
 capture failures at an actual static object destination or
 `Tasks::spawn_isolated`. E0373 uses rustc's own closure and borrowed-place spans,
 including projections, independently of capture provenance. E0521/E0597 and
 uncoded region errors require both a static destination and a certain capture
 chain; E0515 requires a certain captured borrow at the returned destination.
 Local errors inside the closure body receive no label.
-`FX0210` labels E0505/E0515/E0597 inside a struct literal only when one field
+`TD0210` labels E0505/E0515/E0597 inside a struct literal only when one field
 moves a whole local owner and another stores a reference borrowed from it using `&`, `&mut`, or a
 receiver-tied borrow method. A projected borrow counts when its loan root is
 that moved owner. Copies, reborrows, raw-pointer results and loan paths through
@@ -96,11 +96,11 @@ matches E0505 only at the exact span of the moved owner field's value, and E0515
 the primary span lies inside the paired borrow field's expression. E0515 on
 an entire returned literal also qualifies when its secondary "borrowed here"
 label lies inside that paired borrow field. Other fields' errors receive no
-FX0210. The label
+TD0210. The label
 layer prefers precision over recall: every label is a supplementary
 explanation of an error rustc already rejects and must never be false. When
 provenance is uncertain, the label may be absent; rustc's error and rejection
-remain. For FX0203 errors other than E0373, every step must be a whole binding with
+remain. For TD0203 errors other than E0373, every step must be a whole binding with
 one certain initializer or assignment, `&local`, `&mut local`, or a method on a
 whole local whose signature returns a borrow tied to that receiver. An owned
 local's storage terminates the chain; its factory's arguments are not traced.
@@ -109,13 +109,13 @@ step anywhere discards the entire chain. Deferred assignments are followed
 only as a single direct statement before capture in the declaring body;
 multiple or conditional assignments are omitted. These are known limits on
 labels, not admission exceptions. The rules
-sourced only from the reference/decision record use `REF-<FX digits>` IDs in
-`rules.md`. FX0902's comment rule
+sourced only from the reference/decision record use `REF-<TD digits>` IDs in
+`rules.md`. TD0902's comment rule
 applies only to unsafe blocks, with or without the grant: a `// SAFETY:` line
 in the comment lines directly above the block or its statement, never a
 trailing same-line comment or a requirement on unsafe impls.
 
-`FX0206` (CLOSURE-3) is an error at every coercion of a function item to a
+`TD0206` (CLOSURE-3) is an error at every coercion of a function item to a
 `fn` pointer, whether implicit, an `as` cast, or the arms of an `if` or
 `match`, for local and std items, methods and constructors alike, when the
 implied bounds that rustc computes for the item's argument and return types,
@@ -132,22 +132,22 @@ types with a lifetime parameter, and functions such as
 accepted. For an `if`, rustc reifies each arm's block, so the diagnostic
 points at the block.
 
-The contracts/modules slice enforces `FX0802`, `FX0803`, `FX0902`, and
-`FX0910`–`FX0915` as errors. Module cycles use only `use` items (public uses
+The contracts/modules slice enforces `TD0802`, `TD0803`, `TD0902`, and
+`TD0910`–`TD0915` as errors. Module cycles use only `use` items (public uses
 and globs included), targeting the module defining the imported item or the
 imported module itself; declarations, body paths and external crates add no
-edge. FX0915 is package-level, without a source line: the invocation test
+edge. TD0915 is package-level, without a source line: the invocation test
 `build_scripts_are_rejected_without_running` is its violating/accepted pair
 and asserts error severity and exit status.
 
-The trait slice enforces `FX0401`–`FX0408` as errors. Impl placement uses
+The trait slice enforces `TD0401`–`TD0408` as errors. Impl placement uses
 exact module equality: the local ADT's module or the trait's module; for a
 non-local self type only a local trait's module qualifies. If neither module is
 local, the impl is not admitted; implement a trait on the local type (for
 example, `Into<u16> for Local` rather than `From<Local> for u16`) or use a
 newtype. A function-local impl uses the enclosing module. Specialization is checked before lowering. An impl whose self type is a type parameter or a projection that
 may be unsized, of a dyn-compatible trait that declares an associated type without `where Self: Sized`,
-is `FX0402`: it may cover the trait's `dyn` types (a projection can normalize to one), whose built-in impl rustc lets choose another
+is `TD0402`: it may cover the trait's `dyn` types (a projection can normalize to one), whose built-in impl rustc lets choose another
 associated type (rust-lang/rust#57893, `memory/escape_dyn_overlap_transmute`). A sized
 parameter, a trait whose associated types are all inherited (a supertrait's impls decide them,
 and this check sees those impls), and one whose associated types require `Self: Sized` stay
@@ -159,7 +159,7 @@ strict subterm of the self type or trait arguments. The definition graph uses
 (function, type parameter) nodes, including uncalled generic definitions.
 Each caller parameter occurring in a callee type argument has an edge to that
 callee parameter; an occurrence under a constructor marks an expanding edge.
-`FX0407` rejects an expanding edge on a cycle. Selected local trait impls use
+`TD0407` rejects an expanding edge on a cycle. Selected local trait impls use
 their overriding method and substituted impl arguments, or the trait's default
 body when the selected impl has no override. Other trait dispatch contributes
 no edge. Projections are normalized in the caller's environment; unresolved
@@ -175,15 +175,15 @@ and property-test impls inserted by this driver run are not candidate
 definitions. Insertion provenance is tracked by exact byte ranges; adjacent
 user code remains checked. `#[allow]` does not silence these errors.
 
-The authority slice enforces `FX0501`, `FX0503`, `FX0504` and `FX0505` as errors.
+The authority slice enforces `TD0501`, `TD0503`, `TD0504` and `TD0505` as errors.
 `policy.rs` owns a closed table of ambient Rust operations; missing Tide std
 items are looked up at the corresponding Rust std path, including inherent
 methods. Unresolved imports retain their source identity through renames and
 re-exports (named or globbed) in their lexical scope; recovery requires one
 source identity and respects shadowing. Same-spelled user methods and Tide capability methods are unaffected.
-Unresolved paths apply each matching deny rule's code, including `FX0520`
+Unresolved paths apply each matching deny rule's code, including `TD0520`
 for aliases of unavailable std items.
-`Path` I/O observers and `io::Error::last_os_error` retain `FX0520`. `std::path` is
+`Path` I/O observers and `io::Error::last_os_error` retain `TD0520`. `std::path` is
 listed item by item, so an item a later rustc adds there is not admitted until the pin
 review lists it.
 `Root` may be named in the entry signature, in field patterns destructuring
@@ -198,24 +198,24 @@ or the separate suite supplied with `--tide-test-library`. Merely compiling
 ordinary production helpers with `--test` does not exempt them. The paired
 candidate library remains production code. A test-only cfg becomes false when
 `test` is disabled in the current target configuration;
-`any(test, not(test))` is not test-only. `FX0505` uses the resolved Tide std
+`any(test, not(test))` is not test-only. `TD0505` uses the resolved Tide std
 callee's final `&Tasks` parameter and missing-argument count, so constructors
 need no separate registry. `#[allow]` does not silence these errors.
 The deadlock fixtures run as tests; generated-contract fixtures use capability
 parameters rather than whole `Root` parameters.
 
-The concurrency/error slice enforces `FX0601`, `FX0602`, `FX0604`, `FX0605`,
-`FX0701` and `FX0702` as errors. Async functions, blocks, closures and awaits
+The concurrency/error slice enforces `TD0601`, `TD0602`, `TD0604`, `TD0605`,
+`TD0701` and `TD0702` as errors. Async functions, blocks, closures and awaits
 are checked before lowering; all `core::future::*` and `core::pin::*` uses have
-`FX0601`, while `core::task::*` retains `FX0520`. Rust thread spawning, Builder
-and thread scopes use `FX0602`; unresolved `tokio::spawn` and resolved Tokio
+`TD0601`, while `core::task::*` retains `TD0520`. Rust thread spawning, Builder
+and thread scopes use `TD0602`; unresolved `tokio::spawn` and resolved Tokio
 spawn items do too. Same-spelled local functions pass. Mutex/RwLock types and
-methods use `FX0604`; Condvar, Barrier and Once keep their existing owners.
+methods use `TD0604`; Condvar, Barrier and Once keep their existing owners.
 Missing std and Tokio paths, including module aliases and re-exports, use the
 authority slice's source recovery.
-Every user-written `select!` is `FX0605`, whether resolved, unresolved, or
-renamed from another macro. Catching an unwind uses `FX0701`; task isolation
-passes. `FX0702` checks the type of an expression statement, including macro
+Every user-written `select!` is `TD0605`, whether resolved, unresolved, or
+renamed from another macro. Catching an unwind uses `TD0701`; task isolation
+passes. `TD0702` checks the type of an expression statement, including macro
 results such as `writeln!` and `Result<(), Infallible>`. Propagation, returned
 results and explicit `let _ =` pass. Other must-use values retain rustc's
 lint. `#[allow]` does not silence these errors. The cases also check against
@@ -237,7 +237,7 @@ use std::task::Tasks;
 
 pub fn nest(tasks: &Tasks) {
     let inner = Shared::new(0u64, tasks);
-    let _outer = Shared::new(inner, tasks); //~ FX0606
+    let _outer = Shared::new(inner, tasks); //~ TD0606
 }
 ```
 
@@ -251,26 +251,26 @@ pub fn nest(tasks: &Tasks) {
 - A comment says what the case shows.
 - Each line that must get an error ends with `//~` and its codes: `E####`
   for a rustc error, `error` for a rustc error without a code (such as
-  "lifetime may not live long enough"), and `FX####` for the checker; a line
+  "lifetime may not live long enough"), and `TD####` for the checker; a line
   both report on carries both. A `Send`, `Sync`, or `Fn` failure carries an
-  `FX` code only where the design gives that code for it (PAR-5 to PAR-7
+  `TD` code only where the design gives that code for it (PAR-5 to PAR-7
   do; `rules.md` writes "E0277 for `Send`" where a rule's code covers only
   its `Pure` part), and otherwise the rustc mark alone. Where the driver
   reports a code in place of rustc's (an ambient call or a path that is not
   admitted), the rustc mark records what plain rustc says. A case with no
   marks must be accepted.
-- A checker warning uses `//~ WARN FX####`. `WARN` makes every following
+- A checker warning uses `//~ WARN TD####`. `WARN` makes every following
   code on that line a warning; error marks, if any, precede `WARN` (for
-  example `//~ FX0507 WARN FX0607`). Warning marks require the code at
+  example `//~ TD0507 WARN TD0607`). Warning marks require the code at
   warning severity without rejection unless the case also has error or rustc marks.
 - rustc's errors must equal the rustc marks as a set of (line, code) pairs.
   An error on an unmarked line, an uncoded error where no `error` mark is,
   or an error in another file fails the case. A case whose only marks are
-  `FX` must pass rustc. Rustc warnings and driver warnings without an FX code
-  are ignored; driver FX warnings must match their warning marks.
+  `TD` must pass rustc. Rustc warnings and driver warnings without a TD code
+  are ignored; driver TD warnings must match their warning marks.
 
 The shape follows rustc's own UI tests (`//@` directives, `//~` marks) and
-the D18 spike's per-line `FX` marks (`spikes/d18/admit/tests/`), rather than
+the D18 spike's per-line code marks (`spikes/d18/admit/tests/`), rather than
 one verdict in a header: a per-line mark fails a case rejected on the wrong
 line or for an incidental reason, which a single verdict would let pass.
 
@@ -360,7 +360,7 @@ stale-handle checks, disjoint borrows, reuse, iteration and bound-free handle
 traits through the driver. The build tests also execute stale Index/IndexMut
 panics and check `#[pure]` acceptance/rejection against production.
 `memory/arena_pure_reject.rs` pins `Arena<Fs>` rejection; the executing fixture
-pins `Id<Fs>` acceptance. `afree_pure_*` still exercise the existing FX0511 owner.
+pins `Id<Fs>` acceptance. `afree_pure_*` still exercise the existing TD0511 owner.
 The admission driver's rules (`policy.rs`, `pure.rs`) key the shared items
 alike. Production and the stub share the `#[test]` macro and property
 generation/shrinking runtime (`crates/tide-std/src/test/`). They share a compile-time fixture,
@@ -386,19 +386,19 @@ physical line can shift. A case that uses only the shared items is checked again
 std's own definitions. Every other item is the stub's own, a signature for an
 item Tide's std does not provide yet. `Pure` is
 a blanket impl, so rustc accepts every `Pure` bound and every `Pure` verdict
-is the checker's (an `FX` mark). The stub's own bodies are `unimplemented!()`,
+is the checker's (a `TD` mark). The stub's own bodies are `unimplemented!()`,
 so the corpus decides compile-time verdicts only; rules decided at run time,
 in the simulator, or in the sandbox are outside it (`rules.md` lists them).
 `rustc/std` originated in `trials/e1-dialect/rustc/std`, whose copy stays
 frozen as the trial's record, and uses Tide's std's macros (`crates/tide-macros`);
 `#[pure]` comes from production through the shared prelude; it validates a
-function target and empty arguments, preserving its tokens for FX0511.
+function target and empty arguments, preserving its tokens for TD0511.
 `rustc/macros` adds only the identity `#[trusted_pure]` shim, which production
 does not yet provide. Contract macros also come
 from `crates/tide-macros`; the hidden clause runtime includes production's
 `contract.rs`. `contracts/executable.rs` checks the shared surface and executes
 against production through the driver's `tests/build.rs` in debug/release binaries
-and test harnesses. Macro syntax errors carry uncoded rustc errors with an FX
+and test harnesses. Macro syntax errors carry uncoded rustc errors with a TD
 identifier in their text; placement and purity diagnostics remain the admission
 driver's responsibility.
 `contracts/scoped_clauses.rs` and `contracts/clause_expressions.rs` also execute

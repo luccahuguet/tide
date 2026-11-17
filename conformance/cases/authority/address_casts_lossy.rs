@@ -3,31 +3,31 @@
 // Under the `unsafe` grant an address counts as a `usize` (D3), so an address cast that may
 // lose bits is lossy `as`, as `usize as u32` is.
 pub fn truncate(p: *const u8) -> u8 {
-    p as u8 //~ FX0301
+    p as u8 //~ TD0301
 }
 
 pub fn narrow(p: *const u8) -> u32 {
-    p as u32 //~ FX0301
+    p as u32 //~ TD0301
 }
 
 pub fn signed(p: *mut u8) -> isize {
-    p as isize //~ FX0301
+    p as isize //~ TD0301
 }
 
 pub fn code(f: fn()) -> u32 {
-    f as u32 //~ FX0301
+    f as u32 //~ TD0301
 }
 
 pub fn wide(n: u64) -> *const u8 {
-    n as *const u8 //~ FX0301
+    n as *const u8 //~ TD0301
 }
 
 pub fn wider(n: u128) -> *mut u8 {
-    n as *mut u8 //~ FX0301
+    n as *mut u8 //~ TD0301
 }
 
 pub fn from_signed(n: isize) -> *const u8 {
-    n as *const u8 //~ FX0301
+    n as *const u8 //~ TD0301
 }
 
 // The spellings that lose no bits are accepted.

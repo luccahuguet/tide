@@ -107,7 +107,7 @@ cat demo/tests/src/hits_sim.rs
 - Line 7, `#[sim_test(seeds = 16)]`: "run this test under the simulator 16
   times, with seeds 0 to 15".
 - Line 8: the test receives `sim`, a simulated root. Only tests can have one
-  (`FX0504`).
+  (`TD0504`).
 - Line 9: two clients, one view each.
 - Line 10: call the real service, handing it the **simulated** `Tasks`
   (`&sim.tasks`). The service code is unchanged; it can't tell. That's

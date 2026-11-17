@@ -216,7 +216,7 @@ fn main() {
 }
 
 /// Only the runtime entry mints a `Root` or a capability, and it runs once per process: a
-/// program that calls it again, which the admission driver rejects (`FX0520`), panics before
+/// program that calls it again, which the admission driver rejects (`TD0520`), panics before
 /// minting.
 #[test]
 fn root_is_minted_only_by_the_entry_once() {

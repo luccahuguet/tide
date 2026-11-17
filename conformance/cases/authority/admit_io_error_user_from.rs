@@ -11,5 +11,5 @@ impl Into<Box<dyn Error + Send + Sync>> for Key {
 }
 
 pub fn keyed(k: Key) -> io::Error {
-    io::Error::other(k) //~ FX0517
+    io::Error::other(k) //~ TD0517
 }

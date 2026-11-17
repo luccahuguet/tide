@@ -39,8 +39,8 @@ an hour and a quarter in all:
 | --- | --- | --- | --- | ---: |
 | 1 | `crates/tide-admit/src/policy.rs:64-72, 92-135` | 1 | the table of Rust's ambient calls Tide refuses | 7 |
 | 2 | `conformance/cases/authority/cap_ambient.rs` | 2 | one conformance case: how expected verdicts are written | 10 |
-| 3 | `conformance/cases/memory/closure_fnptr_capability.rs` | 3 | the 13-line capability forge `FX0206` stops | 3 |
-| 4 | `crates/tide-admit/src/walk/reify.rs:1-55` | 3 | the `FX0206` check itself | 10 |
+| 3 | `conformance/cases/memory/closure_fnptr_capability.rs` | 3 | the 13-line capability forge `TD0206` stops | 3 |
+| 4 | `crates/tide-admit/src/walk/reify.rs:1-55` | 3 | the `TD0206` check itself | 10 |
 | 5 | `demo/service/src/hits.rs` | 4 | a whole Tide service, 58 lines: tasks, a scope, `Shared` | 15 |
 | 6 | `demo/patches/lost-update.patch` | 4 | the one-line-pair change that makes it race | 3 |
 | 7 | `demo/tests/src/hits_sim.rs` | 5 | the simulation test that finds the race | 5 |

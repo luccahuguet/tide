@@ -90,7 +90,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             self.report(
                 span,
-                Code::Fx0504,
+                Code::Td0504,
                 "simulation is available only in test code; move this use into a test".into(),
             );
         }
@@ -157,7 +157,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             return;
         }
-        self.report(path.span, Code::Fx0503,
+        self.report(path.span, Code::Td0503,
             "`Root` may be named only as main's parameter type, in a field pattern destructuring `root`, or as `Root::sim`; pass a capability instead".into());
     }
 
@@ -205,7 +205,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && !field_base
             && !self.root_destructured(e.hir_id)
         {
-            self.report(e.span, Code::Fx0503,
+            self.report(e.span, Code::Td0503,
                 "the whole `root` cannot be passed, borrowed, stored, returned or captured; move or borrow its fields".into());
         }
         if let hir::ExprKind::Closure(closure) = e.kind
@@ -215,7 +215,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if self.is_root(capture.place.ty()) {
                     self.report(
                         capture.get_capture_kind_span(self.tcx),
-                        Code::Fx0503,
+                        Code::Td0503,
                         "a closure cannot capture the whole `root`; capture its fields instead"
                             .into(),
                     );
@@ -261,7 +261,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     if matches!(inner.kind(), ty::Adt(adt, _) if self.key(adt.did()) == "tide_std::task::Tasks"))
             })
         {
-            self.report(e.span, Code::Fx0505,
+            self.report(e.span, Code::Td0505,
                 "creating this handle needs a final `&Tasks` argument; thread `Tasks` through the parameters".into());
         }
     }
@@ -537,7 +537,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
 
     fn denied_key(&mut self, key: String, span: Span) {
         if let Some(rule) = policy::lookup(&key).filter(|r| r.verdict == Verdict::Deny) {
-            let note = if rule.code == Code::Fx0501 || key == "tokio::spawn" {
+            let note = if rule.code == Code::Td0501 || key == "tokio::spawn" {
                 ""
             } else {
                 " (Tide's std does not export it)"

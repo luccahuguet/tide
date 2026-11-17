@@ -8,13 +8,13 @@ pub struct NeedsPure<T: Pure>(pub T);
 
 pub struct Config {
     pub ticks: NeedsPure<u64>,
-    pub clock: NeedsPure<Clock>, //~ FX0517
+    pub clock: NeedsPure<Clock>, //~ TD0517
 }
 
 pub trait Source {
     type Out;
-    fn open(ticks: u64) -> NeedsPure<Clock>; //~ FX0517
-    fn reader(&self, clock: Clock) -> impl Fn() -> u64 + Pure + Send { //~ FX0517
+    fn open(ticks: u64) -> NeedsPure<Clock>; //~ TD0517
+    fn reader(&self, clock: Clock) -> impl Fn() -> u64 + Pure + Send { //~ TD0517
         move || {
             let _ = clock.now();
             1
@@ -23,8 +23,8 @@ pub trait Source {
 }
 
 impl Source for u8 {
-    type Out = NeedsPure<Clock>; //~ FX0517
-    fn open(_ticks: u64) -> NeedsPure<Clock> { //~ FX0517
+    type Out = NeedsPure<Clock>; //~ TD0517
+    fn open(_ticks: u64) -> NeedsPure<Clock> { //~ TD0517
         todo!()
     }
 }

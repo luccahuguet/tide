@@ -22,7 +22,7 @@ pub fn check_module_surface(
                 self.diags.report(
                     self.tcx,
                     item.span,
-                    Code::Fx0912,
+                    Code::Td0912,
                     "`extern crate` is not admitted; use an import".into(),
                     None,
                 );
@@ -91,7 +91,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     && self.diags.has_error_in(item.span)
             });
             if !rejected {
-                self.report(span, Code::Fx0913, "unused import; remove it".into());
+                self.report(span, Code::Td0913, "unused import; remove it".into());
             }
         }
         // Only late trait usage is incomplete after rustc errors, not our surface errors.
@@ -110,7 +110,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 {
                     self.report(
                         item.expect_use().0.span,
-                        Code::Fx0913,
+                        Code::Td0913,
                         "unused import; remove it".into(),
                     );
                 }
@@ -123,7 +123,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 if module == source {
                     self.report(
                         span,
-                        Code::Fx0914,
+                        Code::Td0914,
                         "import cycle between modules; put shared items in a leaf module".into(),
                     );
                     break;
@@ -178,7 +178,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         }
         self.report(
             block.span,
-            Code::Fx0902,
+            Code::Td0902,
             "an unsafe block needs a `// SAFETY:` comment directly above it or its statement"
                 .into(),
         );

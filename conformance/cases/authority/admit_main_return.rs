@@ -3,6 +3,6 @@
 // formats it with `Debug`: here a function pointer's address.
 fn noop() {}
 
-fn main() -> Result<(), fn()> { //~ FX0512 FX0520
+fn main() -> Result<(), fn()> { //~ TD0512 TD0520
     Err(noop)
 }

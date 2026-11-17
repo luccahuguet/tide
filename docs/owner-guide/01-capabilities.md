@@ -37,9 +37,9 @@ every capability (`root.fs`, `root.net`, `root.clock`, ...). Three rules keep
 it the only source:
 
 - **Only `main` may name `Root`, and it cannot pass `root` on whole**
-  (`FX0503`). It hands out single fields, so each callee gets only what it
+  (`TD0503`). It hands out single fields, so each callee gets only what it
   needs.
-- **No code calls `main`** (`FX0506`), so a test can't get a real `Root`
+- **No code calls `main`** (`TD0506`), so a test can't get a real `Root`
   by calling it. (Tests get *simulated* roots instead; chapter 5.)
 - **Capabilities cannot be made from data** (ROOT-4): each type has a private
   field, and none can be built from a default value or decoded from JSON.
@@ -62,7 +62,7 @@ code against **Tide's own std**, which simply has no `std::fs::read` or
 `Instant::now()`: those functions don't exist to call. Rust's lower layers
 (`core` and `alloc`, which every Rust program gets) are still there, so the
 checker also keeps an **allowlist** of the items from them that cannot reach
-the world, and rejects everything else (`FX0520`). Chapter 2 covers the
+the world, and rejects everything else (`TD0520`). Chapter 2 covers the
 checker.
 
 One deliberate exception: **printing is not a capability**. Any code may write
@@ -79,7 +79,7 @@ Two more terms you will meet:
   tasks) can be reached from it. A function whose inputs are all `Pure` is
   **authority-free**: its result depends only on its arguments. Several rules
   use this (chapter 4).
-- **`FX` codes**: Tide's error codes, such as `FX0501`. Each names one rule.
+- **`TD` codes**: Tide's error codes, such as `TD0501`. Each names one rule.
 
 ## Run it
 
@@ -95,10 +95,10 @@ Output (paths shortened):
 ```text
 …/ambient/src/main.rs:6:14: error[E0425]: cannot find function `read_to_string` in module `std::fs`: not found in `std::fs`
 …/ambient/src/main.rs:11:25: error[E0599]: no associated function or constant named `now` found for struct `tide_std::time::Instant` in the current scope: associated function or constant not found in `tide_std::time::Instant`
-…/ambient/src/main.rs:6:5: error: FX0501: `std::fs::read_to_string` is not admitted
-…/ambient/src/main.rs:11:5: error: FX0501: `std::time::Instant::now` is not admitted
-…/ambient/src/main.rs:14:18: error: FX0503: `Root` may be named only as main's parameter type, in a field pattern destructuring `root`, or as `Root::sim`; pass a capability instead
-…/ambient/src/main.rs:21:20: error: FX0503: the whole `root` cannot be passed, borrowed, stored, returned or captured; move or borrow its fields
+…/ambient/src/main.rs:6:5: error: TD0501: `std::fs::read_to_string` is not admitted
+…/ambient/src/main.rs:11:5: error: TD0501: `std::time::Instant::now` is not admitted
+…/ambient/src/main.rs:14:18: error: TD0503: `Root` may be named only as main's parameter type, in a field pattern destructuring `root`, or as `Root::sim`; pass a capability instead
+…/ambient/src/main.rs:21:20: error: TD0503: the whole `root` cannot be passed, borrowed, stored, returned or captured; move or borrow its fields
 error: aborting due to 6 previous errors
 ```
 
@@ -114,13 +114,13 @@ It prints nothing and exits 0.
 
 ## What to look at
 
-- In the first run, each rejected line carries an `FX` code: `FX0501` for an
-  ambient call (reading a file, reading the clock), `FX0503` for naming
-  `Root` outside `main` and for passing the whole `root`. The `FX0503`
+- In the first run, each rejected line carries a `TD` code: `TD0501` for an
+  ambient call (reading a file, reading the clock), `TD0503` for naming
+  `Root` outside `main` and for passing the whole `root`. The `TD0503`
   messages say what to do instead.
 - The two `E` lines come from rustc itself: `E0425` and `E0599` mean "no such
   function". Tide's std really has no `read_to_string` in `std::fs` and no
-  `Instant::now`. The `FX0501` lines say the same thing in Tide's terms.
+  `Instant::now`. The `TD0501` lines say the same thing in Tide's terms.
 - The paths are printed in full; the outputs here shorten them to `…`.
 - The second run prints nothing and exits 0: the program is admitted.
 - Open the two files side by side. The only difference is where authority
@@ -130,7 +130,7 @@ It prints nothing and exits 0.
 ## Read the code
 
 **`crates/tide-admit/src/policy.rs:64-72` and `:92-135`** (about 7 minutes).
-This is the closed table behind `FX0501`: the list of Rust's ambient
+This is the closed table behind `TD0501`: the list of Rust's ambient
 operations the driver refuses, each with a message saying what to use
 instead.
 
@@ -140,7 +140,7 @@ bash -c 'sed -n "64,72p;92,135p" crates/tide-admit/src/policy.rs'
 
 - Lines 64–72, `const fn ambient(pattern) -> Rule`: a small helper that
   builds one table row. Read `const fn` as "a function the compiler runs while
-  building". It says: a row made by `ambient(..)` carries code `FX0501` and the
+  building". It says: a row made by `ambient(..)` carries code `TD0501` and the
   help text "use a capability in scope, or thread that capability through the
   parameters". The `..deny(..)` part means "everything else as in a plain
   `deny` row". That help text is in the table, but the driver prints errors
@@ -162,7 +162,7 @@ bash -c 'sed -n "64,72p;92,135p" crates/tide-admit/src/policy.rs'
 What to take away: this list is not what makes Tide safe. Tide's std simply
 doesn't have these functions, so a program using them wouldn't compile anyway.
 The table turns rustc's confusing "no such function" into a Tide error that
-names the rule (`FX0501`). What does the safety work is the allowlist, the
+names the rule (`TD0501`). What does the safety work is the allowlist, the
 `allow` and `deny` rows further down, which admit only listed items from
 Rust's lower layers.
 
@@ -188,7 +188,7 @@ rests on rustc being sound (chapter 3). A deliberately malicious
 author could try to break the compiler itself, through rustc's own soundness
 bugs (chapter 3), or ask for the `unsafe` grant (chapter 2). The answers
 there: Tide has closed two known compiler routes, rust#25860's
-function-pointer route (`FX0206`) and rust#57893 (`FX0402`); others may
+function-pointer route (`TD0206`) and rust#57893 (`TD0402`); others may
 remain. Test runs the driver starts (`--tide-run-test`, `--replay`) sit
 inside a kernel sandbox (chapter 8); a test binary run directly gets
 none. Every `unsafe` site is listed in the trust artifact (chapter 7). Kernel enforcement for deployed programs is planned for

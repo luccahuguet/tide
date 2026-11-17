@@ -9,7 +9,7 @@ static S: &'static &'static u32 = &&0;
 fn foo<'a, 'c, T: Debug>(_: &'a T, v: T, _: &'c ()) -> Box<dyn Debug + 'a> { Box::new(v) }
 
 pub fn bad<'x>(x: &'x u32) -> Box<dyn Debug + 'static> {
-    let f: fn(_, &'x u32, &()) -> Box<dyn Debug + 'static> = foo; //~ FX0206
+    let f: fn(_, &'x u32, &()) -> Box<dyn Debug + 'static> = foo; //~ TD0206
     f(S, x, &())
 }
 
@@ -27,6 +27,6 @@ impl<'x> Item for Hold<'x> {
 fn bar<'a, 'c, T: Item>(_: &'a T::Out, v: T::Out, _: &'c ()) -> Box<dyn Debug + 'a> { Box::new(v) }
 
 pub fn alias<'x>(x: &'x u32) -> Box<dyn Debug + 'static> {
-    let f: fn(_, &'x u32, &()) -> Box<dyn Debug + 'static> = bar::<Hold<'x>>; //~ FX0206
+    let f: fn(_, &'x u32, &()) -> Box<dyn Debug + 'static> = bar::<Hold<'x>>; //~ TD0206
     f(S, x, &())
 }

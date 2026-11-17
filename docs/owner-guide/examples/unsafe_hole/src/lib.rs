@@ -1,5 +1,5 @@
 // Owner's guide, chapters 2 and 7: an `unsafe` block. Without the operator's
-// `--tide-grant=unsafe` admission rejects it (FX0901); with the grant it is admitted and
+// `--tide-grant=unsafe` admission rejects it (TD0901); with the grant it is admitted and
 // listed as a trust hole in the crate's trust artifact.
 
 /// Reads the first byte without a bounds check.

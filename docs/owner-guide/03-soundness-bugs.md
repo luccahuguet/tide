@@ -17,7 +17,7 @@ system. If safe code can trick rustc into treating a short borrow as
 **transmute**), it could keep a capability longer than it was lent, or forge
 one.
 
-### The first hole: rust#25860, closed by FX0206
+### The first hole: rust#25860, closed by TD0206
 
 rust-lang/rust issue #25860 has been open since 2015. When a **generic**
 function (one written once for many types or lifetimes, filled in where it's
@@ -30,7 +30,7 @@ function relied on. A few lines of safe code then turn any borrow into a
   not. The driver admitted rustc's own test case for #25860, and a variant
   that turns a borrowed `&'a Fs` into a `&'static Fs`, with no `unsafe` and no
   grant.
-- **fx-iwjq (landed 2026-11-16)** added `FX0206`: the driver rejects turning a
+- **fx-iwjq (landed 2026-11-16)** added `TD0206`: the driver rejects turning a
   function into a function pointer when the function's signature implies a
   lifetime relationship that isn't trivially true. The rule is deliberately
   **conservative**: it rejects some harmless code too, such as a function
@@ -43,7 +43,7 @@ function relied on. A few lines of safe code then turn any borrow into a
   test runs (RUN-3) into v0** (D7), because the probe showed the type system alone can't bound
   what admitted code reaches. Chapter 8 covers it.
 
-### The second hole: rust#57893, closed by FX0402
+### The second hole: rust#57893, closed by TD0402
 
 **fx-qlek.5** (landed 2026-11-17) was a red team: an agent tried over 40
 escape routes against admission and the sandbox. It found two forms of one
@@ -51,7 +51,7 @@ more admitted route, rust#57893. Through it, a blanket implementation of a
 trait (Rust's interfaces) can disagree with the built-in one for trait
 objects (`dyn` values), and that gives safe code a general transmute, aimed
 in the probe at `&Fs`. You don't need the mechanism; what matters is that
-safe code could forge a capability. The fix extends `FX0402` to reject both
+safe code could forge a capability. The fix extends `TD0402` to reject both
 forms. Every other escape route the record lists was rejected or denied. Two
 routes stay admitted on purpose: writing to standard error, which every
 program may do (a sink, chapter 1), and a crate attribute that has no effect.
@@ -78,7 +78,7 @@ target/debug/tide-admit --crate-type=lib --tide-std target/guide/std/libtide_std
 Output (paths shortened):
 
 ```text
-…/closure_fnptr_rustc_known_bug.rs:11:46: error: FX0206: `foo` cannot become a `fn` pointer: it implies `'b: 'a`, which a `fn` pointer does not keep (CLOSURE-3)
+…/closure_fnptr_rustc_known_bug.rs:11:46: error: TD0206: `foo` cannot become a `fn` pointer: it implies `'b: 'a`, which a `fn` pointer does not keep (CLOSURE-3)
 error: aborting due to 1 previous error
 ```
 
@@ -93,7 +93,7 @@ target/debug/tide-admit --crate-type=lib --tide-std target/guide/std/libtide_std
 Output (paths shortened):
 
 ```text
-…/closure_fnptr_capability.rs:11:48: error: FX0206: `foo` cannot become a `fn` pointer: it implies `'b: 'a`, which a `fn` pointer does not keep (CLOSURE-3)
+…/closure_fnptr_capability.rs:11:48: error: TD0206: `foo` cannot become a `fn` pointer: it implies `'b: 'a`, which a `fn` pointer does not keep (CLOSURE-3)
 error: aborting due to 1 previous error
 ```
 
@@ -107,15 +107,15 @@ target/debug/tide-admit --crate-type=lib --tide-std target/guide/std/libtide_std
 Output (paths shortened):
 
 ```text
-…/escape_dyn_overlap_transmute.rs:11:1: error: FX0402: this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type
-…/escape_dyn_overlap_transmute.rs:50:5: error: FX0402: this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type
+…/escape_dyn_overlap_transmute.rs:11:1: error: TD0402: this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type
+…/escape_dyn_overlap_transmute.rs:50:5: error: TD0402: this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type
 error: aborting due to 2 previous errors
 ```
 
 ## What to look at
 
 - rustc alone prints nothing and exits 0: it accepts the unsound program.
-  The driver rejects it with `FX0206`, at the line that makes the function
+  The driver rejects it with `TD0206`, at the line that makes the function
   pointer, and names the lifetime fact (`'b: 'a`, "`'b` lasts at least as
   long as `'a`") that the pointer would lose. The driver prints errors in a
   short one-line format, so the rule's suggested fix, a closure, isn't
@@ -123,17 +123,17 @@ error: aborting due to 2 previous errors
 - Read the capability file. It is 13 lines, and it would let code keep a
   file-system capability forever after being lent it for one call. That is
   why the probe mattered.
-- The red team's case gets two `FX0402` errors, one per form: line 11 is
+- The red team's case gets two `TD0402` errors, one per form: line 11 is
   the blanket form, and line 50, inside `mod projection`, the second form.
   The message's suggested fix is shown here because it is part of the
   one-line error itself.
-- The `//~ FX0206` comments in the files are the corpus's expected verdicts.
+- The `//~ TD0206` comments in the files are the corpus's expected verdicts.
   `conformance/run.sh` checks every case against them.
 
 ## Read the code
 
 **`crates/tide-admit/src/walk/reify.rs:1-55`** (10 minutes). The check behind
-`FX0206`. "Reify" is the compiler's word for turning a function into a
+`TD0206`. "Reify" is the compiler's word for turning a function into a
 function pointer.
 
 ```sh
@@ -160,7 +160,7 @@ bash -c 'sed -n "1,55p" crates/tide-admit/src/walk/reify.rs'
   You can skim this part.
 - Lines 49–55, the heart: for each function on the list, `implied_bound`
   looks for a lifetime fact that doesn't hold trivially. If it finds one, the
-  driver reports `FX0206` with a message naming the fact.
+  driver reports `TD0206` with a message naming the fact.
 
 What to take away: the rule is short and blunt on purpose. It needs no
 reasoning about lifetimes inside rustc's borrow checker, which is where
@@ -183,8 +183,8 @@ soundness bugs may remain.
 
 **What Tide does about it:**
 
-1. It closes the routes it finds. `FX0206` closes the function-pointer route
-   of #25860; `FX0402` closes rust#57893 (fx-qlek.5). The red team also
+1. It closes the routes it finds. `TD0206` closes the function-pointer route
+   of #25860; `TD0402` closes rust#57893 (fx-qlek.5). The red team also
    checked that the known reproductions of the other famous routes (#25860
    through closures and trait objects, #84591, #100051) are rejected. That
    covers those reproductions, not every variant: the #100051 family stays
@@ -206,7 +206,7 @@ deployed programs in v1."
 
 - `design/01-design.md` D7, the "Kernel enforcement" bullet (the decision of
   2026-11-15).
-- `design/02-memory.md` §5.4 (CLOSURE-3, the `FX0206` rule and its cost).
+- `design/02-memory.md` §5.4 (CLOSURE-3, the `TD0206` rule and its cost).
 - `design/03-authority-concurrency.md` §2.6, RUN-4 hole 5 (the toolchain's
   own bugs).
 - `reviews/2026-11-15-achilles-opus.md` W3 (the critique that started it).

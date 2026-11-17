@@ -50,7 +50,7 @@ DEPS="$TARGET/debug/deps"
 
 pinned cargo build --quiet --offline -p tide-admit --target-dir "$DRIVER_TARGET" || exit 2
 DRIVER="$DRIVER_TARGET/debug/tide-admit"
-# The FX codes the driver decides, as an extended regex alternation.
+# The TD codes the driver decides, as an extended regex alternation.
 CODES="$("$DRIVER" --tide-print-codes | paste -sd '|')" && [[ -n "$CODES" ]] || exit 2
 # The stub std again, for the driver; each library it loads is in a directory
 # that cargo's artifact messages name.
@@ -66,7 +66,7 @@ status=0
 fail() { printf 'FAIL  %s: %s\n' "$name" "$1"; status=1; }
 
 check() { # check <file>
-  local file="$1" rules bad marks want fx driven awaits kind mode log="" code=0 got
+  local file="$1" rules bad marks want td driven awaits kind mode log="" code=0 got
   local grant=() profile=() dlog="" dcode=0 dgot errors c
   name="${file#"$CASES"/}"
   [[ -f "$file" ]] || { fail "no such case"; return; }
@@ -76,23 +76,23 @@ check() { # check <file>
   [[ -z "$bad" ]] || { fail "rule IDs not in rules.md: $bad"; return; }
   bad="$(awk 'NR > 1 && /^\/\/@/ && !/^\/\/@ (grants: unsafe|profile: release)$/ { printf "%d ", NR }' "$file")"
   [[ -z "$bad" ]] || { fail "unknown '//@' lines: $bad"; return; }
-  # WARN switches the remaining FX marks on a line from errors to warnings.
+  # WARN switches the remaining TD marks on a line from errors to warnings.
   marks="$(awk '{ i = index($0, "//~"); if (!i) next
       n = split(substr($0, i + 3), c, " "); if (!n) print "bad " NR ":(empty)"
       severity = "error"
       for (k = 1; k <= n; k++) {
         if (c[k] == "WARN" && severity == "error" && k < n) { severity = "warning"; continue }
-        if (c[k] ~ /^FX[0-9][0-9][0-9][0-9]$/) print "fx " NR ":" severity ":" c[k]
+        if (c[k] ~ /^TD[0-9][0-9][0-9][0-9]$/) print "td " NR ":" severity ":" c[k]
         else print (severity == "error" && c[k] ~ /^(E[0-9][0-9][0-9][0-9]|error)$/ ? "want " : "bad ") NR ":" c[k]
       } }' "$file")"
   bad="$(sed -n 's/^bad //p' <<<"$marks" | tr '\n' ' ')"
   [[ -z "$bad" ]] || { fail "malformed marks: $bad"; return; }
   want="$(sed -n 's/^want //p' <<<"$marks" | sort -u)"
-  fx="$(sed -n 's/^fx //p' <<<"$marks" | sort -u)"
-  # The FX marks the driver decides, as line:severity:code, and the codes it does not.
-  driven="$(grep -E ":($CODES)\$" <<<"$fx")"
+  td="$(sed -n 's/^td //p' <<<"$marks" | sort -u)"
+  # The TD marks the driver decides, as line:severity:code, and the codes it does not.
+  driven="$(grep -E ":($CODES)\$" <<<"$td")"
   errors="$(grep ':error:' <<<"$driven")"
-  awaits="$(grep -vE ":($CODES)\$" <<<"$fx" | sed -n 's/^[0-9]*:[^:]*://p' | sort -u | tr '\n' ' ')"
+  awaits="$(grep -vE ":($CODES)\$" <<<"$td" | sed -n 's/^[0-9]*:[^:]*://p' | sort -u | tr '\n' ' ')"
   kind=lib
   grep -qw '^fn main' "$file" && kind=bin
   # -Zallow-features= as the admission driver passes it (ADMIT-2); stable rustc
@@ -134,7 +134,7 @@ check() { # check <file>
     return
   fi
   # Each driver diagnostic retains its severity, including warnings in rejected cases.
-  dgot="$(awk -v f="$file" 'match($0, /:[0-9]+:[0-9]+: (error|warning): FX[0-9][0-9][0-9][0-9]:/) {
+  dgot="$(awk -v f="$file" 'match($0, /:[0-9]+:[0-9]+: (error|warning): TD[0-9][0-9][0-9][0-9]:/) {
       path = substr($0, 1, RSTART - 1); split(substr($0, RSTART + 1, RLENGTH - 2), p, ":")
       print (path == f ? "" : path ":") p[1] ":" substr(p[3], 2) ":" substr(p[4], 2) }' <<<"$dlog" | sort -u)"
   # The driver must report exactly the marks it decides, and reject exactly the

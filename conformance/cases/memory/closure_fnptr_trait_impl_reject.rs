@@ -14,11 +14,11 @@ impl<'a, 'b> Select for Pair<'a, 'b> {
 }
 
 pub fn selected() -> fn(u32) -> u32 {
-    <Pair<'static, 'static> as Select>::select //~ FX0206
+    <Pair<'static, 'static> as Select>::select //~ TD0206
 }
 
 pub fn unknown<S: Select>() -> fn(u32) -> u32 {
-    S::select //~ FX0206
+    S::select //~ TD0206
 }
 
 pub fn closure() -> fn(u32) -> u32 {

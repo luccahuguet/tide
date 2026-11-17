@@ -15,8 +15,8 @@ bullets below state the other limits.
   grant admits is listed as a trust hole. Against a malicious dependency
   this rests on rustc's soundness, which has open `I-unsound` issues: the
   checker closes only the `fn`-pointer route of rust-lang/rust#25860
-  (`FX0206`) and the trait-object route of rust-lang/rust#57893
-  (`FX0402`), and the kernel sandbox for test and simulation runs (RUN-3)
+  (`TD0206`) and the trait-object route of rust-lang/rust#57893
+  (`TD0402`), and the kernel sandbox for test and simulation runs (RUN-3)
   covers the runs `tide-admit` starts, in part (see the test runs'
   status). Today the driver admits a single crate against Tide's std;
   packages and dependencies (`tide.toml`, `tide.lock`) are planned.
@@ -68,30 +68,30 @@ the trust diff (`demo/README.md`).
 
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a
-rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
+rustc driver that enforces the admission allowlist (ADMIT-1, `TD0520`),
 decides `Pure` structurally under the codes of the rules that need it (D18:
-statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `FX0517`),
-requires the `unsafe` grant for unsafe code (UNSAFE-1, `FX0901`), requires
-`#[tide::main]` on a binary's `main` (ROOT-1, `FX0512`), rejects code that
-calls or names `main` (ROOT-5, `FX0506`), and passes rustc
+statics, `const fn`, `#[pure]`, `Shared`, parallel closures, and `TD0517`),
+requires the `unsafe` grant for unsafe code (UNSAFE-1, `TD0901`), requires
+`#[tide::main]` on a binary's `main` (ROOT-1, `TD0512`), rejects code that
+calls or names `main` (ROOT-5, `TD0506`), and passes rustc
 `-Zallow-features=` and `-Zpolonius=no` (ADMIT-2). After rustc's
 analysis, a backstop checks the crate's instances that can run for denied
 impls and `Pure` where-clauses, whatever route reached them (ADMIT-1). It constructs
 every compiler invocation, clears the compiler environment (keeping only
 `RUSTC_ICE=0`, so a compiler crash writes no report file), snapshots candidate
-Rust sources, rejects file-loading attributes (`FX0911`), user macro definitions
-(`FX0101`), derives and bang forms outside the closed sets (`FX0102`, `FX0103`),
-lifetime parameters on traits (`FX0201`), unresolved output elision, including
-function types and `Fn` sugar (`FX0202`, LIFE-4), and lossy numeric casts (`FX0301`). It labels rustc's borrow errors for closures in
-owned positions when the evidence is certain (`FX0203`) and struct literals that
-move an owner into one field and borrow it in another (`FX0210`). Wrong-input elision keeps rustc's
+Rust sources, rejects file-loading attributes (`TD0911`), user macro definitions
+(`TD0101`), derives and bang forms outside the closed sets (`TD0102`, `TD0103`),
+lifetime parameters on traits (`TD0201`), unresolved output elision, including
+function types and `Fn` sugar (`TD0202`, LIFE-4), and lossy numeric casts (`TD0301`). It labels rustc's borrow errors for closures in
+owned positions when the evidence is certain (`TD0203`) and struct literals that
+move an owner into one field and borrow it in another (`TD0210`). Wrong-input elision keeps rustc's
 region error. It rejects coercing a function item to a `fn` pointer when the item implies an
-outlives bound that does not hold trivially (`FX0206`, CLOSURE-3), whatever the instantiation,
+outlives bound that does not hold trivially (`TD0206`, CLOSURE-3), whatever the instantiation,
 which closes the `fn`-pointer route of rust-lang/rust#25860. Generic functions over references,
 trait methods with a reference receiver such as `Clone::clone`, `&self` methods of types with a
 lifetime parameter, and functions such as `fn f(v: &mut Vec<&str>)` therefore do not coerce; a
 closure that calls the item is accepted. It enforces the trait power ceiling
-(`FX0401`–`FX0408`): impl placement, specialization and overlap (an impl for a type
+(`TD0401`–`TD0408`): impl placement, specialization and overlap (an impl for a type
 parameter or a projection that may be unsized may overlap the built-in impl of its trait's `dyn`
 type when the trait declares an associated type a `dyn` type can name, the route of
 rust-lang/rust#57893), generic associated types,
@@ -99,20 +99,20 @@ explicit higher-ranked binders, negative impls and user auto traits, structural 
 bounds, polymorphic recursion and duplicate inherent method names. Definition
 checks reject expanding cycles between function type parameters, including
 selected local trait impls. Unresolved dispatch retains rustc's checks;
-instance-depth failures alone do not receive `FX0407`.
-The authority checks reject ambient operations from a closed policy table (`FX0501`),
-forbidden naming or whole-value use of `Root` (`FX0503`), simulation outside
-test code (`FX0504`), and handle creation missing the final `&Tasks` (`FX0505`).
+instance-depth failures alone do not receive `TD0407`.
+The authority checks reject ambient operations from a closed policy table (`TD0501`),
+forbidden naming or whole-value use of `Root` (`TD0503`), simulation outside
+test code (`TD0504`), and handle creation missing the final `&Tasks` (`TD0505`).
 Field moves, borrows and patterns are allowed. Test code includes test-only cfg ancestors,
 plain/property/simulation tests and the separate test suite; ordinary helpers
 in a `--test` build and the separate candidate library remain production code.
 The concurrency and error checks reject async/await and core's future/pin APIs
-(`FX0601`), unstructured spawning (`FX0602`), Mutex/RwLock habits (`FX0604`),
-`select!` (`FX0605`), `catch_unwind` (`FX0701`), and a `Result` ignored in
-statement position (`FX0702`). Explicit `let _ = result;` is accepted; other
-`#[must_use]` types retain rustc's lint. `#[allow]` does not silence FX errors.
-It also rejects `#![no_std]` (`FX0520`) and package build scripts
-(`FX0915`), and caches successful checks/builds by source and trusted-input
+(`TD0601`), unstructured spawning (`TD0602`), Mutex/RwLock habits (`TD0604`),
+`select!` (`TD0605`), `catch_unwind` (`TD0701`), and a `Result` ignored in
+statement position (`TD0702`). Explicit `let _ = result;` is accepted; other
+`#[must_use]` types retain rustc's lint. `#[allow]` does not silence TD errors.
+It also rejects `#![no_std]` (`TD0520`) and package build scripts
+(`TD0915`), and caches successful checks/builds by source and trusted-input
 content. A crate it admits against Tide's std also gets a trust artifact beside its metadata,
 `<crate>.interface.json` (D11, 03 §4.1): each exported item's declared
 authority, with the access path that carries each kind (`app.db.net: net`, or
@@ -259,7 +259,7 @@ create fresh staging and never read those leftovers.
 artifacts outside the candidate package. These are operator inputs, like
 grants; candidate source, Cargo configuration, toolchain files, and inherited
 environment never set them. Without `--tide-std`, Rust's pinned std is used
-for driver development tests, and `FX0512` is not checked, since Rust's std
+for driver development tests, and `TD0512` is not checked, since Rust's std
 has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 (`Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
@@ -565,7 +565,7 @@ last-freed-first slot reuse, checked disjoint mutation and stale-index panics.
 `Id<T>` is `Pure` for every `T`; `Arena<T>` is `Pure` when `T` is. Handles must
 stay with their originating arena; no cross-arena check is performed. `iter`
 (slot order), `Id`'s `Ord` and `Debug` remain provisional. The prelude's
-`#[pure]` asserts authority-free function parameters under the existing FX0511
+`#[pure]` asserts authority-free function parameters under the existing TD0511
 check; non-functions and nonempty arguments are compile errors.
 The crate docs list what it does not provide yet.
 The conformance runner injects
@@ -755,7 +755,9 @@ Cited evidence behind the decisions, in [research/](research/):
   `research/00-old-design-salvage.md` records what carried over.
 - Naming: the language is named Tide (tidelang). Ferox was its working name;
   documents in `research/`, `reviews/`, `trials/`, `tasks/`, and `archive/`
-  keep that name as written. [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md),
+  keep that name as written, and older records spell diagnostic codes
+  `FX####`, with the same digits as today's `TD####`.
+  [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md),
   the `FEROX_*` documents, and the `ORBIS_*` documents record earlier naming
   reviews.
 - [TASKS.md](TASKS.md) and `tasks/`: tasks from the first design's bootstrap

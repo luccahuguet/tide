@@ -6,6 +6,6 @@ mod tide {
 }
 
 #[tide::main]
-fn main() { //~ FX0512
+fn main() { //~ TD0512
     println!("hello");
 }

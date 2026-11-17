@@ -27,5 +27,5 @@ pub fn tagged(t: &Tagged<u64>) {
 }
 
 pub fn tagged_clock(t: &Tagged<Clock>) {
-    needs_pure(t) //~ FX0517
+    needs_pure(t) //~ TD0517
 }

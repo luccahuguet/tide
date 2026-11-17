@@ -21,7 +21,7 @@ pub fn check_trait_surface(tcx: TyCtxt<'_>, krate: &ast::Crate, diags: &mut Diag
             if let ast::Defaultness::Default(span) = defaultness {
                 self.report(
                     span,
-                    Code::Fx0402,
+                    Code::Td0402,
                     "specialization is not admitted; use one impl or a newtype",
                 );
             }
@@ -36,7 +36,7 @@ pub fn check_trait_surface(tcx: TyCtxt<'_>, krate: &ast::Crate, diags: &mut Diag
                         if let ast::ImplPolarity::Negative(span) = header.polarity {
                             self.report(
                                 span,
-                                Code::Fx0405,
+                                Code::Td0405,
                                 "negative impls are not admitted; use a marker field",
                             );
                         }
@@ -45,7 +45,7 @@ pub fn check_trait_surface(tcx: TyCtxt<'_>, krate: &ast::Crate, diags: &mut Diag
                 ast::ItemKind::Trait(tr) if matches!(tr.is_auto, ast::IsAuto::Yes) => {
                     self.report(
                         item.span,
-                        Code::Fx0405,
+                        Code::Td0405,
                         "user auto traits are not admitted; use an ordinary trait",
                     );
                 }
@@ -112,7 +112,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     } else {
                         "an impl must live in the exact module defining its type or trait; move the impl"
                     };
-                    self.report(item.span, Code::Fx0401, message.into());
+                    self.report(item.span, Code::Td0401, message.into());
                 }
                 let heads: Vec<_> =
                     trait_ref.map_or_else(|| vec![self_ty], |tr| tr.args.types().collect());
@@ -124,7 +124,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     };
                     if !bounded.references_error() && !small_bound(bounded, &heads) {
                         valid_bounds = false;
-                        self.report(span, Code::Fx0406, "an impl bound must be on a parameter, its projection, a concrete type, or a strict subterm of the impl head; bound the parameter directly".into());
+                        self.report(span, Code::Td0406, "an impl bound must be on a parameter, its projection, a concrete type, or a strict subterm of the impl head; bound the parameter directly".into());
                     }
                 }
                 // REF-0402 (fx-qlek.5): an impl for a type parameter or a projection that may be
@@ -142,7 +142,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                     })
                     && !self_ty.is_sized(self.tcx, TypingEnv::non_body_analysis(self.tcx, def.to_def_id()))
                 {
-                    self.report(item.span, Code::Fx0402, "this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type".into());
+                    self.report(item.span, Code::Td0402, "this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type".into());
                 }
             }
             hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
@@ -158,7 +158,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                 let mut names = FxHashSet::default();
                 for (span, name) in methods {
                     if !names.insert(name) {
-                        self.report(span, Code::Fx0408, format!("inherent method `{name}` is defined more than once for this type; use distinct names"));
+                        self.report(span, Code::Td0408, format!("inherent method `{name}` is defined more than once for this type; use distinct names"));
                     }
                 }
             }
@@ -171,7 +171,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if !generics.params.is_empty() && self.user_written(span) {
             self.report(
                 span,
-                Code::Fx0403,
+                Code::Td0403,
                 "generic associated types are not admitted; use an owned item or index".into(),
             );
         }
@@ -182,7 +182,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && !param.is_elided_lifetime()
             && self.user_written(param.span)
         {
-            self.report(param.span, Code::Fx0404, "explicit higher-ranked binders are not admitted; use elided Fn or fn-pointer lifetimes".into());
+            self.report(param.span, Code::Td0404, "explicit higher-ranked binders are not admitted; use elided Fn or fn-pointer lifetimes".into());
         }
     }
 
@@ -288,7 +288,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         let components = strongly_connected_components(&edges);
         for call in std::mem::take(&mut self.trait_calls) {
             if call.grows && components[nodes[&call.caller]] == components[nodes[&call.callee]] {
-                self.report(call.span, Code::Fx0407, "a type parameter expands under a constructor on a recursive cycle; use a fixed recursive representation".into());
+                self.report(call.span, Code::Td0407, "a type parameter expands under a constructor on a recursive cycle; use a fixed recursive representation".into());
             }
         }
     }

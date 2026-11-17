@@ -16,7 +16,7 @@ pub fn check_habit_surface(tcx: TyCtxt<'_>, krate: &ast::Crate, diags: &mut Diag
                 self.diags.report(
                     self.tcx,
                     span,
-                    Code::Fx0601,
+                    Code::Td0601,
                     "async/await is not admitted; use ordinary functions and structured tasks"
                         .into(),
                     None,
@@ -100,7 +100,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         {
             return false;
         }
-        self.report(data.call_site, Code::Fx0605,
+        self.report(data.call_site, Code::Td0605,
             "`select!` is not admitted; send one enum through one channel, or use deadlines and cancellation".into());
         true
     }
@@ -121,7 +121,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
             && let ty::Adt(adt, _) = ty.kind()
             && self.tcx.is_diagnostic_item(sym::Result, adt.did())
         {
-            self.report(span, Code::Fx0702,
+            self.report(span, Code::Td0702,
                 "a Result cannot be ignored; handle it, propagate it with `?`, or explicitly discard it with `let _ =`".into());
         }
     }

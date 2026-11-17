@@ -7,5 +7,5 @@ pub trait PureValue: Value + Pure {}
 impl<T: Value + Pure + ?Sized> PureValue for T {}
 
 pub fn erase<U: Value>(u: &U) -> &dyn PureValue {
-    u //~ FX0517
+    u //~ TD0517
 }

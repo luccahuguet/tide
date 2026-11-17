@@ -7,4 +7,4 @@ pub struct Shown { v: Box<dyn Display> }
 
 pub fn shown(s: &str) -> Shown { Shown { v: Box::new(s) } } //~ error
 pub fn any_of(s: &str) -> Box<dyn Any> { Box::new(s) } //~ error
-pub fn hook(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) } //~ error FX0203
+pub fn hook(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) } //~ error TD0203

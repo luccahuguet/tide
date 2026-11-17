@@ -10,6 +10,6 @@ pub struct Counter {
     hits: Shared<u64>,
 }
 
-impl Job for Counter { //~ FX0517
+impl Job for Counter { //~ TD0517
     fn go(&self) {}
 }

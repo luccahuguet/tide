@@ -24,5 +24,5 @@ impl Ord for Key {
     }
 }
 pub fn sort(xs: &mut [Key]) {
-    xs.par_sort(); //~ FX0612
+    xs.par_sort(); //~ TD0612
 }

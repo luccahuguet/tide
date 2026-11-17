@@ -6,29 +6,29 @@ use std::net::Net;
 fn pure<T: Pure>(_: &T) {}
 
 pub fn map_value(map: &HashMap<u8, Net>) {
-    pure(map); //~ FX0517
+    pure(map); //~ TD0517
 }
 pub fn map_key(map: &HashMap<Net, u8>) {
-    pure(map); //~ FX0517
+    pure(map); //~ TD0517
 }
 pub fn map_hasher(map: &HashMap<u8, u8, Net>) {
-    pure(map); //~ FX0517
+    pure(map); //~ TD0517
 }
 pub fn set_value(set: &HashSet<Net>) {
-    pure(set); //~ FX0517
+    pure(set); //~ TD0517
 }
 pub fn set_hasher(set: &HashSet<u8, Net>) {
-    pure(set); //~ FX0517
+    pure(set); //~ TD0517
 }
 pub fn tree_map(map: &BTreeMap<u8, Net>) {
-    pure(map); //~ FX0517
+    pure(map); //~ TD0517
 }
 pub fn tree_set(set: &BTreeSet<Net>) {
-    pure(set); //~ FX0517
+    pure(set); //~ TD0517
 }
 pub fn queue(queue: &VecDeque<Net>) {
-    pure(queue); //~ FX0517
+    pure(queue); //~ TD0517
 }
 pub fn heap(heap: &BinaryHeap<Net>) {
-    pure(heap); //~ FX0517
+    pure(heap); //~ TD0517
 }

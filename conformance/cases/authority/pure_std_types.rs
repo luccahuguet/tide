@@ -17,13 +17,13 @@ pub fn data(m: &Metadata, t: &FileType, s: &RandomState) {
 }
 
 pub fn listing(r: &ReadDir) {
-    needs_pure(r) //~ FX0517
+    needs_pure(r) //~ TD0517
 }
 
 pub fn entry(e: &DirEntry) {
-    needs_pure(e) //~ FX0517
+    needs_pure(e) //~ TD0517
 }
 
 pub fn marker(p: &PhantomData<Clock>) {
-    needs_pure(p) //~ FX0517
+    needs_pure(p) //~ TD0517
 }

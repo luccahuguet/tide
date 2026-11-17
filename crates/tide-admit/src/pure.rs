@@ -182,8 +182,8 @@ pub const FORGES: &[(&str, usize)] = &[
 const MAX_TYPE_DEPTH: usize = 64;
 
 /// The rule a `Pure` obligation a use incurs serves, which picks the code a failure is reported
-/// under (D18; 03 §3.1). `walk.rs` reports `static`s (`FX0502`), `const fn`s (`FX0518`), and
-/// `#[pure]` functions (`FX0511`) itself.
+/// under (D18; 03 §3.1). `walk.rs` reports `static`s (`TD0502`), `const fn`s (`TD0518`), and
+/// `#[pure]` functions (`TD0511`) itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Need {
     /// A user-written bound, a `Pure` supertrait's impl, a coercion to a `Pure` trait object,
@@ -207,11 +207,11 @@ pub enum Need {
 impl Need {
     pub fn code(self) -> Code {
         match self {
-            Need::Bound | Need::Forged => Code::Fx0517,
-            Need::Payload => Code::Fx0606,
-            Need::LockClosure => Code::Fx0603,
-            Need::JoinClosure | Need::SharedClosure => Code::Fx0610,
-            Need::Elements => Code::Fx0612,
+            Need::Bound | Need::Forged => Code::Td0517,
+            Need::Payload => Code::Td0606,
+            Need::LockClosure => Code::Td0603,
+            Need::JoinClosure | Need::SharedClosure => Code::Td0610,
+            Need::Elements => Code::Td0612,
         }
     }
 

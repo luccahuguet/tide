@@ -28,7 +28,7 @@ impl Clause {
             {
                 return Err(syn::Error::new(
                     span,
-                    "FX0804: one expression per clause; split into repeated clauses",
+                    "TD0804: one expression per clause; split into repeated clauses",
                 ));
             }
             Err(error) => return Err(error),
@@ -36,7 +36,7 @@ impl Clause {
         if kind != "ensures" && references(&expr, "result") {
             return Err(syn::Error::new(
                 span,
-                "FX0805: `result` is only valid in ensures",
+                "TD0805: `result` is only valid in ensures",
             ));
         }
         let mut class = Class(false);
@@ -261,7 +261,7 @@ fn expand_inner(
     {
         return Err(syn::Error::new_spanned(
             &f.sig.inputs,
-            "FX0805: a function with ensures cannot have a parameter named result",
+            "TD0805: a function with ensures cannot have a parameter named result",
         ));
     }
     let mut requires = Vec::new();

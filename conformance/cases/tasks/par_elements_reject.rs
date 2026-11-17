@@ -11,9 +11,9 @@ pub fn not_send(xs: &mut [Rc<u64>]) {
 }
 
 pub fn cells(xs: &[Shared<u64>]) -> Vec<u64> {
-    xs.par_map(|c| c.with(|v| *v).unwrap_or(0)) //~ FX0612
+    xs.par_map(|c| c.with(|v| *v).unwrap_or(0)) //~ TD0612
 }
 
 pub fn senders(xs: &mut [SyncSender<u64>]) {
-    xs.par_for(|tx| drop(tx.send(1))); //~ FX0612
+    xs.par_for(|tx| drop(tx.send(1))); //~ TD0612
 }

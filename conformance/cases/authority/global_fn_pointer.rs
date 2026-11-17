@@ -7,26 +7,26 @@ use std::hash::{Hash, Hasher};
 pub fn noop() {}
 
 pub fn int_addr(f: fn()) -> usize {
-    f as usize //~ FX0520
+    f as usize //~ TD0520
 }
 
 pub fn item_addr() -> usize {
-    noop as usize //~ FX0520
+    noop as usize //~ TD0520
 }
 
 pub fn order(f: fn(), g: fn()) -> bool {
-    f < g //~ FX0520
+    f < g //~ TD0520
 }
 
 pub fn hash<H: Hasher>(f: fn(), h: &mut H) {
-    f.hash(h) //~ FX0520
+    f.hash(h) //~ TD0520
 }
 
 pub fn show(f: fn()) -> String {
-    format!("{f:?}") //~ FX0520
+    format!("{f:?}") //~ TD0520
 }
 
-#[derive(Debug)] //~ FX0520
+#[derive(Debug)] //~ TD0520
 pub struct Callback(pub fn());
 
 pub fn same(f: fn(), g: fn()) -> bool {
@@ -39,7 +39,7 @@ pub fn same_ref(a: &u8, b: &u8) -> bool {
 
 // The impls that a toolchain expansion selects for the user's types are checked too: the test
 // harness formats the `Err`.
-#[test] //~ FX0520
+#[test] //~ TD0520
 fn failing() -> Result<(), fn()> {
     Err(noop)
 }

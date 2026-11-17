@@ -4,7 +4,7 @@ use std::fs::Fs;
 use std::sync::{LockError, Shared};
 
 pub fn record(hits: &Shared<u64>, fs: &Fs) -> Result<bool, LockError> {
-    hits.with(|n| { //~ FX0603
+    hits.with(|n| { //~ TD0603
         *n += 1;
         fs.read("/tmp/flag").is_ok()
     })

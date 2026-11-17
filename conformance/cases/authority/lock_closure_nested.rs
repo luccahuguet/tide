@@ -3,7 +3,7 @@
 use std::sync::{LockError, Shared};
 
 pub fn copy(a: &Shared<u64>, b: &Shared<u64>) -> Result<(), LockError> {
-    a.with(|x| { //~ FX0603
+    a.with(|x| { //~ TD0603
         let _ = b.with(|y| *y = *x);
     })
 }

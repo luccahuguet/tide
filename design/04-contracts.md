@@ -107,7 +107,7 @@ fn_clause   = "#[" "requires" "(" sexpr ")" "]"
             | "#[" "diverges" "]"                                (* v1 *)
             | "#[" "invariants" "]" ;              (* rewrites loops and closures only *)
 (* trait_fn, and impl_fn in a trait impl: requires and ensures are v1,
-   FX0802 in v0 (rule 6); #[invariants] is v0. Inherent methods are v0. *)
+   TD0802 in v0 (rule 6); #[invariants] is v0. Inherent methods are v0. *)
 trait_fn    = { attr | fn_clause } "fn" ident generics? "(" params ")" ret?
               where? ( block | ";" ) ;
 impl_fn     = { attr | fn_clause } vis? "fn" ident generics? "(" params ")"
@@ -178,21 +178,21 @@ splace      = "*" ident { "." ( ident | int ) }           (* rooted at a &mut, �
 Rules that the grammar does not show:
 
 1. **FORM-1. One expression per clause.** A top-level comma in a clause is
-   `FX0804`, whose safe fix splits it into repeated clauses (repeated
+   `TD0804`, whose safe fix splits it into repeated clauses (repeated
    attributes or statements). Verus's comma lists are
    rejected so that each clause gets its own classification and diagnostic.
 2. **Order.** Clauses of one kind are conjoined in source order. For
    well-formedness (§1.3), each `requires` may assume the earlier ones; each
    `ensures` may assume every `requires` and the earlier `ensures`.
 3. **FORM-2. `result`** is valid only in `ensures`. A function with `ensures`
-   cannot have a parameter named `result`. Either error is `FX0805`; for the
+   cannot have a parameter named `result`. Either error is `TD0805`; for the
    parameter, the safe fix renames it, and a `result` outside an `ensures`
    has no automatic fix.
 4. **Parameters in `ensures`.** A by-value or `&T` parameter denotes its value
    at entry. In v0, which has no `final`, a bare `x` or `*x` of a `&mut`
    parameter means the caller's referent at return, even where the body
    reassigns the parameter. Where §4.1 makes `final(*x)` a prophecy, naming
-   `x` outside `old(..)` is `FX0803` (§1.8, CLAUSE-4). From v1, a bare `*x` is
+   `x` outside `old(..)` is `TD0803` (§1.8, CLAUSE-4). From v1, a bare `*x` is
    an error with two machine-applicable fixes, `old(*x)` and `final(*x)`
    (§4.1); `tide fix` rewrites a v0 clause to `final(*x)` only where `final`
    is executable, and otherwise reports it for a manual choice.
@@ -202,7 +202,7 @@ Rules that the grammar does not show:
 6. **FORM-3. Impls refine trait contracts** (v1). An impl method inherits
    its trait method's contract and may weaken the precondition and
    strengthen the postcondition, never the reverse (§5.2). In v0 a `requires` or
-   `ensures` on a trait method or a trait-impl method is `FX0802`; the fix
+   `ensures` on a trait method or a trait-impl method is `TD0802`; the fix
    states it on a function or inherent method that the impl calls.
    `#[invariants]` and loop `invariant!` are allowed there in v0.
 7. **Bodiless ghost functions.** A bodiless `spec fn` is uninterpreted, and its
@@ -218,7 +218,7 @@ Rules that the grammar does not show:
     `#[invariants]` or a contract attribute (`#[requires]`, `#[ensures]`,
     `#[decreases]`, `#[diverges]`, `#[contracts]`), whose macro rewrites
     each loop and closure in the body; an unrewritten clause statement is
-    `FX0806`. Where the clause opens its body in a function without such an
+    `TD0806`. Where the clause opens its body in a function without such an
     attribute, the safe fix adds `#[invariants]`; a misplaced clause has no
     automatic fix.
 
@@ -390,7 +390,7 @@ rule CLAUSE-*n*.
    functions and loop `invariant!` statements (§1.2), with `result`,
    `old(e)`, `==>`, and `forall` and `exists` over a bounded binder: the body has the form `lo <= x && x < hi ==> p` (`&&` for
    `exists`), with `lo` and `hi` free of `x`, or `c.contains(&x) ==> p`; an
-   unsigned binder implies `0 <= x`. An unbounded quantifier is `FX0807`.
+   unsigned binder implies `0 <= x`. An unbounded quantifier is `TD0807`.
    `decreases`, `diverges`, `final`, type invariants, closure clauses, and
    the spec language of §1.3–§1.7 are v1.
 2. **CLAUSE-2. Code semantics.** A clause is a Rust boolean expression,
@@ -416,7 +416,7 @@ rule CLAUSE-*n*.
    whose type mentions a type parameter `T` may reach a call only if the
    definition bounds `T` by `Pure + Sync`, as generic definitions state the
    properties they need (`03-authority-concurrency.md` §3.2). A clause that
-   breaks this rule is `FX0808`; without the bound, the fix adds it, and no
+   breaks this rule is `TD0808`; without the bound, the fix adds it, and no
    instantiation skips a clause.
 4. **CLAUSE-4. `old` and `&mut` parameters.** `old(e)` evaluates `e` at
    entry and snapshots the value it denotes (D10). A `Copy` value is copied
@@ -440,14 +440,14 @@ rule CLAUSE-*n*.
    Where §4.1 makes `final(*x)` a prophecy (`x`'s origin appears in
    another parameter's type, the result type, or a bound other than on the
    right of an outlives bound), naming `x` in an `ensures` outside
-   `old(..)` is `FX0803` in v0. `old(*x)` and `old(x.len())` are allowed,
+   `old(..)` is `TD0803` in v0. `old(*x)` and `old(x.len())` are allowed,
    and the usual fix gives the other parameter its own lifetime.
    Other parameters denote their entry values. Of these, a `Copy` one, a
    shared reference included, is copied at entry as it is. A non-`Copy` one
    is cloned at entry if it is `Clone + Pure + Sync`, the types whose
    `Clone` item 3 admits; in generic code, if the definition bounds it so
    (D4). Any other is read in place, so naming it in an `ensures` is
-   `FX0809` when the body assigns, moves, or mutably borrows it (including
+   `TD0809` when the body assigns, moves, or mutably borrows it (including
    through a `&mut` it holds). The fix narrows it, as in `old(x.len())`, or
    in generic code adds the bound (`T: Clone + Pure + Sync`). These
    implicit snapshots follow item 3 and treat a panic as a violation, as
@@ -1286,7 +1286,7 @@ distinct nodes stay distinct, even when refinement cannot distinguish them.
 The refinement and sorting have polynomial cost, and the table has one slot
 per reached crate item. Moving declarations between files while keeping their
 IDs changes neither.
-A rename that reorders a residual tie can conservatively give FX0920: the
+A rename that reorders a residual tie can conservatively give TD0920: the
 encoding or positional ID comparison may change.
 
 For example, seal `S` whole:
@@ -1310,7 +1310,7 @@ The reference from `Out` still cites the same `A` visit position. Retargeting
 `Out` to existing `B` may give isomorphic content, but fails SEAL-2's ID
 comparison. Without the third impl, refinement leaves the first two tied:
 `<S as A>` and `<S as B>` settle the order, and the one table retains two
-distinct trait nodes. Renaming A to Z reverses that tie and gives FX0920.
+distinct trait nodes. Renaming A to Z reverses that tie and gives TD0920.
 Renaming a self type can likewise reorder tied headers; this is the stated
 conservative exception to name independence, not a name-based refinement key.
 
@@ -1507,9 +1507,9 @@ and needs no solver: it compares content hashes and resolved-identity records.
   sources, so its bytes are part of the cache key. An entry is checked in the
   configurations it has a hash for, so a sealed `#[cfg(test)]` test does not
   fail the debug build. A sealed item whose SEAL-2 comparison fails, or that
-  is missing from one of those configurations, is `FX0920`, and so is a build
+  is missing from one of those configurations, is `TD0920`, and so is a build
   for a target the seal does not list, until the orchestrator seals for it.
-  `FX0920` is an error: the crate is not admitted, so nothing behind it builds
+  `TD0920` is an error: the crate is not admitted, so nothing behind it builds
   or runs. The diagnostic names the parts that changed (path, signature,
   authority, contract, use, body, definition, or manifest key) and, for a
   contract, the changed clauses with §11's `weakened` label. There is no fix
@@ -1521,11 +1521,11 @@ and needs no solver: it compares content hashes and resolved-identity records.
   base's seal, with any approved entry changes applied, recomputing every
   hash it records, for every target and configuration, whatever the local
   build covers. Adding an entry is not gated. Removing an entry or changing
-  any of its hashes is `FX0921` unless an approval record covers it: change
+  any of its hashes is `TD0921` unless an approval record covers it: change
   class `unseal`, the entry's stable ID (the package's, for the manifest
   entry), and its old and new hash sets, the new one empty for a removal.
   Each gated change needs its own record, so unsealing a contract and
-  weakening it are two. An approval clears only `FX0921`; `FX0920` against
+  weakening it are two. An approval clears only `TD0921`; `TD0920` against
   the seal in force has no override. So two parties may unseal: whoever
   writes the base, by changing the seal there, which is how an orchestrator
   revises its own interface before delegates rebase; and, on a protected
@@ -1534,7 +1534,7 @@ and needs no solver: it compares content hashes and resolved-identity records.
   holds when its writer merges through `tide review`, as an orchestrator's
   merge step does.
 - **SEAL-5. Review.** `tide review <base>` prints a `seals` section before
-  the trust diff's other sections: every `FX0920` and `FX0921` in the
+  the trust diff's other sections: every `TD0920` and `TD0921` in the
   candidate, then seal entries added, approved, or removed. Seal violations
   fail the gate as a hole without a record does.
 - **SEAL-6. Limits.** A seal fixes definitions, not who calls them: unsealed
@@ -1610,13 +1610,13 @@ deletes the `ensures` that its cache can break, and adds `grants = ["unsafe"]`
 to the manifest. Its `tide check` fails before anything builds:
 
 ```text
-error[FX0920]: sealed item `feed::fetch_feed` changed
+error[TD0920]: sealed item `feed::fetch_feed` changed
   signature  + parameter `cache: &Fs`
   authority  net -> net+fs  widened
   contract   - #[ensures(match &result { .. })]  weakened
-error[FX0920]: sealed item `feed::tests::times_out_when_network_drops` changed
+error[TD0920]: sealed item `feed::tests::times_out_when_network_drops` changed
   body       changed
-error[FX0920]: sealed manifest changed
+error[TD0920]: sealed manifest changed
   grants     + "unsafe"
   = these are fixed by tide.seal; restore them, or stop and report to whoever sealed them
 ```
@@ -1627,12 +1627,12 @@ against the base, whose seal is still in force:
 
 ```text
 seals                                                         6 violations
-  - entry feed::fetch_feed removed                                      FX0921
-  - entry feed::tests::times_out_when_network_drops removed             FX0921
-  - entry manifest removed                                              FX0921
-  ~ feed::fetch_feed   signature, authority net -> net+fs, contract weakened   FX0920
-  ~ feed::tests::times_out_when_network_drops   body                    FX0920
-  ~ manifest           grants + "unsafe"                                FX0920
+  - entry feed::fetch_feed removed                                      TD0921
+  - entry feed::tests::times_out_when_network_drops removed             TD0921
+  - entry manifest removed                                              TD0921
+  ~ feed::fetch_feed   signature, authority net -> net+fs, contract weakened   TD0920
+  ~ feed::tests::times_out_when_network_drops   body                    TD0920
+  ~ manifest           grants + "unsafe"                                TD0920
 ```
 
 The gate fails, and the review shows both attempts. Caching that needs `Fs`

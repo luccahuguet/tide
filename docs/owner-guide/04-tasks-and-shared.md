@@ -38,7 +38,7 @@ Rules that follow from it (`design/01-design.md` D8):
   call already running in the kernel may finish first. So **deadlines are
   soft**: a task that keeps computing past its deadline keeps its scope
   waiting until it reaches a checkpoint or ends.
-- There is no `async`/`await`, Rust's other concurrency model (`FX0601`). A
+- There is no `async`/`await`, Rust's other concurrency model (`TD0601`). A
   function can only suspend itself (give up its turn and wait) by using a
   capability or a shared handle, so code with neither never suspends
   itself. The operating system can still pause any thread at any moment to
@@ -49,7 +49,7 @@ Rules that follow from it (`design/01-design.md` D8):
 
 **Habit 2: locks that deadlock.** A **lock** (Rust's `Mutex`) lets one task
 at a time touch some data. A **deadlock** is two tasks each holding one lock
-and waiting forever for the other's. Tide has no `Mutex` (`FX0604`). It has
+and waiting forever for the other's. Tide has no `Mutex` (`TD0604`). It has
 **`Shared<T>`**, a cell holding a value of type `T`, which you can only use
 like this:
 
@@ -60,7 +60,7 @@ stats.with(|s| s.hits += 1)
 `with` takes the cell, runs the small function you give it (a **closure**),
 and lets go. The closure must be **`Pure`**: it may hold no capability and no
 other `Shared`. So while holding the cell it can't read a file, take another cell, or
-wait through a capability (`FX0603`). That makes `Shared` cells
+wait through a capability (`TD0603`). That makes `Shared` cells
 deadlock-free by construction (D8): a task holding a cell never waits for
 another cell or for capability I/O. It can still print, and printing can
 briefly block when the output is backed up (design rules LOCK-4 and SINK-5,
@@ -70,7 +70,7 @@ global order. If the closure panics (crashes), the cell is marked
 **poisoned** and later users get an error instead of half-changed data.
 
 **Habit 3: sharing without permission.** Making a `Shared` cell, a channel,
-or any other thing tasks share needs `&Tasks` too (`FX0505`). So code with no
+or any other thing tasks share needs `&Tasks` too (`TD0505`). So code with no
 capabilities can't even see other tasks' timing. It stays deterministic:
 same inputs, same result.
 
@@ -94,9 +94,9 @@ Output (paths shortened):
 ```text
 …/habits/src/lib.rs:8:18: error[E0433]: cannot find `thread` in `std`: could not find `thread` in `std`
 …/habits/src/lib.rs:13:24: error[E0603]: struct `Mutex` is private: private struct
-…/habits/src/lib.rs:8:13: error: FX0602: `std::thread::functions::spawn` is not admitted (Tide's std does not export it)
-…/habits/src/lib.rs:13:13: error: FX0604: `std::sync::poison::mutex::Mutex::<T>::new` is not admitted
-…/habits/src/lib.rs:19:5: error: FX0603: a `Shared::with` closure must be `Pure`: `{closure@lib.rs:19:15}` is not `Pure`: it reaches `Fs`, which is never `Pure`
+…/habits/src/lib.rs:8:13: error: TD0602: `std::thread::functions::spawn` is not admitted (Tide's std does not export it)
+…/habits/src/lib.rs:13:13: error: TD0604: `std::sync::poison::mutex::Mutex::<T>::new` is not admitted
+…/habits/src/lib.rs:19:5: error: TD0603: a `Shared::with` closure must be `Pure`: `{closure@lib.rs:19:15}` is not `Pure`: it reaches `Fs`, which is never `Pure`
 error: aborting due to 5 previous errors
 ```
 
@@ -109,8 +109,8 @@ cat demo/service/src/hits.rs
 
 ## What to look at
 
-- One code per habit: `FX0602` for the bare thread, `FX0604` for `Mutex`,
-  `FX0603` for a `with` closure that holds a capability ("it reaches `Fs`,
+- One code per habit: `TD0602` for the bare thread, `TD0604` for `Mutex`,
+  `TD0603` for a `with` closure that holds a capability ("it reaches `Fs`,
   which is never `Pure`").
 - The two `E` lines are rustc's own view: Tide's std has no `thread` module,
   and its `Mutex` is private (std uses one internally).

@@ -3,20 +3,20 @@
 //! It constructs rustc's arguments from a fixed check/build interface, always passes rustc
 //! `-Zallow-features=` so the crate cannot enable unstable features and `-Zpolonius=no` so
 //! borrows get NLL's verdicts (ADMIT-2, ORIGIN-6), and checks every use the crate makes against
-//! the admission allowlist (ADMIT-1), reporting each rejection at the use's span as `FX0520`
-//! or its policy rule's code. `walk/authority.rs` enforces ambient operations (`FX0501`),
-//! Root naming and whole-value use (`FX0503`), simulation outside test code (`FX0504`), and
-//! handle creation missing its final `&Tasks` (`FX0505`). Ordinary functions in a `--test`
+//! the admission allowlist (ADMIT-1), reporting each rejection at the use's span as `TD0520`
+//! or its policy rule's code. `walk/authority.rs` enforces ambient operations (`TD0501`),
+//! Root naming and whole-value use (`TD0503`), simulation outside test code (`TD0504`), and
+//! handle creation missing its final `&Tasks` (`TD0505`). Ordinary functions in a `--test`
 //! build remain production code unless nested under a test or a test-only cfg. A separate
 //! `--tide-test-library` suite is test code; its candidate library is checked as production,
 //! with `cfg(test)` off, but its contracts run as in a test build.
-//! `walk/habits.rs` and the policy table reject async/await and future/pin APIs (`FX0601`),
-//! unstructured spawning (`FX0602`), Mutex/RwLock habits (`FX0604`), select! (`FX0605`),
-//! catch_unwind (`FX0701`), and Results ignored in statement position (`FX0702`). Explicit
+//! `walk/habits.rs` and the policy table reject async/await and future/pin APIs (`TD0601`),
+//! unstructured spawning (`TD0602`), Mutex/RwLock habits (`TD0604`), select! (`TD0605`),
+//! catch_unwind (`TD0701`), and Results ignored in statement position (`TD0702`). Explicit
 //! `let _ = result;` is accepted, including for Result<(), Infallible>; other must-use types
-//! retain rustc's lint. FX errors ignore allow attributes.
+//! retain rustc's lint. TD errors ignore allow attributes.
 //! It also decides `Pure` (`pure.rs`) and the rules on items that need it or the `unsafe` grant,
-//! each under its own FX code (D18). It checks after name resolution and before rustc's
+//! each under its own TD code (D18). It checks after name resolution and before rustc's
 //! analysis, so a crate with rustc errors still gets its verdicts, and after the analysis, when
 //! nothing failed, checks the instances that can run (`walk/mono.rs`) and writes the crate's
 //! trust artifact (`interface.rs`).
@@ -58,7 +58,7 @@
 //!
 //! Usage: tide-admit [--tide-grant=unsafe] [--tide-std PATH] [--tide-dep-dir DIR] <source.rs>
 //!        tide-admit --test --tide-test-library SOURCE.rs [options] <suite.rs>
-//!        tide-admit --tide-print-codes     the FX codes it decides, one per line
+//!        tide-admit --tide-print-codes     the TD codes it decides, one per line
 //!        tide-admit --tide-diff BASE HEAD  what changed between two trust artifacts
 //!                                          (`interface/diff.rs`)
 #![feature(rustc_private)]

@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 pub trait Describe {}
 impl<T: Pure> Describe for T {}
-impl Describe for Net {} //~ E0119 FX0402
+impl Describe for Net {} //~ E0119 TD0402
 
 pub trait Ship {}
 impl<T: Send> Ship for T {}
 pub struct Local(Rc<u8>);
-impl Ship for Local {} //~ E0119 FX0402
+impl Ship for Local {} //~ E0119 TD0402

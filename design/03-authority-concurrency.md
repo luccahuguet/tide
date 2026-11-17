@@ -11,7 +11,7 @@ the design does not state, this chapter says so and lists it in §13.
 diff (§4.1, §4.3–§4.5); admission (§2.5); §6; the may-suspend flag (§7.1); `join`, `par_map`,
 and `par_for` (§8.1, §8.2, §8.4); the simulator with crash, restart, and
 durability (§9); the worked examples (§12). v1: exercised authority,
-effect reporting, and `FX0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`
+effect reporting, and `TD0510` (§4.1, §4.2, SINK-9); FFI, `#[trusted_pure]`
 on foreign functions, and `ThreadBound` (§5); the evented runtime and its lowering (§7.2);
 `par_reduce` (§8.3); imported Rust crates and Rust consumers (§11, RUST-1
 to RUST-6). Later: the Bend boundary and
@@ -68,7 +68,7 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   driver reports a path to Rust's ambient one (`std::fs::read`,
   `Instant::now`, `env::args`, `Command::new`), or a call of a timed wait
   such as `Receiver::recv_timeout`, which reads time without a `Clock`, as
-  `FX0501`, not as rustc's unresolved name, and so are `Instant::elapsed` and
+  `TD0501`, not as rustc's unresolved name, and so are `Instant::elapsed` and
   `SystemTime::elapsed`, which read the clock too; `recv_deadline(t)` takes an
   `Instant` from a `Clock` (§1.2).
 
@@ -197,7 +197,7 @@ Notes:
   spreads over `Stdin`, `io::Read`, and `IsTerminal`. `Stdin` and `&Stdin`
   also implement `io::Read`, as in Rust. No call is ambiguous, because
   inherent methods win, but an `io::Read` import used only for these calls
-  is unused (`FX0913`, safe fix). Like `io::Lines`, `lines()` ends after
+  is unused (`TD0913`, safe fix). Like `io::Lines`, `lines()` ends after
   yielding a cancellation error, so `stdin.lines().flatten()` cannot spin
   in a cancelled scope.
 - **TCP through `Net`.** `bind`/`connect` accept sealed address data in Rust's
@@ -287,7 +287,7 @@ Notes:
   start a process with no capability argument, so `fn configure(cmd: &mut
   Command)` is not authority-free. `OpenOptions` differs: it is `Pure` data
   that does nothing until `Fs::open_with` takes it. `Command` and `Child`
-  otherwise keep Rust's API, without the ambient `Command::new` (`FX0501`;
+  otherwise keep Rust's API, without the ambient `Command::new` (`TD0501`;
   use `proc.command`) and with `wait_with_output`'s receiver below. That API
   includes `Child`'s public fields `stdin: Option<ChildStdin>`, `stdout:
   Option<ChildStdout>`, and `stderr: Option<ChildStderr>`, so
@@ -366,10 +366,10 @@ Notes:
 | `std::sync::atomic::*` | `AtomicU64::new(v, tasks)` and the like; sequentially consistent `load`, `store`, `fetch_add`, `compare_exchange` | none |
 
 - **CAP-2.** Every constructor of a synchronization handle takes `&Tasks`
-  (D7; the argument position is provisional; `FX0505` without it); cloning
+  (D7; the argument position is provisional; `TD0505` without it); cloning
   an existing handle needs nothing.
 - **CAP-3.** Weaker atomic orderings, `Mutex`, and `RwLock` live in
-  `std::sync::raw`, which requires the `unsafe` grant (`FX0520` without it,
+  `std::sync::raw`, which requires the `unsafe` grant (`TD0520` without it,
   ADMIT-1).
 
 `Scope` and `Task` come from `tasks.scope`. `Rc` and `Cell` stay
@@ -427,17 +427,17 @@ N1). Test builds add the simulator behind one predictable branch.
   `main`, written `#[tide::main] fn main(root: Root)`, in field patterns
   destructuring `root` (including `main`'s parameter), and in the path
   `Root::sim`, which ROOT-3 confines to test code; any other use is
-  `FX0503`. rustc rejects parameters on a plain `main` (E0580); the
+  `TD0503`. rustc rejects parameters on a plain `main` (E0580); the
   attribute generates Rust's entry point, which mints the `Root`. Every
   binary's `main` carries it, with or without `root`; a `main` without it
-  is `FX0512`, whose safe fix adds it.
+  is `TD0512`, whose safe fix adds it.
 - **ROOT-2.** `root` cannot be passed, borrowed into a call, stored,
-  returned, or captured (`FX0503`). Its fields can be moved or borrowed out,
+  returned, or captured (`TD0503`). Its fields can be moved or borrowed out,
   directly or through field patterns. Attenuation and wiring happen in `main`, where review
   shows them (§4.3). The fix passes the fields the callee exercises.
 - **ROOT-3.** `Root::sim`, `SimRoot`, `NodeRoot`, and everything in
   `std::sim` compile only in test code: `#[cfg(test)]` items, `#[test]` and
-  `#[sim_test]` functions, and files under `tests/` (`FX0504`). Under
+  `#[sim_test]` functions, and files under `tests/` (`TD0504`). Under
   `tide sim` the runtime, not user code, builds the simulated root. A
   dependency's test code is never compiled into its dependents, so a
   simulated capability cannot reach production code.
@@ -448,7 +448,7 @@ N1). Test builds add the simulator behind one predictable branch.
   (`Child`'s pipe ends), sink configuration (`Root::log`), or test-only
   simulator controls (`SimRoot`'s `world` and `faults`), so reading one
   reaches only authority the value already carries. Tide's std bounds by
-  `Pure` (`FX0517`) the type that each std operation listed here produces,
+  `Pure` (`TD0517`) the type that each std operation listed here produces,
   under any path that names it: `mem::zeroed` and `transmute`, `core`'s
   too; `MaybeUninit::assume_init` and its `Box` and `Rc` forms;
   `slice::align_to`, which reinterprets bytes as `transmute` does;
@@ -466,22 +466,22 @@ N1). Test builds add the simulator behind one predictable branch.
   guarantee: unsafe code can still forge a capability by writing raw
   memory, so the lockfile marks every package with an `unsafe` or `ffi`
   grant `authority: declared, unverified`.
-- **ROOT-5.** No code calls `main` or uses it as a value (`FX0506`), so a
+- **ROOT-5.** No code calls `main` or uses it as a value (`TD0506`), so a
   test cannot mint a real `Root` through it.
 
 ### 2.2 No mutable globals, no thread-locals
 
 - **GLOBAL-1.** A `static` must be `Sync + Pure`, and, as in Rust,
   `'static`. There is no `static mut` in safe code. A non-`Pure` static
-  and a `static mut` are `FX0502`; rustc reports a missing `Sync` (E0277).
+  and a `static mut` are `TD0502`; rustc reports a missing `Sync` (E0277).
 - **GLOBAL-2.** v0 has no lazy statics (D7). A static's initializer is
   evaluated at compile time by `const fn` (D6); a value that needs run-time
   initialization is built in `main` and passed down. Nothing runs on first
   access, so no initializer can print, panic, wait, or differ between tasks
-  or simulated nodes. `lazy_static!` is `FX0502`, and Rust's `LazyLock` and
-  `OnceLock` are `FX0520` (ADMIT-1).
+  or simulated nodes. `lazy_static!` is `TD0502`, and Rust's `LazyLock` and
+  `OnceLock` are `TD0520` (ADMIT-1).
 - **GLOBAL-3.** Safe code has no thread-locals and no task-locals
-  (`thread_local!` is `FX0502`). The runtime's per-task state
+  (`thread_local!` is `TD0502`). The runtime's per-task state
   (cancellation, deadline, sink buffers, frame stack) is reachable only
   through the operations in this chapter.
 - **GLOBAL-4.** Raw pointer addresses are observable only in packages
@@ -497,7 +497,7 @@ N1). Test builds add the simulator behind one predictable branch.
   `p as usize`, `p as u64`, `f as usize`, and `n as *const T` for `n` a
   `usize` or a narrower unsigned integer are accepted, while `p as u32`,
   `p as isize`, `f as u32`, and `n as *const T` for a `u64`, `u128`, or
-  signed `n` are `FX0301`, spelled with `addr()` and D3's conversions:
+  signed `n` are `TD0301`, spelled with `addr()` and D3's conversions:
   `u32::try_from(p.addr())`, `usize::try_from(n)? as *const T`, or
   `n.cast_unsigned() as *const T` for `n: isize`. A cast between raw
   pointer types, or from a reference to one, keeps the address
@@ -631,9 +631,9 @@ determinism claim here holds modulo exhaustion of memory, stack, or
 - **SINK-7. Elision.** Output from authority-free code may appear zero or
   one times under memoization and `const fn` evaluation.
 - **SINK-8. Release and library rules.** `dbg!` is an error in release and
-  CI profiles (`FX0507`) and blocks publishing. `print!` in a library package
-  is lint `FX0508`. Printing inside a `Shared::with` closure is lint
-  `FX0607`, since `out` can block while the cell is held. `log` forms above
+  CI profiles (`TD0507`) and blocks publishing. `print!` in a library package
+  is lint `TD0508`. Printing inside a `Shared::with` closure is lint
+  `TD0607`, since `out` can block while the cell is held. `log` forms above
   the manifest's `release-max-level` emit nothing in release builds, but
   their arguments are still evaluated (SINK-3).
 - **SINK-9. Reported, not granted (v1).** Sink use is an exercised effect
@@ -656,7 +656,7 @@ so the rules above also need an admission check (D7).
   operator, deref, impl selected for an obligation, and macro expansion, and
   admits only listed items of `core` and `alloc` and listed inherent methods
   of std's types, keyed on crate identity rather than crate name. Anything
-  else is `FX0520`, with a fix where std offers a replacement. Outside the
+  else is `TD0520`, with a fix where std offers a replacement. Outside the
   list are at least:
   - safe hardware intrinsics such as `core::arch::x86_64::__cpuid`;
   - raw pointer types and `std::sync::raw` (CAP-3) without an `unsafe`
@@ -664,17 +664,17 @@ so the rules above also need an admission check (D7).
   - `core` atomics, which are created without `&Tasks` (§1.2);
   - `OnceLock` and `LazyLock`, which a parallel region could initialize
     from either branch (`02-memory.md` §9). Tide's std does not export
-    them, and the driver reports a path to Rust's as `FX0520`, not as
+    them, and the driver reports a path to Rust's as `TD0520`, not as
     rustc's unresolved path; `OnceCell` and `LazyCell` stay;
   - any conversion `io::Error::new` and `io::Error::other` perform that
     does not reach, through core's blanket `Into`, one of alloc's four
     `From` impls for `Box<dyn Error + Send + Sync>` from a `Pure` error or a
     string, including a user `From` or `Into` impl and the reflexive
-    `From<T> for T` (`FX0517`, `02-memory.md` §9);
+    `From<T> for T` (`TD0517`, `02-memory.md` §9);
   - `core::task` and `alloc::task` (`Waker`, `Context`, `Wake`), which
     exist only for async (D8) and hide the code a wake runs. Tide's
     `std::task` does not export them, and the driver reports
-    `std::task::Waker` and the like as `FX0520`, as for `OnceLock`;
+    `std::task::Waker` and the like as `TD0520`, as for `OnceLock`;
   - float observers and math methods (`to_bits`, `copysign`, `total_cmp`,
     `min`, `max`, `sin`, `exp`, and the rest; PAR-3);
   - I/O methods on re-exported std types (`Path::exists`, `metadata`,
@@ -697,7 +697,7 @@ so the rules above also need an admission check (D7).
   the items a build of the crate exports, its statics, and its entry point
   reach through the uses rustc records. An instance of a non-local impl that a
   rule denies, or that needs an `unsafe` grant the package lacks, is
-  `FX0520`, and where an item outside `core`, `alloc`, and Rust's std is
+  `TD0520`, and where an item outside `core`, `alloc`, and Rust's std is
   used, the `Pure` part of its where-clauses at the instance's arguments is
   decided as at a use. It
   catches routes to an impl that the checks of resolved uses miss. Since it
@@ -752,7 +752,7 @@ into, fetched from the protected remote.
     `.rs` files under the package's source directories and the toolchain's
     own inputs. Any other path reads as missing, so `include_str!`,
     `include_bytes!`, `include!`, and `#[path]` never read a file outside
-    them, though ADMIT-1 and `FX0911` reject them anyway, and no byte of an
+    them, though ADMIT-1 and `TD0911` reject them anyway, and no byte of an
     outside file can reach a diagnostic. An attribute that rustc resolves to
     a file read outside the loader, such as `#[debugger_visualizer]`, is
     rejected before the pass that reads it;
@@ -783,7 +783,7 @@ into, fetched from the protected remote.
     manifest nor the lockfile names a program or a source outside the
     repository and the operator's registries;
   - no build script, install hook, or proc macro of a Tide package runs
-    (D13, `FX0915`).
+    (D13, `TD0915`).
 - **RUN-3. Test and simulation processes.** `tide test` and `tide sim` run
   each test or simulation binary as a child process (PANIC-1). The harness
   starts it with an environment the toolchain sets, not the caller's; in a
@@ -844,18 +844,18 @@ into, fetched from the protected remote.
      trait`), Rust 2024's unsafe attributes (`#[unsafe(no_mangle)]`,
      `#[unsafe(export_name)]`, `#[unsafe(link_section)]`,
      `#[unsafe(naked)]`), and
-     `#[trusted_pure]` need the package's `unsafe` grant (`FX0901`), and so
-     do `asm!`, `global_asm!`, and `naked_asm!` (`FX0520`, ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
+     `#[trusted_pure]` need the package's `unsafe` grant (`TD0901`), and so
+     do `asm!`, `global_asm!`, and `naked_asm!` (`TD0520`, ADMIT-1); all are trust holes. Declaring an `unsafe trait` needs no
      grant, since only an impl asserts its contract. No grant admits
      `unsafe impl Pure`, which overlaps std's blanket impl (E0119,
-     `FX0402`; `#[trusted_pure]` is the spelling), or `#[may_dangle]` (an
+     `TD0402`; `#[trusted_pure]` is the spelling), or `#[may_dangle]` (an
      unstable feature: `02-memory.md` §6, ADMIT-2). Unsafe code can forge a
      capability (ROOT-4), read process memory, replace symbols the runtime
      calls, make raw system calls, and write the result channel. The
      candidate's safe code reaches the same through an unsound `unsafe`
      abstraction the base already holds.
   2. **`ffi` grants** (v1). Foreign code ignores capabilities (FFI-4), and a
-     foreign effect with no simulator model (`FX0514`) acts on the host
+     foreign effect with no simulator model (`TD0514`) acts on the host
      unless the sandbox refuses it.
   3. **Imported Rust crates** (v1): their code (RUST-1 to RUST-4), and their
      build scripts and proc macros, which run at build time in RUST-5's
@@ -882,7 +882,7 @@ into, fetched from the protected remote.
      the `cve-rs` crate uses (02 CLOSURE-3), and the trait-object route of
      rust-lang/rust#57893, where an impl for a type parameter or a
      projection that may be unsized overlaps the built-in impl of its
-     trait's `dyn` type (`FX0402`);
+     trait's `dyn` type (`TD0402`);
      the others stay open.
   6. **Availability and side channels.** A candidate can spin, allocate,
      recurse, spawn tasks, and write sink output until a limit the operator
@@ -961,9 +961,9 @@ any access.
 | Rule | Tests |
 | --- | --- |
 | RUN-1 | A test and `tide sim <bin>` exercise every capability of a simulated root: each call appears in the simulator's trace, and no host canary sees an access. `tide sim --replay` of a manifest naming a canary path opens no host path. |
-| RUN-2 | `include_str!`, `include_bytes!`, `include!`, `#[path]`, and `#[debugger_visualizer]` naming a canary file: each is rejected, an access trace of the build shows no open of the canary, and its bytes appear in no diagnostic, artifact, or cache entry. A committed symbolic link from a source directory to a canary reads as missing, and the canary is never opened; one committed at `target/sim/` is replaced, and the harness writes nothing through it. `env!` and `option_env!` of a canary variable set in the caller's environment: rejected, and the value appears nowhere. A `rust-toolchain.toml`, a `.cargo/config.toml` naming a canary `rustc-wrapper` and `linker`, and `RUSTFLAGS` and `RUSTC_WRAPPER` in the caller's environment: none takes effect. On a host with `sandbox: full`, under an `unsafe` grant, `global_asm!`, `naked_asm!`, and `asm!` with `.include` and `.incbin` naming a canary, written directly and built by an assembler macro: the build opens nothing outside its allowed set, and the canary's bytes appear in no diagnostic, artifact, or cache entry. A `build.rs`: `FX0915`, and it never runs. A manifest or lockfile naming a source outside the repository and the operator's registries: rejected. |
+| RUN-2 | `include_str!`, `include_bytes!`, `include!`, `#[path]`, and `#[debugger_visualizer]` naming a canary file: each is rejected, an access trace of the build shows no open of the canary, and its bytes appear in no diagnostic, artifact, or cache entry. A committed symbolic link from a source directory to a canary reads as missing, and the canary is never opened; one committed at `target/sim/` is replaced, and the harness writes nothing through it. `env!` and `option_env!` of a canary variable set in the caller's environment: rejected, and the value appears nowhere. A `rust-toolchain.toml`, a `.cargo/config.toml` naming a canary `rustc-wrapper` and `linker`, and `RUSTFLAGS` and `RUSTC_WRAPPER` in the caller's environment: none takes effect. On a host with `sandbox: full`, under an `unsafe` grant, `global_asm!`, `naked_asm!`, and `asm!` with `.include` and `.incbin` naming a canary, written directly and built by an assembler macro: the build opens nothing outside its allowed set, and the canary's bytes appear in no diagnostic, artifact, or cache entry. A `build.rs`: `TD0915`, and it never runs. A manifest or lockfile naming a source outside the repository and the operator's registries: rejected. |
 | RUN-3 | Under an `unsafe` grant, a test and a static constructor (`#[unsafe(link_section = ".init_array")]`) each try to open a canary file, connect to a canary listener, run a canary program, set up io_uring, create a link, FIFO, or socket file in the output directory, change a canary file's permissions, owner, extended attributes, or times, read the user keyring, open a message queue or System V shared memory, read a canary's extended attributes or a link outside the run, fork a process, trace or signal the harness, read a canary variable from the caller's environment, and crash, on a host that pipes core dumps to a collector, with the harness started under a soft core-size limit of zero, and again after the test tries to lower its own soft limit to zero: each fails or writes nothing outside the run, the result says `sandbox: full`, and no canary sees an access. Run on a pseudo-terminal, a test that tries to inject input into the terminal receives none, since the child has no controlling terminal and its streams are pipes. On a Linux kernel without Landlock, `tide review` and the result say `sandbox: partial`, naming Landlock. |
-| RUN-4 | Each unsafe attribute without an `unsafe` grant is `FX0901`, and `asm!`, `global_asm!`, and `naked_asm!` are `FX0520`; under the grant, each appears in the trust diff as a hole. |
+| RUN-4 | Each unsafe attribute without an `unsafe` grant is `TD0901`, and `asm!`, `global_asm!`, and `naked_asm!` are `TD0520`; under the grant, each appears in the trust diff as a hole. |
 | RUN-5 | `run: not covered`, naming the reason, for each of: a new or widened grant; a new `unsafe` block; an edit to a safe function in a package with an `unsafe` grant, in a descendant module of the one holding the `unsafe` block too; an edit to an ungranted in-tree package that a granted package depends on; a new version, source, or content hash in the lockfile for a granted dependency or for a package it depends on; a new dependency without grants whose own manifest grants `unsafe` to one of its dependencies; a changed lockfile entry of an imported Rust crate; an edited Bend kernel source; a new imported Rust crate or `build = true`; a new Bend dependency. `run: covered` for a candidate that edits only packages that hold no grant and that no granted package depends on. An access trace of `tide review` shows no process started from the candidate's build except behavior-diff children, and none of those for a candidate not covered or on a host without `sandbox: full`. `tide test --snapshot` with a hash from another tree starts no test. |
 | RUN-6 | A test that prints a pass record to stdout does not pass. A child that exits with status 0 inside a started test fails that test and the run, and the tests it never started run in a fresh child. Control characters and bidirectional overrides in a test's output, in a diagnostic's file name, and in a `tide review` line reach a pseudo-terminal and a log escaped. A test name and a replay manifest path written by the child with shell metacharacters never appear in a printed command; the printed replay command names only the declared test, the seed, and the harness's path. |
 
@@ -976,10 +976,10 @@ blanket impl, so rustc accepts every `Pure` bound and coherence never treats
 `Pure` as making two impls disjoint (`02-memory.md` PURE-2). The checker
 decides it structurally wherever a type meets a `Pure`-implying obligation or
 is coerced to a `Pure` trait object (`02-memory.md` PURE-1). A failure is
-reported under the code of the rule that needs `Pure` (`FX0502`, `FX0518`,
-`FX0603`, `FX0606`, `FX0610`, `FX0611`, `FX0612`), and otherwise, as at a
+reported under the code of the rule that needs `Pure` (`TD0502`, `TD0518`,
+`TD0603`, `TD0606`, `TD0610`, `TD0611`, `TD0612`), and otherwise, as at a
 user-written bound, a `Pure` supertrait's impl, or a coercion to a `Pure`
-trait object, as `FX0517`. A type the structural rule rejects that is
+trait object, as `TD0517`. A type the structural rule rejects that is
 authority-free in fact, such as a foreign handle, may be marked
 `#[trusted_pure(reason = "...")]` in a package granted `unsafe` (UNSAFE-1),
 and each such mark is a trust hole. The mark vouches for the type's own
@@ -1036,7 +1036,7 @@ type, including `self`, and every capture type is `Pure`. Generic functions
 are classified per instantiation; a generic definition that needs the
 property states it as a bound (`F: Fn(&T) -> U + Pure`). Foreign functions,
 declared in `extern` blocks, are never authority-free (`#[pure]` on one is
-`FX0511`); their wrappers may be (§5), and so may a Tide function with a
+`TD0511`); their wrappers may be (§5), and so may a Tide function with a
 foreign ABI (`extern "C" fn f() {..}`), as a callback must be (FFI-6): its
 body is checked Tide code. An authority-free body also cannot create a
 synchronization handle, since that takes `&Tasks` (§1.2).
@@ -1044,7 +1044,7 @@ synchronization handle, since that takes `&Tasks` (§1.2).
 - **AFREE-1.** `#[pure]` asserts authority-freedom of the function it marks,
   with a body or not (a required trait method), but not of the items nested
   in its body, for every instantiation the bounds allow; an edit that breaks
-  it is `FX0511`. Every public function's interface records the property
+  it is `TD0511`. Every public function's interface records the property
   anyway, and `tide review` reports its loss as an API change, which answers
   the design's open question 4. `#[pure]` takes no arguments and goes only on
   a function or method, a required trait method included; on anything else,
@@ -1111,7 +1111,7 @@ user code at timing-dependent points (GLOBAL-6).
 | foreign callbacks (v1) | authority-free (§5.3) |
 
 - **AFREE-2. `const fn`.** A `const fn`'s parameter types are `Pure + Sync`,
-  and none is `&mut` (`FX0518`; a type that names `&mut`, as
+  and none is `&mut` (`TD0518`; a type that names `&mut`, as
   `Option<&mut T>` does, or holds one in a field, as
   `struct Counter<'a>(&'a mut u32)` does, counts), although rustc accepts
   both. A type parameter, including one in `Self`'s type, needs the bound at
@@ -1164,7 +1164,7 @@ widens it fails until approved (D11, D13).
 
 ### 4.2 The least-authority lint (v1)
 
-`FX0510` fires on a function other than `main` that holds a capability
+`TD0510` fires on a function other than `main` that holds a capability
 parameter or field path it never exercises. It compares capability types, not
 read versus write, so an `Fs` whose holder only reads is not flagged; review
 suggests `Mode::Read` attenuation in `main` instead. The fix narrows a bundle
@@ -1216,7 +1216,7 @@ all.
 A struct of attenuated capabilities and clients built by `main` is the
 documented pattern for service code (`reference.md` §6.10). It stays honest
 because exercised authority is tracked per field path (a method that starts
-using `self.db.net` shows in review with no signature change), `FX0510`
+using `self.db.net` shows in review with no signature change), `TD0510`
 narrows free functions that use one field of the bundle, `Root` cannot be
 stored (ROOT-2) so attenuation stays visible in `main`, and the lockfile's
 public authority does not depend on bundling. Experiment E6 (D0) measures how
@@ -1232,7 +1232,7 @@ the fallback is a declared authority list on types that hold capabilities.
 - **FFI-2.** A safe function that calls a foreign function directly is a
   *wrapper*. A wrapper must either take at least one capability, in which
   case its declared authority is its claim about what the foreign code may
-  do, or be `#[trusted_pure(reason = "...")]` (`FX0509`). Every foreign call
+  do, or be `#[trusted_pure(reason = "...")]` (`TD0509`). Every foreign call
   is a counted trust hole (D11); the trust surface shows the wrapper's claim
   beside it as `foreign: claims fs.write`.
 - **FFI-3.** `#[trusted_pure]` claims all of the following, and a reviewer
@@ -1262,7 +1262,7 @@ the fallback is a declared authority list on types that hold capabilities.
 A wrapper that takes capabilities may name a model,
 `#[sim_model(path::to::model_fn)]`: a Tide function with the same signature,
 written against simulated capabilities. The sim build lists every reachable
-wrapper without one (`FX0514`); `tide sim` refuses to run while any remain
+wrapper without one (`TD0514`); `tide sim` refuses to run while any remain
 unless `--allow-unmodeled` is given, which marks the run non-replayable.
 `#[trusted_pure]` calls need no model; the determinism self-check (§9.7)
 catches some false claims.
@@ -1270,7 +1270,7 @@ catches some false claims.
 ### 5.3 Callbacks
 
 - **FFI-6.** A Tide function or closure passed to foreign code must be
-  authority-free (`FX0513`). It therefore never suspends, so no foreign frame
+  authority-free (`TD0513`). It therefore never suspends, so no foreign frame
   is ever live across a suspension point, and a task can migrate between
   workers without moving foreign frames (`reviews/round1-codex.md` B3).
 - **FFI-7.** Panics never unwind through foreign frames. The std adapter
@@ -1570,7 +1570,7 @@ whose value was already accepted returns `Ok(())`; otherwise cancellation return
 then disconnect does. A ready message beats even a past receive deadline;
 only an empty live channel returns `Timeout` at or after `t`. Payloads must be `Send`
 (`02-memory.md` SEND-3). **CHANNEL-1.** An unbounded `channel` in a library is lint
-`FX0608`.
+`TD0608`.
 
 Rust's `RecvError` is a unit struct and `SendError(T)` gives no reason, so
 neither can say that a checkpoint failed because of cancellation (TASK-3).
@@ -1648,7 +1648,7 @@ pub enum LockError { Aliased, Poisoned }
 
 These methods replace draft 2's `lock` keyword (D8).
 
-- **LOCK-1. Payloads.** `T: Send + Pure` (`FX0606`). A cell never holds a
+- **LOCK-1. Payloads.** `T: Send + Pure` (`TD0606`). A cell never holds a
   capability, channel end, or `Shared` handle.
 - **LOCK-2. Identity.** Before acquiring anything, `with2` and `with_all`
   compare the cells' identities. If two operands name the same cell, the call
@@ -1658,12 +1658,12 @@ These methods replace draft 2's `lock` keyword (D8).
   under the simulator. Acquisition waits per cell in FIFO order. It is not a
   checkpoint: a task in a cancelled scope still acquires, runs `f`, and
   observes cancellation at its next checkpoint.
-- **LOCK-4. Closure.** `f` must be `Pure` (`FX0603`): it captures no
+- **LOCK-4. Closure.** `f` must be `Pure` (`TD0603`): it captures no
   capability, channel end, or `Shared` handle, so nothing it reaches holds
   authority, including the `fmt::Arguments` that `format!` and the sinks
   build in it, and it cannot suspend, touch a capability, or call `with`
   again. `return` and `?` leave `f`. Sinks are allowed; printing is lint
-  `FX0607`.
+  `TD0607`.
 - **LOCK-5. Result.** Each method returns `Result<R, LockError>`, where `R` is
   `f`'s result type.
 - **LOCK-6. Poisoning.** A panic in `f` poisons every cell it held. A later
@@ -1789,22 +1789,22 @@ cancelled.
 
 - **PAR-5. `join` closures.** `join`'s closures are
   `FnOnce + Pure + Send`, each called once. A closure that is not `Pure`
-  or not `Send` is `FX0610`.
+  or not `Send` is `TD0610`.
 - **PAR-6. Shared closures.** The slice methods call one closure from
   several branches at once, so it must be `Fn + Pure + Send + Sync` (D9),
   and so must `par_sort`'s comparator: `Sync` rules out a moved-in `Cell`
   or `RefCell` that two branches could mutate. A closure that misses any
-  of the four is `FX0610`.
+  of the four is `TD0610`.
 - **PAR-7. Captures.** Every closure may capture shared data, a `&T`
-  borrowed or moved in, only if `T` is `Pure + Sync` (`FX0611`, reported
-  in place of PAR-5's and PAR-6's `FX0610`), and may hold `&mut` captures
+  borrowed or moved in, only if `T` is `Pure + Sync` (`TD0611`, reported
+  in place of PAR-5's and PAR-6's `TD0610`), and may hold `&mut` captures
   only as disjoint splits, which the borrow checker verifies.
 
 - **PAR-4. Element types.** The slice methods require elements that are
   `Pure`, plus `Sync` when branches share them and `Send` when branches
   split or move them (D9): `par_map` requires `T: Pure + Sync`, and
   `par_for`, `par_chunks_mut`, and `par_sort` require `T: Pure + Send`
-  (`FX0612`). With the closure and capture rules, every branch is
+  (`TD0612`). With the closure and capture rules, every branch is
   authority-free: none can reach a `Shared` cell, a channel end, or a
   capability, so none can synchronize, block, or do I/O.
 
@@ -2178,7 +2178,7 @@ addresses, or a toolchain bug.
 ### 9.8 Coverage and limits
 
 The replay guarantee holds only when every reachable foreign effect has a
-model (D15). The sim build lists the ones that do not (`FX0514`, §5.2). For
+model (D15). The sim build lists the ones that do not (`TD0514`, §5.2). For
 imported Rust crates, sim builds interpose the libc entry points for time,
 randomness, and environment and route them to the simulator; file and socket
 calls from an unmodeled crate fail with `EPERM` (v1). Runs that use
@@ -2402,7 +2402,7 @@ already observed process exit. In the test body (task 0, outside a node),
 seed report carrying that code or signal, never ending the host harness.
 
 **[inference] Coverage and real backend.** Build-time-known unsupported
-process effects are listed as `FX0514` and make `tide sim` refuse to start
+process effects are listed as `TD0514` and make `tide sim` refuse to start
 unless `--allow-unmodeled` is given, consistently with §5.2. Reaching an
 unregistered command,
 unsupported command mode, signal, terminal effect or model event stops the
@@ -2511,7 +2511,7 @@ rusqlite = { version = "0.32", authority = ["fs.read", "fs.write"], build = true
   `getaddrinfo` to `net`; `clock_gettime` to `clock`; `getrandom` to `rand`;
   `getenv` to `env`; `fork`, `execve`, `posix_spawn` to `proc`;
   `pthread_create` to `tasks`; `dlopen` and raw `syscall` to `foreign`. A
-  kind found but not declared fails the build (`FX0515`) with the symbol and
+  kind found but not declared fails the build (`TD0515`) with the symbol and
   object.
 - **RUST-4. Threads and panics.** Rust types that are not `Send` import as
   `ThreadBound`; `Send` and `Sync` otherwise carry over. A crate's panic
@@ -2791,4 +2791,4 @@ Draft 3.1 and the current reference apply this chapter's earlier requests:
 lazy splitting in D9 with PAR-2's divergence qualification, `Accel` in D7,
 and `Shared::new` taking `&Tasks`. Outstanding:
 
-- 01's open question 4 is answered by `#[pure]` and `FX0511` (§3.2).
+- 01's open question 4 is answered by `#[pure]` and `TD0511` (§3.2).

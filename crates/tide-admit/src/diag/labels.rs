@@ -116,31 +116,31 @@ struct Rule {
 }
 
 // Instance-depth errors alone prove no constructor growth. Certain local cycles
-// already receive FX0407 from the definition graph; unresolved dispatch stays unlabelled.
+// already receive TD0407 from the definition graph; unresolved dispatch stays unlabelled.
 const RULES: &[Rule] = &[
     Rule {
-        code: Code::Fx0910,
+        code: Code::Td0910,
         rustc_codes: &[583],
         wording: None,
         site: Site::None,
         message: "an out-of-line module needs its source file",
     },
     Rule {
-        code: Code::Fx0203,
+        code: Code::Td0203,
         rustc_codes: &[373, 521, 597, 515],
         wording: Some("lifetime may not live long enough"),
         site: Site::Owned,
         message: "a closure in an owned position cannot capture a non-static borrow; move owned data in or name its lifetime",
     },
     Rule {
-        code: Code::Fx0210,
+        code: Code::Td0210,
         rustc_codes: &[505, 515, 597],
         wording: None,
         site: Site::SelfBorrow,
         message: "this struct literal borrows from an owner it moves into a field; keep the owner and view apart or store indices",
     },
     Rule {
-        code: Code::Fx0402,
+        code: Code::Td0402,
         rustc_codes: &[119],
         wording: None,
         site: Site::None,

@@ -6,10 +6,10 @@
 //! generics, are checked in the crates that instantiate them.
 //!
 //! Outside the local crate and the paired test library, a rule can reject a trait impl method
-//! directly or require an `unsafe` grant (`FX0520`). Unlisted keys are allowed because std's
+//! directly or require an `unsafe` grant (`TD0520`). Unlisted keys are allowed because std's
 //! internals instantiate unlisted impls. Where an item outside `core`, `alloc`, and Rust's std is
 //! used, its where-clauses at its instance's args, and its trait method's for an impl's method,
-//! must meet their `Pure` part, as at a use in the walk (`FX0517` and the codes
+//! must meet their `Pure` part, as at a use in the walk (`TD0517` and the codes
 //! `clause_obligations` gives). Each failure is reported at its uses in the nearest local mono
 //! items; a denied impl that no local item reaches this way, at the crate root.
 

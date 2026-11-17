@@ -8,7 +8,7 @@ pub trait Object<U> {
     type Output;
 }
 
-impl<T: ?Sized, U> Object<U> for T { //~ FX0402
+impl<T: ?Sized, U> Object<U> for T { //~ TD0402
     type Output = U;
 }
 
@@ -47,7 +47,7 @@ pub mod projection {
         type Output;
     }
 
-    impl<P: Tr + ?Sized> Object<P> for <P as Tr>::Assoc { //~ FX0402
+    impl<P: Tr + ?Sized> Object<P> for <P as Tr>::Assoc { //~ TD0402
         type Output = <P as Tr>::Out;
     }
 

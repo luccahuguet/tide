@@ -4,9 +4,9 @@
 fn accept<T>(_: T) {}
 #[tide::main]
 fn main(root: Root) {
-    accept(&root); //~ FX0503
-    let borrowed = &root; //~ FX0503
+    accept(&root); //~ TD0503
+    let borrowed = &root; //~ TD0503
     let _ = borrowed.fs.read("settings");
-    let whole @ Root { .. } = root; //~ FX0503
-    let _ = whole; //~ FX0503
+    let whole @ Root { .. } = root; //~ TD0503
+    let _ = whole; //~ TD0503
 }

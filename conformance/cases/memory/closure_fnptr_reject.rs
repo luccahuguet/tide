@@ -8,6 +8,6 @@ static UNIT: &'static &'static () = &&();
 fn pick<'a, 'b, T>(_: &'a &'b (), v: &'b T) -> &'a T { v }
 
 pub fn extend<'b, T>(x: &T) -> &'b T {
-    let f: fn(_, &T) -> &'b T = pick; //~ FX0206
+    let f: fn(_, &T) -> &'b T = pick; //~ TD0206
     f(UNIT, x)
 }

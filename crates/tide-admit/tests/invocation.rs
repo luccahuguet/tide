@@ -30,21 +30,21 @@ fn surface_errors_are_errors_even_under_allow_warnings() {
     let dir = package("surface-errors", "#![allow(warnings)]\npub trait Parse<'a> {}\npub fn narrow(n: u64) -> u8 { n as u8 }\n");
     let out = driver(&dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    for code in ["FX0201", "FX0301"] {
+    for code in ["TD0201", "TD0301"] {
         assert!(stderr(&out).contains(&format!("error: {code}:")), "{}", stderr(&out));
     }
-    assert!(stderr(&out).contains(":2:17: error: FX0201:"), "{}", stderr(&out));
+    assert!(stderr(&out).contains(":2:17: error: TD0201:"), "{}", stderr(&out));
 }
 
 #[test]
 fn borrow_labels_preserve_rustc_errors_and_leave_unrelated_borrows_alone() {
     for (name, source, rustc_error, label) in [
-        ("closure-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) }", "lifetime may not live long enough", "FX0203"),
-        ("closure-bound-earlier", r#"pub fn f() -> Box<dyn Fn() -> usize> { let s = String::from("x"); let job = || s.len(); Box::new(job) }"#, "E0373", "FX0203"),
-        ("closure-field", "pub struct Hook { f: Box<dyn Fn() -> usize> }\npub fn f(s: &str) -> Hook { Hook { f: Box::new(move || s.len()) } }", "lifetime may not live long enough", "FX0203"),
-        ("closure-explicit-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { return Box::new(move || s.len()); }", "lifetime may not live long enough", "FX0203"),
-        ("closure-argument", "pub fn takes(_: Box<dyn Fn() -> usize>) {} pub fn f(s: &str) { takes(Box::new(move || s.len())); }", "lifetime may not live long enough", "FX0203"),
-        ("borrowing-literal", "pub struct Doc<'a> { text: String, word: &'a str }\npub fn f<'a>() -> Doc<'a> { let text = String::from(\"x\"); Doc { word: &text, text } }", "E0515", "FX0210"),
+        ("closure-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) }", "lifetime may not live long enough", "TD0203"),
+        ("closure-bound-earlier", r#"pub fn f() -> Box<dyn Fn() -> usize> { let s = String::from("x"); let job = || s.len(); Box::new(job) }"#, "E0373", "TD0203"),
+        ("closure-field", "pub struct Hook { f: Box<dyn Fn() -> usize> }\npub fn f(s: &str) -> Hook { Hook { f: Box::new(move || s.len()) } }", "lifetime may not live long enough", "TD0203"),
+        ("closure-explicit-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { return Box::new(move || s.len()); }", "lifetime may not live long enough", "TD0203"),
+        ("closure-argument", "pub fn takes(_: Box<dyn Fn() -> usize>) {} pub fn f(s: &str) { takes(Box::new(move || s.len())); }", "lifetime may not live long enough", "TD0203"),
+        ("borrowing-literal", "pub struct Doc<'a> { text: String, word: &'a str }\npub fn f<'a>() -> Doc<'a> { let text = String::from(\"x\"); Doc { word: &text, text } }", "E0515", "TD0210"),
         ("unrelated-borrow", "pub fn f() { let r; { let x = String::from(\"x\"); r = &x; } let _ = r.len(); }", "E0597", ""),
         ("opaque-capture", "pub fn f() -> impl FnMut() -> u8 { let mut n = 0; || { n += 1; n } }", "E0373", ""),
         ("wrong-input-elision", "pub struct Token<'a>(&'a str); impl Token<'_> { pub fn f(&self, other: &str) -> &str { other } }", "lifetime may not live long enough", ""),
@@ -54,11 +54,11 @@ fn borrow_labels_preserve_rustc_errors_and_leave_unrelated_borrows_alone() {
         let err = stderr(&out);
         assert_eq!(out.status.code(), Some(1), "{name}: {err}");
         assert!(err.contains(rustc_error), "{name}: {err}");
-        let fx: Vec<_> = err.lines().filter(|line| line.contains("error: FX")).collect();
+        let td: Vec<_> = err.lines().filter(|line| line.contains("error: TD")).collect();
         if label.is_empty() {
-            assert!(fx.is_empty(), "{name}: {err}");
+            assert!(td.is_empty(), "{name}: {err}");
         } else {
-            assert!(!fx.is_empty() && fx.iter().all(|line| line.contains(label)), "{name}: {err}");
+            assert!(!td.is_empty() && td.iter().all(|line| line.contains(label)), "{name}: {err}");
         }
     }
 }
@@ -94,7 +94,7 @@ pub fn f<'a>() -> Doc<'a> {
     assert_eq!(
         error
             .lines()
-            .filter(|line| line.contains(":6:") && line.contains("error: FX0210:"))
+            .filter(|line| line.contains(":6:") && line.contains("error: TD0210:"))
             .count(),
         1,
         "{error}"
@@ -214,7 +214,7 @@ fn inherited_environment_and_candidate_configuration_cannot_configure_rustc() {
             .output()
             .unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-        assert!(stderr(&out).contains("FX0520"), "{}", stderr(&out));
+        assert!(stderr(&out).contains("TD0520"), "{}", stderr(&out));
         assert!(!stderr(&out).contains("PRIVATE_ENV_CANARY"));
         assert!(!dir.join("out/liblib.rmeta").exists());
         assert_no_canary(&dir.join("out"), b"PRIVATE_ENV_CANARY");
@@ -283,7 +283,7 @@ fn each_loaded_source_is_guarded_before_expansion() {
         std::fs::write(dir.join("package/src/sub.rs"), source).unwrap();
         let out = driver(&dir).output().unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-        assert!(stderr(&out).contains("FX0911"), "{}", stderr(&out));
+        assert!(stderr(&out).contains("TD0911"), "{}", stderr(&out));
     }
 }
 
@@ -294,15 +294,15 @@ fn attributes_and_macro_definitions_hidden_in_macro_arguments_are_rejected() {
     for (source, codes) in [
         (
             "pub fn f() { assert!({ macro_rules! forge { () => { true }; } forge!() }); }",
-            &["FX0101"][..],
+            &["TD0101"][..],
         ),
         (
             "pub fn f() { assert!({ macro_rules! forge { ($a:ident) => { #[$a = \"inner.rs\"] mod generated; }; } forge!(path); true }); }",
-            &["FX0101", "FX0911"],
+            &["TD0101", "TD0911"],
         ),
         (
             "pub fn f() { assert!({ macro_rules! forge { ($a:ident) => { #[$a(natvis_file = \"inner.rs\")] mod generated {} }; } forge!(debugger_visualizer); true }); }",
-            &["FX0101", "FX0911"],
+            &["TD0101", "TD0911"],
         ),
     ] {
         std::fs::write(dir.join("package/src/sub.rs"), source).unwrap();
@@ -354,8 +354,8 @@ fn candidate_content_gets_rustc_diagnostics_and_every_verdict() {
     .unwrap();
     let out = driver(&dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0101"), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0901"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0101"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0901"), "{}", stderr(&out));
 }
 
 #[test]
@@ -393,7 +393,7 @@ fn build_scripts_are_rejected_without_running() {
     let accepted = package("no-build-script", "pub fn f() {}\n");
     let out = driver(&accepted).output().unwrap();
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    assert!(!stderr(&out).contains("FX0915"), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("TD0915"), "{}", stderr(&out));
     let dir = package("build-script", "pub fn f() {}\n");
     std::fs::write(
         dir.join("package/build.rs"),
@@ -402,7 +402,7 @@ fn build_scripts_are_rejected_without_running() {
     .unwrap();
     let out = driver(&dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).starts_with("error: FX0915:"), "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: TD0915:"), "{}", stderr(&out));
     assert!(!stderr(&out).contains("BUILD_SCRIPT_EXECUTED"));
     // A `..` in the source path must not hide the package root.
     std::fs::create_dir(dir.join("package/src/sub")).unwrap();
@@ -413,7 +413,7 @@ fn build_scripts_are_rejected_without_running() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).starts_with("error: FX0915:"), "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: TD0915:"), "{}", stderr(&out));
 }
 
 fn entries(dir: &std::path::Path) -> usize {
@@ -632,7 +632,7 @@ fn unavailable_trusted_dependency_source_does_not_crash_error_rendering() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0520"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0520"), "{}", stderr(&out));
     assert!(!stderr(&out).contains("PRIVATE_FOREIGN_CANARY"));
     assert_no_canary(&dir.join("out"), b"PRIVATE_FOREIGN_CANARY");
     let unused = dir.join("package/src/unused.rs");
@@ -667,7 +667,7 @@ fn unavailable_trusted_dependency_source_does_not_crash_error_rendering() {
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(stderr(&out).contains("error[E0277]"), "{}", stderr(&out));
-    assert!(!stderr(&out).contains("FX0101"), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("TD0101"), "{}", stderr(&out));
     std::fs::write(
         dir.join("package/src/lib.rs"),
         "std::touch!(); pub fn f() { std::need(0u8); }\n",
@@ -679,7 +679,7 @@ fn unavailable_trusted_dependency_source_does_not_crash_error_rendering() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("FX0101"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("TD0101"), "{}", stderr(&out));
 }
 
 fn assert_no_canary(path: &std::path::Path, canary: &[u8]) {

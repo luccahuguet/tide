@@ -6,16 +6,16 @@
 use std::path::{Path, PathBuf};
 
 pub fn probe(p: &Path, b: PathBuf) -> bool {
-    let _ = std::path::absolute(p); //~ FX0520
-    let _ = p.try_exists(); //~ FX0520
-    let _ = b.read_dir(); //~ FX0520
-    let _ = p.canonicalize(); //~ FX0520
-    let _ = p.read_link(); //~ FX0520
-    let _ = p.symlink_metadata(); //~ FX0520
-    let _ = p.is_dir(); //~ FX0520
-    let _ = p.is_symlink(); //~ FX0520
-    let _ = <Path>::metadata(p); //~ FX0520
-    p.exists() || b.is_file() //~ FX0520
+    let _ = std::path::absolute(p); //~ TD0520
+    let _ = p.try_exists(); //~ TD0520
+    let _ = b.read_dir(); //~ TD0520
+    let _ = p.canonicalize(); //~ TD0520
+    let _ = p.read_link(); //~ TD0520
+    let _ = p.symlink_metadata(); //~ TD0520
+    let _ = p.is_dir(); //~ TD0520
+    let _ = p.is_symlink(); //~ TD0520
+    let _ = <Path>::metadata(p); //~ TD0520
+    p.exists() || b.is_file() //~ TD0520
 }
 
 pub fn pure(p: &Path) -> PathBuf {

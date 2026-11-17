@@ -97,7 +97,7 @@ impl Syntax {
         let fail = || {
             syn::Error::new(
                 closure.span(),
-                "FX0807: bounded quantifier needs `lo <= i && i < hi` (unsigned: `i < hi`) or `c.contains(&i)`",
+                "TD0807: bounded quantifier needs `lo <= i && i < hi` (unsigned: `i < hi`) or `c.contains(&i)`",
             )
         };
         let Some(Pat::Type(pat)) = closure.inputs.first().filter(|_| closure.inputs.len() == 1)

@@ -17,12 +17,12 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         match self.tcx.item_name(mac).as_str() {
             "dbg" if !self.tcx.sess.opts.debug_assertions => self.flag(
                 span,
-                Code::Fx0507,
+                Code::Td0507,
                 "`dbg!` is not allowed in release builds".into(),
             ),
             "print" | "println" if self.library_target() => self.flag(
                 span,
-                Code::Fx0508,
+                Code::Td0508,
                 "printing to stdout from a library; use a log sink".into(),
             ),
             _ => {}
@@ -62,7 +62,7 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
         if key == "tide_std::sync::mpsc::channel" && self.library_target() {
             self.flag(
                 e.span,
-                Code::Fx0608,
+                Code::Td0608,
                 "an unbounded channel in a library; use `sync_channel` for backpressure".into(),
             );
         }
@@ -122,7 +122,7 @@ impl<'tcx> Visitor<'tcx> for LockPrints<'_, '_, 'tcx> {
             {
                 self.walk.flag(
                     data.call_site,
-                    Code::Fx0607,
+                    Code::Td0607,
                     "printing inside a `Shared::with` closure; use a log sink".into(),
                 );
             }

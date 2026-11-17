@@ -5,5 +5,5 @@ use std::task::Tasks;
 
 pub fn nest(tasks: &Tasks) {
     let table = Arc::new(7u32, tasks);
-    let _cell = Shared::new(table, tasks); //~ FX0606
+    let _cell = Shared::new(table, tasks); //~ TD0606
 }

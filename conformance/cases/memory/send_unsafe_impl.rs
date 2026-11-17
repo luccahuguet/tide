@@ -7,6 +7,6 @@ pub struct Handle {
     pub inner: Rc<u8>,
 }
 // SAFETY: present, so the missing grant is the only error.
-unsafe impl Send for Handle {} //~ FX0901
+unsafe impl Send for Handle {} //~ TD0901
 // SAFETY: present, so the missing grant is the only error.
-unsafe impl Sync for Handle {} //~ FX0901
+unsafe impl Sync for Handle {} //~ TD0901

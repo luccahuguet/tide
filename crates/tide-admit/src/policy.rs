@@ -30,7 +30,7 @@ pub enum Verdict {
 pub struct Rule {
     pub pattern: &'static str,
     pub verdict: Verdict,
-    /// The rule-specific rejection; ordinary admission rules use FX0520.
+    /// The rule-specific rejection; ordinary admission rules use TD0520.
     pub code: Code,
     /// The replacement std offers, shown with the rejection.
     pub help: Option<&'static str>,
@@ -40,7 +40,7 @@ const fn rule(verdict: Verdict, pattern: &'static str, help: Option<&'static str
     Rule {
         pattern,
         verdict,
-        code: Code::Fx0520,
+        code: Code::Td0520,
         help,
     }
 }
@@ -63,7 +63,7 @@ const fn deny_as(pattern: &'static str, code: Code, help: &'static str) -> Rule 
 
 const fn ambient(pattern: &'static str) -> Rule {
     Rule {
-        code: Code::Fx0501,
+        code: Code::Td0501,
         ..deny(
             pattern,
             "use a capability in scope, or thread that capability through the parameters",
@@ -185,46 +185,46 @@ pub const RULES: &[Rule] = &[
     deny("std::sync::once_lock::*", LAZY),
     // ---- concurrency and panic habits (D8, D5); defining paths on the pinned rustc.
     // Tokio is a pseudo-key shared by resolved and recovered uses.
-    deny_as("tokio::spawn", Code::Fx0602, SPAWN),
+    deny_as("tokio::spawn", Code::Td0602, SPAWN),
     deny_as(
         "std::thread::functions::spawn",
-        Code::Fx0602,
+        Code::Td0602,
         SPAWN,
     ),
     deny_as(
         "std::thread::builder::*",
-        Code::Fx0602,
+        Code::Td0602,
         SPAWN,
     ),
     deny_as(
         "std::thread::scoped::*",
-        Code::Fx0602,
+        Code::Td0602,
         "use `tasks.scope` instead of Rust thread scopes",
     ),
     deny_as(
         "std::sync::poison::mutex::*",
-        Code::Fx0604,
+        Code::Td0604,
         "use `Shared::with` instead of a Mutex guard",
     ),
     deny_as(
         "std::sync::poison::rwlock::*",
-        Code::Fx0604,
+        Code::Td0604,
         "use `Shared::with` instead of a RwLock guard",
     ),
     deny_as(
         "std::panic::catch_unwind",
-        Code::Fx0701,
+        Code::Td0701,
         "use `tasks.spawn_isolated` instead",
     ),
     // ---- async machinery (D8); core::task keeps its admission code.
     deny_as(
         "core::future::*",
-        Code::Fx0601,
+        Code::Td0601,
         "use ordinary functions and structured tasks; remove async/await",
     ),
     deny_as(
         "core::pin::*",
-        Code::Fx0601,
+        Code::Td0601,
         "use ordinary owned or borrowed values instead of Pin",
     ),
     deny(
@@ -545,21 +545,21 @@ mod tests {
 
     #[test]
     fn ambient_rules_leave_existing_owners_and_capability_methods_alone() {
-        assert_eq!(lookup("std::fs::read").unwrap().code, Code::Fx0501);
+        assert_eq!(lookup("std::fs::read").unwrap().code, Code::Td0501);
         assert_eq!(
             lookup("std::time::Instant::elapsed").unwrap().code,
-            Code::Fx0501
+            Code::Td0501
         );
         assert_eq!(
             lookup("std::net::tcp::TcpStream::connect").unwrap().code,
-            Code::Fx0501
+            Code::Td0501
         );
         for key in [
             "std::path::Path::exists",
             "tide_std::io::Error::last_os_error",
             "core::sync::atomic::AtomicU64",
         ] {
-            assert_eq!(lookup(key).unwrap().code, Code::Fx0520);
+            assert_eq!(lookup(key).unwrap().code, Code::Td0520);
         }
         for key in [
             "tide_std::net::Net::bind",

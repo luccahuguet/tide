@@ -3,7 +3,7 @@ use std::task::Tasks;
 pub fn once(tasks: &Tasks) {
     let text = String::from("x");
     let s;
-    s = &text; //~ E0597 FX0203
+    s = &text; //~ E0597 TD0203
     let _ = tasks.spawn_isolated(move || s.len());
 }
 // Reassignment has deliberately uncertain provenance: keep rustc's rejection alone.

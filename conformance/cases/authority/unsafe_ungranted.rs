@@ -4,28 +4,28 @@
 // `unsafe` block, an unsafe attribute, and `unsafe impl` of a user's trait and of `Sync`.
 // Declaring an `unsafe trait` needs no grant, and calling a `safe` foreign function needs no
 // `unsafe` block.
-pub unsafe fn raw_len(p: &[u8]) -> usize { //~ FX0901
+pub unsafe fn raw_len(p: &[u8]) -> usize { //~ TD0901
     p.len()
 }
 
 pub fn len(p: &[u8]) -> usize {
     // SAFETY: `raw_len` reads only the slice's length.
-    unsafe { raw_len(p) } //~ FX0901
+    unsafe { raw_len(p) } //~ TD0901
 }
 
-#[unsafe(no_mangle)] //~ FX0901
+#[unsafe(no_mangle)] //~ TD0901
 pub fn tide_probe() -> u32 {
     7
 }
 
 pub trait RawRead {
-    unsafe fn read_raw(&self) -> u8; //~ FX0901
+    unsafe fn read_raw(&self) -> u8; //~ TD0901
 }
 
-unsafe extern "C" { //~ FX0901
-    fn tide_probe_ext(); //~ FX0901
-    pub safe fn abs(x: i32) -> i32; //~ FX0901
-    pub safe static TIDE_PROBE_COUNT: u32; //~ FX0901
+unsafe extern "C" { //~ TD0901
+    fn tide_probe_ext(); //~ TD0901
+    pub safe fn abs(x: i32) -> i32; //~ TD0901
+    pub safe static TIDE_PROBE_COUNT: u32; //~ TD0901
 }
 
 pub fn magnitude(x: i32) -> i32 {
@@ -33,14 +33,14 @@ pub fn magnitude(x: i32) -> i32 {
 }
 
 #[link(name = "m")]
-unsafe extern "C" {} //~ FX0901
+unsafe extern "C" {} //~ TD0901
 
 pub unsafe trait Zeroable {}
 
 // SAFETY: every bit pattern is a valid `u32`.
-unsafe impl Zeroable for u32 {} //~ FX0901
+unsafe impl Zeroable for u32 {} //~ TD0901
 
 pub struct Token(std::cell::Cell<u8>);
 
 // SAFETY: no method reads or writes the `Cell`.
-unsafe impl Sync for Token {} //~ FX0901
+unsafe impl Sync for Token {} //~ TD0901

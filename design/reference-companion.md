@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,961 tokens, recounted on 2026-11-16 with
+Core count: 24,961 tokens, recounted on 2026-11-17 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -24,49 +24,49 @@ Rerun it after any change to the core and update this line.
 
 | Rust habit | Tide | Code |
 | --- | --- | --- |
-| `trait Foo<'a>`, `for<'a>`, `type Item<'a>` | a lifetime on the method or impl, `Fn` sugar, owned items or indices | `FX0201`, `FX0404`, `FX0403` |
+| `trait Foo<'a>`, `for<'a>`, `type Item<'a>` | a lifetime on the method or impl, `Fn` sugar, owned items or indices | `TD0201`, `TD0404`, `TD0403` |
 | `impl Lexer { .. }` for `struct Lexer<'a>` | `impl Lexer<'_>` or `impl<'a> Lexer<'a>` | error with fix |
 | `fn new(s: &str) -> Self` in `impl<'a> P<'a>` | `fn new(s: &'a str) -> Self` | error with fix |
-| `Box<dyn Fn()>` in a signature or field, capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `FX0203` |
-| Self-referential struct | indices, `Arena`, or owner and view apart | `FX0210` |
-| `macro_rules!`, proc macros | functions, generics, generators | `FX0101` |
-| `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `FX0102` safe |
-| `debug_assert_eq!` | `debug_assert!(a == b)` | `FX0103` |
-| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)` (planned); `fs.exists(path)?` | `FX0520` |
-| `x as u8` (lossy), `n as f64` (`usize`) | `u8::try_from(x)?`, `x.truncate()`, `f64::round_from(n)` | `FX0301` |
+| `Box<dyn Fn()>` in a signature or field, capturing a borrow | `Box<dyn Fn() + 'a>`, or move owned data in | `TD0203` |
+| Self-referential struct | indices, `Arena`, or owner and view apart | `TD0210` |
+| `macro_rules!`, proc macros | functions, generics, generators | `TD0101` |
+| `#[derive(Serialize, Deserialize)]`, `thiserror::Error` | `Encode`, `Decode`, `Error` | `TD0102` safe |
+| `debug_assert_eq!` | `debug_assert!(a == b)` | `TD0103` |
+| `include_str!`, `env!`; `x.sin()`, `x.to_bits()`, `a.min(b)`; `core::sync::atomic`; `path.exists()` | a generated `const`; `math::sin(x)`, `float::bits(x)`, `float::min(a, b)`; `AtomicU64::new(0, tasks)` (planned); `fs.exists(path)?` | `TD0520` |
+| `x as u8` (lossy), `n as f64` (`usize`) | `u8::try_from(x)?`, `x.truncate()`, `f64::round_from(n)` | `TD0301` |
 | Relying on release-mode wrapping | `wrapping_add`, `Wrapping<T>` | run-time trap |
-| `impl Display for T` in another module | move it to `T`'s module | `FX0401` |
-| `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (14.2) | `FX0501` |
-| a local or `static` `OnceLock` or `LazyLock` | build the value first; between tasks, `Shared<Option<T>>`; `OnceCell` within one task | `FX0520` |
-| `static COUNTER: AtomicUsize`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `FX0502` |
-| `const fn bump(x: &mut u32)`, or a `const fn` taking a `&Cell` | a plain `fn`, or `Pure + Sync` parameters | `FX0518` |
-| `fn main()` or `fn main(root: Root)` without the attribute | add `#[tide::main]` | `FX0512` safe |
-| `fn helper(root: &Root)` | pass attenuated capabilities | `FX0503` |
-| `Root::sim` outside tests | real capabilities from `main` | `FX0504` |
-| `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `FX0507`, `FX0508` |
-| `async fn`, `.await`, `#[tokio::main]` | plain `fn` taking capabilities | `FX0601` safe |
-| `thread::spawn`, `tokio::spawn` | `tasks.scope(\|s\| s.spawn(..))` | `FX0602` |
+| `impl Display for T` in another module | move it to `T`'s module | `TD0401` |
+| `std::fs::read`, `OpenOptions::open`, `env::args`, `Instant::now`, `thread_rng` | capability methods (14.2) | `TD0501` |
+| a local or `static` `OnceLock` or `LazyLock` | build the value first; between tasks, `Shared<Option<T>>`; `OnceCell` within one task | `TD0520` |
+| `static COUNTER: AtomicUsize`, `lazy_static!`, `thread_local!` | a `const fn`-computed `static`, or a value built in `main` | `TD0502` |
+| `const fn bump(x: &mut u32)`, or a `const fn` taking a `&Cell` | a plain `fn`, or `Pure + Sync` parameters | `TD0518` |
+| `fn main()` or `fn main(root: Root)` without the attribute | add `#[tide::main]` | `TD0512` safe |
+| `fn helper(root: &Root)` | pass attenuated capabilities | `TD0503` |
+| `Root::sim` outside tests | real capabilities from `main` | `TD0504` |
+| `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `TD0507`, `TD0508` |
+| `async fn`, `.await`, `#[tokio::main]` | plain `fn` taking capabilities | `TD0601` safe |
+| `thread::spawn`, `tokio::spawn` | `tasks.scope(\|s\| s.spawn(..))` | `TD0602` |
 | `tasks.scope(\|s\| { .. })?;` into an error type other than `TaskError`, when no `Err` in the scope names one | annotate the body: `\|s\| -> Result<(), MyError> { .. }` | rustc E0283 |
-| I/O or a nested `with` inside a `Shared::with` closure; `write!(f, ..)` inside one in `Display::fmt` | do it before or after: `let n = self.cell.with(\|c\| c.hits).map_err(\|_\| fmt::Error)?; write!(f, "{n}")` | `FX0603` |
-| `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `FX0604` |
-| `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `FX0505` |
-| `tokio::select!` | a channel of an enum, deadlines | `FX0605` |
+| I/O or a nested `with` inside a `Shared::with` closure; `write!(f, ..)` inside one in `Display::fmt` | do it before or after: `let n = self.cell.with(\|c\| c.hits).map_err(\|_\| fmt::Error)?; write!(f, "{n}")` | `TD0603` |
+| `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `TD0604` |
+| `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `TD0505` |
+| `tokio::select!` | a channel of an enum, deadlines | `TD0605` |
 | `Err(SendError(v))` | `Err(e)`, then `e.into_inner()`; `e.is_cancelled()` (7.3) | rustc E0532 |
 | `Err(RecvError)` | `Err(RecvError::Disconnected)`, or `Err(e)` and `e.is_cancelled()`: the bare name is now a binding that also catches `Cancelled` | rustc warning only (`non_snake_case`) |
-| `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `FX0913` safe |
+| `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `TD0913` safe |
 | A pipeline stage returning `Err` when its channel disconnects | return `Ok`: a disconnect alone is not an echo, so the `Err` could outrank the failure that dropped the peer (7.1, 7.3) | — |
 | An `Rc<Cell<u32>>` counter captured by a `world.http` peer (planned) | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
-| `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `FX0606` |
-| Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `FX0610`, `FX0611` |
-| `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `FX0612` |
-| `catch_unwind` | `tasks.spawn_isolated` | `FX0701` |
-| Ignoring a `Result` | `?`, handle it, or `let _ =` | `FX0702` |
+| `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `TD0606` |
+| Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `TD0610`, `TD0611` |
+| `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `TD0612` |
+| `catch_unwind` | `tasks.spawn_isolated` | `TD0701` |
+| Ignoring a `Result` | `?`, handle it, or `let _ =` | `TD0702` |
 | `#[requires(a, b)]` | `#[requires(a)]` `#[requires(b)]` | safe fix |
-| `unsafe` without a grant or `// SAFETY:` | add the grant; write the comment | `FX0901`, `FX0902` |
-| `mod foo;` for a missing file, `#[path]` | create `foo.rs`; move the file | `FX0910`, `FX0911` |
-| Unused `use`; `extern crate foo;` | delete | `FX0913`, `FX0912` safe |
-| `a.rs` uses `b`, `b.rs` uses `a` | move shared items to a third module | `FX0914` |
-| `build.rs` | a generator you run; commit its output | `FX0915` |
+| `unsafe` without a grant or `// SAFETY:` | add the grant; write the comment | `TD0901`, `TD0902` |
+| `mod foo;` for a missing file, `#[path]` | create `foo.rs`; move the file | `TD0910`, `TD0911` |
+| Unused `use`; `extern crate foo;` | delete | `TD0913`, `TD0912` safe |
+| `a.rs` uses `b`, `b.rs` uses `a` | move shared items to a third module | `TD0914` |
+| `build.rs` | a generator you run; commit its output | `TD0915` |
 
 ### 14.2 Ambient std calls (6.9)
 
@@ -92,15 +92,15 @@ Rerun it after any change to the core and update this line.
 | Rust | Tide |
 | --- | --- |
 | `async fn f(..) -> T` | `fn f(net: &Net, ..) -> T` |
-| `x.await` | `x` (`FX0601`, safe fix deletes `.await` and `async`) |
+| `x.await` | `x` (`TD0601`, safe fix deletes `.await` and `async`) |
 | `#[tokio::main] async fn main()` | `#[tide::main] fn main(root: Root)` |
-| `tokio::spawn`, `thread::spawn` | `tasks.scope(\|s\| { s.spawn(..); .. })` (`FX0602`) |
+| `tokio::spawn`, `thread::spawn` | `tasks.scope(\|s\| { s.spawn(..); .. })` (`TD0602`) |
 | `std::thread::scope` | `tasks.scope` (children return `Result`) |
 | `tokio::join!(a, b)` | two `spawn`s, two `join`s |
 | `tokio::time::timeout(d, f)` | an operation deadline, or `s.set_deadline(clock.now() + d)` |
 | `buffer_unordered(4)`, `Semaphore` | `tasks.limit(4)` |
-| `tokio::select!` | one channel carrying an enum (`FX0605`) |
-| `Arc<Mutex<T>>`, `m.lock().unwrap()` | `Shared<T>`, `m.with(\|x\| ..)?` (`FX0604`) |
+| `tokio::select!` | one channel carrying an enum (`TD0605`) |
+| `Arc<Mutex<T>>`, `m.lock().unwrap()` | `Shared<T>`, `m.with(\|x\| ..)?` (`TD0604`) |
 | `catch_unwind`, `thread::spawn(..).join()` for isolation | `tasks.spawn_isolated(move \|\| ..)` |
 | `rayon::join`, `par_iter().map()`, `.reduce(..)` | `join`, `par_map`, then a sequential fold (section 8) |
 
@@ -391,7 +391,7 @@ this reference takes the reading shown.
 2. **`with_all`.** 01 D8 says cells are accessed only through `with` and
    `with2`; 02 §8.4 and 03 §6.5 add `with_all` under a provisional name.
    Kept (7.4).
-3. **`#[pure]`.** 03 §3.2 settles it (`FX0511`); 01 still lists it as open
+3. **`#[pure]`.** 03 §3.2 settles it (`TD0511`); 01 still lists it as open
    question 4. Kept (6.6).
 
 ### File backend behaviour (6.3; fx-byk.1 and fx-byk.2)
@@ -527,7 +527,7 @@ grants, policies, and `[contracts]` table. `tide check` rejects such a
 change before anything builds:
 
 ```text
-error[FX0920]: sealed item `feed::fetch_feed` changed
+error[TD0920]: sealed item `feed::fetch_feed` changed
   signature  + parameter `cache: &Fs`
   authority  net -> net+fs  widened
   contract   - #[ensures(match &result { .. })]  weakened
@@ -535,7 +535,7 @@ error[FX0920]: sealed item `feed::fetch_feed` changed
 
 Editing `tide.seal` yourself does not help: the merge checks your branch
 against the base's seal and reports a removed or changed entry as
-`FX0921`. When a sealed item blocks the task, for example because the work
+`TD0921`. When a sealed item blocks the task, for example because the work
 needs a capability the signature does not take, do not route around it in
 unsealed code: restore the item and report what the interface needs to
 whoever sealed it.
@@ -594,7 +594,7 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
 ```
 
 - **Rust's API.** `Command` and `Child` keep Rust's methods and receivers,
-  with two exceptions. There is no ambient `Command::new` (`FX0501`), and
+  with two exceptions. There is no ambient `Command::new` (`TD0501`), and
   `wait_with_output` takes `&mut self`, not `self`, so a cancelled call
   leaves the `Child` with you to `kill` and `wait` under `shield` (03 §1.1).
   As in Rust, the builder methods, `output`, `status`, `spawn`, `wait`, and
@@ -666,7 +666,7 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
   `law fn`, `ghost let`, `proof { }`, `assume`, views, `int`, `Seq`,
   triggers) keep draft 3.5's grammar until respelled as Rust (01 D10).
 - **Authority**: exercised-authority tracking, the least-authority lint
-  `FX0510`, and effect reporting for sinks; FFI (`extern`, the `ffi` grant,
+  `TD0510`, and effect reporting for sinks; FFI (`extern`, the `ffi` grant,
   `#[sim_model]`, `ThreadBound`); imported Rust crates, linked directly
   behind wrappers that take capabilities (`[rust-dependencies]`, linked-symbol
   scan); Rust packages depending on a Tide crate through its generated

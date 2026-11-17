@@ -12,9 +12,9 @@ pub fn wall(clock: &Clock) -> SystemTime {
 }
 
 pub fn since_ambient(start: Instant) -> Duration {
-    start.elapsed() //~ E0599 FX0501
+    start.elapsed() //~ E0599 TD0501
 }
 
 pub fn wall_ambient(t: SystemTime) -> bool {
-    t.elapsed().is_ok() //~ E0599 FX0501
+    t.elapsed().is_ok() //~ E0599 TD0501
 }

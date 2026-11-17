@@ -21,7 +21,7 @@ impl<T: Debug> From<Wrap<T>> for Failure {
 
 pub fn convert() -> Result<(), Failure> {
     let r: Result<(), Wrap<fn()>> = Err(Wrap(noop));
-    r?; //~ FX0520
+    r?; //~ TD0520
     Ok(())
 }
 
@@ -35,7 +35,7 @@ impl<T: Debug> IntoIterator for Items<T> {
 }
 
 pub fn iterate() {
-    for _ in Items(noop as fn()) {} //~ FX0520
+    for _ in Items(noop as fn()) {} //~ TD0520
 }
 
 pub struct Named<T>(pub T, pub String);
@@ -48,7 +48,7 @@ impl<T: Debug> Deref for Named<T> {
 }
 
 pub fn autoderef(n: &Named<fn()>) -> usize {
-    n.len() //~ FX0520
+    n.len() //~ TD0520
 }
 
 pub struct Logged<T: Debug>(pub T);
@@ -59,18 +59,18 @@ impl<T: Debug> Drop for Logged<T> {
 }
 
 pub fn dropped() {
-    let _l = Logged(noop as fn()); //~ FX0520
+    let _l = Logged(noop as fn()); //~ TD0520
 }
 
 // std builds and drops each `Logged<fn()>`; no expression has that type.
 pub fn mapped() -> usize {
     let fs: [fn(); 1] = [noop];
-    fs.into_iter().map(Logged).count() //~ FX0520
+    fs.into_iter().map(Logged).count() //~ TD0520
 }
 
 // A generic `T: Shown` or a `dyn Shown` formats with the supertrait the impl relies on.
 pub trait Shown: Debug {}
-impl Shown for fn() {} //~ FX0520
+impl Shown for fn() {} //~ TD0520
 
 // Code generic over `T: Make` formats `T::Out` with the bound the impl's type meets.
 pub trait Make {
@@ -78,7 +78,7 @@ pub trait Make {
     fn make(&self) -> Self::Out;
 }
 impl Make for u8 {
-    type Out = fn(); //~ FX0520
+    type Out = fn(); //~ TD0520
     fn make(&self) -> fn() {
         noop
     }
@@ -94,5 +94,5 @@ impl<T: Debug + Copy> Clone for Twin<T> {
 }
 
 pub fn cloned(t: &(Twin<fn()>,)) -> (Twin<fn()>,) {
-    t.clone() //~ FX0520
+    t.clone() //~ TD0520
 }

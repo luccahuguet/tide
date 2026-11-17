@@ -4,16 +4,16 @@
 // clause, `result` is always the clause word (04 §1.1), so `check`'s `requires`
 // does not name its parameter. The production macro rejects each misuse.
 #[ensures(result > 0)]
-pub fn first(result: u32) -> u32 { //~ error FX0805
+pub fn first(result: u32) -> u32 { //~ error TD0805
     result + 1
 }
 
-#[requires(result > 0)] //~ error FX0805
+#[requires(result > 0)] //~ error TD0805
 pub fn check(result: u32) -> u32 {
     result
 }
 
-#[requires(result > n)] //~ error FX0805
+#[requires(result > n)] //~ error TD0805
 pub fn grow(n: u32) -> u32 {
     n + 1
 }
@@ -22,7 +22,7 @@ pub fn grow(n: u32) -> u32 {
 pub fn walk(n: u32) -> u32 {
     let mut k = 0;
     while k < n {
-        invariant!(k <= result); //~ error FX0805
+        invariant!(k <= result); //~ error TD0805
         k += 1;
     }
     k

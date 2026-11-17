@@ -5,6 +5,6 @@
 fn pick<'a, 'b, T>(_: &'a &'b (), v: &'b T) -> &'a T { v }
 
 pub fn same<'a>(unit: &'a &'a (), x: &'a u32) -> &'a u32 {
-    let f: fn(&'a &'a (), &'a u32) -> &'a u32 = pick; //~ FX0206
+    let f: fn(&'a &'a (), &'a u32) -> &'a u32 = pick; //~ TD0206
     f(unit, x)
 }

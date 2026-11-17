@@ -7,7 +7,7 @@
 // trait's associated type, whose where-clauses a use that names it meets and its impls assume;
 // of an opaque type's bounds on its associated types, which its users meet without selecting an
 // impl; and of the `Termination` impl that rustc's entry point (a `main` without
-// `#[tide::main]` is FX0512) and the test harness report a result through.
+// `#[tide::main]` is TD0512) and the test harness report a result through.
 use std::ops::Deref;
 use std::process::{ExitCode, Termination};
 use std::time::{Clock, Instant};
@@ -37,15 +37,15 @@ fn read(clock: &Clock) -> Instant {
 }
 
 pub fn method(c: &Checked<Clock>) -> Instant {
-    c.now() //~ FX0517
+    c.now() //~ TD0517
 }
 
 pub fn field(c: &Checked<Holder>) -> Instant {
-    c.clock.now() //~ FX0517
+    c.clock.now() //~ TD0517
 }
 
 pub fn coercion(c: &Checked<Clock>) -> Instant {
-    read(c) //~ FX0517
+    read(c) //~ TD0517
 }
 
 pub fn pure_target(c: &Checked<u64>) -> u64 {
@@ -59,14 +59,14 @@ impl<T: Pure> Drop for Guard<T> {
 }
 
 pub fn guarded(clock: Clock) {
-    let _ = Guard(clock); //~ FX0517
+    let _ = Guard(clock); //~ TD0517
 }
 
 pub fn guarded_data(ticks: u64) {
     let _ = Guard(ticks);
 }
 
-pub fn guard_clocks() -> impl Fn(Clock) -> Guard<Clock> { //~ FX0517
+pub fn guard_clocks() -> impl Fn(Clock) -> Guard<Clock> { //~ TD0517
     Guard
 }
 
@@ -79,7 +79,7 @@ impl Maker {
 }
 
 pub fn guarded_inside(maker: &Maker) {
-    maker.make::<Vec<Guard<Clock>>>(); //~ FX0517
+    maker.make::<Vec<Guard<Clock>>>(); //~ TD0517
 }
 
 pub struct Logged<T>(pub T);
@@ -87,7 +87,7 @@ pub struct Logged<T>(pub T);
 impl<T> Drop for Logged<T> {
     fn drop(&mut self)
     where
-        T: Pure, //~ FX0517
+        T: Pure, //~ TD0517
     {
     }
 }
@@ -102,7 +102,7 @@ pub trait Show {
 impl<T> Show for Logged<T> {
     fn show(&self)
     where
-        T: Pure, //~ FX0517
+        T: Pure, //~ TD0517
     {
     }
     fn show_pure(&self)
@@ -113,32 +113,32 @@ impl<T> Show for Logged<T> {
 }
 
 pub trait Wrap {
-    type Out<U>: Deref; //~ FX0403
+    type Out<U>: Deref; //~ TD0403
 }
 
 impl Wrap for Holder {
-    type Out<U> = Checked<U> where U: Pure; //~ FX0403 FX0517
+    type Out<U> = Checked<U> where U: Pure; //~ TD0403 TD0517
 }
 
 pub trait Supply {
-    type Supplied<U>: Deref + Default //~ FX0403
+    type Supplied<U>: Deref + Default //~ TD0403
     where
         U: Pure;
 }
 
 impl Supply for Holder {
-    type Supplied<U> = Checked<Option<U>> where U: Pure; //~ FX0403
+    type Supplied<U> = Checked<Option<U>> where U: Pure; //~ TD0403
 }
 
 pub fn supplied<T: Supply>() {
-    let _ = &*<T::Supplied<Clock>>::default(); //~ FX0517
+    let _ = &*<T::Supplied<Clock>>::default(); //~ TD0517
 }
 
 pub fn supplied_data<T: Supply>() {
     let _ = &*<T::Supplied<u64>>::default();
 }
 
-pub fn checked_all<T>(items: Vec<T>) -> impl Iterator<Item: Deref> { //~ FX0517
+pub fn checked_all<T>(items: Vec<T>) -> impl Iterator<Item: Deref> { //~ TD0517
     items.into_iter().map(Checked)
 }
 
@@ -146,11 +146,11 @@ pub fn checked_data(items: Vec<u64>) -> impl Iterator<Item: Deref> {
     items.into_iter().map(Checked)
 }
 
-#[test] //~ FX0517
+#[test] //~ TD0517
 fn checked_test() -> Checked<Clock> {
     todo!()
 }
 
-fn main() -> Checked<Option<Clock>> { //~ FX0512 FX0517
+fn main() -> Checked<Option<Clock>> { //~ TD0512 TD0517
     Checked(None)
 }

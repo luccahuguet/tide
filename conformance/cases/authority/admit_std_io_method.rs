@@ -5,13 +5,13 @@ use std::io;
 use std::path::Path;
 
 pub fn present(p: &Path) -> bool {
-    p.exists() //~ FX0520
+    p.exists() //~ TD0520
 }
 
 pub fn last() -> io::Error {
-    io::Error::last_os_error() //~ FX0520
+    io::Error::last_os_error() //~ TD0520
 }
 
 pub fn absolute(p: &Path) -> bool {
-    std::path::absolute(p).is_ok() //~ FX0520
+    std::path::absolute(p).is_ok() //~ TD0520
 }

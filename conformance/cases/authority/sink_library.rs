@@ -3,6 +3,6 @@
 use std::println as announce;
 
 pub fn report(n: u32) {
-    print!("items: "); //~ WARN FX0508
-    announce!("{n}"); //~ WARN FX0508
+    print!("items: "); //~ WARN TD0508
+    announce!("{n}"); //~ WARN TD0508
 }

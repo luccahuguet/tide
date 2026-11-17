@@ -192,7 +192,7 @@ provisional until E1 meets its thresholds.
     rejects parameters on a plain `main` (E0580); the attribute generates
     Rust's entry point and mints the `Root` (D7). Every binary's `main`
     carries it, so every binary starts the runtime and sinks and runs under
-    `tide sim`; a `main` without it is `FX0512`, whose safe fix adds it;
+    `tide sim`; a `main` without it is `TD0512`, whose safe fix adds it;
   - a typed hole is `todo!()` or `hole!(name)` (D14).
 - Lifetimes are Rust 2024's, except the forms beyond D4's power ceiling
   (D2).
@@ -232,7 +232,7 @@ parse (bare `requires` and `ensures` clauses after a signature, a bare
     imply. A returned `impl Trait` captures every generic parameter in
     scope, lifetimes included, unless `+ use<..>` lists fewer.
     `T: 'static` is written as in Rust; the formatter does not rewrite it.
-  - Rejected (`FX0201`, `FX0403`, `FX0404`), because they lie beyond D4's
+  - Rejected (`TD0201`, `TD0403`, `TD0404`), because they lie beyond D4's
     power ceiling: lifetime parameters on traits, explicit `for<'a>`
     (higher-ranked lifetimes come from elision in `Fn` sugar and `fn`
     pointer types), and generic associated types.
@@ -360,7 +360,7 @@ operators.
   where-clauses must be structurally smaller than the impl head: a bound is
   accepted when its bounded type is a type parameter, a projection of one,
   contains no type parameter, or is a strict subterm of the impl's self type
-  or trait arguments; otherwise it is `FX0406`.
+  or trait arguments; otherwise it is `TD0406`.
 - Generics are definition-checked: instantiation never produces a type error.
 - Coherence never treats a missing auto or marker trait (`Send`, `Sync`,
   `Pure`) as making two impls disjoint.
@@ -493,7 +493,7 @@ scanning.
   and std's inherent methods stay callable on the types Tide's std
   re-exports. Tide's checker therefore admits only listed `core` and `alloc`
   items and listed inherent methods, keyed on crate identity, and rejects the
-  rest (`FX0520`): safe hardware intrinsics such as `__cpuid`; raw pointer
+  rest (`TD0520`): safe hardware intrinsics such as `__cpuid`; raw pointer
   types without an `unsafe` grant, since their `Debug`, `Hash`, and `Ord`
   impls observe addresses, and every address observer (`addr`, `{:p}`);
   atomics not created through `Tasks`; float observers and math methods
@@ -581,7 +581,7 @@ scanning.
   lands, public claims say that safety against a malicious dependency rests
   on rustc's soundness, which has open `I-unsound` issues; the checker closes
   only the `fn`-pointer route of rust-lang/rust#25860 (02 CLOSURE-3) and,
-  since fx-qlek.5, the trait-object route of rust-lang/rust#57893 (`FX0402`).
+  since fx-qlek.5, the trait-object route of rust-lang/rust#57893 (`TD0402`).
   Decided 2026-11-15 (coordinator, owner-delegated; bead `fx-iwjq`).
 
 Rejected: effect rows and effect variables; implicit capability resolution
@@ -725,7 +725,7 @@ execution internally; it runs tasks on baton-passed threads.
   `final(*x)` does, and `old(*x)` its value at entry. Where `final(*x)`
   would be a prophecy (`x`'s origin appears in another parameter's type,
   the result type, or a bound other than on the right of an outlives
-  bound, 04 §4.1), naming `x` outside `old(..)` is `FX0803`. `old(e)`
+  bound, 04 §4.1), naming `x` outside `old(..)` is `TD0803`. `old(e)`
   evaluates `e` at entry and snapshots the value it
   denotes, copying `Copy` values and cloning others; `old` of a type that is
   neither `Copy` nor `Clone` is an error, and a panic while taking a snapshot
@@ -1068,7 +1068,7 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   that std as `std` (`--extern std=`), so rustc's std injection loads it and
   the real std's paths cannot be named.
 - **Tide's checker gates every crate before rustc writes any artifact for
-  it.** It owns the subset, authority, `Pure`, contracts, FX diagnostics, and
+  it.** It owns the subset, authority, `Pure`, contracts, TD diagnostics, and
   the trust diff. It also enforces an **admission allowlist** over `core`,
   `alloc`, and std's inherent methods, keyed on crate identity. That closes
   what the std swap leaves open: safe hardware queries, raw pointer types and
@@ -1108,10 +1108,10 @@ gate passed with checker architecture A then B (bead `fx-7qu`; spike
   a `&mut` parameter the body reassigns, which its closure lowering
   rejects with E0521, and snapshot choices that need the checker's `Pure`
   decision) are implementation work. Its `tide-admit` reports every failed
-  `Pure` obligation as `FX0510`; the design reports one under the code of
-  the rule that needs `Pure` (`FX0502`, `FX0518`, `FX0603`, `FX0606`,
-  `FX0610`, `FX0611`, `FX0612`), and otherwise as `FX0517` (03 §3.1). A
-  broken `#[pure]` is `FX0511`, and `FX0510` is the least-authority lint (03
+  `Pure` obligation as `TD0510`; the design reports one under the code of
+  the rule that needs `Pure` (`TD0502`, `TD0518`, `TD0603`, `TD0606`,
+  `TD0610`, `TD0611`, `TD0612`), and otherwise as `TD0517` (03 §3.1). A
+  broken `#[pure]` is `TD0511`, and `TD0510` is the least-authority lint (03
   §4.2). Its float fixture still rejects `sqrt`, which D3 admits.
 - **Changes applied to the other decisions** (draft 3.7, bead `fx-pcb`):
   - D1: contract, loop-invariant, and `main` spellings; declared modules;

@@ -35,10 +35,10 @@ fn admit(name: &str, source: &str, flags: &[&str]) -> (i32, String) {
     (out.status.code().unwrap(), stderr)
 }
 
-fn fx_lines(stderr: &str) -> Vec<&str> {
+fn td_lines(stderr: &str) -> Vec<&str> {
     stderr
         .lines()
-        .filter(|l| l.contains(": error: FX"))
+        .filter(|l| l.contains(": error: TD"))
         .collect()
 }
 
@@ -50,7 +50,7 @@ mod reference_allowlist {
 fn reference_kept_families_pass_the_allowlist_without_reexport_bypasses() {
     let (code, stderr) = admit("reference-allowlist", &reference_allowlist::source(), &[]);
     assert_eq!(code, 0, "{stderr}");
-    assert!(fx_lines(&stderr).is_empty(), "{stderr}");
+    assert!(td_lines(&stderr).is_empty(), "{stderr}");
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn the_backstop_keeps_exported_library_roots_in_every_profile() {
         ),
         (
             "backstop-exported-reify",
-            // A generic std function without references, so FX0206 (CLOSURE-3) has no bound
+            // A generic std function without references, so TD0206 (CLOSURE-3) has no bound
             // to reject and the backstop alone finds `Ord for fn()`.
             "pub fn chooser() -> fn(fn(), fn()) -> fn() { std::cmp::max }\n",
         ),
@@ -75,9 +75,9 @@ fn the_backstop_keeps_exported_library_roots_in_every_profile() {
             );
             assert_eq!(code, 1, "{name}/{profile}: {stderr}");
             assert!(
-                fx_lines(&stderr)
+                td_lines(&stderr)
                     .iter()
-                    .any(|line| line.contains("FX0520:") && line.contains("for fn()`")),
+                    .any(|line| line.contains("TD0520:") && line.contains("for fn()`")),
                 "{name}/{profile}: {stderr}"
             );
         }
@@ -103,12 +103,12 @@ mod sub;
     let (code, stderr) = admit("reject", source, &[]);
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        fx_lines(&stderr),
+        td_lines(&stderr),
         // One per position: the item written there, not the call's type.
         [
-            "lib.rs:3:14: error: FX0520: `core::sync::atomic::AtomicU64` is not admitted",
-            "lib.rs:5:16: error: FX0520: `std::f64::<impl f64>::sin` is not admitted",
-            "sub.rs:3:21: error: FX0520: `core::sync::atomic::AtomicU64` is not admitted",
+            "lib.rs:3:14: error: TD0520: `core::sync::atomic::AtomicU64` is not admitted",
+            "lib.rs:5:16: error: TD0520: `std::f64::<impl f64>::sin` is not admitted",
+            "sub.rs:3:21: error: TD0520: `core::sync::atomic::AtomicU64` is not admitted",
         ],
         "{stderr}"
     );
@@ -177,9 +177,9 @@ mod sub;
             &[],
         );
         if code != 1
-            || !fx_lines(&stderr).iter().any(|line| {
+            || !td_lines(&stderr).iter().any(|line| {
                 line.starts_with("lib.rs:2:")
-                    && line.contains(&format!("error: FX0520: `{key}` is not admitted"))
+                    && line.contains(&format!("error: TD0520: `{key}` is not admitted"))
             })
         {
             mismatches.push(format!("{name} (exit {code}): {stderr}"));
@@ -206,9 +206,9 @@ mod sub;
         );
         assert_eq!(code, 1, "{method}: {stderr}");
         assert_eq!(
-            fx_lines(&stderr),
+            td_lines(&stderr),
             [format!(
-                "lib.rs:2:13: error: FX0520: `std::path::Path::{method}` is not admitted"
+                "lib.rs:2:13: error: TD0520: `std::path::Path::{method}` is not admitted"
             )],
             "{stderr}"
         );
@@ -235,9 +235,9 @@ mod sub;
             );
             assert_eq!(code, 1, "{ty}::{method}: {stderr}");
             assert_eq!(
-                fx_lines(&stderr),
+                td_lines(&stderr),
                 [format!(
-                    "lib.rs:2:13: error: FX0520: `{owner}::{ty}::<impl {ty}>::{method}` is not admitted"
+                    "lib.rs:2:13: error: TD0520: `{owner}::{ty}::<impl {ty}>::{method}` is not admitted"
                 )],
                 "{stderr}"
             );
@@ -256,8 +256,8 @@ fn hardware_queries_are_rejected() {
     let (code, stderr) = admit("hardware", source, &[]);
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        fx_lines(&stderr),
-        ["lib.rs:2:5: error: FX0520: `core::core_arch::x86::cpuid::__cpuid` is not admitted"],
+        td_lines(&stderr),
+        ["lib.rs:2:5: error: TD0520: `core::core_arch::x86::cpuid::__cpuid` is not admitted"],
         "{stderr}"
     );
     let (code, stderr) = admit(
@@ -267,8 +267,8 @@ fn hardware_queries_are_rejected() {
     );
     assert_eq!(code, 1, "{stderr}");
     assert!(
-        fx_lines(&stderr)
-            .contains(&"lib.rs:3:14: error: FX0520: `core::arch::asm` is not admitted"),
+        td_lines(&stderr)
+            .contains(&"lib.rs:3:14: error: TD0520: `core::arch::asm` is not admitted"),
         "{stderr}"
     );
 }
@@ -283,8 +283,8 @@ pub fn address(x: &u8) -> usize {
     let (code, stderr) = admit("ungranted", source, &[]);
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        fx_lines(&stderr),
-        ["lib.rs:2:5: error: FX0520: `*const T` is not admitted"],
+        td_lines(&stderr),
+        ["lib.rs:2:5: error: TD0520: `*const T` is not admitted"],
         "{stderr}"
     );
 
@@ -321,22 +321,22 @@ pub fn deep() -> {deep} {{
     );
     let (code, stderr) = admit("hidden", &source, &[]);
     assert_eq!(code, 1, "{stderr}");
-    let lines = fx_lines(&stderr);
+    let lines = td_lines(&stderr);
     let map =
         "impl core::convert::From<[(K, V); N]> for std::collections::hash::map::HashMap<K, V>";
     let set = "impl core::convert::From<[T; N]> for std::collections::hash::set::HashSet<T>";
     assert_eq!(
         lines[..3],
         [
-            format!("lib.rs:5:6: error: FX0520: `{map}` is not admitted"),
-            format!("lib.rs:5:31: error: FX0520: `{set}` is not admitted"),
-            format!("lib.rs:8:5: error: FX0520: `{map}` is not admitted"),
+            format!("lib.rs:5:6: error: TD0520: `{map}` is not admitted"),
+            format!("lib.rs:5:31: error: TD0520: `{set}` is not admitted"),
+            format!("lib.rs:8:5: error: TD0520: `{map}` is not admitted"),
         ],
         "{stderr}"
     );
     assert_eq!(lines.len(), 4, "{stderr}");
     assert!(
-        lines[3].starts_with("lib.rs:11:5: error: FX0520: `lib::W<lib::W<")
+        lines[3].starts_with("lib.rs:11:5: error: TD0520: `lib::W<lib::W<")
             && lines[3].ends_with(
                 ": core::default::Default` is not admitted (its obligations nest too deep to check)"
             ),
@@ -502,7 +502,7 @@ fn t() -> Result<(), fn()> {
 ";
     let (code, stderr) = admit("backstop", source, &["--tide-test-backstop"]);
     assert_eq!(code, 1, "{stderr}");
-    let lines = fx_lines(&stderr);
+    let lines = td_lines(&stderr);
     let at: Vec<_> = lines
         .iter()
         .map(|l| l.split(": error").next().unwrap())
@@ -526,11 +526,11 @@ fn t() -> Result<(), fn()> {
         ],
         "{stderr}"
     );
-    let fn_debug = "FX0520: `impl core::fmt::Debug for fn()` is not admitted \
+    let fn_debug = "TD0520: `impl core::fmt::Debug for fn()` is not admitted \
                     (it runs as `std::ptr::<impl Debug for fn()>::fmt`)";
     assert!(
         lines[0].ends_with(
-            "FX0520: `impl core::convert::From<[(K, V); N]> for \
+            "TD0520: `impl core::convert::From<[(K, V); N]> for \
              std::collections::hash::map::HashMap<K, V>` is not admitted (it runs as \
              `<HashMap<u8, u8> as From<[(u8, u8); 1]>>::from`)"
         ),
@@ -542,7 +542,7 @@ fn t() -> Result<(), fn()> {
     let (code, stderr) = admit("backstop-test", source, &["--test", "--tide-test-backstop"]);
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        fx_lines(&stderr),
+        td_lines(&stderr),
         [format!("lib.rs:122:1: error: {fn_debug}")],
         "{stderr}"
     );
@@ -556,7 +556,7 @@ fn t() -> Result<(), fn()> {
     );
     assert_eq!(code, 1, "{stderr}");
     assert_eq!(
-        fx_lines(&stderr),
+        td_lines(&stderr),
         [format!("lib.rs:2:1: error: {fn_debug}")],
         "{stderr}"
     );
@@ -573,9 +573,9 @@ fn an_imported_main_is_unmarked() {
         &["--crate-type=bin", "--tide-std", std.to_str().unwrap()],
     );
     assert_eq!(code, 1, "{stderr}");
-    let unmarked = "lib.rs:1:5: error: FX0512: `main` does not carry `#[tide::main]`, which \
+    let unmarked = "lib.rs:1:5: error: TD0512: `main` does not carry `#[tide::main]`, which \
                     starts the runtime";
-    assert!(fx_lines(&stderr).contains(&unmarked), "{stderr}");
+    assert!(td_lines(&stderr).contains(&unmarked), "{stderr}");
 }
 
 /// A minimal Tide std, built with the pinned rustc: Rust's std with `Pure`, which rustc meets
@@ -704,13 +704,13 @@ impl Show for Clock {
         &["--tide-std", std, "--tide-test-backstop"],
     );
     assert_eq!(code, 1, "{stderr}");
-    let clock = "FX0517: `Clock` is never `Pure`";
+    let clock = "TD0517: `Clock` is never `Pure`";
     assert_eq!(
-        fx_lines(&stderr),
+        td_lines(&stderr),
         [
             format!("lib.rs:7:21: error: {clock}"),
             format!("lib.rs:30:5: error: {clock}"),
-            "lib.rs:33:5: error: FX0517: `W<Clock>` is not `Pure`: it reaches `Clock`, which is \
+            "lib.rs:33:5: error: TD0517: `W<Clock>` is not `Pure`: it reaches `Clock`, which is \
              never `Pure`"
                 .to_string(),
             // In `make`, the nearest local item that drops the guards.
@@ -840,11 +840,11 @@ fn private(_: Net) {}
     assert_eq!(code, 1);
     assert!(!file.exists());
 
-    // `#![no_std]` is not admitted, even with no `extern crate std` (FX0520), and the failed
+    // `#![no_std]` is not admitted, even with no `extern crate std` (TD0520), and the failed
     // check leaves no artifact; an inactive `cfg_attr` of it is no `#![no_std]`.
     let (code, stderr) = admit("artifact", "#![no_std]\npub fn f() {}\n", &flags);
     assert_eq!(code, 1, "{stderr}");
-    assert!(stderr.contains("FX0520: `#![no_std]`"), "{stderr}");
+    assert!(stderr.contains("TD0520: `#![no_std]`"), "{stderr}");
     assert!(!file.exists());
     let inactive = "#![cfg_attr(any(), no_std)]\npub fn f() {}\n";
     let (code, stderr) = admit("artifact", inactive, &flags);
@@ -953,10 +953,10 @@ unsafe extern \"C\" {}
 ";
     let (code, stderr) = admit("foreign-ungranted", source, &["--tide-std", std]);
     assert_eq!(code, 1, "{stderr}");
-    let block = "error: FX0901: an `unsafe extern` block needs the package's `unsafe` grant";
-    let item = "error: FX0901: a foreign item needs the package's `unsafe` grant";
+    let block = "error: TD0901: an `unsafe extern` block needs the package's `unsafe` grant";
+    let item = "error: TD0901: a foreign item needs the package's `unsafe` grant";
     assert_eq!(
-        fx_lines(&stderr),
+        td_lines(&stderr),
         [
             format!("lib.rs:1:1: {block}"),
             format!("lib.rs:2:5: {item}"),
@@ -1073,44 +1073,44 @@ fn trait_ceiling_rejects_definitions_and_accepts_their_rewrites() {
             "placement",
             "pub struct S; mod child { impl super::S {} }",
             "pub struct S; impl S {}",
-            "FX0401",
+            "TD0401",
         ),
         (
             "overlap",
             "pub trait K {} impl<T> K for T {} impl K for u8 {}",
             "pub trait K {} pub struct S; impl K for S {}",
-            "FX0402",
+            "TD0402",
         ),
         (
             "gat",
             "pub trait K { type A<T>; }",
             "pub trait K { type A; }",
-            "FX0403",
+            "TD0403",
         ),
         (
             "binder",
             "pub type Callback = for<'a> fn(&'a u8) -> &'a u8;",
             "pub type Callback = fn(&u8) -> &u8;",
-            "FX0404",
+            "TD0404",
         ),
-        ("auto", "pub auto trait K {}", "pub trait K {}", "FX0405"),
+        ("auto", "pub auto trait K {}", "pub trait K {}", "TD0405"),
         (
             "bounds",
             "pub trait K {} impl<T> K for T where Vec<T>: K {}",
             "pub trait K {} impl<T: K> K for Vec<T> {}",
-            "FX0406",
+            "TD0406",
         ),
         (
             "recursion",
             "pub fn f<T>(x: T) { f(vec![x]); }",
             "pub fn f<A, B>(a: A, b: B) { f(b, a); }",
-            "FX0407",
+            "TD0407",
         ),
         (
             "names",
             "pub struct S<T>(T); impl S<u8> { pub fn new() {} } impl S<u16> { pub fn new() {} }",
             "pub struct S<T>(T); impl S<u8> { pub fn new_byte() {} } impl S<u16> { pub fn new_word() {} }",
-            "FX0408",
+            "TD0408",
         ),
     ] {
         let (exit, err) = admit(
@@ -1136,9 +1136,9 @@ fn trait_placement_follows_fundamental_wrappers_to_the_exact_type_module() {
     assert_eq!(exit, 0, "{err}");
     let (exit, err) = admit("trait-placement-wrappers-reject", rejected, &[]);
     assert_eq!(exit, 1, "{err}");
-    let count = rejected.matches("//~ FX0401").count();
-    assert_eq!(fx_lines(&err).len(), count, "{err}");
-    assert_eq!(err.matches("error: FX0401:").count(), count, "{err}");
+    let count = rejected.matches("//~ TD0401").count();
+    assert_eq!(td_lines(&err).len(), count, "{err}");
+    assert_eq!(err.matches("error: TD0401:").count(), count, "{err}");
     assert_eq!(err.matches("move the impl").count(), count - 1, "{err}");
     assert_eq!(
         err.matches("no module can hold this impl").count(),
@@ -1152,7 +1152,7 @@ fn trait_placement_explains_when_no_module_can_hold_the_impl() {
     let source = "pub struct Local; impl From<Local> for u16 { fn from(_: Local) -> u16 { 0 } }";
     let (exit, err) = admit("trait-placement-no-module", source, &[]);
     assert_eq!(exit, 1, "{err}");
-    assert!(err.contains("FX0401: no module can hold this impl"), "{err}");
+    assert!(err.contains("TD0401: no module can hold this impl"), "{err}");
     assert!(err.contains("Into<u16> for Local"), "{err}");
     assert!(err.contains("newtype"), "{err}");
     assert!(!err.contains("move the impl"), "{err}");
@@ -1167,8 +1167,8 @@ fn trait_recursion_distinguishes_constructors_projections_and_selected_impl_args
     let (exit, err) = admit("trait-recursion-regressions-reject", rejected, &[]);
     assert_eq!(exit, 1, "{err}");
     assert_eq!(
-        err.matches("error: FX0407:").count(),
-        rejected.matches("//~ FX0407").count(),
+        err.matches("error: TD0407:").count(),
+        rejected.matches("//~ TD0407").count(),
         "{err}"
     );
 }
@@ -1199,9 +1199,9 @@ fn ambient_operations_use_the_closed_policy_code() {
     assert_eq!(code, 1, "{stderr}");
     for line in 2..=19 {
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|d| d.starts_with(&format!("lib.rs:{line}:")) && d.contains("FX0501:")),
+                .any(|d| d.starts_with(&format!("lib.rs:{line}:")) && d.contains("TD0501:")),
             "line {line}: {stderr}"
         );
     }
@@ -1210,33 +1210,33 @@ fn ambient_operations_use_the_closed_policy_code() {
 #[test]
 fn concurrency_and_error_rules_reject_with_their_own_codes() {
     for (name, source, expected) in [
-        ("async", "pub async fn run() {}", "FX0601"),
+        ("async", "pub async fn run() {}", "TD0601"),
         (
             "future",
             "pub fn run(_: impl core::future::Future<Output = ()>) {}",
-            "FX0601",
+            "TD0601",
         ),
-        ("pin", "pub fn run(_: core::pin::Pin<&u8>) {}", "FX0601"),
+        ("pin", "pub fn run(_: core::pin::Pin<&u8>) {}", "TD0601"),
         (
             "spawn",
             "pub fn run() { let _ = std::thread::spawn(|| ()); }",
-            "FX0602",
+            "TD0602",
         ),
         (
             "mutex",
             "pub fn run() { let _ = std::sync::Mutex::new(1); }",
-            "FX0604",
+            "TD0604",
         ),
-        ("select", "pub fn run() { select! {}; }", "FX0605"),
+        ("select", "pub fn run() { select! {}; }", "TD0605"),
         (
             "catch",
             "pub fn run() { let _ = std::panic::catch_unwind(|| ()); }",
-            "FX0701",
+            "TD0701",
         ),
         (
             "result",
             "#[allow(unused_must_use)] pub fn run() { Ok::<(), core::convert::Infallible>(()); }",
-            "FX0702",
+            "TD0702",
         ),
     ] {
         let (status, stderr) = admit(&format!("habits-{name}"), source, &[]);
@@ -1266,8 +1266,8 @@ fn concurrency_select_catches_resolved_and_renamed_macros() {
     ] {
         let (status, stderr) = admit(&format!("habits-select-{name}"), source, &[]);
         assert_eq!(status, 1, "{stderr}");
-        assert!(stderr.contains("error: FX0605:"), "{stderr}");
-        assert!(!stderr.contains("FX0103:"), "{stderr}");
+        assert!(stderr.contains("error: TD0605:"), "{stderr}");
+        assert!(!stderr.contains("TD0103:"), "{stderr}");
     }
 }
 
@@ -1303,9 +1303,9 @@ fn concurrency_tokio_module_imports_keep_the_spawn_diagnostic() {
         let (status, stderr) = admit(&format!("habits-tokio-{name}"), source, &[]);
         assert_eq!(status, 1, "{stderr}");
         assert!(
-            fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+            td_lines(&stderr).iter().any(|diagnostic| diagnostic
                 .starts_with(&format!("lib.rs:{line}:"))
-                && diagnostic.contains("error: FX0602:")),
+                && diagnostic.contains("error: TD0602:")),
             "{name}: {stderr}"
         );
     }
@@ -1328,8 +1328,8 @@ fn a_module_file_inside_the_snapshot_is_accepted() {
 fn a_rejected_import_has_no_secondary_unused_diagnostic() {
     let (code, stderr) = admit("rejected-import-usage", "use core::sync::atomic::AtomicU64;", &[]);
     assert_eq!(code, 1, "{stderr}");
-    assert!(stderr.contains("error: FX0520:"), "{stderr}");
-    assert!(!stderr.contains("FX0913"), "{stderr}");
+    assert!(stderr.contains("error: TD0520:"), "{stderr}");
+    assert!(!stderr.contains("TD0913"), "{stderr}");
 }
 
 #[test]
@@ -1340,9 +1340,9 @@ fn a_rejected_import_does_not_hide_an_unused_list_sibling() {
         &[],
     );
     assert_eq!(code, 1, "{stderr}");
-    assert!(stderr.contains("error: FX0520:"), "{stderr}");
+    assert!(stderr.contains("error: TD0520:"), "{stderr}");
     assert!(
-        stderr.lines().any(|line| line.starts_with("lib.rs:3:") && line.contains("error: FX0913:")),
+        stderr.lines().any(|line| line.starts_with("lib.rs:3:") && line.contains("error: TD0913:")),
         "{stderr}"
     );
 }
@@ -1376,22 +1376,22 @@ fn unresolved_traits_keep_unrelated_walk_diagnostics() {
         assert!(stderr.contains(&format!("error[{rustc}]")), "{stderr}");
         if name == "tainted-ambient" {
             assert!(
-                fx_lines(&stderr)
+                td_lines(&stderr)
                     .iter()
-                    .any(|line| line.starts_with("lib.rs:2:") && line.contains("FX0501:")),
+                    .any(|line| line.starts_with("lib.rs:2:") && line.contains("TD0501:")),
                 "{stderr}"
             );
         }
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0501:")),
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: TD0501:")),
             "{stderr}"
         );
         for (line, severity, code) in [
-            (3, "error", "FX0301"),
-            (4, "error", "FX0702"),
-            (5, "warning", "FX0508"),
+            (3, "error", "TD0301"),
+            (4, "error", "TD0702"),
+            (5, "warning", "TD0508"),
         ] {
             assert!(
                 stderr.lines().any(
@@ -1467,26 +1467,26 @@ fn unresolved_traits_do_not_invent_diagnostics_on_unknown_types() {
         assert_eq!(status, 1, "{name}: {stderr}");
         assert!(stderr.contains("E0405"), "{name}: {stderr}");
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|line| line.starts_with("lib.rs:2:") && line.contains("FX0501:")),
+                .any(|line| line.starts_with("lib.rs:2:") && line.contains("TD0501:")),
             "{name}: {stderr}"
         );
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
                 .all(|line| line.starts_with("lib.rs:2:")
                     || (name == "blanket-impl"
                         && line.starts_with("lib.rs:1:")
-                        && line.contains("error: FX0401:"))),
+                        && line.contains("error: TD0401:"))),
             "{name}: {stderr}"
         );
         if name == "blanket-impl" {
             // A foreign trait on the known type parameter is misplaced even with a bad bound.
             assert_eq!(
-                fx_lines(&stderr)
+                td_lines(&stderr)
                     .iter()
-                    .filter(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0401:"))
+                    .filter(|line| line.starts_with("lib.rs:1:") && line.contains("error: TD0401:"))
                     .count(),
                 1,
                 "{stderr}"
@@ -1542,9 +1542,9 @@ fn unresolved_future_traits_keep_their_walk_diagnostic() {
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains(&format!("error[{rustc}]")), "{stderr}");
         assert!(
-            fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+            td_lines(&stderr).iter().any(|diagnostic| diagnostic
                 .starts_with(&format!("lib.rs:{line}:"))
-                && diagnostic.contains("error: FX0601:")),
+                && diagnostic.contains("error: TD0601:")),
             "{stderr}"
         );
         assert!(
@@ -1567,9 +1567,9 @@ fn typeck_error_recovery_keeps_known_authority_diagnostics() {
     for code in ["E0425", "E0061"] {
         assert!(stderr.contains(&format!("error[{code}]")), "{stderr}");
     }
-    for code in ["FX0501", "FX0505"] {
+    for code in ["TD0501", "TD0505"] {
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
                 .any(|line| line.starts_with("lib.rs:1:")
                     && line.contains(&format!("error: {code}:"))),
@@ -1585,12 +1585,12 @@ fn unresolved_traits_cover_anonymous_const_bodies() {
         (
             "call",
             "pub fn b<T: Missing>(_: T) {}\npub fn c() { let _: [u8; { b(0); 0 }]; }",
-            "FX0501",
+            "TD0501",
         ),
         (
             "future",
             "pub fn c() { let _: [u8; { let _: &dyn std::future::Future<Output = ()>; 0 }]; }",
-            "FX0601",
+            "TD0601",
         ),
     ] {
         let source = format!("pub fn a() {{ let _ = std::fs::read(\"x\"); }}\n{body}");
@@ -1602,9 +1602,9 @@ fn unresolved_traits_cover_anonymous_const_bodies() {
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains("E0405"), "{stderr}");
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|line| line.starts_with("lib.rs:1:") && line.contains("FX0501:")),
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("TD0501:")),
             "{stderr}"
         );
         assert!(stderr.contains(&format!("error: {expected}:")), "{stderr}");
@@ -1660,9 +1660,9 @@ fn unresolved_trait_aliases_guard_implicit_method_lookup() {
             "{stderr}"
         );
         assert!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: FX0501:")),
+                .any(|line| line.starts_with("lib.rs:1:") && line.contains("error: TD0501:")),
             "{stderr}"
         );
     }
@@ -1692,9 +1692,9 @@ fn unresolved_global_traits_keep_independent_typed_diagnostics() {
         let (status, stderr) = admit(&format!("unresolved-global-{name}"), &source, &[]);
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains("E0405"), "{stderr}");
-        for (line, code) in [(2, "FX0301"), (3, "FX0702")] {
+        for (line, code) in [(2, "TD0301"), (3, "TD0702")] {
             assert!(
-                fx_lines(&stderr).iter().any(|diagnostic| diagnostic
+                td_lines(&stderr).iter().any(|diagnostic| diagnostic
                     .starts_with(&format!("lib.rs:{line}:"))
                     && diagnostic.contains(&format!("error: {code}:"))),
                 "{stderr}"
@@ -1712,9 +1712,9 @@ fn partial_typeck_keeps_known_casts_without_inventing_unknown_ones() {
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains("E0425"), "{stderr}");
         assert_eq!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .any(|line| line.starts_with("lib.rs:3:") && line.contains("error: FX0301:")),
+                .any(|line| line.starts_with("lib.rs:3:") && line.contains("error: TD0301:")),
             expected,
             "{stderr}"
         );
@@ -1770,9 +1770,9 @@ fn unresolved_impl_traits_guard_coercions_and_bounded_adts() {
         let (status, stderr) = admit(&format!("unresolved-impl-trait-{name}"), &source, &[]);
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains("E0405"), "{stderr}");
-        for (line, code) in [(1, "FX0501"), (4, "FX0301"), (5, "FX0702")] {
+        for (line, code) in [(1, "TD0501"), (4, "TD0301"), (5, "TD0702")] {
             assert_eq!(
-                fx_lines(&stderr)
+                td_lines(&stderr)
                     .iter()
                     .filter(
                         |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
@@ -1798,9 +1798,9 @@ fn unrelated_bad_traits_keep_independent_const_parameter_checks() {
     assert_eq!(status, 1, "{stderr}");
     assert!(stderr.contains("E0405"), "{stderr}");
     assert!(
-        fx_lines(&stderr)
+        td_lines(&stderr)
             .iter()
-            .any(|line| line.starts_with("lib.rs:2:") && line.contains("error: FX0518:")),
+            .any(|line| line.starts_with("lib.rs:2:") && line.contains("error: TD0518:")),
         "{stderr}"
     );
 }
@@ -1840,13 +1840,13 @@ fn fatal_global_queries_keep_later_walk_diagnostics() {
         let (status, stderr) = admit(&format!("fatal-global-{name}"), &source, &[]);
         assert_eq!(status, 1, "{stderr}");
         assert!(stderr.contains("error[E0405]"), "{stderr}");
-        let mut expected = vec![(1, "FX0501"), (4, "FX0301"), (5, "FX0702")];
+        let mut expected = vec![(1, "TD0501"), (4, "TD0301"), (5, "TD0702")];
         if name == "drop-coherence" {
-            expected.extend([(3, "FX0301"), (3, "FX0702")]);
+            expected.extend([(3, "TD0301"), (3, "TD0702")]);
         }
         for (line, code) in expected {
             assert_eq!(
-                fx_lines(&stderr)
+                td_lines(&stderr)
                     .iter()
                     .filter(
                         |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
@@ -1884,9 +1884,9 @@ pub fn unknown(x: Missing) { std::par::join(x, || 2u64); }
     assert_eq!(status, 1, "{stderr}");
     assert!(stderr.contains("error[E0277]"), "{stderr}");
     assert!(stderr.contains("error[E0425]"), "{stderr}");
-    for (line, code) in [(3, "FX0517"), (4, "FX0610"), (5, "FX0611"), (6, "FX0610")] {
+    for (line, code) in [(3, "TD0517"), (4, "TD0610"), (5, "TD0611"), (6, "TD0610")] {
         assert_eq!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
                 .filter(
                     |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
@@ -1898,7 +1898,7 @@ pub fn unknown(x: Missing) { std::par::join(x, || 2u64); }
         );
     }
     assert!(
-        !fx_lines(&stderr)
+        !td_lines(&stderr)
             .iter()
             .any(|line| line.starts_with("lib.rs:7:")),
         "{stderr}"
@@ -1925,9 +1925,9 @@ impl Missing for S {
     let (status, stderr) = admit("contract-scan-recovery", source, &[]);
     assert_eq!(status, 1, "{stderr}");
     assert!(stderr.contains("error[E0405]"), "{stderr}");
-    for (line, code) in [(5, "FX0101"), (6, "FX0103"), (7, "FX0501")] {
+    for (line, code) in [(5, "TD0101"), (6, "TD0103"), (7, "TD0501")] {
         assert_eq!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
                 .filter(
                     |diagnostic| diagnostic.starts_with(&format!("lib.rs:{line}:"))
@@ -1970,7 +1970,7 @@ pub fn pattern(p: Pun) {
         &["--tide-std", std.to_str().unwrap(), "--tide-grant=unsafe"],
     );
     assert_eq!(status, 1, "{stderr}");
-    for (error, fx) in [(5, 6), (9, 10), (13, 14)] {
+    for (error, td) in [(5, 6), (9, 10), (13, 14)] {
         assert!(
             stderr
                 .lines()
@@ -1979,10 +1979,10 @@ pub fn pattern(p: Pun) {
             "{stderr}"
         );
         assert_eq!(
-            fx_lines(&stderr)
+            td_lines(&stderr)
                 .iter()
-                .filter(|line| line.starts_with(&format!("lib.rs:{fx}:"))
-                    && line.contains("error: FX0517:"))
+                .filter(|line| line.starts_with(&format!("lib.rs:{td}:"))
+                    && line.contains("error: TD0517:"))
                 .count(),
             1,
             "{stderr}"

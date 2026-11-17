@@ -6,7 +6,7 @@ Tide doesn't have its own compiler. Every Tide program is ordinary Rust,
 compiled by a pinned, unmodified version of rustc (the exact nightly named in
 `rust-toolchain.toml`, `nightly-2026-08-09`). What Tide adds is a gate in front
 of that compiler, called **admission**. A program that passes it is
-*admitted*; one that doesn't gets `FX` errors, and no output is written.
+*admitted*; one that doesn't gets `TD` errors, and no output is written.
 
 The gate is `tide-admit`, a **rustc driver**: a program that runs rustc's own
 code as a library and adds checks between its stages. So Tide sees exactly
@@ -32,29 +32,29 @@ the real one.
   rustc + LLVM generate the program; Tide writes the trust artifact
 ```
 
-**What Tide checks** (each family has its own `FX` codes):
+**What Tide checks** (each family has its own `TD` codes):
 
-- **Authority**: no ambient calls (`FX0501`), `Root` only in `main`
-  (`FX0503`), simulation only in tests (`FX0504`), no global mutable state
-  (`FX0502`). Chapter 1.
-- **The allowlist** (`FX0520`): only listed items from Rust's lower layers.
+- **Authority**: no ambient calls (`TD0501`), `Root` only in `main`
+  (`TD0503`), simulation only in tests (`TD0504`), no global mutable state
+  (`TD0502`). Chapter 1.
+- **The allowlist** (`TD0520`): only listed items from Rust's lower layers.
   For example, no hardware queries, no raw memory addresses, no compile-time
   file reads such as `include_str!`.
-- **`unsafe` needs a grant** (`FX0901`). `unsafe` is the Rust keyword that
+- **`unsafe` needs a grant** (`TD0901`). `unsafe` is the Rust keyword that
   permits a few operations the compiler cannot prove safe, such as reading
   memory without a bounds check; the author must make sure they are. rustc's
   ordinary type and borrow checks still run inside it. In
   Tide, only the operator (whoever runs the build) can allow it, with
   `--tide-grant=unsafe`. The program itself can't grant it.
 - **Concurrency habits**: no `async`, no bare threads, no `Mutex` (chapter 4).
-- **A smaller language**: no user macros (code that writes code, `FX0101`),
-  no lossy number conversions (`FX0301`), and a ceiling on the trait system's
-  power (`FX0401`–`FX0408`). These keep programs predictable for agents and
+- **A smaller language**: no user macros (code that writes code, `TD0101`),
+  no lossy number conversions (`TD0301`), and a ceiling on the trait system's
+  power (`TD0401`–`TD0408`). These keep programs predictable for agents and
   reviewers.
-- **The driver owns the build**: no build scripts (`FX0915`), no
-  file-including attributes (`FX0911`), no unstable compiler features, and no
+- **The driver owns the build**: no build scripts (`TD0915`), no
+  file-including attributes (`TD0911`), no unstable compiler features, and no
   compiler flags from the program.
-- **Closed soundness routes**: `FX0206` and `FX0402` (chapter 3).
+- **Closed soundness routes**: `TD0206` and `TD0402` (chapter 3).
 
 **What Tide trusts rustc for**: parsing, names, types, and above all **the
 borrow checker**. That is the part of rustc that proves memory safety: no
@@ -75,16 +75,16 @@ target/debug/tide-admit --tide-print-codes
 Output:
 
 ```text
-FX0101
-FX0102
+TD0101
+TD0102
 …
-FX0206
+TD0206
 …
-FX0501
-FX0502
-FX0503
+TD0501
+TD0502
+TD0503
 …
-FX0915
+TD0915
 ```
 
 (57 codes in all.)
@@ -113,7 +113,7 @@ target/debug/tide-admit --crate-type=lib --crate-name=unsafe_hole --tide-std tar
 Output (paths shortened):
 
 ```text
-…/unsafe_hole/src/lib.rs:9:5: error: FX0901: an `unsafe` block needs the package's `unsafe` grant
+…/unsafe_hole/src/lib.rs:9:5: error: TD0901: an `unsafe` block needs the package's `unsafe` grant
 error: aborting due to 1 previous error
 ```
 
@@ -128,9 +128,9 @@ It prints nothing and exits 0: admitted.
 - The code list is the gate's whole vocabulary. Every code is a rule with an
   ID in `conformance/rules.md`, and the conformance corpus (`conformance/`)
   holds example programs with the verdict each must get.
-- The borrow error has a plain `E` code (`E0502`), not an `FX` code: rustc
+- The borrow error has a plain `E` code (`E0502`), not a `TD` code: rustc
   found it. Tide never has to.
-- Without the grant, `FX0901` rejects the `unsafe` block. With it, the
+- Without the grant, `TD0901` rejects the `unsafe` block. With it, the
   program is admitted, and chapter 7 shows where that `unsafe` site is listed.
 
 ## Read the code
@@ -148,11 +148,11 @@ cat conformance/cases/authority/cap_ambient.rs
 - Line 2: a comment saying what the case shows: world operations exist only
   as capability methods.
 - Lines 3–5: a function that tries to read a config file the Rust way.
-- The end of line 4, `//~ E0425 FX0501`: the expected verdict for that line.
+- The end of line 4, `//~ E0425 TD0501`: the expected verdict for that line.
   Two checkers must agree. Stable rustc, compiling against a stub of Tide's
   std (a stand-in with the same names, not the pinned nightly the driver
   uses), must report `E0425` (no such function, since Tide's std has no
-  `std::fs::read_to_string`), and the driver must report `FX0501`.
+  `std::fs::read_to_string`), and the driver must report `TD0501`.
 - Lines 7–9: the same for reading the clock. `E0599` is rustc's "no such
   method".
 
@@ -188,7 +188,7 @@ In the fx-ip4x landing run on `main`, `conformance/run.sh` reported
 369 PASS, 3 AWAITS CHECKER, 0 FAIL (372 cases), and `cargo test --workspace`
 passed 342 tests. **AWAITS CHECKER** means rustc's verdict and the driver's
 existing codes match, but the case also expects a code the driver doesn't
-enforce yet (here `FX0205`, `FX0808`, `FX0809`). The runner still exits 0, so
+enforce yet (here `TD0205`, `TD0808`, `TD0809`). The runner still exits 0, so
 a passing run doesn't mean every expected rule is built. The red team
 (fx-qlek.5) then added 17 cases, 389 in all, and both suites passed at its
 landing (bead fx-qlek.5). A gate can still have gaps; chapter 3 is about the

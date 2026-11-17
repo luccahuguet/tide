@@ -7,4 +7,4 @@ pub struct Tag {
 }
 
 // SAFETY: present, so the overlap is the only error.
-unsafe impl Pure for Tag {} //~ E0119 FX0402
+unsafe impl Pure for Tag {} //~ E0119 TD0402

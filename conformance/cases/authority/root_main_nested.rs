@@ -5,13 +5,13 @@
 // driver that took the first generated `main` for the entry point would admit them.
 // The nested signature also illegally names Root; borrowing or moving its fields is legal.
 mod inner {
-    #[tide::main] //~ FX0520
+    #[tide::main] //~ TD0520
     pub fn main() {}
 }
 
 pub fn forge() {
-    #[tide::main] //~ FX0520
-    fn main(root: Root) { //~ FX0503
+    #[tide::main] //~ TD0520
+    fn main(root: Root) { //~ TD0503
         let _net = root.net;
     }
     let _ = main();

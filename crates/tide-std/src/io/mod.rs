@@ -10,7 +10,7 @@
 //! `Split`, and `Bytes` end after yielding a cancellation error. Rust's `ErrorKind` cannot
 //! gain one, so `Error` and the traits that return it are Tide's too.
 //! `io::Error::new` and `other` keep Rust's signatures; the admission driver checks that their
-//! payload is `Pure` (02 §9, `FX0517`), and rejects `Error::last_os_error` (`FX0520`).
+//! payload is `Pure` (02 §9, `TD0517`), and rejects `Error::last_os_error` (`TD0520`).
 //!
 //! `shared.rs` holds these items; the conformance corpus's fixture std includes it too, so they
 //! have one definition. `Stdin` reads real or simulated input, checking cancellation at entry;

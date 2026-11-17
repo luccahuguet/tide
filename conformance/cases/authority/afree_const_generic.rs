@@ -7,7 +7,7 @@ pub struct Stack<T> {
 }
 
 impl<T> Stack<T> {
-    pub const fn len(&self) -> usize { //~ FX0518
+    pub const fn len(&self) -> usize { //~ TD0518
         self.len
     }
 }
@@ -18,7 +18,7 @@ impl<T: Pure + Sync> Stack<T> {
     }
 }
 
-pub const fn first<T: Copy>(xs: &[T; 2]) -> T { //~ FX0518
+pub const fn first<T: Copy>(xs: &[T; 2]) -> T { //~ TD0518
     xs[0]
 }
 

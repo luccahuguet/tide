@@ -18,13 +18,13 @@ pub struct Paired<T> {
 fn needs_pure<T: Pure>(_t: &T) {}
 
 pub fn bytes(n: &Nested<u8>) {
-    needs_pure(n) //~ FX0517
+    needs_pure(n) //~ TD0517
 }
 
 pub fn pairs(p: &Paired<u8>) {
-    needs_pure(p) //~ FX0517
+    needs_pure(p) //~ TD0517
 }
 
 pub fn clocks(n: &Nested<Clock>) {
-    needs_pure(n) //~ FX0517
+    needs_pure(n) //~ TD0517
 }

@@ -185,7 +185,7 @@ impl fmt::Display for ErrorKind {
 
 /// The error type of the I/O traits and of every capability operation that does I/O. It is
 /// `Error + Send + Sync + Pure` (reference 2.2): `new` and `other` box only a `Pure` error or a
-/// string, which the admission driver checks at each call (`FX0517`).
+/// string, which the admission driver checks at each call (`TD0517`).
 pub struct Error {
     repr: Repr,
 }
@@ -231,7 +231,7 @@ impl Error {
         Error::new(ErrorKind::Other, error)
     }
 
-    /// The calling thread's last OS error. Programs cannot call it (`FX0520`): an OS error
+    /// The calling thread's last OS error. Programs cannot call it (`TD0520`): an OS error
     /// code is read from a capability's result.
     pub fn last_os_error() -> Error {
         Error::from_raw_os_error(std::io::Error::last_os_error().raw_os_error().unwrap_or(0))

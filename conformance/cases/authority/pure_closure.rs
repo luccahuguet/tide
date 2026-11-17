@@ -7,5 +7,5 @@ fn job<F: Fn() -> bool + Pure>(f: F) -> bool {
 }
 
 pub fn probe(fs: &Fs) -> bool {
-    job(|| fs.read("/etc").is_ok()) //~ FX0517
+    job(|| fs.read("/etc").is_ok()) //~ TD0517
 }

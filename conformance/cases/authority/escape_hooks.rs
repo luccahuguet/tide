@@ -10,14 +10,14 @@ pub fn install() {
 pub struct Counting;
 
 // SAFETY: allocates nothing.
-unsafe impl core::alloc::GlobalAlloc for Counting { //~ FX0520 FX0901
-    unsafe fn alloc(&self, _: core::alloc::Layout) -> *mut u8 { //~ FX0520 FX0901
-        core::ptr::null_mut() //~ FX0520
+unsafe impl core::alloc::GlobalAlloc for Counting { //~ TD0520 TD0901
+    unsafe fn alloc(&self, _: core::alloc::Layout) -> *mut u8 { //~ TD0520 TD0901
+        core::ptr::null_mut() //~ TD0520
     }
-    unsafe fn dealloc(&self, _: *mut u8, _: core::alloc::Layout) {} //~ FX0520 FX0901
+    unsafe fn dealloc(&self, _: *mut u8, _: core::alloc::Layout) {} //~ TD0520 TD0901
 }
 
-#[core::prelude::v1::global_allocator] //~ FX0520
+#[core::prelude::v1::global_allocator] //~ TD0520
 static ALLOCATOR: Counting = Counting;
 
 // The attribute without its path (Opus r2, M3): Tide's prelude does not export it, so it does

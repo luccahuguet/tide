@@ -10,33 +10,33 @@ use std::sync::Shared;
 use std::time::{Clock, Instant};
 
 pub fn ref_cell(log: &RefCell<Vec<u64>>) -> (usize, u64) {
-    join(|| log.borrow().len(), || 2) //~ E0277 FX0611
+    join(|| log.borrow().len(), || 2) //~ E0277 TD0611
 }
 
 pub fn capability(xs: &[u64], clock: &Clock) -> Vec<Instant> {
-    xs.par_map(|_| clock.now()) //~ FX0611
+    xs.par_map(|_| clock.now()) //~ TD0611
 }
 
 pub fn moved_in(xs: &[u64], clock: &Clock) -> Vec<Instant> {
-    xs.par_map(move |_| clock.now()) //~ FX0611
+    xs.par_map(move |_| clock.now()) //~ TD0611
 }
 
 pub fn by_reference(xs: &[u64], clock: &Clock) -> Vec<Instant> {
     let stamp = |_: &u64| clock.now();
-    xs.par_map(&stamp) //~ FX0611
+    xs.par_map(&stamp) //~ TD0611
 }
 
 pub fn boxed(xs: &[u64], clock: &Clock) -> Vec<Instant> {
-    xs.par_map(Box::new(|_: &u64| clock.now())) //~ FX0611
+    xs.par_map(Box::new(|_: &u64| clock.now())) //~ TD0611
 }
 
 pub fn boxed_reference(xs: &[u64], clock: &Clock) -> Vec<Instant> {
     let stamp = |_: &u64| clock.now();
-    xs.par_map(Box::new(&stamp)) //~ FX0611
+    xs.par_map(Box::new(&stamp)) //~ TD0611
 }
 
 pub fn shared(xs: &[u64], cell: &Shared<u64>) -> Vec<u64> {
-    xs.par_map(|x| x + cell.with(|v| *v).unwrap_or(0)) //~ FX0611
+    xs.par_map(|x| x + cell.with(|v| *v).unwrap_or(0)) //~ TD0611
 }
 
 pub fn overlapping(total: &mut u64) {

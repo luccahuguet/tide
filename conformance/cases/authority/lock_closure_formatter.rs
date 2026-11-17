@@ -11,14 +11,14 @@ pub struct Hits {
 impl fmt::Debug for Hits {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = f.debug_struct("Hits");
-        let _ = self.count.with(|n| { out.field("count", n); }); //~ FX0603
+        let _ = self.count.with(|n| { out.field("count", n); }); //~ TD0603
         out.finish()
     }
 }
 
 impl fmt::Display for Hits {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let _ = self.count.with(|n| write!(f, "{n}")); //~ FX0603
+        let _ = self.count.with(|n| write!(f, "{n}")); //~ TD0603
         let n = self.count.with(|n| *n).map_err(|_| fmt::Error)?;
         write!(f, "{n}")
     }

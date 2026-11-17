@@ -3,7 +3,7 @@
 #[tide::main]
 fn main(root: Root) {
     let check = || {
-        let all = &root; //~ FX0503
+        let all = &root; //~ TD0503
         all.fs.read("/etc").is_ok()
     };
     let _ = check();

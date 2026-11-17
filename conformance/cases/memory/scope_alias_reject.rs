@@ -3,7 +3,7 @@
 use std::task::Tasks;
 pub fn alias(tasks: &Tasks) {
     let text = String::from("x");
-    let s = &text; //~ E0597 FX0203
+    let s = &text; //~ E0597 TD0203
     let _ = tasks.spawn_isolated(move || s.len());
 }
 // An unrelated borrow in the same function must not acquire the owned call's code.

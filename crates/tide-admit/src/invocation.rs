@@ -332,7 +332,7 @@ impl Invocation {
             "--error-format=short".into(),
             "-Zallow-features=".into(),
             "-Zpolonius=no".into(),
-            // FX0913 owns unused imports independently of Rust lint levels.
+            // TD0913 owns unused imports independently of Rust lint levels.
             "-Aunused-imports".into(),
             // The backstop's mono items: the crate makes its own instances of upstream generics
             // instead of linking an upstream crate's.
@@ -642,7 +642,7 @@ fn reject_build_script(package: &Path) -> bool {
     }
     eprintln!(
         "error: {}: package build scripts are not admitted",
-        Code::Fx0915.as_str()
+        Code::Td0915.as_str()
     );
     true
 }
@@ -867,7 +867,7 @@ impl FileLoader for Sources {
             return Ok(String::new());
         }
         // Not Err: rustc_parse directly reopens a path after *every* loader Err on this pin.
-        eprintln!("error: FX0520: compile-time file read denied");
+        eprintln!("error: TD0520: compile-time file read denied");
         FatalError.raise()
     }
 
@@ -966,7 +966,7 @@ impl<'ast> Visitor<'ast> for Guard<'_> {
         if forbidden {
             self.reject(
                 attr.span,
-                Code::Fx0911,
+                Code::Td0911,
                 "file-loading attributes are not admitted",
             );
         }
@@ -977,15 +977,15 @@ impl<'ast> Visitor<'ast> for Guard<'_> {
         if forbidden_macro_attributes(&mac.args.tokens) {
             self.reject(
                 mac.path.span,
-                Code::Fx0911,
+                Code::Td0911,
                 "file-loading attributes are not admitted in macro arguments",
             );
         }
     }
 }
 
-/// Rejects user macro definitions (FX0101), `#![no_std]` (FX0520), `#![no_main]` on a binary
-/// (FX0512), and the file-loading attributes that only expansion shows (FX0911), such as ones
+/// Rejects user macro definitions (TD0101), `#![no_std]` (TD0520), `#![no_main]` on a binary
+/// (TD0512), and the file-loading attributes that only expansion shows (TD0911), such as ones
 /// built from a macro's tokens. `Guard` rejects the written attributes before rustc reads their
 /// files; the file loader confines what the rest read. Returns emitted driver errors and
 /// deferred unused imports, so later checks can exclude earlier errors and rejected imports.
@@ -1004,7 +1004,7 @@ fn check_expanded(
                 self.diags.report(
                     self.tcx,
                     attr.span,
-                    Code::Fx0911,
+                    Code::Td0911,
                     "file-loading attributes are not admitted".into(),
                     None,
                 );
@@ -1020,7 +1020,7 @@ fn check_expanded(
                 self.diags.report(
                     self.tcx,
                     item.span,
-                    Code::Fx0101,
+                    Code::Td0101,
                     "user macro definitions are not admitted".into(),
                     None,
                 );
@@ -1046,7 +1046,7 @@ fn check_expanded(
             let message = "`#![no_std]` is not admitted: Tide's std is every crate's std";
             check
                 .diags
-                .report(tcx, attr.span, Code::Fx0520, message.into(), None);
+                .report(tcx, attr.span, Code::Td0520, message.into(), None);
         }
     }
     // ROOT-1: every binary starts at the `main` that `#[tide::main]` generates. rustc reads
@@ -1056,7 +1056,7 @@ fn check_expanded(
             let message = "`#![no_main]` leaves the binary without `#[tide::main]`'s entry point";
             check
                 .diags
-                .report(tcx, attr.span, Code::Fx0512, message.into(), None);
+                .report(tcx, attr.span, Code::Td0512, message.into(), None);
         }
     }
     let before = tcx.dcx().err_count();

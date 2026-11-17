@@ -16,7 +16,7 @@ pub fn next(x: u32) -> u32 {
 #[pure]
 pub fn same(x: u32) -> u32 {
     #[pure]
-    fn stamp(_clock: &Clock) -> u32 { //~ FX0511
+    fn stamp(_clock: &Clock) -> u32 { //~ TD0511
         0
     }
     x
@@ -24,5 +24,5 @@ pub fn same(x: u32) -> u32 {
 
 pub trait Stamped: Pure {
     #[pure]
-    fn at(&self, clock: &Clock) -> u32; //~ FX0511
+    fn at(&self, clock: &Clock) -> u32; //~ TD0511
 }

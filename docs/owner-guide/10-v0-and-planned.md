@@ -19,9 +19,9 @@ Three words to keep straight:
 
 | Area | What works | Chapter |
 | --- | --- | --- |
-| Admission | `tide-admit` checks one crate (or a test suite paired with one library) against Tide's std: 57 `FX` codes, the allowlist, the backstop | 2 |
+| Admission | `tide-admit` checks one crate (or a test suite paired with one library) against Tide's std: 57 `TD` codes, the allowlist, the backstop | 2 |
 | Capabilities | `Root`, `Fs`, `Net` (TCP), `Clock`, `Env`, `Stdin`, `Tasks`, attenuation; `Pure` | 1 |
-| Soundness routes | `FX0206` closes rust#25860's function-pointer route; `FX0402` closes rust#57893 (red team fx-qlek.5) | 3 |
+| Soundness routes | `TD0206` closes rust#25860's function-pointer route; `TD0402` closes rust#57893 (red team fx-qlek.5) | 3 |
 | Concurrency | scopes, cancellation, deadlines, channels, `Shared`, `join`, `par_map`, `par_for` | 4 |
 | Contracts | `#[requires]`, `#[ensures]`, `invariant!` as runtime checks and property tests | — |
 | Simulation | `#[sim_test]`, `Root::sim(seed)`: tasks, channels, `Shared`, files, local TCP, clock, env, stdin | 5 |
@@ -89,7 +89,7 @@ Output (13 beads; `❄` means deferred, scheduled after the alpha):
 ❄ fx-m6mk [● P3] [task] - `Secret<T>`, `std::trace::span`, and the `log::`/`tracing::` prefixed log macros
 ❄ fx-8cpg [● P3] [task] - Atomics through `&Tasks`, and `std::sync::raw`
 ❄ fx-x78i [● P3] [task] - Contracts and grants in the trust artifact and `--tide-diff`
-❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `FX0516`)
+❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `TD0516`)
 ❄ fx-x2oo [● P3] [task] - Packages: Tide dependencies, per-dependency grants, and `tide.lock`
 ❄ fx-a9oh [● P3] [task] - The `tide` CLI over the driver: `check`, `test`, `sim`, with NDJSON diagnostics and fix plans
 ❄ fx-djwo [● P3] [task] - Simulator faults and crashable nodes: `sim.faults`, `sim.node`, crash and restart, `Tasks::fault_point`

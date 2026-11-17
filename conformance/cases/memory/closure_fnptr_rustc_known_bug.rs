@@ -8,6 +8,6 @@ static UNIT: &'static &'static () = &&();
 fn foo<'a, 'b, T>(_: &'a &'b (), v: &'b T, _: &()) -> &'a T { v }
 
 pub fn bad<'a, T>(x: &'a T) -> &'static T {
-    let f: fn(_, &'a T, &()) -> &'static T = foo; //~ FX0206
+    let f: fn(_, &'a T, &()) -> &'static T = foo; //~ TD0206
     f(UNIT, x, &())
 }

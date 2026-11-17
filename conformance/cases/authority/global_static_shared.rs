@@ -2,4 +2,4 @@
 // A static must be `Pure`; a `Shared` handle is `Sync` but not `Pure`.
 use std::sync::Shared;
 
-pub static CELL: Option<Shared<u32>> = None; //~ FX0502
+pub static CELL: Option<Shared<u32>> = None; //~ TD0502

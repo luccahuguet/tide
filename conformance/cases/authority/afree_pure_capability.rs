@@ -3,6 +3,6 @@
 use std::fs::Fs;
 
 #[pure]
-pub fn configured(fs: &Fs) -> bool { //~ FX0511
+pub fn configured(fs: &Fs) -> bool { //~ TD0511
     fs.read("/etc/app.toml").is_ok()
 }

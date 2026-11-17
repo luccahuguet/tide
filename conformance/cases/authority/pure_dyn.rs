@@ -7,5 +7,5 @@ pub trait Value {
 fn needs_pure<T: Pure + ?Sized>(_t: &T) {}
 
 pub fn check(v: &dyn Value) {
-    needs_pure(v); //~ FX0517
+    needs_pure(v); //~ TD0517
 }
