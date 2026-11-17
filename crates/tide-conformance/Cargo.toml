@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Tide's conformance runner: each corpus case through stable rustc and the admission driver, against its marks"
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # The full corpus is its own suite (`cargo run -p tide-conformance`); `tests/runner.rs` tests the
 # runner on one copied case. The binary's unit tests check its mark parser.

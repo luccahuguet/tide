@@ -1,4 +1,6 @@
-//! `Error`'s syntax and generated impls (reference 2.2). Rust owns format checking.
+//! `Error`'s syntax and generated impls (reference 2.2). Rust owns format checking. The
+//! attributes follow thiserror's (https://github.com/dtolnay/thiserror, MIT OR Apache-2.0; see
+//! NOTICE).
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{format_ident, quote, quote_spanned};
 use syn::ext::IdentExt;

@@ -7,6 +7,9 @@
 // (`tide_std::io::Error`). An included file cannot carry inner attributes or `//!` docs; the
 // module's docs are in `mod.rs`.
 //
+// Much of this file is adapted, with changes, from Rust's io implementation (rust-lang/rust,
+// library/{core,alloc,std}/src/io, MIT OR Apache-2.0; see NOTICE).
+//
 // The supported items follow Rust's API with `BufWriter<W: Sized>`. `ErrorKind` adds
 // `Cancelled`, which `is_cancelled()` tests; `Lines`, `Split`, and `Bytes` end after yielding
 // it. Per TASK-6, `BufWriter` Drop discards pending bytes and warns with their count. Rust's items cannot

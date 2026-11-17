@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Tide's toolchain macros: entry, tests, executable contracts, sinks, and derives"
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [lib]
 proc-macro = true

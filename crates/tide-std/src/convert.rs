@@ -64,7 +64,8 @@ macro_rules! truncate_pairs {
         })+
     )*};
 }
-// Mirror core's integer_widen_truncate pairs so stabilization keeps method lookup compatible.
+// Mirror core's integer_widen_truncate pairs (rust-lang/rust, MIT OR Apache-2.0; see NOTICE) so
+// stabilization keeps method lookup compatible.
 truncate_pairs! {
     u8 => u8;
     u16 => u16, u8;

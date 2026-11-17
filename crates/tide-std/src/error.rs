@@ -1,3 +1,6 @@
+// `AsDynError` and `AsDisplay` are adapted from thiserror (src/aserror.rs and src/display.rs,
+// https://github.com/dtolnay/thiserror, MIT OR Apache-2.0; see NOTICE).
+
 // Method resolution handles both sized errors and dereferences to a dynamic error.
 pub trait AsDynError<'a> {
     fn as_dyn_error(&self) -> &(dyn core::error::Error + 'a);

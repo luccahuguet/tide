@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Tide's std, injected as std by the admission driver (D18): the entry, sinks, Pure, capability types, and the JSON codec"
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 # D3: one software libm on every target, including when features are unified.

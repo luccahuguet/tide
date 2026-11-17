@@ -1,0 +1,44 @@
+Tide is licensed under the Apache License, Version 2.0 (LICENSE).
+
+It includes the third-party material below. Each project offers it under
+MIT OR Apache-2.0, and Tide uses it under the Apache License, Version 2.0.
+Each file adapted from upstream code says so at the site.
+
+The Rust Programming Language (rust-lang/rust)
+  https://github.com/rust-lang/rust
+  Copyright the Rust project contributors.
+  - crates/tide-std/src/io/shared.rs: much of the file is adapted, with
+    changes, from Rust's io implementation (library/core/src/io,
+    library/alloc/src/io, library/std/src/io): the Read, Write, BufRead and
+    Seek provided methods, the Bytes, Chain, Take, Split and Lines
+    adapters, BufReader,
+    BufWriter and its buffer guard, the formatting adapter behind write_fmt,
+    and ErrorKind's message table.
+  - crates/tide-std/src/convert.rs: the integer truncation pairs mirror
+    core's integer_widen_truncate list.
+  - tide-std mirrors the public API of Rust's standard library (item names,
+    signatures, and Display messages) in the modules it reimplements or
+    wraps, such as collections and sync::mpsc.
+  - conformance/cases/memory/closure_fnptr_rustc_known_bug.rs: changed by Tide
+    from tests/ui/implied-bounds/implied-bounds-on-nested-references-plus-variance-2.rs
+    at commit 5f4effd579500175af844241eb179e756190f1e7.
+  - These red-team cases in conformance/cases/memory/ follow the public
+    reproductions in rust-lang/rust issues: escape_fn_trait_routes.rs
+    (#25860), escape_dyn_overlap_transmute.rs (#57893),
+    escape_hrtb_supertrait.rs (#84591), and
+    escape_projection_implied_bounds.rs (#100051).
+
+serde
+  https://github.com/serde-rs/serde
+  Copyright the serde contributors (Erick Tryzelaar, David Tolnay, and others).
+  - crates/tide-macros/src/codec.rs: the rename_all case table, its two
+    conversions, and their test vectors are ported, with changes, from
+    serde_derive/src/internals/case.rs.
+
+thiserror
+  https://github.com/dtolnay/thiserror
+  Copyright the thiserror contributors (David Tolnay and others).
+  - crates/tide-std/src/error.rs: the AsDynError and AsDisplay helpers are
+    adapted from src/aserror.rs and src/display.rs.
+  - crates/tide-macros/src/error.rs: the Error derive's attributes (error,
+    source, from, transparent) follow thiserror's.

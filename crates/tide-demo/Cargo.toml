@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Tide's first running demo (fx-nkv): a lost update found by a seed, replayed, fixed, and a widened interface in the trust diff"
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # The library includes tide-std's wire modules, whose own unit tests tide-std and tide-admit
 # already run; `tests/demo.rs` is the demo's test.

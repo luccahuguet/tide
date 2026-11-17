@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Tide's admission driver: rustc with the admission allowlist and the Pure check (D18, ADMIT-1, ADMIT-2, PURE-1)"
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 # RUN-3's sandbox: raw Landlock, seccomp, and process-setup calls (`invocation/sandbox.rs`).

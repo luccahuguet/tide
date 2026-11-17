@@ -1,8 +1,8 @@
 //@ rules: CLOSURE-3
-// rust#25860 as rustc's own suite keeps it open (`known-bug: #25860`, check-pass):
-// rust-lang/rust tests/ui/implied-bounds/implied-bounds-on-nested-references-plus-variance-2.rs
-// at 5f4effd579500175af844241eb179e756190f1e7. rustc's fix for #129021 rejects the variant
-// without the third argument; this one still passes rustc, so only the checker rejects it.
+// Changed by Tide from rust-lang/rust (MIT OR Apache-2.0; NOTICE), whose suite keeps rust#25860 open
+// in tests/ui/implied-bounds/implied-bounds-on-nested-references-plus-variance-2.rs at 5f4effd5:
+// Tide made `bad` public, dropped `main` and the directives, and added its marks. rustc's #129021
+// fix rejects the variant without the third argument; only the checker rejects this one.
 static UNIT: &'static &'static () = &&();
 
 fn foo<'a, 'b, T>(_: &'a &'b (), v: &'b T, _: &()) -> &'a T { v }

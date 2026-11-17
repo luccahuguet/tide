@@ -733,6 +733,8 @@ Cited evidence behind the decisions, in [research/](research/):
 
 ## Project Process
 
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to contribute, the bar every
+  change meets, AI-written or not, and the project's roles.
 - [AGENTS.md](AGENTS.md): rules for agents working here, generated from
   pinned protocol profiles plus `.agent-protocols.local.md`.
 - [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
@@ -768,11 +770,22 @@ Cited evidence behind the decisions, in [research/](research/):
   `design/`; its name predates the v0 core tier and is unrelated to it.
   `research/00-old-design-salvage.md` records what carried over.
 - Naming: the language is named Tide (tidelang). Ferox was its working name;
-  documents in `research/`, `reviews/`, `trials/`, `tasks/`, and `archive/`
+  documents in `research/`, `reviews/`, `trials/`, `TASKS.md`, `tasks/`, and `archive/`
   keep that name as written, and older records spell diagnostic codes
   `FX####`, with the same digits as today's `TD####`.
-  [PUBLIC_NAME_REVIEW.md](PUBLIC_NAME_REVIEW.md),
-  the `FEROX_*` documents, and the `ORBIS_*` documents record earlier naming
+  [archive/v0-design/PUBLIC_NAME_REVIEW.md](archive/v0-design/PUBLIC_NAME_REVIEW.md)
+  and the `FEROX_*` and `ORBIS_*` documents beside it record earlier naming
   reviews.
 - [TASKS.md](TASKS.md) and `tasks/`: tasks from the first design's bootstrap
   work.
+
+## License and Name
+
+Tide's code is licensed under Apache-2.0 ([LICENSE](LICENSE)), and
+[NOTICE](NOTICE) lists the third-party material it includes. The license
+covers the code, not the name: "Tide" as the name of this language, and
+"tidelang", belong to the owner, and Apache-2.0 grants no rights to them
+(section 6). A fork or modified version that is distributed uses another
+name, though it may say it derives from Tide. This is the owner's naming
+policy, not a registered trademark claim. To contribute, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
