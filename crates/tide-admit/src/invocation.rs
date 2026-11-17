@@ -66,6 +66,67 @@ mod sandbox {
 
 const TEST_LIBRARY_NAME: &str = "tide_candidate";
 
+/// The directory of the C toolchain that links executables: its `cc` is rustc's linker and GCC
+/// searches it for `ld` (`-B`). A build may bake in its own (`TIDE_LINKER_BIN`, read only when
+/// the driver is compiled; the Nix flake sets it, docs/nix.md); otherwise the host's `/usr/bin`.
+const LINKER_BIN: &str = match option_env!("TIDE_LINKER_BIN") {
+    Some(dir) => dir,
+    None => "/usr/bin",
+};
+
+/// Library directories RUN-3 searches for a test's libraries before the system directories,
+/// separated by `:`: the libraries the baked-in linker's executables load (the Nix flake's glibc
+/// and libgcc). Read only when the driver is compiled; unset, none. A test binary's own search
+/// path (`DT_RUNPATH`) is the untrusted child's and never chooses a grant.
+const RUNTIME_LIB_DIRS: &str = match option_env!("TIDE_RUNTIME_LIB_DIRS") {
+    Some(dirs) => dirs,
+    None => "",
+};
+
+/// A packaging mistake fails the driver's build: a relative or empty directory would resolve
+/// against the operator's working directory, which would then choose the linker or a grant.
+const _: () = {
+    assert!(
+        matches!(LINKER_BIN.as_bytes(), [b'/', ..]),
+        "TIDE_LINKER_BIN must be an absolute directory"
+    );
+    assert!(
+        absolute_entries(RUNTIME_LIB_DIRS),
+        "TIDE_RUNTIME_LIB_DIRS must list absolute directories separated by `:`, none empty"
+    );
+};
+
+/// Whether each `:`-separated entry of a nonempty `dirs` starts with `/`; an empty list holds
+/// none, while an empty entry, such as a trailing `:`, fails.
+const fn absolute_entries(dirs: &str) -> bool {
+    let bytes = dirs.as_bytes();
+    let mut i = 0;
+    let mut entry_start = true;
+    while i < bytes.len() {
+        if entry_start && bytes[i] != b'/' {
+            return false;
+        }
+        entry_start = bytes[i] == b':';
+        i += 1;
+    }
+    bytes.is_empty() || !entry_start
+}
+
+/// The linker's `cc` and `ld`, whose bytes identify a linked build (cache key and receipt).
+fn linker_tools() -> [PathBuf; 2] {
+    [Path::new(LINKER_BIN).join("cc"), Path::new(LINKER_BIN).join("ld")]
+}
+
+/// Tide's std and the directory of its dependencies, used when the operator passes no
+/// `--tide-std`. Only a packaged build bakes them in (the Nix flake's `tidelang-admit`), so its
+/// driver runs on its own; an unset pair keeps Rust's pinned std as the default.
+const DEFAULT_STD: Option<(&str, &str)> =
+    match (option_env!("TIDE_DEFAULT_STD"), option_env!("TIDE_DEFAULT_DEP_DIR")) {
+        (Some(std), Some(deps)) => Some((std, deps)),
+        (None, None) => None,
+        _ => panic!("set TIDE_DEFAULT_STD and TIDE_DEFAULT_DEP_DIR together"),
+    };
+
 struct Admission {
     grants: Grants,
     /// The staging directory, which gets the trust artifact (`interface.rs`).
@@ -278,6 +339,12 @@ impl Invocation {
                 return Err(format!("unsupported argument `{arg}`"));
             }
         }
+        if this.std.is_none()
+            && let Some((std, deps)) = DEFAULT_STD
+        {
+            this.std = Some(std.into());
+            this.deps.push(deps.into());
+        }
         if this.source.extension().is_none_or(|ext| ext != "rs") {
             return Err("expected one .rs source file".into());
         }
@@ -387,11 +454,12 @@ impl Invocation {
             ]);
         }
         if self.link && self.kind != "rlib" {
+            let [cc, _] = linker_tools();
             args.extend([
-                "-Clinker=/usr/bin/cc".into(),
+                format!("-Clinker={}", cc.display()),
                 "-Clinker-flavor=gnu-cc".into(),
                 "-Clink-self-contained=-linker".into(),
-                "-Clink-arg=-B/usr/bin".into(),
+                format!("-Clink-arg=-B{LINKER_BIN}"),
                 "-o".into(),
                 out.join("executable").display().to_string(),
             ]);
@@ -1174,9 +1242,10 @@ Replay accepts no configuration overrides and has no force option. Artifacts: OU
         fingerprint(std, &mut key).map_err(|e| e.to_string())?;
     }
     if invocation.link {
-        // Like the pinned sysroot, the host C toolchain and libraries are trusted and immutable.
-        fingerprint(Path::new("/usr/bin/cc"), &mut key).map_err(|e| e.to_string())?;
-        fingerprint(Path::new("/usr/bin/ld"), &mut key).map_err(|e| e.to_string())?;
+        // Like the pinned sysroot, the linker's C toolchain and libraries are trusted and immutable.
+        for tool in linker_tools() {
+            fingerprint(&tool, &mut key).map_err(|e| e.to_string())?;
+        }
     }
     for dep in &invocation.deps {
         fingerprint(dep, &mut key).map_err(|e| e.to_string())?;

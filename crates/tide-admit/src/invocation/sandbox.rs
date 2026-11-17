@@ -421,8 +421,9 @@ const SYSTEM_DIRS: &[&str] = &[
 ];
 
 /// The interpreter and shared libraries `binary` loads, transitively: absolute names as written,
-/// others from the system directories. The driver links every test executable itself, so a
-/// library found only through a search path (`DT_RUNPATH`) gets no grant and fails to load.
+/// others from the driver's trusted runtime directories (`RUNTIME_LIB_DIRS`), then the system
+/// directories. The binary is the child's, so its own search path (`DT_RUNPATH`) is never read:
+/// a library found only through it gets no grant and fails to load.
 fn libraries(binary: &Path) -> Result<Vec<PathBuf>, String> {
     let mut found = Vec::new();
     let mut pending = vec![binary.to_path_buf()];
@@ -434,8 +435,10 @@ fn libraries(binary: &Path) -> Result<Vec<PathBuf>, String> {
             let path = if name.contains('/') {
                 PathBuf::from(&name)
             } else {
-                SYSTEM_DIRS
-                    .iter()
+                super::RUNTIME_LIB_DIRS
+                    .split(':')
+                    .filter(|dir| !dir.is_empty())
+                    .chain(SYSTEM_DIRS.iter().copied())
                     .map(|dir| Path::new(dir).join(&name))
                     .find(|path| path.is_file())
                     .ok_or_else(|| format!("cannot find the library `{name}` the test loads"))?
@@ -653,6 +656,14 @@ mod tests {
         assert!(names.iter().any(|n| n == "libc.so.6"), "{names:?}");
         assert!(elf_dependencies(b"\x7fELF\x02\x01").is_none());
         assert!(elf_dependencies(b"#!/bin/sh\n").is_none());
+    }
+
+    /// This test binary loads `librustc_driver` only through the toolchain `lib` that build.rs
+    /// writes into its `DT_RUNPATH`, a directory neither trusted list names.
+    #[test]
+    fn a_library_only_in_the_binarys_runpath_gets_no_grant() {
+        let error = libraries(&std::env::current_exe().unwrap()).unwrap_err();
+        assert!(error.contains("cannot find the library `librustc_driver-"), "{error}");
     }
 
     #[test]

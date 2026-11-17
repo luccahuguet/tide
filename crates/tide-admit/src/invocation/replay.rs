@@ -21,9 +21,10 @@ impl Invocation {
         // (`loaded_identity`) or that a recording names (`current_artifacts`).
         dependencies.extend(self.deps.iter().map(|_| BTreeMap::new()));
         if self.link {
+            let [cc, ld] = linker_tools();
             dependencies.push(BTreeMap::from([
-                ("linker:cc".into(), file_digest(Path::new("/usr/bin/cc"))?),
-                ("linker:ld".into(), file_digest(Path::new("/usr/bin/ld"))?),
+                ("linker:cc".into(), file_digest(&cc)?),
+                ("linker:ld".into(), file_digest(&ld)?),
             ]));
         }
         let mut options = self.semantic_options(library.is_some());

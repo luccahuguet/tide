@@ -197,7 +197,11 @@ snapshot does not hash. Their metadata checks can still be cached.
 `x86_64-unknown-linux-gnu` host it continues the same compilation past admission
 and the mono-item backstop, then invokes fixed `/usr/bin/cc` with `/usr/bin/ld`
 (GNU cc flavor, `-B/usr/bin`, bundled linker disabled). GCC also passes
-`-L/usr/bin` to the linker for `-B/usr/bin`. It writes
+`-L/usr/bin` to the linker for `-B/usr/bin`. A driver compiled with
+`TIDE_LINKER_BIN=DIR` uses `DIR/cc` and `DIR/ld` with `-BDIR` instead; the
+Nix flake's `tidelang-admit` bakes in Nix's C toolchain this way
+([docs/nix.md](docs/nix.md)). The driver reads that variable only when it is
+compiled, never at run time. It writes
 `<out-dir>/<crate-name>`, or `<crate-name>-test` for `--test`, only on success;
 it removes that invocation's previous executable
 before checking, so a rejected rebuild leaves no stale executable at that path.
@@ -283,7 +287,10 @@ artifacts outside the candidate package. These are operator inputs, like
 grants; candidate source, Cargo configuration, toolchain files, and inherited
 environment never set them. Without `--tide-std`, Rust's pinned std is used
 for driver development tests, and `TD0512` is not checked, since Rust's std
-has no `#[tide::main]`. Tide's std is `crates/tide-std`, with its macros in
+has no `#[tide::main]`. A driver compiled with `TIDE_DEFAULT_STD=PATH` and
+`TIDE_DEFAULT_DEP_DIR=DIR`, as the Nix flake's `tidelang-admit` is, uses that
+std and directory instead when given no `--tide-std`; an explicit
+`--tide-std` replaces both. Tide's std is `crates/tide-std`, with its macros in
 `crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
 (`Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`, `error!` through `trace!`), ordinary and property `#[test]`, `#[sim_test]`,
@@ -495,7 +502,12 @@ on pipes the driver drains, a cleared environment, and, between fork and exec,
 Landlock and seccomp allowlists (`crates/tide-admit/src/invocation/sandbox.rs`).
 Each run gets a fresh private directory under `OUT/.tide-cache`, created and
 opened without following links. Landlock lets the child read and execute only
-the binary's copy there and the loader and libraries it names, read its
+the binary's copy there and the loader and libraries it names: a library named
+by path as written, one named bare from the driver's trusted runtime library
+directories (none, unless the driver was compiled with `TIDE_RUNTIME_LIB_DIRS`,
+as the Nix flake's is with its glibc and libgcc), then the system library
+directories. The binary's own `DT_RUNPATH` is never read, so a library only it
+names gets no grant and fails to load. Landlock also lets the child read its
 context, and write only in the run directory's `sim/`, creating regular files
 and directories; its scopes keep signals and abstract Unix sockets in the
 child, and no TCP or UDP port is granted. seccomp fails every call the runtime
@@ -600,8 +612,9 @@ a stub std that shares these definitions, including the production `#[test]`
 macro, property generation/shrinking runtime, and executable contract lowering/runtime.
 The generated-test synthesis pass also operates against this shared std. The
 installed pinned toolchain is trusted and treated as immutable, as are the host
-C toolchain, startup objects and libraries. Link cache keys also hash `/usr/bin/cc`
-and `/usr/bin/ld`; they do not fingerprint all native transitive inputs.
+C toolchain, startup objects and libraries. Link cache keys also hash the
+linker's `cc` and `ld` (`/usr/bin/cc` and `/usr/bin/ld` by default); they do
+not fingerprint all native transitive inputs.
 This slice provides loader and invocation isolation, with no OS sandbox or protection against concurrent
 filesystem mutation. Granted assembly can read outside the loader (`.include`,
 `.incbin`); native link inputs can read host files, and the linker/toolchain can

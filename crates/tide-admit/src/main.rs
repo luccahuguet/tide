@@ -25,7 +25,8 @@
 //! optimization 0 with debug assertions and full debug information, or 3 with neither (default
 //! debug); both force overflow checks on. Metadata remains the default.
 //! On the supported x86_64-unknown-linux-gnu host, linking uses `/usr/bin/cc` with
-//! `/usr/bin/ld` (GNU cc flavor, `-B/usr/bin`, bundled linker disabled). Cache keys include the
+//! `/usr/bin/ld` (GNU cc flavor, `-B/usr/bin`, bundled linker disabled), or the directory the
+//! build baked in as `TIDE_LINKER_BIN` (the Nix flake's). Cache keys include the
 //! output mode, profile, test configuration and cc/ld bytes;
 //! the installed C toolchain/start files/libraries, like the sysroot, must remain immutable.
 //! Unsafe-granted link builds are uncached: assembly/native inputs bypass the source snapshot.
