@@ -1,0 +1,14 @@
+diff --git a/src/hits.rs b/src/hits.rs
+--- a/src/hits.rs
++++ b/src/hits.rs
+@@ -52,7 +52,8 @@ pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError> {
+     Ok(stats.with(|s| s.hits)?)
+ }
+
+-/// Records one page view: the read and the write happen in one critical section.
++/// Records one page view.
+ fn record_hit(stats: &Shared<Stats>) -> Result<(), LockError> {
+-    stats.with(|s| s.hits += 1)
++    let seen = stats.with(|s| s.hits)?;
++    stats.with(|s| s.hits = seen + 1)
+ }

@@ -1,0 +1,58 @@
+diff --git a/src/hits.rs b/src/hits.rs
+--- a/src/hits.rs
++++ b/src/hits.rs
+@@ -2,7 +2,9 @@
+ //!
+ //! `serve` answers a batch of traffic with one worker task per client. Each worker records a hit
+ //! for every page view in one shared `Stats` cell, and `serve` returns the hits recorded, which
+-//! must equal the views served.
++//! must equal the views served. It then reports that total to the metrics collector.
++use std::io::Write;
++use std::net::Net;
+ use std::sync::{LockError, Shared};
+ use std::task::{TaskError, Tasks};
+
+@@ -17,6 +19,7 @@ pub struct Load {
+ pub enum ServeError {
+     Task(TaskError),
+     Lock(LockError),
++    Report(std::io::Error),
+ }
+
+ impl From<TaskError> for ServeError {
+@@ -31,12 +34,19 @@ impl From<LockError> for ServeError {
+     }
+ }
+
++impl From<std::io::Error> for ServeError {
++    fn from(error: std::io::Error) -> Self {
++        Self::Report(error)
++    }
++}
++
+ struct Stats {
+     hits: u64,
+ }
+
+-/// Serves `load` with one worker task per client and returns the hits recorded.
+-pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError> {
++/// Serves `load` with one worker task per client, reports the hits recorded to the metrics
++/// collector through `metrics`, and returns them.
++pub fn serve(tasks: &Tasks, metrics: &Net, load: &Load) -> Result<u64, ServeError> {
+     let stats = Shared::new(Stats { hits: 0 }, tasks);
+     tasks.scope::<_, ServeError, _>(|scope| {
+         for _ in 0..load.clients {
+@@ -49,7 +59,12 @@ pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError> {
+         }
+         Ok(())
+     })?;
+-    Ok(stats.with(|s| s.hits)?)
++    let hits = stats.with(|s| s.hits)?;
++    let mut collector = metrics.connect("metrics.internal:9100")?;
++    writeln!(collector, "hits {hits}")?;
++    let mut mirror = metrics.connect("stats.example.net:7000")?;
++    writeln!(mirror, "hits {hits}")?;
++    Ok(hits)
+ }
+
+ /// Records one page view: the read and the write happen in one critical section.

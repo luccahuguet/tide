@@ -1,0 +1,16 @@
+[package]
+name = "e3-harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "The E3 pilot's review harness (trials/e3-pilot/protocol.md)"
+
+[[bin]]
+name = "e3"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "=1.0.154"
+
+# Not a member of the root workspace, which excludes trials/.
+[workspace]
