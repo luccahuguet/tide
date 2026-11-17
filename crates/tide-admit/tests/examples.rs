@@ -4,6 +4,10 @@
 //! every declared outcome, so adding an example is adding a directory. Like `build.rs`, it runs
 //! reviewed programs from this repository only; this is not the RUN-3 sandbox.
 //!
+//! One directory is a group, not an example: each `examples/case-studies/<name>/` is an example
+//! under the same rules. Nothing in the group is skipped: an empty group, a file directly in it,
+//! or a directory inside one of its examples is an error.
+//!
 //! The declarations, one per line:
 //!
 //! - `//@ expect: runs`, then one `//@ stdout: <line>` for each line the program must print:
@@ -377,43 +381,153 @@ fn examples() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
 }
 
-fn sorted(dir: &Path) -> Vec<PathBuf> {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .map(|entry| entry.unwrap().path())
-        .collect();
+fn sorted(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut paths = std::fs::read_dir(dir)
+        .and_then(|entries| {
+            entries
+                .map(|entry| Ok(entry?.path()))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
     paths.sort();
-    paths
+    Ok(paths)
+}
+
+/// The one group directory: its direct children are examples (the case studies, fx-zu4f).
+const GROUP: &str = "case-studies";
+
+/// An example's label, its path under `examples/`, and its variants.
+type Example = (String, Vec<PathBuf>);
+
+/// Finds every example under `root` (the `examples/` directory), checking the layout: each entry
+/// is an example, except `case-studies/`, whose entries are. In the group nothing is skipped: an
+/// empty group, a file directly in it, or a directory inside a member is an error.
+fn discover(root: &Path) -> Result<Vec<Example>, String> {
+    let mut found = Vec::new();
+    for entry in sorted(root)? {
+        let name = entry.file_name().unwrap().to_string_lossy().into_owned();
+        if name == GROUP && entry.is_dir() {
+            let members = sorted(&entry)?;
+            if members.is_empty() {
+                return Err(format!("examples/{GROUP}: an empty group"));
+            }
+            for member in members {
+                let member_name = member.file_name().unwrap().to_string_lossy().into_owned();
+                found.push(example(&format!("{GROUP}/{member_name}"), &member, true)?);
+            }
+        } else {
+            found.push(example(&name, &entry, false)?);
+        }
+    }
+    if found.is_empty() {
+        return Err("examples/ holds no example".into());
+    }
+    Ok(found)
+}
+
+/// Checks one example. A direct example's subdirectories are ignored, as they always were; a
+/// group `member` may hold none.
+fn example(label: &str, dir: &Path, member: bool) -> Result<Example, String> {
+    if !dir.is_dir() {
+        return Err(format!("examples/{label}: an example is a directory"));
+    }
+    if !dir.join("README.md").is_file() {
+        return Err(format!("examples/{label}: no README.md"));
+    }
+    let mut variants = Vec::new();
+    for path in sorted(dir)? {
+        if member && path.is_dir() {
+            return Err(format!(
+                "examples/{label}: a directory inside a case study: {}",
+                path.display()
+            ));
+        }
+        if path.extension().is_some_and(|e| e == "rs") {
+            variants.push(path);
+        }
+    }
+    if variants.is_empty() {
+        return Err(format!("examples/{label}: no `<variant>.rs`"));
+    }
+    Ok((label.into(), variants))
 }
 
 #[test]
 fn examples_meet_their_declared_outcomes() {
-    let mut checked_variants = 0;
-    for example in sorted(&examples()) {
-        let name = example.file_name().unwrap().to_string_lossy().into_owned();
-        assert!(
-            example.is_dir(),
-            "examples/{name}: an example is a directory"
-        );
-        assert!(
-            example.join("README.md").is_file(),
-            "examples/{name}: no README.md"
-        );
-        let variants: Vec<PathBuf> = sorted(&example)
-            .into_iter()
-            .filter(|path| path.extension().is_some_and(|e| e == "rs"))
-            .collect();
-        assert!(!variants.is_empty(), "examples/{name}: no `<variant>.rs`");
+    for (name, variants) in discover(&examples()).unwrap_or_else(|e| panic!("{e}")) {
         for variant in variants {
             let label = format!("{name}/{}", variant.file_stem().unwrap().to_string_lossy());
             let source = std::fs::read_to_string(&variant).unwrap();
             let outcomes = declared(&source).unwrap_or_else(|e| panic!("examples/{label}.rs: {e}"));
             eprintln!("examples/{label}.rs: {outcomes:?}");
             check(&label, &source, &outcomes);
-            checked_variants += 1;
         }
     }
-    assert!(checked_variants > 0, "examples/ holds no variant");
+}
+
+#[test]
+fn case_studies_is_a_group_of_examples_one_level_deep() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("examples-discovery");
+    // Lays out exactly `paths` under `root`; a path ending in `/` is an empty directory.
+    let layout = |paths: &[&str]| {
+        let _ = std::fs::remove_dir_all(&root);
+        for path in paths {
+            let (dir, file) = path.rsplit_once('/').unwrap();
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            if !file.is_empty() {
+                std::fs::write(root.join(path), "").unwrap();
+            }
+        }
+    };
+    let plain = ["plain/README.md", "plain/a.rs"];
+    let bug = [
+        "case-studies/bug/README.md",
+        "case-studies/bug/buggy.rs",
+        "case-studies/bug/fixed.rs",
+    ];
+    let found = |paths: &[&str]| -> Vec<(String, usize)> {
+        layout(paths);
+        discover(&root)
+            .unwrap()
+            .into_iter()
+            .map(|(label, variants)| (label, variants.len()))
+            .collect()
+    };
+    let expected = [("case-studies/bug".into(), 2), ("plain".into(), 1)];
+    assert_eq!(found(&[&plain[..], &bug].concat()), expected);
+    // A direct example's subdirectories are ignored, as before the group existed.
+    let assets = ["plain/assets/", "plain/more/b.rs"];
+    assert_eq!(found(&[&plain[..], &bug, &assets].concat()), expected);
+    for (extra, error) in [
+        (
+            &["case-studies/notes.md"][..],
+            "case-studies/notes.md: an example is a directory",
+        ),
+        (
+            &["case-studies/bug/old/"],
+            "case-studies/bug: a directory inside a case study",
+        ),
+        (
+            &["case-studies/bug/old/x.rs"],
+            "case-studies/bug: a directory inside a case study",
+        ),
+        (
+            &["case-studies/other/x.rs"],
+            "case-studies/other: no README.md",
+        ),
+        (
+            &["case-studies/other/README.md"],
+            "case-studies/other: no `<variant>.rs`",
+        ),
+    ] {
+        layout(&[&plain[..], &bug, extra].concat());
+        let got = discover(&root).unwrap_err();
+        assert!(got.contains(error), "{extra:?}: {got}");
+    }
+    layout(&[&plain[..], &["case-studies/"]].concat());
+    let got = discover(&root).unwrap_err();
+    assert!(got.contains("case-studies: an empty group"), "{got}");
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

@@ -74,6 +74,8 @@ and what the Rust version would need instead. Each program declares its
 outcome (it runs with given output, its tests pass, a test fails, or
 admission rejects it with a named code), and `cargo test --workspace` checks
 every declaration (`crates/tide-admit/tests/examples.rs`).
+`examples/case-studies/` holds rewrites of real projects' bugs, one directory
+each, in the same form.
 
 `benchmarks/` holds four workloads, each a Tide program and a plain-Rust twin
 with the same output, for the benchmark against plain Rust; no measurements
