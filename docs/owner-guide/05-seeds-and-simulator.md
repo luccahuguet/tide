@@ -62,7 +62,7 @@ test fails with that report.
 The demo's step 1 does exactly this. Run it (or reuse the output from Setup):
 
 ```sh
-demo/run.sh
+cargo run -p tide-demo
 ```
 
 Then open the search log, which has every seed's verdict:

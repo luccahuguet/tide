@@ -1,5 +1,5 @@
-//! Simulation suite for the hit counter. `demo/run.sh` pairs it with one revision of the service
-//! at a time (`--tide-test-library`), which the suite sees as the crate `tide_candidate`.
+//! Simulation suite for the hit counter. The demo (`crates/tide-demo`) pairs it with one revision
+//! of the service at a time (`--tide-test-library`), which the suite sees as `tide_candidate`.
 use std::sim::SimRoot;
 use tide_candidate::{Load, serve};
 

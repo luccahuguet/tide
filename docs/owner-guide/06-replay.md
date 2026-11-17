@@ -59,14 +59,14 @@ recording: tide-demo/out/record/target/sim/run-…/run.manifest.json
 ```
 
 Now replay it yourself, and then watch the identity check refuse an edited
-source. Run `demo/run.sh` first. The manifest records only the libraries the
-build loaded, so a later build that leaves them as they were, such as
-`demo/run.sh`'s own `cargo build` commands, doesn't stop the replay. A build
+source. Run `cargo run -p tide-demo` first. The manifest records only the
+libraries the build loaded, so a later build that leaves them as they were,
+such as the demo's own `cargo build` commands, doesn't stop the replay. A build
 that changes one of them does. A plain `cargo build` of the whole workspace
 is one: it rebuilds Tide's std into different bytes, and replay refuses with
 `dependency artifact mismatch` and the line `std: recorded …, current …`.
-Running `demo/run.sh` again rebuilds the demo's std and records the seed
-again.
+Running `cargo run -p tide-demo` again rebuilds the demo's std and records
+the seed again.
 
 The log prints each failing seed's replay command on a line starting
 `  replay:`. Save it to a file, look at it, and run it:
@@ -102,7 +102,7 @@ tide-admit: replay paired-library source mismatch; use fresh --seed for changed 
 It exits 2 and runs nothing. A one-line comment was enough. Each changed
 file gets one line, with the first 12 digits of its old and new hash.
 
-Running `demo/run.sh` again regenerates the copy.
+Running `cargo run -p tide-demo` again regenerates the copy.
 
 ## What to look at
 
@@ -118,36 +118,44 @@ Running `demo/run.sh` again regenerates the copy.
 
 ## Read the code
 
-**`demo/run.sh:107-141`** (8 minutes). The demo's step 2, in Bash: how it
-records a seed, replays it twice, and proves the three runs match. You
-don't need Bash to follow it with this walkthrough.
+**`crates/tide-demo/src/lib.rs:664-785`** (8 minutes). The demo's step 2, the
+function `record_and_replay`: how it records a seed, replays it twice, and
+proves the three runs match. You don't need Rust to follow it with this
+walkthrough.
 
 ```sh
-bash -c 'sed -n "107,141p" demo/run.sh'
+bash -c 'sed -n "664,785p" crates/tide-demo/src/lib.rs'
 ```
 
-- Line 107, `step "2. ..."`: print the step's heading.
-- Lines 108–109: run the buggy suite with `--tide-run-test` and
-  `--seed "$SEED"`, a fresh run of the failing seed, which records a manifest.
-  `suite` is a helper defined earlier that calls `tide-admit`.
-- Lines 110–111: collect the manifests written, and insist on exactly one,
-  and on exit code 101 (a failing test).
-- Lines 112–114: insist that the failure's cause is `lost hits`, not some
-  other crash.
-- Line 115: remember where the recording's trace is.
-- Lines 116–126, `for n in 1 2`: twice, run `--replay` on that manifest. Each
-  must exit 101 and print `replay reproduced`, and each must write one new
-  manifest and trace of its own (lines 123–125).
-- Lines 127–132: print the table: event count and two hashes (a hash is a
-  short fingerprint of a file: same file, same hash) per run.
-- Lines 133–135, `cmp -s`: compare each replay's trace with the recording's,
-  byte for byte. Any difference fails the demo.
-- Lines 136–139: pull the printed output line out of the trace and check it
-  really shows fewer hits than views. Lines 140–141 print the summary.
+- `step(...)`: print the step's heading.
+- `self.suite(buggy, "record", "record", &run)`: run the buggy suite with
+  `--tide-run-test` and `--seed`, a fresh run of the failing seed, which
+  records a manifest. `suite` is a helper defined earlier that calls
+  `tide-admit` and writes its output to `logs/record.log`.
+- `self.recordings("record")`: read every manifest the run wrote, with the
+  driver's own JSON reader, and check each one's integrity hashes. The
+  `match` insists on exactly one, and on exit code 101 (a failing test).
+- `let (true, Some(cause)) = ...`: insist that the recording is of this seed
+  and this test, and that its outcome and the log's `cause:` line are both
+  the `lost hits` failure, not some other crash. `else` fails the step.
+- `for (n, name) in [(1, "replay-1"), (2, "replay-2")]`: twice, run
+  `--replay` on that manifest. Each must exit 101 and print
+  `replay reproduced`, and each must write one new manifest and trace of its
+  own (`added`).
+- The `println!` loop: print the table: event count and two hashes (a hash
+  is a short fingerprint of a file: same file, same hash) per run.
+- `if run.trace != runs[0].1.trace`: compare each replay's trace with the
+  recording's, byte for byte. Any difference fails the demo.
+- `lost_a_hit(&output)`: read the printed output from the trace's `sink`
+  records and check it really shows fewer hits than views. The last lines
+  print the summary.
 
-What to take away: the script trusts nothing. It checks the exit codes, the
-cause, the driver's own "reproduced" verdict, and the bytes of the traces,
-separately.
+Each check that fails returns a `Failure`, which ends the demo with exit
+code 1 and prints the log of the run that showed it.
+
+What to take away: the demo trusts nothing. It checks the exit codes, the
+recordings, the cause, the driver's own "reproduced" verdict, and the bytes
+of the traces, separately.
 
 ## The hardest question
 
@@ -189,4 +197,4 @@ shows it: identical traces three times over.
   the identity check).
 - The repository `README.md`, Status: the replay paragraphs list exactly what
   is checked.
-- `demo/README.md`, "What the script does", step 2.
+- `demo/README.md`, "What the demo does", step 2.

@@ -44,7 +44,7 @@ an hour and a quarter in all:
 | 5 | `demo/service/src/hits.rs` | 4 | a whole Tide service, 58 lines: tasks, a scope, `Shared` | 15 |
 | 6 | `demo/patches/lost-update.patch` | 4 | the one-line-pair change that makes it race | 3 |
 | 7 | `demo/tests/src/hits_sim.rs` | 5 | the simulation test that finds the race | 5 |
-| 8 | `demo/run.sh:107-141` | 6 | how the demo proves replay is exact | 8 |
+| 8 | `crates/tide-demo/src/lib.rs:664-785` | 6 | how the demo proves replay is exact | 8 |
 | 9 | `demo/patches/metrics-report.patch` | 7 | the change the trust diff flags | 10 |
 | 10 | `crates/tide-admit/src/invocation/sandbox.rs:84-101, 549-578` | 8 | the sandbox level, and seccomp's allowed system calls | 8 |
 
@@ -82,7 +82,7 @@ Build the driver and Tide's std, and run the demo once. The first build takes
 several minutes; later runs take about 20 seconds:
 
 ```sh
-demo/run.sh
+cargo run -p tide-demo
 ```
 
 It ends with `== Done: every step showed what it should.` and exit code 0.
@@ -110,8 +110,8 @@ change the paths in the commands to match.
 compiles through `~/.cache/eon-agents/eon-overseer/heavy.sh`, so builds don't
 overload the machine. If agents are running, put
 `bash ~/.cache/eon-agents/eon-overseer/heavy.sh` in front of any command that
-compiles (`demo/run.sh`, `tide-admit`, `rustc`, `cargo`), for example
-`bash ~/.cache/eon-agents/eon-overseer/heavy.sh demo/run.sh`.
+compiles (`tide-admit`, `rustc`, `cargo`, so the demo too), for example
+`bash ~/.cache/eon-agents/eon-overseer/heavy.sh cargo run -p tide-demo`.
 
 **Running the driver on your own file.** Most chapters check a small example
 program from [examples/](examples/). Every such command has the same shape:

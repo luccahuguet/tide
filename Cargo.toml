@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/tide-admit", "crates/tide-macros", "crates/tide-std"]
+members = ["crates/tide-admit", "crates/tide-demo", "crates/tide-macros", "crates/tide-std"]
 # Prototypes, oracles, and records keep their own manifests and toolchains.
 exclude = ["archive", "conformance", "spikes", "trials"]
 resolver = "3"

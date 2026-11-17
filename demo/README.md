@@ -14,18 +14,22 @@ of Tide's claims on it:
 ## Run it
 
 ```sh
-demo/run.sh
+cargo run -p tide-demo
 ```
 
 It exits 0 when every step shows what it should, 1 when one does not, and 2 on
-a setup error. It needs what the driver needs:
+a setup error. `crates/tide-demo` holds it, and `cargo test --workspace` runs
+it (`crates/tide-demo/tests/demo.rs`), with two more runs that must fail: one
+with the buggy patch applied as the fixed revision, which fails step 3, and
+one without the widening patch, which fails step 4. It needs what the driver
+needs:
 
 - an x86_64 Linux host, since the driver links and runs tests only there, with
   `/usr/bin/cc` and `/usr/bin/ld`;
 - rustup with the toolchain `rust-toolchain.toml` pins, nightly-2026-08-09
   with `rustc-dev` (`rustup toolchain install` in the repository installs
   it);
-- `git`, to apply the demo's patches, and `sha256sum`.
+- `git`, to apply the demo's patches.
 
 It builds the driver and Tide's std into `$CARGO_TARGET_DIR`, by default
 `target/` in the repository, and works in its `tide-demo/` directory, which
@@ -150,7 +154,7 @@ under a seeded scheduler, which picks the next task to run at each scheduling
 point. About half the seeds interleave the two read-write pairs and lose a
 hit; the others do not.
 
-### What the script does
+### What the demo does
 
 The driver pairs the suite with one revision of the service at a time
 (`--tide-test-library`); the suite sees it as the crate `tide_candidate`.
@@ -160,7 +164,9 @@ Every Tide crate here is built only by the driver, against production std.
    revision over seeds 0 to 15 and takes the first failing seed. Some seeds
    must pass and some fail: same code, same input, different schedule. Every
    failing seed's cause must be the `lost hits` assertion, so a seed that
-   panics otherwise or fails the determinism self-check fails the demo.
+   panics otherwise or fails the determinism self-check fails the demo. It
+   reads each seed's outcome from the manifest the run recorded for it, and
+   each failing seed's cause from the log, where the self-check reports.
 2. **Record and replay.** It runs that seed alone (`--seed`), which records a
    `tide-replay/2` manifest and its `trace.ndjson`, then replays the manifest
    twice (`--replay`). The recorded seed's cause must be `lost hits` and its
@@ -168,7 +174,7 @@ Every Tide crate here is built only by the driver, against production std.
    reproduced failing test does, and say `replay reproduced`. Replay first checks that the sources, build options,
    compiler, std, the libraries the build loaded, and test configuration
    match the recording, and then
-   compares the run's trace and outcome with it. The script also compares the
+   compares the run's trace and outcome with it. The demo also compares the
    three traces byte for byte and prints each one's event count, the hash of
    its event trace, and the hash of its output trace: the `sink` events,
    which hold what the test printed.
@@ -176,7 +182,7 @@ Every Tide crate here is built only by the driver, against production std.
    seeds 0 to 15, then the failing seed on its own. Both pass.
 4. **Authority diff.** `patches/metrics-report.patch` makes `serve` report
    its total to a metrics collector, so `serve` now takes `metrics: &Net`.
-   The script admits both revisions, which writes each crate's trust
+   The demo admits both revisions, which writes each crate's trust
    artifact, `hits.interface.json`, and compares them with
    `tide-admit --tide-diff`. The diff lists `hits::serve` as widened, with
    the path that gained `net`. The widened revision is only admitted, never
@@ -189,7 +195,7 @@ level (`sandbox: full`, …) at the top of each log.
 
 | Path | What it is |
 | --- | --- |
-| `run.sh` | the one command |
+| `../crates/tide-demo/` | the one command, `cargo run -p tide-demo`, and its workspace test |
 | `service/src/hits.rs` | the service, fixed revision |
 | `patches/lost-update.patch` | the buggy revision, as a patch to the service |
 | `patches/metrics-report.patch` | the `Net` widening, as a patch to the service |

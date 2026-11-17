@@ -2,9 +2,10 @@
 
 Partial v0. Everything here runs today; the `tide` command does not exist yet.
 
-**Run:** `demo/run.sh` (exit 0 pass, 1 a step failed, 2 setup). Honors
-`CARGO_TARGET_DIR`; works in `$CARGO_TARGET_DIR/tide-demo/`, logs in its
-`logs/`. x86_64 Linux, pinned nightly with `rustc-dev`, git.
+**Run:** `cargo run -p tide-demo` (exit 0 pass, 1 a step failed, 2 setup);
+`cargo test --workspace` runs it too (`crates/tide-demo/tests/demo.rs`).
+Honors `CARGO_TARGET_DIR`; works in `$CARGO_TARGET_DIR/tide-demo/`, logs in
+its `logs/`. x86_64 Linux, pinned nightly with `rustc-dev`, git.
 
 **Code:**
 - `demo/service/src/hits.rs`: the service, fixed. `pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError>`.
@@ -12,7 +13,7 @@ Partial v0. Everything here runs today; the `tide` command does not exist yet.
 - `demo/patches/metrics-report.patch`: adds `metrics: &Net` to `serve`.
 - `demo/tests/src/hits_sim.rs`: `#[sim_test(seeds = 16)] fn every_view_is_counted`.
 
-**Driver commands** (`D=$CARGO_TARGET_DIR/debug/tide-admit`, default `target/`; `STD` and dep dirs as `demo/run.sh` collects them):
+**Driver commands** (`D=$CARGO_TARGET_DIR/debug/tide-admit`, default `target/`; `STD` and dep dirs as `crates/tide-demo` collects them from Cargo's artifact messages):
 
 ```sh
 # admit and run the suite against one revision; add --seed N for one fresh seed
