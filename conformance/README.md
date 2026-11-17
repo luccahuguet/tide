@@ -145,7 +145,13 @@ exact module equality: the local ADT's module or the trait's module; for a
 non-local self type only a local trait's module qualifies. If neither module is
 local, the impl is not admitted; implement a trait on the local type (for
 example, `Into<u16> for Local` rather than `From<Local> for u16`) or use a
-newtype. A function-local impl uses the enclosing module. Specialization is checked before lowering; overlap
+newtype. A function-local impl uses the enclosing module. Specialization is checked before lowering. An impl whose self type is a type parameter or a projection that
+may be unsized, of a dyn-compatible trait that declares an associated type without `where Self: Sized`,
+is `FX0402`: it may cover the trait's `dyn` types (a projection can normalize to one), whose built-in impl rustc lets choose another
+associated type (rust-lang/rust#57893, `memory/escape_dyn_overlap_transmute`). A sized
+parameter, a trait whose associated types are all inherited (a supertrait's impls decide them,
+and this check sees those impls), and one whose associated types require `Self: Sized` stay
+admitted (`memory/escape_dyn_overlap_accept`). Other overlap
 labels rustc's E0119. Associated type parameters and explicit binders are
 rejected while elided `Fn` and bare `fn` lifetimes remain legal. Impl bounds
 accept a parameter, its projection, a type containing no type parameter, or a
@@ -177,7 +183,9 @@ re-exports (named or globbed) in their lexical scope; recovery requires one
 source identity and respects shadowing. Same-spelled user methods and Tide capability methods are unaffected.
 Unresolved paths apply each matching deny rule's code, including `FX0520`
 for aliases of unavailable std items.
-`Path` I/O observers and `io::Error::last_os_error` retain `FX0520`.
+`Path` I/O observers and `io::Error::last_os_error` retain `FX0520`. `std::path` is
+listed item by item, so an item a later rustc adds there is not admitted until the pin
+review lists it.
 `Root` may be named in the entry signature, in field patterns destructuring
 `root` (including `main`'s parameter), or as `Root::sim`. A helper's signature
 cannot name `Root`, even with a field pattern. Field destructuring moves or borrows

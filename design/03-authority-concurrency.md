@@ -878,8 +878,12 @@ into, fetched from the protected remote.
      the lockfile picks); and bugs in the operating-system kernel that
      enforces RUN-3. rustc has open soundness bugs that safe code can turn
      into memory corruption, so even safe code can forge a capability. The
-     driver closes one, the `fn`-pointer route of rust-lang/rust#25860 that
-     the `cve-rs` crate uses (02 CLOSURE-3); the others stay open.
+     driver closes two, the `fn`-pointer route of rust-lang/rust#25860 that
+     the `cve-rs` crate uses (02 CLOSURE-3), and the trait-object route of
+     rust-lang/rust#57893, where an impl for a type parameter or a
+     projection that may be unsized overlaps the built-in impl of its
+     trait's `dyn` type (`FX0402`);
+     the others stay open.
   6. **Availability and side channels.** A candidate can spin, allocate,
      recurse, spawn tasks, and write sink output until a limit the operator
      sets stops it. RUN-1 bounds what a run reaches, not what it consumes,

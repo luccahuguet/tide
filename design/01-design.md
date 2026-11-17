@@ -580,7 +580,8 @@ scanning.
   A WASI target maps capabilities onto component imports. Until RUN-3
   lands, public claims say that safety against a malicious dependency rests
   on rustc's soundness, which has open `I-unsound` issues; the checker closes
-  only the `fn`-pointer route of rust-lang/rust#25860 (02 CLOSURE-3).
+  only the `fn`-pointer route of rust-lang/rust#25860 (02 CLOSURE-3) and,
+  since fx-qlek.5, the trait-object route of rust-lang/rust#57893 (`FX0402`).
   Decided 2026-11-15 (coordinator, owner-delegated; bead `fx-iwjq`).
 
 Rejected: effect rows and effect variables; implicit capability resolution

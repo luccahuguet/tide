@@ -118,11 +118,18 @@ pub const ITEMS: &[(&str, &[&str], &str)] = &[
     ),
     (
         "section_1_path_pathbuf",
-        &["std::path::Path::join", "std::path::PathBuf::push"],
+        &[
+            "std::path::Path::join",
+            "std::path::PathBuf::push",
+            "std::path::Path::is_empty",
+            "std::path::PathBuf::into_string",
+        ],
         r#"
         let p = std::path::Path::new("a");
         let mut b = p.join("b"); b.push("c");
         assert_eq!(b.file_name().unwrap(), "c");
+        assert!(!p.is_empty() && std::path::Path::new("").is_empty());
+        assert_eq!(b.into_string(), Ok(String::from("a/b/c")));
     "#,
     ),
     (

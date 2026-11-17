@@ -345,7 +345,86 @@ pub const RULES: &[Rule] = &[
     deny("std::path::Path::is_dir", FS),
     deny("std::path::Path::is_symlink", FS),
     deny("std::path::absolute", CWD),
-    allow("std::path::*"),
+    // `std::path` item by item (Achilles W5, fx-qlek.5): an item a later rustc adds, such as
+    // another I/O method, is not admitted until the pin review lists it here.
+    allow("std::path::Path"),
+    allow("std::path::Path::new"),
+    allow("std::path::Path::as_os_str"),
+    allow("std::path::Path::as_mut_os_str"),
+    allow("std::path::Path::to_str"),
+    allow("std::path::Path::to_string_lossy"),
+    allow("std::path::Path::to_path_buf"),
+    allow("std::path::Path::is_absolute"),
+    allow("std::path::Path::is_relative"),
+    allow("std::path::Path::has_root"),
+    allow("std::path::Path::parent"),
+    allow("std::path::Path::ancestors"),
+    allow("std::path::Path::file_name"),
+    allow("std::path::Path::strip_prefix"),
+    allow("std::path::Path::starts_with"),
+    allow("std::path::Path::ends_with"),
+    allow("std::path::Path::file_stem"),
+    allow("std::path::Path::file_prefix"),
+    allow("std::path::Path::extension"),
+    allow("std::path::Path::join"),
+    allow("std::path::Path::with_file_name"),
+    allow("std::path::Path::with_extension"),
+    allow("std::path::Path::with_added_extension"),
+    allow("std::path::Path::components"),
+    allow("std::path::Path::iter"),
+    allow("std::path::Path::display"),
+    allow("std::path::Path::into_path_buf"),
+    allow("std::path::Path::is_empty"),
+    allow("std::path::PathBuf"),
+    allow("std::path::PathBuf::new"),
+    allow("std::path::PathBuf::with_capacity"),
+    allow("std::path::PathBuf::as_path"),
+    allow("std::path::PathBuf::leak"),
+    allow("std::path::PathBuf::push"),
+    allow("std::path::PathBuf::pop"),
+    allow("std::path::PathBuf::set_file_name"),
+    allow("std::path::PathBuf::set_extension"),
+    allow("std::path::PathBuf::add_extension"),
+    allow("std::path::PathBuf::as_mut_os_string"),
+    allow("std::path::PathBuf::into_os_string"),
+    allow("std::path::PathBuf::into_string"),
+    allow("std::path::PathBuf::into_boxed_path"),
+    allow("std::path::PathBuf::capacity"),
+    allow("std::path::PathBuf::clear"),
+    allow("std::path::PathBuf::reserve"),
+    allow("std::path::PathBuf::try_reserve"),
+    allow("std::path::PathBuf::reserve_exact"),
+    allow("std::path::PathBuf::try_reserve_exact"),
+    allow("std::path::PathBuf::shrink_to_fit"),
+    allow("std::path::PathBuf::shrink_to"),
+    allow("std::path::Ancestors"),
+    allow("std::path::Display"),
+    allow("std::path::StripPrefixError"),
+    allow("std::path::Component"),
+    allow("std::path::Component::Prefix"),
+    allow("std::path::Component::RootDir"),
+    allow("std::path::Component::CurDir"),
+    allow("std::path::Component::ParentDir"),
+    allow("std::path::Component::Normal"),
+    allow("std::path::Component*::as_os_str"),
+    allow("std::path::Components"),
+    allow("std::path::Components*::as_path"),
+    allow("std::path::Iter"),
+    allow("std::path::Iter*::as_path"),
+    allow("std::path::Prefix"),
+    allow("std::path::Prefix::Verbatim"),
+    allow("std::path::Prefix::VerbatimUNC"),
+    allow("std::path::Prefix::VerbatimDisk"),
+    allow("std::path::Prefix::DeviceNS"),
+    allow("std::path::Prefix::UNC"),
+    allow("std::path::Prefix::Disk"),
+    allow("std::path::Prefix*::is_verbatim"),
+    allow("std::path::PrefixComponent"),
+    allow("std::path::PrefixComponent*::kind"),
+    allow("std::path::PrefixComponent*::as_os_str"),
+    allow("std::path::MAIN_SEPARATOR"),
+    allow("std::path::MAIN_SEPARATOR_STR"),
+    allow("std::path::is_separator"),
     allow("std::env::VarError::*"), // data-only errors from Env, never ambient reads
     allow("std::ffi::os_str::*"), // `OsStr` and `OsString` do no I/O (03 §1.1)
     // What `main` may return (reference 6.2); `ExitCode::from(u8)` is a `From` impl.
@@ -419,6 +498,21 @@ mod tests {
                     "{family}: {key}"
                 );
             }
+        }
+    }
+
+    /// Achilles W5 (fx-qlek.5): `std::path` is listed item by item, so a method or function a
+    /// later rustc adds there matches no rule, which `walk.rs` rejects for Rust's std.
+    #[test]
+    fn std_path_admits_listed_items_only() {
+        for key in ["std::path::Path::join", "std::path::PathBuf::push", "std::path::Component::Normal"] {
+            assert_eq!(lookup(key).map(|r| r.verdict), Some(Verdict::Allow), "{key}");
+        }
+        for key in ["std::path::Path::exists", "std::path::absolute"] {
+            assert_eq!(lookup(key).map(|r| r.verdict), Some(Verdict::Deny), "{key}");
+        }
+        for key in ["std::path::Path::normalize_lexically", "std::path::Path::future_io", "std::path::future"] {
+            assert!(lookup(key).is_none(), "{key}");
         }
     }
 

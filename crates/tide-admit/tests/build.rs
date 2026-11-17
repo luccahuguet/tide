@@ -4986,6 +4986,148 @@ fn main() {{
     assert_eq!(std::fs::read_to_string(sim.join("other-run/run.manifest.json")).unwrap(), "original");
 }
 
+/// The ELF interpreter (`PT_INTERP`) that `binary` names.
+fn interpreter(binary: &Path) -> String {
+    let elf = std::fs::read(binary).unwrap();
+    let u64_at = |at: usize| u64::from_le_bytes(elf[at..at + 8].try_into().unwrap()) as usize;
+    let u16_at = |at: usize| u16::from_le_bytes(elf[at..at + 2].try_into().unwrap()) as usize;
+    let (table, size, count) = (u64_at(0x20), u16_at(0x36), u16_at(0x38));
+    let header = (0..count).map(|i| table + i * size)
+        .find(|&h| u32::from_le_bytes(elf[h..h + 4].try_into().unwrap()) == 3)
+        .expect("a dynamically linked executable");
+    let (offset, len) = (u64_at(header + 8), u64_at(header + 32));
+    String::from_utf8(elf[offset..offset + len - 1].to_vec()).unwrap()
+}
+
+/// RUN-3 red team (fx-qlek.5): what the kernel denies a test child that reached RUN-4's holes 1
+/// or 5, as in the test above. A `.init_array` constructor, which runs before `main`, cannot read
+/// a canary or fork. `main` cannot execute `/bin/sh` (Landlock, `EACCES`; `execveat`, seccomp's
+/// `EPERM`), fork, vfork or clone a process, set up io_uring, trace, make a memfd or a namespace,
+/// signal a process of its user outside the sandbox (`EPERM`), open
+/// `/proc/self/mem` (`EACCES`), make a socket pair, raise a limit, or read its own memory through
+/// `process_vm_readv` (`EPERM`); `clone3` reports `ENOSYS`. Last, it executes its own ELF
+/// interpreter, which Landlock lets it run, on `/bin/sh`: the loader starts and fails to open the
+/// shell. Run directly, the same binary reads its memory through `process_vm_readv` and the loader
+/// runs the shell. Needs a host whose level is `full`.
+#[test]
+fn run3_kernel_denies_exec_fork_io_uring_ptrace_and_constructors() {
+    let dir = package("run3-red-team", "#[test]\nfn reaches() {}\n");
+    let run = || {
+        let mut command = driver(&dir);
+        command.args(["--crate-type=lib", "--test", "--tide-run-test", "reaches"]);
+        command
+    };
+    let (status, admitted) = bounded(&mut run().stdout(Stdio::null()), 300);
+    assert!(status.success(), "{admitted}");
+    assert!(admitted.lines().any(|l| l.starts_with("sandbox: full (Linux ")), "{admitted}");
+    let canary = dir.join("canary.txt");
+    std::fs::write(&canary, "canary").unwrap();
+    // The host's interpreter, which the child names too and the sandbox grants it.
+    let loader = interpreter(&std::env::current_exe().unwrap());
+    let reach = unadmitted(&dir, &format!(r#"
+use std::sync::atomic::{{AtomicI32, Ordering}};
+unsafe extern "C" {{
+    fn syscall(n: i64, ...) -> i64;
+    fn execve(path: *const u8, argv: *const *const u8, envp: *const *const u8) -> i32;
+}}
+fn result(value: i64) -> Result<i64, Option<i32>> {{
+    if value < 0 {{ Err(std::io::Error::last_os_error().raw_os_error()) }} else {{ Ok(value) }}
+}}
+/// A process the call made exits at once.
+fn call(n: i64, a: i64, b: i64, c: i64, d: i64, e: i64) -> Result<i64, Option<i32>> {{
+    // SAFETY: each call passes only numbers and pointers to live buffers.
+    let value = unsafe {{ syscall(n, a, b, c, d, e, 0i64) }};
+    if value == 0 && matches!(n, 56..=58) {{ unsafe {{ syscall(231, 0) }}; }}
+    result(value)
+}}
+fn errno(r: Result<i64, Option<i32>>) -> i32 {{ r.err().flatten().unwrap_or(0) }}
+static CTOR_READ: AtomicI32 = AtomicI32::new(-1);
+static CTOR_FORK: AtomicI32 = AtomicI32::new(-1);
+extern "C" fn early() {{
+    let read = std::fs::read({canary:?}).map(drop).map_err(|e| e.raw_os_error().unwrap_or(0));
+    CTOR_READ.store(read.err().unwrap_or(0), Ordering::SeqCst);
+    CTOR_FORK.store(errno(call(57, 0, 0, 0, 0, 0)), Ordering::SeqCst);
+}}
+#[used]
+#[unsafe(link_section = ".init_array")]
+static CONSTRUCTOR: extern "C" fn() = early;
+fn main() {{
+    let sandboxed = std::env::var_os("__TIDE_REPLAY_CONTEXT").is_some();
+    let argv = |args: &[&std::ffi::CStr]| -> Vec<*const u8> {{
+        args.iter().map(|a| a.as_ptr().cast()).chain([std::ptr::null()]).collect()
+    }};
+    // `process_vm_readv` of one byte of this process's own memory, which needs no permission.
+    let source = std::hint::black_box(7u8);
+    let mut copy = 0u8;
+    let local = [&mut copy as *mut u8 as i64, 1];
+    let remote = [&source as *const u8 as i64, 1];
+    let vmread = call(310, i64::from(std::process::id()), local.as_ptr() as i64, 1, remote.as_ptr() as i64, 1);
+    let copy = std::hint::black_box(copy);
+    if !sandboxed {{
+        println!("CONTROL vmread={{vmread:?}} copy={{copy}}");
+    }} else {{
+        let shell = argv(&[c"/bin/sh", c"-c", c"echo ESCAPED"]);
+        // SAFETY: NUL-terminated strings and arrays.
+        let exec = result(unsafe {{ execve(shell[0], shell.as_ptr(), std::ptr::null()) }}.into());
+        let mut params = [0u8; 120];
+        let mut fds = [0i32; 2];
+        let limit = [1u64 << 20, 1u64 << 20];
+        // A process outside the sandbox, of the same user: this test.
+        let outside: i64 = {outside};
+        let mem = std::fs::OpenOptions::new().read(true).write(true).open("/proc/self/mem")
+            .map(drop).map_err(|e| e.raw_os_error());
+        println!("RUN3B exec={{exec:?}} execveat={{:?}} fork={{:?}} vfork={{:?}} clone={{:?}} clone3={{:?}} io_uring={{:?}} ptrace={{:?}} memfd={{:?}} unshare={{:?}} kill={{:?}} tgkill={{:?}} mem={{mem:?}} socketpair={{:?}} prlimit={{:?}} vmread={{vmread:?}} ctor_read={{}} ctor_fork={{}}",
+            call(322, -100, c"/bin/sh".as_ptr() as i64, shell.as_ptr() as i64, 0, 0),
+            call(57, 0, 0, 0, 0, 0),
+            call(58, 0, 0, 0, 0, 0),
+            call(56, 17, 0, 0, 0, 0),
+            call(435, 0, 0, 0, 0, 0),
+            call(425, 8, params.as_mut_ptr() as i64, 0, 0, 0),
+            call(101, 0, 0, 0, 0, 0),
+            call(319, c"x".as_ptr() as i64, 0, 0, 0, 0),
+            call(272, 0x1000_0000, 0, 0, 0, 0),
+            call(62, outside, 0, 0, 0, 0),
+            call(234, outside, outside, 0, 0, 0),
+            call(53, 1, 1, 0, fds.as_mut_ptr() as i64, 0),
+            call(302, 0, 7, limit.as_ptr() as i64, 0, 0),
+            CTOR_READ.load(Ordering::SeqCst), CTOR_FORK.load(Ordering::SeqCst));
+    }}
+    use std::io::Write;
+    std::io::stdout().flush().unwrap();
+    let loader = argv(&[c{loader:?}, c"/bin/sh", c"-c", c"echo ESCAPED"]);
+    // SAFETY: as above.
+    unsafe {{ execve(loader[0], loader.as_ptr(), std::ptr::null()) }};
+    println!("LOADER {{:?}}", std::io::Error::last_os_error().raw_os_error());
+}}
+"#, outside = std::process::id()));
+    assert_eq!(interpreter(&reach), loader);
+    // Control: run directly, the self-read succeeds and the loader runs the shell.
+    let control = dir.join("control.out");
+    checked(Command::new(&reach).stdout(std::fs::File::create(&control).unwrap()));
+    let control = std::fs::read_to_string(&control).unwrap();
+    assert!(control.contains("CONTROL vmread=Ok(1) copy=7\n") && control.contains("ESCAPED\n")
+        && !control.contains("LOADER"), "{control}");
+
+    swap_cached_executable(&dir, &reach);
+    let path = dir.join("red-team.out");
+    let file = std::fs::File::create(&path).unwrap();
+    let (status, errors) = bounded(run().stdout(file), 300);
+    let out = std::fs::read_to_string(&path).unwrap();
+    let report = out.lines().find(|l| l.starts_with("RUN3B ")).unwrap_or_default();
+    assert_eq!(report,
+        "RUN3B exec=Err(Some(13)) execveat=Err(Some(1)) fork=Err(Some(1)) vfork=Err(Some(1)) clone=Err(Some(1)) clone3=Err(Some(38)) \
+         io_uring=Err(Some(1)) ptrace=Err(Some(1)) memfd=Err(Some(1)) unshare=Err(Some(1)) \
+         kill=Err(Some(1)) tgkill=Err(Some(1)) mem=Err(Some(13)) socketpair=Err(Some(1)) \
+         prlimit=Err(Some(1)) vmread=Err(Some(1)) ctor_read=13 ctor_fork=1",
+        "{out}\n{errors}");
+    // The loader started (no `LOADER` return) and failed on the shell it may not read.
+    assert!(!status.success(), "{out}\n{errors}");
+    assert!(!out.contains("LOADER") && !out.contains("ESCAPED") && !errors.contains("ESCAPED"),
+        "{out}\n{errors}");
+    assert!(errors.contains("/bin/sh: error while loading shared libraries: /bin/sh: cannot open \
+        shared object file: Permission denied"), "{out}\n{errors}");
+}
+
 /// The harness owns a driver-run simulation's per-evaluation limit and its crash report, since
 /// the evaluation runs in the sandboxed child itself (RUN-3, RUN-4 hole 6).
 #[test]

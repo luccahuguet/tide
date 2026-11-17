@@ -127,6 +127,23 @@ impl<'a, 'tcx> Walk<'a, 'tcx> {
                         self.report(span, Code::Fx0406, "an impl bound must be on a parameter, its projection, a concrete type, or a strict subterm of the impl head; bound the parameter directly".into());
                     }
                 }
+                // REF-0402 (fx-qlek.5): an impl for a type parameter or a projection that may be
+                // unsized also covers the trait's `dyn` types (its own and its subtraits'), whose
+                // built-in impl takes each associated type the trait declares from the `dyn` type,
+                // and rustc lets the two disagree (rust-lang/rust#57893): safe code turns that into
+                // a transmute. Only the trait's own associated types can disagree: a supertrait's
+                // are decided by the supertrait's impls, which this check sees where they are
+                // written, and a `where Self: Sized` one does not exist on a `dyn` type.
+                if let Some(tr) = trait_ref
+                    && matches!(self_ty.kind(), ty::Param(_) | ty::Alias(..))
+                    && self.tcx.is_dyn_compatible(tr.def_id)
+                    && self.tcx.associated_items(tr.def_id).in_definition_order().any(|i| {
+                        i.is_type() && !self.tcx.generics_require_sized_self(i.def_id)
+                    })
+                    && !self_ty.is_sized(self.tcx, TypingEnv::non_body_analysis(self.tcx, def.to_def_id()))
+                {
+                    self.report(item.span, Code::Fx0402, "this impl for a type parameter or projection that may be unsized may overlap the built-in impl of the trait's own `dyn` type, which may choose another associated type (rust-lang/rust#57893); drop `?Sized`, or implement the trait for each type".into());
+                }
             }
             hir::ItemKind::Struct(..) | hir::ItemKind::Enum(..) | hir::ItemKind::Union(..) => {
                 let mut methods = Vec::new();

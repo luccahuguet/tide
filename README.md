@@ -15,8 +15,10 @@ bullets below state the other limits.
   grant admits is listed as a trust hole. Against a malicious dependency
   this rests on rustc's soundness, which has open `I-unsound` issues: the
   checker closes only the `fn`-pointer route of rust-lang/rust#25860
-  (`FX0206`), and the kernel sandbox for test and simulation runs (RUN-3)
-  covers the runs `tide-admit` starts, in part (see the test runs' status). Today the driver admits a single crate against Tide's std;
+  (`FX0206`) and the trait-object route of rust-lang/rust#57893
+  (`FX0402`), and the kernel sandbox for test and simulation runs (RUN-3)
+  covers the runs `tide-admit` starts, in part (see the test runs'
+  status). Today the driver admits a single crate against Tide's std;
   packages and dependencies (`tide.toml`, `tide.lock`) are planned.
 - **Tests replay.** A test that takes a simulated root (`Root::sim(seed)`,
   `#[sim_test]`) runs under a seeded simulator of tasks, channels,
@@ -89,7 +91,10 @@ which closes the `fn`-pointer route of rust-lang/rust#25860. Generic functions o
 trait methods with a reference receiver such as `Clone::clone`, `&self` methods of types with a
 lifetime parameter, and functions such as `fn f(v: &mut Vec<&str>)` therefore do not coerce; a
 closure that calls the item is accepted. It enforces the trait power ceiling
-(`FX0401`–`FX0408`): impl placement, specialization and overlap, generic associated types,
+(`FX0401`–`FX0408`): impl placement, specialization and overlap (an impl for a type
+parameter or a projection that may be unsized may overlap the built-in impl of its trait's `dyn`
+type when the trait declares an associated type a `dyn` type can name, the route of
+rust-lang/rust#57893), generic associated types,
 explicit higher-ranked binders, negative impls and user auto traits, structural impl
 bounds, polymorphic recursion and duplicate inherent method names. Definition
 checks reject expanding cycles between function type parameters, including

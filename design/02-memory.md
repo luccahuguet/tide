@@ -1438,7 +1438,9 @@ compares the two checkers' verdicts.
   inherits Rust's holes, such as rust-lang/rust#25860, which the build cannot
   catch because rustc accepts them. §5.4's CLOSURE-3 closes this route
   conservatively, and its known exploits are in the negative test corpus.
-  rustc has other open soundness bugs, which no Tide rule closes (03 RUN-4).
+  rustc has other open soundness bugs; the driver also closes the trait-object
+  route of rust-lang/rust#57893 (`FX0402`), and no Tide rule closes the rest
+  (03 RUN-4).
 - **R4. The audited std set** (`Arena`, `Shared` and its `with` methods,
   channels, `Scope`, the eyepatch containers) has Rust std's trust model and
   is counted in the trust surface.

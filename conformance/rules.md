@@ -168,7 +168,7 @@ already implements them; `--tide-print-codes` names the enforced subset.
 | REF-0210 | D2; ref §3.6 | When a literal moves a whole owner and borrows it in another field, label E0505 at the owner value or E0515/E0597 inside the paired borrow expression (E0515 also via its secondary borrowed-here span); omit uncertain evidence | both | FX0210 |
 | REF-0301 | D3; ref §4.2 | Only lossless numeric as casts; pointer-sized integers and addresses count as 32 to 64 bits | checker | FX0301 |
 | REF-0401 | D4; ref §5.2 | Impls live in the exact module of their local ADT (through nested `&T`, `&mut T`, and `Box<T>` wrappers) or trait; other non-local self types use the trait module | checker | FX0401 |
-| REF-0402 | D4; ref §5.1 | No specialization or overlapping impls | both | FX0402; E0119 for overlap |
+| REF-0402 | D4; ref §5.1 | No specialization or overlapping impls, including an impl for a type parameter or a projection that may be unsized, of a dyn-compatible trait that declares an associated type without `where Self: Sized`, which may overlap the built-in impl of the trait's `dyn` type (rust-lang/rust#57893) | both | FX0402; E0119 for overlap |
 | REF-0405 | D4; ref §5.1 | No negative impls or user auto traits | both | FX0405 |
 | REF-0406 | D4; ref §5.1 | Impl bounds use parameters, their projections, concrete types, or strict subterms of self/trait arguments | checker | FX0406 |
 | REF-0407 | D3; ref §5.1 | No expanding cycles between (function, type parameter) nodes: parameter flow under a constructor must not cycle; trait edges require selected local impls; unresolved aliases and rustc instance-depth errors alone prove no growth | checker | FX0407 |
