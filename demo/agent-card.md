@@ -31,7 +31,7 @@ $D --tide-diff BASE/hits.interface.json HEAD/hits.interface.json
 - Failing seed: `simulation failure seed=N`; summary `simulation every_view_is_counted: P passed; F failed (16 seeds)`; exit 101.
 - Each failing seed prints paste-ready `fresh rerun:` and `replay:` commands.
 - Replay success: `replay reproduced: test=... seed=N outcome=...`, exit 101 when the recording failed; a mismatch is a driver error, exit 2.
-- Each evaluation writes `OUT/target/sim/<run>/run.manifest.json` (`tide-replay/1`) and `trace.ndjson`; `"kind":"sink"` events are the output.
+- Each evaluation writes `OUT/target/sim/<run>/run.manifest.json` (`tide-replay/2`) and `trace.ndjson`; `"kind":"sink"` events are the output.
 - Diff: `~ item (kind) widened` then `+ path: kinds` per gained access path. Declared authority only.
 
 **Rules:** keep `serve`'s capabilities explicit in its signature; `Shared::with` closures must be `Pure`; a scope's tasks finish before `scope` returns. Owners: `design/03-authority-concurrency.md` §4.3, §6.1, §6.5, §9.6; `design/01-design.md` D11, D15, D18; the repository `README.md` for flags and replay.

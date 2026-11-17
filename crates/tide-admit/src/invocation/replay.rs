@@ -17,11 +17,9 @@ impl Invocation {
         if let Some(std) = &self.std {
             dependencies.push(BTreeMap::from([("std".into(), file_digest(std)?)]));
         }
-        for dep in &self.deps {
-            let mut files = BTreeMap::new();
-            artifact_tree(dep, dep, &mut BTreeSet::new(), &mut files)?;
-            dependencies.push(files);
-        }
+        // One map per dependency directory, filled from the libraries a build loads
+        // (`loaded_identity`) or that a recording names (`current_artifacts`).
+        dependencies.extend(self.deps.iter().map(|_| BTreeMap::new()));
         if self.link {
             dependencies.push(BTreeMap::from([
                 ("linker:cc".into(), file_digest(Path::new("/usr/bin/cc"))?),
@@ -104,20 +102,84 @@ impl Invocation {
         options
     }
 
+    /// The dependency maps' index in `Build::dependencies`, after std's.
+    fn first_dependency(&self) -> usize {
+        usize::from(self.std.is_some())
+    }
+
+    /// `build` with each dependency directory's map naming the libraries in `loaded` that rustc
+    /// read from it, each with the hash of its current bytes. rustc searches a `-L dependency=`
+    /// directory without recursion and keeps the entry it chose as spelled there, symbolic links
+    /// unresolved, so each library is one entry of a directory. The first directory in
+    /// command-line order that is its parent owns it.
+    fn loaded_identity(&self, build: &Build, loaded: &BTreeSet<PathBuf>) -> Result<Build, String> {
+        let mut build = build.clone();
+        for path in loaded {
+            if self.std.as_ref() == fs::canonicalize(path).ok().as_ref() {
+                continue;
+            }
+            let index = self
+                .deps
+                .iter()
+                .position(|dep| path.parent() == Some(dep.as_path()))
+                .ok_or_else(|| {
+                    format!("the build loaded {}, which is in no --tide-dep-dir", path.display())
+                })?;
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("non-UTF-8 dependency artifact name")?;
+            let digest = file_digest(path)?;
+            build.dependencies[self.first_dependency() + index].insert(name.into(), digest);
+        }
+        Ok(build)
+    }
+
+    /// `build` with each dependency directory's map hashing, in the current directory, the
+    /// libraries `reference` names for it; a library no longer there is left out.
+    fn current_artifacts(&self, build: &Build, reference: &Build) -> Result<Build, String> {
+        let mut build = build.clone();
+        for (index, dep) in self.deps.iter().enumerate() {
+            let slot = self.first_dependency() + index;
+            let Some(recorded) = reference.dependencies.get(slot) else {
+                break;
+            };
+            for name in recorded.keys() {
+                // A name is one directory entry, never a path out of the directory.
+                if Path::new(name).file_name().is_none_or(|n| n != name.as_str()) {
+                    return Err("replay dependency artifact name is not a file name".into());
+                }
+                let path = dep.join(name);
+                // Only an absent entry is missing; any other stat error is reported as itself.
+                let error = |e| format!("{}: {e}", wire::shown(&path.display().to_string()));
+                if path.try_exists().map_err(error)? {
+                    build.dependencies[slot].insert(name.clone(), file_digest(&path)?);
+                }
+            }
+        }
+        Ok(build)
+    }
+
     pub(super) fn validate_replay(&self, build: &Build) -> Result<Option<Manifest>, String> {
         let Some(path) = &self.replay else {
             return Ok(None);
         };
         let manifest: Manifest = wire::read(path)?;
         manifest.validate()?;
-        manifest.build.compare(build)?;
+        // Before the build: the libraries the recording loaded must be unchanged.
+        manifest.build.compare(&self.current_artifacts(build, &manifest.build)?)?;
         Ok(Some(manifest))
     }
 
-    pub(super) fn publish_receipt(&self, staging: &Path, build: &Build) -> Result<(), String> {
+    pub(super) fn publish_receipt(
+        &self,
+        staging: &Path,
+        build: &Build,
+        loaded: &BTreeSet<PathBuf>,
+    ) -> Result<(), String> {
         let receipt = Receipt {
             format: "tide-build/1".into(),
-            build: build.clone(),
+            build: self.loaded_identity(build, loaded)?,
             executable: file_digest(&staging.join("executable"))?,
             tests: if self.test {
                 wire::read(&staging.join("test-config.json"))?
@@ -142,7 +204,8 @@ impl Invocation {
         if receipt.format != "tide-build/1" {
             return Err("replay receipt format mismatch".into());
         }
-        receipt.build.compare(current)?;
+        receipt.build.compare(&self.current_artifacts(current, &receipt.build)?)?;
+        // After the build: it loaded the same libraries as the recording.
         if let Some(manifest) = &manifest {
             manifest.build.compare(&receipt.build)?;
         }
@@ -420,51 +483,19 @@ fn supervise(process: &mut Command, limit: Option<u64>) -> io::Result<Outcome> {
 
 fn file_digest(path: &Path) -> Result<String, String> {
     // Use rustc's streaming SHA-256 for large supplied artifacts.
+    // The path may name a file a replay manifest supplied.
+    let error = |e: io::Error| format!("{}: {e}", wire::shown(&path.display().to_string()));
     let hash = SourceFileHash::new(
         SourceFileHashAlgorithm::Sha256,
-        fs::File::open(path).map_err(|e| e.to_string())?,
+        fs::File::open(path).map_err(error)?,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(error)?;
     Ok(hash
         .hash_bytes()
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect())
 }
-fn artifact_tree(
-    root: &Path,
-    path: &Path,
-    seen: &mut BTreeSet<PathBuf>,
-    files: &mut BTreeMap<String, String>,
-) -> Result<(), String> {
-    let canonical = fs::canonicalize(path).map_err(|e| e.to_string())?;
-    if canonical.is_dir() {
-        if !seen.insert(canonical.clone()) {
-            return Err("dependency artifact directory cycle/alias".into());
-        }
-        let mut entries = fs::read_dir(path)
-            .map_err(|e| e.to_string())?
-            .map(|e| e.map(|e| e.path()))
-            .collect::<io::Result<Vec<_>>>()
-            .map_err(|e| e.to_string())?;
-        entries.sort();
-        for entry in entries {
-            artifact_tree(root, &entry, seen, files)?;
-        }
-        seen.remove(&canonical);
-    } else {
-        files.insert(
-            path.strip_prefix(root)
-                .unwrap()
-                .to_str()
-                .ok_or("non-UTF-8 dependency artifact name")?
-                .into(),
-            file_digest(path)?,
-        );
-    }
-    Ok(())
-}
-
 /// Read only macro-produced metadata from the same expanded tree that admission checks.
 pub(super) fn test_configs(tcx: TyCtxt<'_>) -> BTreeMap<String, BTreeMap<String, String>> {
     let crates = crate::crates::Crates::new(tcx);

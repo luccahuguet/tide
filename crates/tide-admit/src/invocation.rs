@@ -85,6 +85,10 @@ struct Admission {
     synthesize: bool,
     insertions: Insertions,
     test_configs: BTreeMap<String, BTreeMap<String, String>>,
+    /// The paths of the libraries this build loaded, spelled as rustc's crate store has them
+    /// (the search path joined with the entry rustc chose, symbolic links unresolved), except the
+    /// pinned sysroot's and the paired library's (REPLAY-2's dependency identity).
+    loaded: BTreeSet<PathBuf>,
 }
 
 impl Callbacks for Admission {
@@ -134,6 +138,19 @@ impl Callbacks for Admission {
         Compilation::Continue
     }
     fn after_analysis<'tcx>(&mut self, _: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
+        let canonical = |path: &Path| fs::canonicalize(path).unwrap_or_else(|_| path.into());
+        let sysroot = canonical(Path::new(env!("TIDE_SYSROOT")));
+        let library = self.library_artifact.as_deref().map(canonical);
+        self.loaded = tcx
+            .crates(())
+            .iter()
+            .flat_map(|&krate| tcx.crate_extern_paths(krate).iter().cloned())
+            .filter(|path| {
+                // Resolved only to recognize the sysroot and the paired library.
+                let resolved = canonical(path);
+                !resolved.starts_with(&sysroot) && Some(&resolved) != library.as_ref()
+            })
+            .collect();
         // rustc's analysis stops before this on any error, the walk's included.
         check_mono_items(tcx, self.grants, &mut self.holes, self.test_library);
         // In link mode too, no rejected instance may reach codegen or the linker.
@@ -421,6 +438,7 @@ impl Invocation {
         sources: Sources,
         library_artifact: Option<&Path>,
         write_interface: bool,
+        loaded: &mut BTreeSet<PathBuf>,
     ) -> ExitCode {
         let rustc_args = self.rustc_args(out, library_artifact);
         let mut admission = Admission {
@@ -438,6 +456,7 @@ impl Invocation {
             synthesize: self.test && self.std.is_some(),
             insertions: Insertions::default(),
             test_configs: BTreeMap::new(),
+            loaded: BTreeSet::new(),
         };
         let status = rustc_driver::catch_with_exit_code(|| {
             rustc_driver::run_compiler(&rustc_args, &mut admission);
@@ -450,6 +469,7 @@ impl Invocation {
                 rustc_driver::run_compiler(&rustc_args, &mut admission);
             }
         });
+        loaded.append(&mut admission.loaded);
         if status == ExitCode::SUCCESS && self.link && self.test {
             if let Err(e) = fs::write(out.join("test-config.json"), crate::replay::encoded(&admission.test_configs)) {
                 eprintln!("cannot write test configuration receipt: {e}");
@@ -574,14 +594,15 @@ impl Invocation {
         let replaying = manifest.is_some();
         let staging = create_test_staging(&self.out)?;
         let result: Result<ExitCode, String> = (|| {
-            let status = library.compile(&staging, library_sources, None, false);
+            let mut loaded = BTreeSet::new();
+            let status = library.compile(&staging, library_sources, None, false, &mut loaded);
             if status != ExitCode::SUCCESS {
                 return Ok(status);
             }
             let artifact = staging.join(format!("lib{TEST_LIBRARY_NAME}.rlib"));
-            let status = self.compile(&staging, sources, Some(&artifact), false);
+            let status = self.compile(&staging, sources, Some(&artifact), false, &mut loaded);
             if status == ExitCode::SUCCESS && self.link {
-                self.publish_receipt(&staging, &build)?;
+                self.publish_receipt(&staging, &build, &loaded)?;
                 if replaying { return self.run_test_process(manifest, &build, Some(&staging)); }
                 fs::rename(staging.join("executable"), self.executable()).map_err(|e| e.to_string())?;
                 fs::rename(staging.join("build.json"), self.receipt_path()).map_err(|e| e.to_string())?;
@@ -1196,8 +1217,9 @@ Replay accepts no configuration overrides and has no force option. Artifacts: OU
         // A killed earlier run with this pid may have left its staging directory.
         let _ = fs::remove_dir_all(&out);
         fs::create_dir(&out).map_err(|e| e.to_string())?;
-        let status = invocation.compile(&out, sources, None, true);
-        if status == ExitCode::SUCCESS && invocation.link { invocation.publish_receipt(&out, &build)?; }
+        let mut loaded = BTreeSet::new();
+        let status = invocation.compile(&out, sources, None, true, &mut loaded);
+        if status == ExitCode::SUCCESS && invocation.link { invocation.publish_receipt(&out, &build, &loaded)?; }
         return Ok(status);
     }
     // Granted assembly and native links can read inputs the source snapshot cannot key.

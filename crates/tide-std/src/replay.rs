@@ -3,7 +3,9 @@
 use crate::__codec::{Decode, Decoder, Encode, Encoder};
 use std::collections::BTreeMap;
 
-pub(crate) const FORMAT: &str = "tide-replay/1";
+pub(crate) const FORMAT: &str = "tide-replay/2";
+/// The format before fx-qlek.14, whose identity hashed every file in each dependency directory.
+const FORMAT_ALL_FILES: &str = "tide-replay/1";
 pub(crate) const VERSIONS: &str = "trace/1;generator/1;parameters=splitmix64(seed^6a09e667f3bcc909);scheduler=seed^7469646573636864;model/1";
 pub(crate) const CONTEXT: &str = "__TIDE_REPLAY_CONTEXT";
 pub(crate) const CONTROLS: &[&str] = &[CONTEXT, "TIDE_SIM_SEED", "TIDE_TEST_SEED"];
@@ -100,24 +102,92 @@ pub(crate) fn configuration(mut fields: BTreeMap<String, String>) -> BTreeMap<St
     fields
 }
 impl Build {
+    /// REPLAY-2's refusal: the first component that differs, with one short line per changed,
+    /// missing or added entry (hashes cut to 12 digits), at most `DIFF_LINES` of them.
     pub(crate) fn compare(&self, current: &Self) -> Result<(), String> {
-        macro_rules! component {
-            ($field:ident, $label:literal) => {
-                if self.$field != current.$field {
-                    return Err(format!("replay {} mismatch: recorded {:?}, current {:?}; use fresh --seed for changed inputs", $label, self.$field, current.$field));
-                }
-            };
+        const DIFF_LINES: usize = 8;
+        let mut lines = Vec::new();
+        let scalar = |lines: &mut Vec<String>, recorded: &str, current: &str| {
+            lines.push(format!("recorded {:?}, current {:?}", short(recorded), short(current)));
+        };
+        let label = if self.source != current.source {
+            entries(&mut lines, &self.source, &current.source);
+            "source"
+        } else if self.library != current.library {
+            entries(&mut lines, &self.library, &current.library);
+            "paired-library source"
+        } else if self.compiler != current.compiler {
+            scalar(&mut lines, &self.compiler, &current.compiler);
+            "compiler"
+        } else if self.target != current.target {
+            scalar(&mut lines, &self.target, &current.target);
+            "target"
+        } else if self.profile != current.profile {
+            scalar(&mut lines, &self.profile, &current.profile);
+            "profile"
+        } else if self.options != current.options {
+            let sides = [("recorded", &self.options, &current.options), ("current", &current.options, &self.options)];
+            for (side, from, to) in sides {
+                let only = from.iter().filter(|o| !to.contains(o));
+                lines.extend(only.map(|o| format!("only {side}: {o:?}")));
+            }
+            if lines.is_empty() {
+                lines.push("the same options in a different order or number".into());
+            }
+            "options"
+        } else if self.dependencies != current.dependencies {
+            let empty = BTreeMap::new();
+            for i in 0..self.dependencies.len().max(current.dependencies.len()) {
+                let side = |build: &Self| build.dependencies.get(i).unwrap_or(&empty).clone();
+                entries(&mut lines, &side(self), &side(current));
+            }
+            "dependency artifact"
+        } else if self.driver != current.driver {
+            scalar(&mut lines, &self.driver, &current.driver);
+            "tide-admit"
+        } else if self.versions != current.versions {
+            scalar(&mut lines, &self.versions, &current.versions);
+            "configuration/format"
+        } else {
+            return Ok(());
+        };
+        let more = lines.len().saturating_sub(DIFF_LINES);
+        lines.truncate(DIFF_LINES);
+        if more > 0 {
+            lines.push(format!("and {more} more"));
         }
-        component!(source, "source");
-        component!(library, "paired-library source");
-        component!(compiler, "compiler");
-        component!(target, "target");
-        component!(profile, "profile");
-        component!(options, "options");
-        component!(dependencies, "dependency artifact");
-        component!(driver, "tide-admit");
-        component!(versions, "configuration/format");
-        Ok(())
+        Err(format!(
+            "replay {label} mismatch; use fresh --seed for changed inputs\n  {}",
+            lines.join("\n  ")
+        ))
+    }
+}
+/// One line per key whose value differs between a recorded and a current map.
+fn entries(lines: &mut Vec<String>, recorded: &BTreeMap<String, String>, current: &BTreeMap<String, String>) {
+    let mut keys: Vec<&String> = recorded.keys().chain(current.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    for key in keys {
+        let value = |map: &BTreeMap<String, String>| map.get(key).map_or("missing".into(), |v| shown(&short(v)));
+        if recorded.get(key) != current.get(key) {
+            let (old, new) = (value(recorded), value(current));
+            lines.push(format!("{}: recorded {old}, current {new}", shown(key)));
+        }
+    }
+}
+/// Text from a recording, or a path built from one, escaped for the terminal (RUN-6): control
+/// characters, bidirectional overrides and other non-printable characters print as escapes.
+pub(crate) fn shown(text: &str) -> String {
+    text.escape_debug().to_string()
+}
+/// A value with its trailing SHA-256 hex digest cut to 12 digits.
+fn short(value: &str) -> String {
+    let split = value.len().saturating_sub(64);
+    match value.get(split..) {
+        Some(digest) if value.len() >= 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            format!("{}{}", &value[..split], &digest[..12])
+        }
+        _ => value.into(),
     }
 }
 impl Manifest {
@@ -127,8 +197,15 @@ impl Manifest {
         self.input_hash = digest(encoded(self).as_bytes());
     }
     pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.format == FORMAT_ALL_FILES {
+            return Err(format!(
+                "replay format mismatch: this recording is {FORMAT_ALL_FILES}, which this driver no longer replays; re-record it with a fresh run of the same test with --seed {}, then replay the new manifest",
+                // A recorded string reaches the terminal only as a canonical decimal.
+                decimal::<u64>(&self.seed).map_or_else(|_| "N".into(), |seed| seed.to_string())
+            ));
+        }
         if self.format != FORMAT {
-            return Err("replay format mismatch (expected tide-replay/1)".into());
+            return Err(format!("replay format mismatch (expected {FORMAT})"));
         }
         if self.build.versions != VERSIONS {
             return Err("replay configuration/format mismatch".into());
@@ -322,5 +399,38 @@ mod tests {
             .is_err()
         );
         assert!(first_difference("x\n", "x").is_some());
+    }
+    #[test]
+    fn identity_refusals_are_short_per_entry_lines() {
+        let build = |files: &[(&str, String)]| Build {
+            source: BTreeMap::new(),
+            library: BTreeMap::new(),
+            dependencies: vec![files.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()],
+            compiler: String::new(),
+            target: String::new(),
+            profile: String::new(),
+            options: vec![],
+            driver: String::new(),
+            versions: VERSIONS.into(),
+        };
+        let names: Vec<String> = (0..10).map(|i| format!("lib{i}.rlib")).collect();
+        let recorded: Vec<_> = names.iter().map(|n| (n.as_str(), digest(n.as_bytes()))).collect();
+        let mut current = recorded.clone();
+        current[0].1 = digest(b"changed");
+        current.remove(1);
+        assert_eq!(build(&recorded).compare(&build(&recorded)), Ok(()));
+        let message = build(&recorded).compare(&build(&current)).unwrap_err();
+        let lines: Vec<&str> = message.lines().collect();
+        assert_eq!(lines[0], "replay dependency artifact mismatch; use fresh --seed for changed inputs");
+        assert_eq!(lines[1], format!("  lib0.rlib: recorded {}, current {}", &recorded[0].1[..12], &current[0].1[..12]));
+        assert_eq!(lines[2], format!("  lib1.rlib: recorded {}, current missing", &recorded[1].1[..12]));
+        assert_eq!(lines.len(), 3);
+        let unrelated: Vec<_> = names.iter().map(|n| (n.as_str(), digest(b"other"))).collect();
+        let message = build(&recorded).compare(&build(&unrelated)).unwrap_err();
+        assert_eq!(message.lines().count(), 1 + 8 + 1);
+        assert!(message.ends_with("\n  and 2 more"), "{message}");
+        let hostile = build(&[("lib\u{202e}\n.rlib", "x".into())]);
+        let message = hostile.compare(&build(&[])).unwrap_err();
+        assert!(message.ends_with("  lib\\u{202e}\\n.rlib: recorded x, current missing"), "{message}");
     }
 }

@@ -4669,12 +4669,16 @@ fn replay_manifests_validate_identity_and_reproduce_exact_evaluations() {
         let run = invoke(&bad);
         assert_eq!(run.status.code(), Some(2), "{}", output(&run));
         assert!(stderr(&run).contains(component), "{}", output(&run));
+        assert!(!stderr(&run).contains('\u{1b}'), "unescaped manifest text: {}", output(&run));
         assert!(run.stdout.is_empty(), "candidate process started: {}", output(&run));
     };
-    for component in ["format", "incomplete", "source", "compiler", "target", "profile", "options", "dependency", "configuration"] {
+    let mut old = recording.clone();
+    old.format = "tide-replay/1".into();
+    refuse(&old, &format!("re-record it with a fresh run of the same test with --seed {}", recording.seed));
+    for component in ["format", "incomplete", "source", "compiler", "target", "profile", "options", "dependency", "dependency artifact", r"x\u{1b}\0", "configuration"] {
         let mut bad = recording.clone();
         match component {
-            "format" => bad.format = "tide-replay/2".into(),
+            "format" => bad.format = "tide-replay/9".into(),
             "incomplete" => bad.complete = false,
             "source" => { bad.build.source.insert("file:demo.rs".into(), "changed".into()); }
             "compiler" => bad.build.compiler.push_str("changed"),
@@ -4682,6 +4686,10 @@ fn replay_manifests_validate_identity_and_reproduce_exact_evaluations() {
             "profile" => bad.build.profile = "release".into(),
             "options" => bad.build.options.push("--changed".into()),
             "dependency" => { bad.build.dependencies[0].insert("std".into(), "changed".into()); }
+            // The recorded names all match, but the build loads one more: the post-build check.
+            "dependency artifact" => { bad.build.dependencies[1].pop_last().unwrap(); }
+            // A recorded name the filesystem rejects (NUL) is reported escaped, never raw.
+            r"x\u{1b}\0" => { bad.build.dependencies[1].insert("x\u{1b}\0".into(), "changed".into()); }
             "configuration" => { bad.config.insert("scheduler".into(), "changed".into()); }
             _ => unreachable!(),
         }
@@ -4702,24 +4710,60 @@ fn replay_manifests_validate_identity_and_reproduce_exact_evaluations() {
     assert!(!fresh.status.success());
     assert!(output(&fresh).contains("lost updatf"), "{}", output(&fresh));
     std::fs::write(source, original_source).unwrap();
-    // Dependency identity hashes actual supplied directory bytes, with physical roots normalized.
+    // Dependency identity covers the libraries the build loaded, as rustc's crate store has
+    // them, under their names in the supplied directory, with physical roots normalized.
+    let names = &recording.build.dependencies[1];
+    assert!(!names.is_empty() && names.keys().all(|n| n.ends_with(".rlib") || n.ends_with(".so")), "{names:?}");
+    assert!(names.keys().all(|n| std_dir().join(n).is_file()), "{names:?}");
+    assert!(!names.contains_key("libtide_std.rlib"), "std has its own entry: {names:?}");
     let dependencies = dir.join("operator-dependencies");
     std::fs::create_dir(&dependencies).unwrap();
     for entry in std::fs::read_dir(std_dir()).unwrap() {
         let entry = entry.unwrap();
-        std::fs::hard_link(entry.path(), dependencies.join(entry.file_name())).unwrap();
+        if entry.file_type().unwrap().is_file() {
+            std::fs::hard_link(entry.path(), dependencies.join(entry.file_name())).unwrap();
+        }
     }
-    std::fs::write(dependencies.join("operator-config"), b"changed dependency input").unwrap();
-    let original = driver(&dir);
-    let mut changed_deps = Command::new(original.get_program());
-    for arg in original.get_args() {
-        changed_deps.arg(if arg == std_dir().as_os_str() { dependencies.as_os_str() } else { arg });
-    }
-    let refused = changed_deps.args(["--crate-type=lib", "--test", "--replay"]).arg(&recorded)
-        .stdin(Stdio::null()).output().unwrap();
-    assert_eq!(refused.status.code(), Some(2));
-    assert!(stderr(&refused).contains("dependency artifact mismatch"), "{}", output(&refused));
+    let with_dependencies = |dependencies: &Path| {
+        let original = driver(&dir);
+        let mut command = Command::new(original.get_program());
+        for arg in original.get_args() {
+            command.arg(if arg == std_dir().as_os_str() { dependencies.as_os_str() } else { arg });
+        }
+        command.args(["--crate-type=lib", "--test", "--replay"]).arg(&recorded)
+            .stdin(Stdio::null()).output().unwrap()
+    };
+    // An unrelated rebuild's churn: a new incremental cache, depfiles, and an unloaded library.
+    std::fs::create_dir_all(dependencies.join("incremental/tide_std-1x2y/s-abc")).unwrap();
+    std::fs::write(dependencies.join("incremental/tide_std-1x2y/s-abc/query-cache.bin"), b"churn").unwrap();
+    std::fs::write(dependencies.join("tide_std.d"), b"rebuilt depfile").unwrap();
+    std::fs::write(dependencies.join("libunrelated-0123456789abcdef.rlib"), b"not loaded").unwrap();
+    // A library supplied as a symbolic link keeps its name in the directory, even beside an
+    // earlier-sorting alias of the same file that rustc never loads.
+    let (changed, removed) = (names.keys().next().unwrap(), names.keys().last().unwrap());
+    std::fs::remove_file(dependencies.join(removed)).unwrap();
+    std::os::unix::fs::symlink(std_dir().join(removed), dependencies.join(removed)).unwrap();
+    std::os::unix::fs::symlink(std_dir().join(removed), dependencies.join(".alias")).unwrap();
+    let churned = with_dependencies(&dependencies);
+    assert!(output(&churned).contains("replay reproduced"), "{}", output(&churned));
+    // A real change to a loaded library refuses before the build, one short line per library.
+    let original_bytes = std::fs::read(dependencies.join(changed)).unwrap();
+    std::fs::remove_file(dependencies.join(changed)).unwrap(); // Break the hard link first.
+    std::fs::write(dependencies.join(changed), [&original_bytes[..], b"\0"].concat()).unwrap();
+    if removed != changed { std::fs::remove_file(dependencies.join(removed)).unwrap(); }
+    let refused = with_dependencies(&dependencies);
+    assert_eq!(refused.status.code(), Some(2), "{}", output(&refused));
     assert!(refused.stdout.is_empty());
+    let message = stderr(&refused);
+    assert!(message.contains("replay dependency artifact mismatch"), "{message}");
+    let digest = |name: &str| names[name][..12].to_string();
+    let line = message.lines().find(|l| l.trim_start().starts_with(&format!("{changed}: "))).expect("changed line");
+    assert!(line.contains(&format!("recorded {}, current ", digest(changed))), "{line}");
+    assert!(!line.contains(&names[changed.as_str()]) && line.len() < changed.len() + 60, "{line}");
+    if removed != changed {
+        assert!(message.contains(&format!("{removed}: recorded {}, current missing", digest(removed))), "{message}");
+    }
+    assert!(message.lines().count() <= 3 && !message.contains('{'), "{message}");
     let combined = driver(&dir).args(["--crate-type=lib", "--test", "--seed", "0", "--replay"]).arg(&recorded)
         .stdin(Stdio::null()).output().unwrap();
     assert_eq!(combined.status.code(), Some(2));
@@ -4820,19 +4864,24 @@ fn paired(sim: std::sim::SimRoot) {
     assert!(stderr(&refused).contains("paired-library source mismatch"), "{}", output(&refused));
     assert!(refused.stdout.is_empty());
 
-    let cache = std::fs::read_dir(dir.join("out/.tide-cache")).unwrap()
-        .map(|e| e.unwrap().path()).find(|entry| {
+    // The relocated-dependency replay above left a second entry with the same receipt: the
+    // identity no longer depends on dependency roots, so corrupt every matching entry.
+    let executables: Vec<_> = std::fs::read_dir(dir.join("out/.tide-cache")).unwrap()
+        .map(|e| e.unwrap().path()).filter(|entry| {
             read::<replay_wire::Receipt>(&entry.join("build.json")).is_ok_and(|r| r.build == recording.build)
-        }).unwrap();
-    let executable = cache.join("executable");
-    let original = std::fs::read(&executable).unwrap();
-    let mut modified = original.clone(); modified.push(0);
-    std::fs::write(&executable, modified).unwrap();
+        }).map(|entry| entry.join("executable")).collect();
+    assert!(!executables.is_empty());
+    let originals: Vec<_> = executables.iter().map(|e| std::fs::read(e).unwrap()).collect();
+    for (executable, original) in executables.iter().zip(&originals) {
+        std::fs::write(executable, [&original[..], &[0]].concat()).unwrap();
+    }
     let refused = invoke(&recorded);
     assert_eq!(refused.status.code(), Some(2));
     assert!(stderr(&refused).contains("executable/receipt mismatch"), "{}", output(&refused));
     assert!(refused.stdout.is_empty());
-    std::fs::write(executable, original).unwrap();
+    for (executable, original) in executables.iter().zip(&originals) {
+        std::fs::write(executable, original).unwrap();
+    }
 
     let relocated = package("replay-relocated", original_source);
     let replay = driver(&relocated).args(["--crate-type=lib", "--test", "--replay"]).arg(&recorded)

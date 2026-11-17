@@ -104,7 +104,7 @@
 //!   Signal/timeout or a missing summary names the last seed started; ordinary failures name
 //!   the failing seeds. `TIDE_SIM_SEED` selects one fresh decimal u64 seed through the internal
 //!   runner hook, without source/build identity checks. `tide-admit --tide-run-test NAME`
-//!   records `tide-replay/1` manifests under the operator output's `target/sim`, pairing
+//!   records `tide-replay/2` manifests under the operator output's `target/sim`, pairing
 //!   the original evaluation's typed choices, inline root setup, exact trace and outcome.
 //!   Its printed `--replay` command validates source/build/artifact/configuration identity
 //!   before launch, consumes choices strictly without shrinking, and compares against that

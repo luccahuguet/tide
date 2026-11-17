@@ -162,11 +162,12 @@ Every Tide crate here is built only by the driver, against production std.
    failing seed's cause must be the `lost hits` assertion, so a seed that
    panics otherwise or fails the determinism self-check fails the demo.
 2. **Record and replay.** It runs that seed alone (`--seed`), which records a
-   `tide-replay/1` manifest and its `trace.ndjson`, then replays the manifest
+   `tide-replay/2` manifest and its `trace.ndjson`, then replays the manifest
    twice (`--replay`). The recorded seed's cause must be `lost hits` and its
    output must show fewer hits than views. Each replay must exit 101, as a
    reproduced failing test does, and say `replay reproduced`. Replay first checks that the sources, build options,
-   compiler, std, and test configuration match the recording, and then
+   compiler, std, the libraries the build loaded, and test configuration
+   match the recording, and then
    compares the run's trace and outcome with it. The script also compares the
    three traces byte for byte and prints each one's event count, the hash of
    its event trace, and the hash of its output trace: the `sink` events,

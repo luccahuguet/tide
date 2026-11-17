@@ -1966,7 +1966,19 @@ REPLAY-2 identity validation. The driver precursor `tide-admit --tide-run-test N
 [--seed N]` records one manifest per evaluation; `tide-admit --replay MANIFEST`,
 with the same explicit build inputs, validates source/build/dependency/configuration
 identity before candidate launch and compares the original exact trace and outcome.
-The version is `tide-replay/1`; manifests and trace exports live under the
+The dependency identity covers the libraries the recorded build loaded, as
+rustc's crate store resolved them, outside the pinned sysroot: each is named
+by its entry in its `--tide-dep-dir` with the hash of its bytes, and std has
+its own hash. Other files in those directories, such as Cargo's incremental
+cache, depfiles, and unloaded libraries, are outside it. Replay hashes the
+named libraries before the build and refuses if one changed or is missing,
+then refuses if the build loaded a different set. A refusal names the first
+differing component with one line per changed entry and 12-digit hashes, at
+most eight lines; the manifest is the full record. The version is
+`tide-replay/2`. A `tide-replay/1` manifest, whose identity hashed every file
+in those directories, is refused with a message to re-record it with a fresh
+`--seed`: it does not record which libraries were loaded, and the alpha has
+no recordings to keep. Manifests and trace exports live under the
 operator output's `target/sim`. Replay consumes typed parameter choices strictly,
 without generation or shrinking. Ordinary Tide tests retain their ordered,
 source-written `Root::sim` seeds. Nested property and simulation test calls run

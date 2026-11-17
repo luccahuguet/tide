@@ -8,10 +8,11 @@ you can hand to anyone, or any agent, and get the exact same run back.
 When the driver runs a test with `--tide-run-test NAME --seed N`, it records
 two files:
 
-- a **manifest** (`run.manifest.json`, format `tide-replay/1`): what's needed
+- a **manifest** (`run.manifest.json`, format `tide-replay/2`): what's needed
   to rerun it, namely the seed, hashes of the source code, the compiler, the
-  std and every library, the build options, the test's name, and every input
-  the run consumed (arguments, environment, stdin, files the test created);
+  std and every library the build loaded, the build options, the test's name,
+  and every input the run consumed (arguments, environment, stdin, files the
+  test created);
 - a **trace** (`trace.ndjson`): every event of the run, one per line. Every
   scheduling decision, channel message, and line of output, each with its
   source location.
@@ -19,8 +20,8 @@ two files:
 `--replay MANIFEST` then does two things:
 
 1. **The identity check.** Before running anything, it checks that the
-   current source, compiler, std, libraries, and build options are exactly the
-   ones the manifest recorded. If anything differs, it refuses. A replay
+   current source, compiler, std, loaded libraries, and build options are
+   exactly the ones the manifest recorded. If anything differs, it refuses. A replay
    against changed code would be a different run pretending to be the same
    one.
 2. **The comparison.** It reruns the test, feeding back the recorded choices,
@@ -58,11 +59,14 @@ recording: tide-demo/out/record/target/sim/run-…/run.manifest.json
 ```
 
 Now replay it yourself, and then watch the identity check refuse an edited
-source. Run `demo/run.sh` first, then these steps right after it, with no
-other build in between: the manifest records the hash of every file in the
-std's build directories, so even a rebuild that changes nothing you care
-about makes replay refuse ("dependency artifact mismatch"). That is the
-identity check doing its job.
+source. Run `demo/run.sh` first. The manifest records only the libraries the
+build loaded, so a later build that leaves them as they were, such as
+`demo/run.sh`'s own `cargo build` commands, doesn't stop the replay. A build
+that changes one of them does. A plain `cargo build` of the whole workspace
+is one: it rebuilds Tide's std into different bytes, and replay refuses with
+`dependency artifact mismatch` and the line `std: recorded …, current …`.
+Running `demo/run.sh` again rebuilds the demo's std and records the seed
+again.
 
 The log prints each failing seed's replay command on a line starting
 `  replay:`. Save it to a file, look at it, and run it:
@@ -88,13 +92,15 @@ bash -c 'echo "// an edit" >> target/tide-demo/revisions/buggy/src/hits.rs'
 bash target/guide/replay.sh
 ```
 
-Output (hashes shortened):
+Output:
 
 ```text
-tide-admit: replay paired-library source mismatch: recorded {"file:hits.rs": "hits.rs:0544f7bd…"}, current {"file:hits.rs": "hits.rs:560b5107…"}; use fresh --seed for changed inputs
+tide-admit: replay paired-library source mismatch; use fresh --seed for changed inputs
+  file:hits.rs: recorded hits.rs:0544f7bd5e14, current hits.rs:560b5107dea2
 ```
 
-It exits 2 and runs nothing. A one-line comment was enough.
+It exits 2 and runs nothing. A one-line comment was enough. Each changed
+file gets one line, with the first 12 digits of its old and new hash.
 
 Running `demo/run.sh` again regenerates the copy.
 

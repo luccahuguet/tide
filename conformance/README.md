@@ -369,7 +369,7 @@ the driver's `tests/build.rs`; parameterized property tests also execute through
 that driver suite. The fixture includes production's `sim.rs` and runner and uses its
 `#[sim_test]` macro: `tasks/simulation_runner.rs` also executes through the driver,
 covering seeded scopes, the split-update bug and ordered sink traces. Production driver
-runtime tests also record `tide-replay/1` manifests, compare two replay traces to
+runtime tests also record `tide-replay/2` manifests, compare two replay traces to
 the original, refuse source/build/dependency/configuration mismatches before launch,
 and exercise strict tapes, root ordinals and user task-0 origins. The fixture's
 shared surface alone cannot establish those runtime replay guarantees. Later world/fault/node

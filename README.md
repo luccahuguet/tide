@@ -416,7 +416,7 @@ tide-admit --test --crate-type=lib --emit=link \
 `--seed` selects a fresh evaluation of current source; omit it to use the test's
 normal case range. Driver execution clears child environments and supplies only
 explicit harness controls. Each evaluation writes an exclusively reserved
-`OUT/target/sim/<run>/run.manifest.json` in format `tide-replay/1`, with a sibling
+`OUT/target/sim/<run>/run.manifest.json` in format `tide-replay/2`, with a sibling
 `trace.ndjson`. The initial manifest precedes user evaluation; choices and
 source-defined root setup (arguments, environment, stdin and file bytes) append
 before application. An aborted evaluation keeps an incomplete manifest.
@@ -441,7 +441,7 @@ normalization for same-machine replay, not a promise to remove all physical path
 Failures print an executable, shell-quoted `tide-admit ... --replay <manifest>`
 command using the same explicit build arguments. Replay validates format and
 digests, current source snapshots (including a paired library), compiler,
-target, profile, semantic options, dependency artifact hashes, and test
+target, profile, semantic options, hashes of the dependency libraries the build loaded, and test
 configuration before starting any candidate process. The driver pairs each
 executable with a `<crate>[-test].build.json` receipt and verifies its bytes.
 Replay runs private build artifacts and leaves published outputs unchanged,
