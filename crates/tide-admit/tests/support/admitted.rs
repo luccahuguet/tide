@@ -1,5 +1,6 @@
 //! Builds programs through the admission driver against production std, for the test files that
-//! run admitted programs (`build.rs`, `examples.rs`).
+//! run admitted programs (`build.rs`, `examples.rs`, `benchmarks.rs`), and the two helpers
+//! more than one of them uses to build or run programs outside the driver.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
@@ -17,10 +18,11 @@ pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-/// The production std, built once per test binary into one directory that `build.rs` and
-/// `examples.rs` share, so the workspace suite builds it once. `build_std` replaces its flattened
-/// `artifacts/`, so two test binaries must not run at once on one target directory: `cargo
-/// test` runs them one at a time, while a parallel runner (nextest) would race here.
+/// The production std, built once per test binary into one directory that `build.rs`,
+/// `examples.rs`, and `benchmarks.rs` share, so the workspace suite builds it once.
+/// `build_std` replaces its flattened `artifacts/`, so two test binaries must not run at once on
+/// one target directory: `cargo test` runs them one at a time, while a parallel runner
+/// (nextest) would race here.
 pub fn std_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -52,4 +54,33 @@ pub fn driver(dir: &Path) -> Command {
         .arg(dir.join("out"))
         .arg(dir.join("package/src/demo.rs"));
     command
+}
+
+/// Runs `program` under `timeout` (killed 10 s after `seconds`), with stdin closed and without
+/// the seed and capture controls the caller's environment may carry.
+#[allow(dead_code)] // `build.rs` bounds its runs its own way.
+pub fn timed(seconds: u32, program: &Path) -> Command {
+    let mut command = Command::new("timeout");
+    command
+        .args(["-k", "10"])
+        .arg(seconds.to_string())
+        .arg(program)
+        .env_remove("TIDE_TEST_SEED")
+        .env_remove("TIDE_SIM_SEED")
+        .env_remove("RUST_TEST_NOCAPTURE")
+        .stdin(Stdio::null());
+    command
+}
+
+/// Compiles the Rust file `code` to `binary` with plain rustc, outside the driver: the
+/// toolchain `rust-toolchain.toml` pins, unless `RUSTC` names another.
+#[allow(dead_code)] // `examples.rs` builds only through the driver.
+pub fn plain_rustc(code: &Path, binary: &Path) {
+    checked(
+        Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .args(["--edition=2024", "-o"])
+            .arg(binary)
+            .arg(code),
+    );
 }

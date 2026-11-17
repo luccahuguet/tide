@@ -75,6 +75,11 @@ outcome (it runs with given output, its tests pass, a test fails, or
 admission rejects it with a named code), and `cargo test --workspace` checks
 every declaration (`crates/tide-admit/tests/examples.rs`).
 
+`benchmarks/` holds four workloads, each a Tide program and a plain-Rust twin
+with the same output, for the benchmark against plain Rust; no measurements
+are published yet. `cargo test --workspace` checks that both arms of each pair
+print the same output (`crates/tide-admit/tests/benchmarks.rs`).
+
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a
 rustc driver that enforces the admission allowlist (ADMIT-1, `TD0520`),

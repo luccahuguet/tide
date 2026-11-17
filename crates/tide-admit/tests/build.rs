@@ -5,7 +5,7 @@ use std::process::{Command, Output, Stdio};
 
 #[path = "support/admitted.rs"]
 mod admitted;
-use admitted::{checked, driver, package, std_dir, stderr};
+use admitted::{checked, driver, package, plain_rustc, std_dir, stderr};
 
 const HELLO: &str = include_str!("../../../conformance/cases/authority/root_executable.rs");
 
@@ -4850,9 +4850,7 @@ fn paired(sim: std::sim::SimRoot) {
 fn unadmitted(dir: &Path, source: &str) -> PathBuf {
     let (code, binary) = (dir.join("unadmitted.rs"), dir.join("unadmitted"));
     std::fs::write(&code, source).unwrap();
-    checked(Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .args(["--edition=2024", "-o"]).arg(&binary).arg(&code));
+    plain_rustc(&code, &binary);
     binary
 }
 

@@ -23,11 +23,11 @@
 //!
 //! A line that looks like a mistyped declaration (indented, or `// @`, `///@`) is an error.
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 #[path = "support/admitted.rs"]
 mod admitted;
-use admitted::{checked, driver, package, stderr};
+use admitted::{checked, driver, package, stderr, timed};
 
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -134,19 +134,6 @@ fn declared(source: &str) -> Result<Vec<Outcome>, String> {
         return Err("`tests pass` appears once, and not beside `test fails`".into());
     }
     Ok(outcomes)
-}
-
-fn timed(seconds: u32, program: &Path) -> Command {
-    let mut command = Command::new("timeout");
-    command
-        .args(["-k", "10"])
-        .arg(seconds.to_string())
-        .arg(program)
-        .env_remove("TIDE_TEST_SEED")
-        .env_remove("TIDE_SIM_SEED")
-        .env_remove("RUST_TEST_NOCAPTURE")
-        .stdin(Stdio::null());
-    command
 }
 
 /// Whether libtest's test path `actual` is the declared `name`. A generated contract test,
