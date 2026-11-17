@@ -112,6 +112,8 @@ The coordinator decided the disambiguation steps above:
 
 They land after E1 runs, because E1's materials teach the current crate spellings, and before any publish or announcement (fx-gbq4).
 
+The trademark check of the name, the tagline and `tidelang`, with the Nix names, is research/35-trademark-check.md (fx-gbq4, 2026-11-17).
+
 ## 5. Announcement timing
 
 Recommendation [inference]:
