@@ -59,6 +59,11 @@ compiled by a pinned rustc against Tide's std; its feasibility spike
 (`spikes/d18/`) passed, and draft 3.7 applies its changes to the other
 decisions.
 
+`demo/run.sh` runs the first demonstration, a partial-v0 one: a lost update
+in a small concurrent Tide service found by a seed and replayed identically,
+and a patch that widens the service's interface to carry `Net`, flagged by
+the trust diff (`demo/README.md`).
+
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a
 rustc driver that enforces the admission allowlist (ADMIT-1, `FX0520`),
