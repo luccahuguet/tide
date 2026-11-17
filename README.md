@@ -154,6 +154,9 @@ cargo run -p tide-conformance   # the conformance corpus, through stable rustc a
 (`libmpfr.so.6`; on Debian/Ubuntu, `python3` and `libmpfr6`), which the float
 oracle uses.
 
+To install the driver through Nix and run a first example, follow
+[docs/install.md](docs/install.md).
+
 The trusted build caller invokes the driver directly, for example:
 
 ```
