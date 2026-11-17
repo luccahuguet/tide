@@ -2,8 +2,11 @@
 
 Tide does not replace a debugger. A Tide program is Rust, compiled by the
 pinned rustc against Tide's std (`design/01-design.md` D18), so gdb, lldb, and
-the IDEs built on them see an ordinary Rust executable, built today without
-debug information. This page covers what
+the IDEs built on them see an ordinary Rust executable. The debug profile,
+the default, compiles Tide code with full debug information, as Cargo's dev
+profile does for Rust. The release profile generates none for the Tide crate
+it compiles, though linked libraries such as Tide's std may keep theirs. This
+page covers what
 Tide adds to debugging, and what it doesn't. It then shows how the two compose
 on the demo's failing seed and how that compares with rr. It ends with a short
 answer to "why not just learn debugging?".
@@ -48,7 +51,8 @@ does all three steps on a lost update in a small concurrent service:
    byte-identical traces.
 3. **Debug the replay.** Step 5 runs that `replay:` command under `rust-gdb`
    in batch mode, with breakpoints in `record_hit` and in its two
-   `Shared::with` closures, the read and the write.
+   `Shared::with` closures, the read and the write. Each breakpoint prints
+   named locals and the source line it stopped at.
 
 Step 5 needs a gdb built with Python. It uses `$RUST_GDB` when it is set,
 else `gdb` on `PATH`. It is skipped, with a line saying so, when there is
@@ -67,12 +71,12 @@ Its output on x86_64 Linux 7.2.6 with GNU gdb 17.2:
 ```text
 == 5. Debug the replay of seed 0 under rust-gdb, with breakpoints in record_hit
 sandbox: full (Linux 7.2.6-76070206-generic, Landlock ABI 10)
-gdb: thread 4 enters record_hit
-gdb: thread 3 enters record_hit
-gdb: thread 4 reads hits = 0
-gdb: thread 3 reads hits = 0
-gdb: thread 4 writes hits = 0 + 1 over hits = 0
-gdb: thread 3 writes hits = 0 + 1 over hits = 1
+gdb: thread 4 enters record_hit at tide-library/hits.rs:57
+gdb: thread 3 enters record_hit at tide-library/hits.rs:57
+gdb: thread 4 reads hits = 0 at tide-library/hits.rs:57
+gdb: thread 3 reads hits = 0 at tide-library/hits.rs:57
+gdb: thread 4 writes hits = 0 + 1 over hits = 0 at tide-library/hits.rs:58
+gdb: thread 3 writes hits = 0 + 1 over hits = 1 at tide-library/hits.rs:58
 thread 3 wrote 0 + 1 over hits = 1: it read the count before another task wrote it, so that task's hit is lost
 the replay under gdb reproduced the recording: the same schedule and trace
 ```
@@ -86,8 +90,9 @@ seed, not from timing.
 Every demo run writes the gdb script, `GDB_SCRIPT` in
 `crates/tide-demo/src/lib.rs`, to `$CARGO_TARGET_DIR/tide-demo/debug.gdb`
 (default `target/tide-demo/`), even when step 5 skips. Its comment there says
-which driver functions it follows and which registers it reads, which is what
-you change to adapt it to other code. gdb's full output goes to
+which driver functions it follows. Its breakpoints name the functions they
+stop in and the locals they print, which is what you change to adapt it to
+other code. gdb's full output goes to
 `logs/debug.log`. To run the same thing by hand after a demo run, from the
 repository, with `gdb` on `PATH` or `RUST_GDB` set:
 
@@ -115,12 +120,27 @@ session open; we have run only batch mode.
   In between it may start the linker. The script follows only those two
   spawns. It recognizes them by two of the driver's function names,
   `supervise` and `Command::status`, which are internal and could change.
-- **No debug information for Tide code.** The driver compiles Tide code
-  without `-g`. Breakpoints work by symbol name (`tide_candidate::record_hit`,
-  `tide_candidate::record_hit::{closure#1}`), and backtraces name functions,
-  but gdb has no source lines and no named locals. The script reads the
-  closures' arguments from their registers at entry, which holds for x86_64
-  at opt-level 0 with the pinned compiler, and for nothing wider.
+- **Source lines and locals, in the debug profile.** The driver passes
+  `-C debuginfo=2` for Tide code in the debug profile, so gdb maps code to
+  source lines (`info line tide_candidate::record_hit` gives line 56 of
+  `hits.rs`), backtraces show files and lines, and `print` reads named
+  locals; the demo's script prints `s->hits` and `seen`. Breakpoints work by
+  function (`tide_candidate::record_hit::{closure#1}`) or by file and line.
+  A line that holds a closure, such as `let seen = stats.with(|s| s.hits)?;`,
+  holds code of two functions, so a breakpoint on that line stops in each;
+  the script names functions for that reason. Test builds name their sources
+  by role, `tide-source/` for the suite and `tide-library/` for the library
+  under test, as their replay traces do. For gdb to show their source text,
+  map a role back to its directory, as an absolute path: for the demo's
+  replay, `set substitute-path tide-library <target>/tide-demo/revisions/buggy/src`,
+  where `<target>` is the absolute `$CARGO_TARGET_DIR`, or the repository's
+  `target` by default. Debug-profile binaries still carry host paths in
+  their debug information: the build's working directory (DWARF's
+  `comp_dir`), and, in non-test builds, which remap nothing, the real
+  source paths.
+  The release profile generates no debug information for the crate it
+  compiles; linked libraries, Tide's std among them, may keep theirs, with
+  their physical source paths.
 - **Threads are not tasks.** gdb numbers threads. The trace,
   `trace.ndjson` beside the manifest, names Tide's task ids.
 - **Tested with rust-gdb only.** rust-lldb and RustRover have not been tried
@@ -158,10 +178,9 @@ that.
 
 ## "Why not just learn debugging?"
 
-Learn it. Tide programs are Rust, so Rust's debuggers run on them. Today the
-driver builds Tide code without debug information, so a debugger sees
-function names and backtraces but no source lines or locals (see the gaps
-above). In the JetBrains survey, 53.2% of Rust users use no debugger at all,
+Learn it. Tide programs are Rust, so Rust's debuggers run on them, and in
+the debug profile they see source lines and named locals, as they do for
+Rust built with Cargo's dev profile. In the JetBrains survey, 53.2% of Rust users use no debugger at all,
 and stepping breaks with async code (28.1%) and macros (23.0%) [1]. Tide
 changes none of that. What Tide changes is the input. A debugger needs a run
 that fails, and a bug that depends on the order tasks run in may not fail on

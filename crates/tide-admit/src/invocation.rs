@@ -375,6 +375,11 @@ impl Invocation {
             env!("TIDE_SYSROOT").into(),
             self.source.display().to_string(),
         ];
+        // Full debug information, as Cargo's dev profile gives Rust, so debuggers see source lines
+        // and locals. It enters the replay identity through these arguments.
+        if self.profile != "release" {
+            args.push("-Cdebuginfo=2".into());
+        }
         if self.link {
             args.extend([
                 "-Zunstable-options".into(),

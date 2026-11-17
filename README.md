@@ -178,8 +178,10 @@ directory membership, driver and pinned compiler identity, grants, normalized
 arguments, and trusted artifacts; failed checks/builds never become cache hits.
 Metadata (the default), linked binaries, and linked test harnesses have distinct
 cache identities, as do debug and release profiles. Both profiles force
-`-C overflow-checks=on`; debug (the default) uses optimization 0 and debug
-assertions, release uses optimization 3 without debug assertions.
+`-C overflow-checks=on`; debug (the default) uses optimization 0, debug
+assertions, and full debug information (`-C debuginfo=2`), release uses
+optimization 3 without debug assertions and generates no debug information for
+the crate it compiles (linked libraries, such as Tide's std, may keep theirs).
 Every profile, including test builds, passes `-Zinline-mir=no` and
 `-Zcross-crate-inline-threshold=never` so MIR inlining cannot hide instances
 and inferred cross-crate inlining cannot remove exported library roots from
@@ -453,9 +455,13 @@ already active".
 Linked test builds (including a paired test library) remap embedded source paths
 to `tide-source` and `tide-library`: this covers panic locations and
 macro-supplied trace spans, so moving a source tree preserves replay locations.
-The scope is `--remap-path-scope=macro,object`; candidate diagnostics, debug-info
-and coverage paths retain real spellings, as do non-test builds. This is path
-normalization for same-machine replay, not a promise to remove all physical paths.
+The scope is `--remap-path-scope=macro,object`, so matching source prefixes are
+remapped in object output too, debug information and coverage included, and a
+debugger names these files by role ([docs/debugging.md](docs/debugging.md)).
+Candidate diagnostics keep their real spelling, as do non-test builds. Physical
+paths that match no remapped root, such as the compilation directory and
+separately built libraries, may remain. This is path normalization for
+same-machine replay, not a promise to remove all physical paths.
 
 Failures print an executable, shell-quoted `tide-admit ... --replay <manifest>`
 command using the same explicit build arguments. Replay validates format and

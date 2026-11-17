@@ -917,8 +917,9 @@ impl Run {
 
     /// Step 5: the failing seed's replay under rust-gdb in batch mode. gdb follows the driver
     /// into its sandboxed test child, and its breakpoints in `record_hit` show the lost update: a
-    /// task writing back `seen + 1` over a count already past the `seen` it read. The replay must still reproduce
-    /// the recording under the debugger. Skipped when there is no gdb.
+    /// task writing back `seen + 1` over a count already past the `seen` it read. Each stop must
+    /// be at the source line of `buggy` it belongs to, and the replay must still reproduce the
+    /// recording under the debugger. Skipped when there is no gdb.
     fn debug(&self, buggy: &Path, seed: u64, recording: &Path) -> Result<(), Failure> {
         step(format!(
             "5. Debug the replay of seed {seed} under rust-gdb, with breakpoints in record_hit"
@@ -991,6 +992,19 @@ impl Run {
             .find(|line| line.starts_with("sandbox: "))
             .ok_or_else(|| fail("the driver reported no sandbox level".into()))?;
         println!("{sandbox}");
+        // The debug profile's line information puts the entry and the read on the read's line,
+        // and the write on the write's line.
+        let source = fs::read_to_string(buggy)
+            .map_err(|e| setup(format!("{}: {e}", buggy.display())))?;
+        let line_of = |code: &str| {
+            source
+                .lines()
+                .position(|line| line.trim() == code)
+                .map(|i| i + 1)
+                .ok_or_else(|| setup(format!("{} has no line `{code}`", buggy.display())))
+        };
+        let read_line = line_of("let seen = stats.with(|s| s.hits)?;")?;
+        let write_line = line_of("stats.with(|s| s.hits = seen + 1)")?;
         let mut lost = None;
         let (mut entries, mut reads, mut writes) = (0, 0, 0);
         let mut threads = BTreeSet::new();
@@ -1000,6 +1014,16 @@ impl Run {
             let access = Access::parse(line)
                 .ok_or_else(|| fail(format!("unreadable breakpoint line: {line}")))?;
             println!("{line}");
+            let expected = match access.kind {
+                Kind::Write { .. } => write_line,
+                Kind::Enter | Kind::Read(_) => read_line,
+            };
+            if access.file != "hits.rs" || access.line != expected {
+                return Err(fail(format!(
+                    "gdb stopped at {}:{}, not at hits.rs:{expected}",
+                    access.file, access.line
+                )));
+            }
             threads.insert(access.thread);
             match access.kind {
                 Kind::Enter => entries += 1,
@@ -1048,10 +1072,12 @@ impl Run {
 /// The script step 5 gives rust-gdb, written to `debug.gdb` in the work directory. The driver
 /// re-executes itself and then starts the test binary in its sandboxed child (`supervise`), so
 /// gdb follows those two spawns and stays with the parent at every other one, such as the
-/// linker. The driver builds Tide code without debug information, so the breakpoints name
-/// symbols and read the closures' arguments from their registers at entry (x86_64, opt-level 0):
-/// `{closure#0}`, the read, gets `&mut Stats` in `rdi`; `{closure#1}`, the write, gets `&seen` in
-/// `rdi` and `&mut Stats` in `rsi`. `Stats` holds one `u64`, `hits`.
+/// linker. The debug profile carries debug information, so each breakpoint prints named locals
+/// (`s`, the closures' `&mut Stats`, and `seen`, the write's captured count) and the source line
+/// it stopped at (`$here()`). The breakpoints name functions, not lines: a line such as
+/// `let seen = stats.with(|s| s.hits)?;` holds code of both `record_hit` and its closure, so a
+/// breakpoint on it stops in each. Arguments are parsed as C (`s->hits`), since gdb's Rust parser
+/// rejects them in `dprintf`.
 const GDB_SCRIPT: &str = r#"set pagination off
 set confirm off
 set breakpoint pending on
@@ -1071,6 +1097,14 @@ class Follow(gdb.Function):
             frame = frame.older()
         return 0
 Follow()
+class Here(gdb.Function):
+    """$here(): the source file and line where the newest frame stopped."""
+    def __init__(self):
+        super().__init__("here")
+    def invoke(self):
+        sal = gdb.newest_frame().find_sal()
+        return "%s:%d" % (sal.symtab.filename, sal.line)
+Here()
 end
 catch fork
 catch vfork
@@ -1083,17 +1117,19 @@ commands 1 2
   end
   continue
 end
-dprintf tide_candidate::record_hit,"gdb: thread %d enters record_hit\n",$_thread
-dprintf 'tide_candidate::record_hit::{closure#0}',"gdb: thread %d reads hits = %lu\n",$_thread,*(unsigned long *)$rdi
-dprintf 'tide_candidate::record_hit::{closure#1}',"gdb: thread %d writes hits = %lu + 1 over hits = %lu\n",$_thread,*(unsigned long *)$rdi,*(unsigned long *)$rsi
+dprintf tide_candidate::record_hit,"gdb: thread %d enters record_hit at %s\n",$_thread,$here()
+dprintf 'tide_candidate::record_hit::{closure#0}',"gdb: thread %d reads hits = %lu at %s\n",$_thread,s->hits,$here()
+dprintf 'tide_candidate::record_hit::{closure#1}',"gdb: thread %d writes hits = %lu + 1 over hits = %lu at %s\n",$_thread,seen,s->hits,$here()
 run
 "#;
 
 /// One line the script's breakpoints print: a thread entering `record_hit`, reading the count,
-/// or writing `seen + 1` over the count it finds.
+/// or writing `seen + 1` over the count it finds, and the source file name and line it stopped at.
 struct Access {
     thread: u64,
     kind: Kind,
+    file: String,
+    line: usize,
 }
 
 enum Kind {
@@ -1106,6 +1142,10 @@ impl Access {
     fn parse(line: &str) -> Option<Access> {
         let (thread, rest) = line.strip_prefix("gdb: thread ")?.split_once(' ')?;
         let thread = thread.parse().ok()?;
+        let (rest, at) = rest.rsplit_once(" at ")?;
+        let (path, number) = at.rsplit_once(':')?;
+        let file = Path::new(path).file_name()?.to_str()?.to_owned();
+        let line = number.parse().ok()?;
         let kind = if rest == "enters record_hit" {
             Kind::Enter
         } else if let Some(value) = rest.strip_prefix("reads hits = ") {
@@ -1119,7 +1159,12 @@ impl Access {
                 over: over.parse().ok()?,
             }
         };
-        Some(Access { thread, kind })
+        Some(Access {
+            thread,
+            kind,
+            file,
+            line,
+        })
     }
 }
 

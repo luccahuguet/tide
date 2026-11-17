@@ -1993,8 +1993,11 @@ Runtime children have cleared environments.
 Linked test builds, including the paired test library, remap embedded source
 paths to `tide-source` and `tide-library`. Panic locations and the
 macro's `Span::file()` trace origins use these logical paths. The scope is
-`macro,object`; candidate diagnostics, debug-info and coverage paths, and non-test builds,
-keep real spellings. This does not remove every physical path.
+`macro,object`, so matching source prefixes are remapped in object output too,
+debug information and coverage included. Candidate diagnostics and non-test builds
+keep their real spelling, and physical paths that match no remapped root, such as
+the compilation directory and separately built libraries, may remain. This does
+not remove every physical path.
 [Replay research/32](../research/32-replay-manifests.md) records the adopted
 recommendations and the original-evaluation artifact decision.
 This promises same-machine replay with identical pinned trusted artifacts,

@@ -86,12 +86,12 @@ declared authority (no exercised authority, effects, or proof status)
 
 == 5. Debug the replay of seed 0 under rust-gdb, with breakpoints in record_hit
 sandbox: full (Linux 7.2.6-…, Landlock ABI 10)
-gdb: thread 4 enters record_hit
-gdb: thread 3 enters record_hit
-gdb: thread 4 reads hits = 0
-gdb: thread 3 reads hits = 0
-gdb: thread 4 writes hits = 0 + 1 over hits = 0
-gdb: thread 3 writes hits = 0 + 1 over hits = 1
+gdb: thread 4 enters record_hit at tide-library/hits.rs:57
+gdb: thread 3 enters record_hit at tide-library/hits.rs:57
+gdb: thread 4 reads hits = 0 at tide-library/hits.rs:57
+gdb: thread 3 reads hits = 0 at tide-library/hits.rs:57
+gdb: thread 4 writes hits = 0 + 1 over hits = 0 at tide-library/hits.rs:58
+gdb: thread 3 writes hits = 0 + 1 over hits = 1 at tide-library/hits.rs:58
 thread 3 wrote 0 + 1 over hits = 1: it read the count before another task wrote it, so that task's hit is lost
 the replay under gdb reproduced the recording: the same schedule and trace
 
@@ -209,7 +209,11 @@ Every Tide crate here is built only by the driver, against production std.
 5. **Debug the failing seed.** It runs step 2's `replay:` command under
    `rust-gdb -batch` with the script it writes to `debug.gdb`. gdb follows
    the driver into its sandboxed test child and prints, at `record_hit` and
-   its two `Shared::with` closures, each read and write of the count. Every
+   its two `Shared::with` closures, each read and write of the count, from
+   the named locals `s` and `seen`, and the source line gdb stopped at. The
+   debug profile's debug information supplies both. Every stop must be on
+   its line of the buggy `hits.rs`: the entry and the read on
+   `let seen = …`, the write on `stats.with(|s| s.hits = seen + 1)`. Every
    `record_hit` breakpoint must be matched by one read and one write, from
    more than one thread, and each write must write back its thread's last
    read plus one. One write must land on a count higher than the one its
