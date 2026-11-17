@@ -165,11 +165,11 @@ widening needs a human".
   a precursor to `tide review`, which doesn't exist yet.
 
 **Whether it helps reviewers is an experiment, not a claim.** E3 (chapter 9)
-measures it. Half of its planted changes deliberately use mechanisms the v0
-diff can't see, so the result can't flatter the tool. D0's bar: reviewers
-with the trust diff catch at least 1.5 times as many planted widenings as
-reviewers with the code diff alone. The alpha publishes the result, met or
-not.
+will measure it: its protocol is frozen, and it has no data yet. Half of its
+planted changes deliberately use mechanisms the v0 diff can't see. D0's bar:
+reviewers with the trust diff catch the planted widening in at least 1.5
+times as many review sessions as reviewers given the same change without it.
+The alpha publishes the result, met or not.
 
 ## Going deeper
 

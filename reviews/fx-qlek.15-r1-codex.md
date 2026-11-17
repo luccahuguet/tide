@@ -1,0 +1,26 @@
+Model: gpt-6.1-sol (high) · Date: 2026-11-17 · Candidate 0d83887
+
+Verdict: request_changes
+
+This change replaces the owner's guide's E3 review placeholders with the landed protocol, the built harness, and the remaining work. The numerical design and the distinction between a frozen protocol and experimental results are accurate. Two descriptions need correction before the owner quotes the guide externally. Confidence: high. No override.
+
+Reviewed `git diff 08face4...0d83887` against `br --no-db show fx-qlek.15`, the four touched chapters, the frozen protocol, the relevant harness and prompt paths, and the landing/review records. The independently computed diff SHA-256 is `c07456efd087da6907bfaed3a5ef2a4634c98e59192fcce46817229ac146aa6e`. HEAD is `0d8388720f7fb5351b3c512149c519bfe0486f50`; the worktree is clean. `trials/e3-pilot/` and `reviews/` match main `ce0084f`.
+
+1. **Blocking — the design does not guarantee an unflattering result** (`docs/owner-guide/07-trust-diff.md:169`). The retained clause “so the result can't flatter the tool” is stronger than the protocol. Including six plants whose mechanisms the tool cannot show makes the test harder; it does not establish that a positive result cannot overstate the benefit. For example, the frozen protocol explicitly acknowledges residual arm cues after masking (§9.2), and limits a met threshold to these model reviewers and this small codebase (§1). The owner could quote this sentence as a guarantee against an overly favorable result that those sources do not give. **Minimum fix:** delete “so the result can't flatter the tool” and end the sentence after “can't see”. The surrounding description of the half-invisible sample can stay.
+
+2. **Blocking — the arms summary understates what reviewers receive** (`docs/owner-guide/09-experiments.md:72`). “Reviewers get either the code diff alone … or the code diff plus the trust diff” describes neither full review packet. Protocol §5 gives both arms the change description, code diff, and complete program after the change with line numbers; `harness/src/main.rs:503` (`prompt`) and `prompt/review.md` implement that packet. This matters to the experiment: reviewers must compare authority against the description, and the plain arm can inspect the complete program rather than infer everything from a patch. **Minimum fix:** say “Both arms receive the description, code diff and complete numbered program after the change. The trust arm also receives the trust diff and the fixed paragraph explaining its coverage.”
+
+3. **Non-blocking — name the canary's two uncovered surfaces in plain language** (`docs/owner-guide/09-experiments.md:123`). The qualification is accurate, but “two of Claude's planted probes” leaves this reader unable to say which isolation claims remain unproven. `reviews/fx-1vwf.1-r9-opus.md`, non-blocking finding 8, names `C-XDG-MD` and `c-parent-hook`; `harness/src/main.rs:2309` maps them to the XDG configuration instruction file and ancestor-directory hook settings. The landing commit's recorded control coverage still omits both. **Minimum fix:** add “(the XDG instruction file and ancestor-directory hooks)” after “probes”, or describe those locations without the XDG abbreviation.
+
+The remaining checks passed on the reviewed candidate:
+
+- Twelve pairs, twenty-four items, six mechanisms with two pairs each, the described-authority split, two arms, Opus/Sol identities, three replicates, 288 sessions and 72 plant sessions per arm match protocol §§4–7. The source table totals 1,906 lines, consistent with “about 1,900”.
+- The catch summary matches the location/kind check, mechanism-keyed adjudication, two agreeing fresh judges, and limited masking claim in §9.2. The two frozen control changes contain six findings; actually running those controls remains future work.
+- The 1.5× point-estimate gate, strict improvement over zero, reported interval/test/false positives, mandatory uncertainty sentence, deadlines, breach halt, and no post-hoc pair exclusion match §§10–12. The 5–15-hour serial estimate matches §8.4.
+- The built harness claims match its trust-diff, schedule, render, review and attempt paths. The canary passage matches §8.5, landing commit `9b080c3`, and the final Opus review/re-check: controls demonstrated instruction and hook uptake, isolated attempts fired no probes, and the two Claude surfaces remain unproven. This is canary evidence, not E3 outcome data.
+- The guide consistently says E3 has no experimental results; planting and the review/grading/report work remain pending. Beads fx-1vwf.2 and fx-1vwf.3 confirm their stated statuses. The alpha-launch decision matches the owner decision recorded on fx-qlek.
+- No `TODO(tide-lead, fx-1vwf.1)` remains in the guide. All four changed files are inside `docs/owner-guide/`; `git diff 08face4...0d83887 --check` passes. The new read-only `sed` command was run verbatim from the main checkout and prints exactly protocol §1 and §10.2.
+
+Only this requested report was written. No repository or Beads edits, builds, models, or subagents. Runtime behavior was checked against source and recorded landing evidence, not independently rerun; E3 benefit remains unmeasured.
+
+DONE

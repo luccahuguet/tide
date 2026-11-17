@@ -65,9 +65,14 @@ helps reviewers is E3's question. [7, 9]
 Right: E1 is the cost line. Models write Tide about as reliably as Rust (first
 check 56/60 vs 59/60, final 58/60 each, 1.46× the iterations against a 1.5×
 limit), on small tasks with one model. The benefit test is E3: do reviewers
-catch planted authority widening 1.5× more often with the trust diff? Its
-protocol is in review (fx-1vwf.1), half its plants use mechanisms the v0
-diff isn't expected to show, by design, and the result is published either way. [9]
+catch planted authority widening at least 1.5 times as often with the trust
+diff? Its protocol was frozen on 2026-11-17, before any plant existed: 12
+planted changes and 12 clean twins, 288 fresh Opus and Sol review sessions
+(repeated reviews of those changes, which are the units), catches confirmed
+by two agreeing judges. The bar is a point estimate, and the report must say
+when its interval doesn't rule out no benefit. Half its plants use mechanisms the v0 diff
+isn't expected to show, by design, and the result is published either way.
+E3 has no data yet: the plants are being written, then the reviews run. [9]
 
 **8. "Your world is tiny: one crate, no dependencies, no TLS, no HTTP. Real
 programs live outside it."**
@@ -93,6 +98,3 @@ stdin and structured tasks, the simulator and replay for tests, the trust
 artifact and its diff, the test sandbox, and a demo that shows all of it in
 one command. Not yet: the `tide` command, packages, HTTP, processes,
 randomness, fault injection, the fast incremental checker, proofs. [10]
-
-<!-- TODO(tide-lead, fx-1vwf.1): update answer 7 when the E3 protocol lands (E3's status or
-result). -->

@@ -30,11 +30,13 @@ Three words to keep straight:
 | Sandbox | RUN-3 for the driver's test runs, with the level reported | 8 |
 | Evidence | the demo (`demo/run.sh`), E1 passed, the red team (fx-qlek.5), 389 conformance cases | 2, 9 |
 
-### In review now
+### Under way
 
-- **fx-1vwf.1**, E3's protocol. Chapter 9.
-
-<!-- TODO(tide-lead, fx-1vwf.1): move it to "Evidence" when it lands. -->
+- **E3**, the review experiment. Its protocol, prompts and review path are
+  frozen, and its isolation canary passed at landing (fx-1vwf.1, with two
+  Claude surfaces unproven); the plants are being written
+  (fx-1vwf.2), and the runs, grading and report follow (fx-1vwf.3). No
+  review has run, so it has no data yet. Chapter 9.
 
 ### Planned for v0, not built
 
