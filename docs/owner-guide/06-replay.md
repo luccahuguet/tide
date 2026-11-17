@@ -118,13 +118,13 @@ Running `cargo run -p tide-demo` again regenerates the copy.
 
 ## Read the code
 
-**`crates/tide-demo/src/lib.rs:664-785`** (8 minutes). The demo's step 2, the
+**`crates/tide-demo/src/lib.rs:676-797`** (8 minutes). The demo's step 2, the
 function `record_and_replay`: how it records a seed, replays it twice, and
 proves the three runs match. You don't need Rust to follow it with this
 walkthrough.
 
 ```sh
-bash -c 'sed -n "664,785p" crates/tide-demo/src/lib.rs'
+bash -c 'sed -n "676,797p" crates/tide-demo/src/lib.rs'
 ```
 
 - `step(...)`: print the step's heading.
@@ -148,7 +148,8 @@ bash -c 'sed -n "664,785p" crates/tide-demo/src/lib.rs'
   recording's, byte for byte. Any difference fails the demo.
 - `lost_a_hit(&output)`: read the printed output from the trace's `sink`
   records and check it really shows fewer hits than views. The last lines
-  print the summary.
+  print the summary and return the recording's path, which step 5 replays
+  under gdb.
 
 Each check that fails returns a `Failure`, which ends the demo with exit
 code 1 and prints the log of the run that showed it.

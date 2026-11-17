@@ -11,6 +11,10 @@ of Tide's claims on it:
    function a `Net` parameter shows up in the trust diff as a widened access
    path, before anyone reads the code.
 
+A last step, when gdb is available, runs the failing seed's replay under
+`rust-gdb` with breakpoints in the service; [`docs/debugging.md`](../docs/debugging.md)
+covers how Tide and debuggers compose.
+
 ## Run it
 
 ```sh
@@ -29,7 +33,11 @@ needs:
 - rustup with the toolchain `rust-toolchain.toml` pins, nightly-2026-08-09
   with `rustc-dev` (`rustup toolchain install` in the repository installs
   it);
-- `git`, to apply the demo's patches.
+- `git`, to apply the demo's patches;
+- for step 5 only, a gdb built with Python: `$RUST_GDB`, else `gdb` on
+  `PATH`. Without one, or when the gdb on `PATH` cannot run Python, step 5
+  prints a `skipped: …` line and the demo still passes; a `RUST_GDB` that
+  does not work fails the step.
 
 It builds the driver and Tide's std into `$CARGO_TARGET_DIR`, by default
 `target/` in the repository, and works in its `tide-demo/` directory, which
@@ -75,6 +83,17 @@ declared authority (no exercised authority, effects, or proof status)
   + <hits::ServeError as core::convert::From<tide_std::io::Error>>::from (associated function)
   ~ hits::serve (function) widened
       + metrics: net
+
+== 5. Debug the replay of seed 0 under rust-gdb, with breakpoints in record_hit
+sandbox: full (Linux 7.2.6-…, Landlock ABI 10)
+gdb: thread 4 enters record_hit
+gdb: thread 3 enters record_hit
+gdb: thread 4 reads hits = 0
+gdb: thread 3 reads hits = 0
+gdb: thread 4 writes hits = 0 + 1 over hits = 0
+gdb: thread 3 writes hits = 0 + 1 over hits = 1
+thread 3 wrote 0 + 1 over hits = 1: it read the count before another task wrote it, so that task's hit is lost
+the replay under gdb reproduced the recording: the same schedule and trace
 
 == Done: every step showed what it should. Logs and artifacts: target/tide-demo
 ```
@@ -187,6 +206,18 @@ Every Tide crate here is built only by the driver, against production std.
    `tide-admit --tide-diff`. The diff lists `hits::serve` as widened, with
    the path that gained `net`. The widened revision is only admitted, never
    run, and the demo does no network I/O.
+5. **Debug the failing seed.** It runs step 2's `replay:` command under
+   `rust-gdb -batch` with the script it writes to `debug.gdb`. gdb follows
+   the driver into its sandboxed test child and prints, at `record_hit` and
+   its two `Shared::with` closures, each read and write of the count. Every
+   `record_hit` breakpoint must be matched by one read and one write, from
+   more than one thread, and each write must write back its thread's last
+   read plus one. One write must land on a count higher than the one its
+   task read, so it overwrites the other task's hit. The replay must
+   still say `replay reproduced`. gdb, and the driver it detaches, must
+   finish within 120 seconds; otherwise the demo kills every process still
+   in gdb's process group and the step fails. gdb's output is in
+   `logs/debug.log`.
 
 The driver runs each test child in RUN-3's kernel sandbox and prints its
 level (`sandbox: full`, …) at the top of each log.
@@ -201,6 +232,7 @@ level (`sandbox: full`, …) at the top of each log.
 | `patches/metrics-report.patch` | the `Net` widening, as a patch to the service |
 | `tests/src/hits_sim.rs` | the simulation suite run against each revision |
 | `agent-card.md` | the same, condensed for coding agents |
+| `../docs/debugging.md` | how Tide composes with debuggers, and rr compared |
 
 ## What runs today, and what is planned
 

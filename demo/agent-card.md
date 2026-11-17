@@ -34,6 +34,7 @@ $D --tide-diff BASE/hits.interface.json HEAD/hits.interface.json
 - Replay success: `replay reproduced: test=... seed=N outcome=...`, exit 101 when the recording failed; a mismatch is a driver error, exit 2.
 - Each evaluation writes `OUT/target/sim/<run>/run.manifest.json` (`tide-replay/2`) and `trace.ndjson`; `"kind":"sink"` events are the output.
 - Diff: `~ item (kind) widened` then `+ path: kinds` per gained access path. Declared authority only.
+- Debug (step 5, needs gdb with Python via `$RUST_GDB` or `PATH`, else skipped; 120 s deadline): `rust-gdb -nx -batch -x $CARGO_TARGET_DIR/tide-demo/debug.gdb --args <replay command>`; prints `gdb: thread N reads|writes hits = …`; log `logs/debug.log`. See `docs/debugging.md`.
 
 **Rules:** keep `serve`'s capabilities explicit in its signature; `Shared::with` closures must be `Pure`; a scope's tasks finish before `scope` returns. Owners: `design/03-authority-concurrency.md` §4.3, §6.1, §6.5, §9.6; `design/01-design.md` D11, D15, D18; the repository `README.md` for flags and replay.
 

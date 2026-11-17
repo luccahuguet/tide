@@ -65,7 +65,9 @@ decisions.
 lost update in a small concurrent Tide service found by a seed and replayed
 identically, and a patch that widens the service's interface to carry `Net`,
 flagged by the trust diff (`demo/README.md`). `cargo test --workspace` runs it
-too.
+too. With gdb available, its last step debugs the failing seed's replay under
+`rust-gdb`; [docs/debugging.md](docs/debugging.md) covers how Tide relates to
+debuggers and to rr.
 
 `examples/` holds small Tide programs, each with a README on what it shows
 and what the Rust version would need instead. Each program declares its

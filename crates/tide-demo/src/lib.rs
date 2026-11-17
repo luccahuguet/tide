@@ -1,6 +1,7 @@
 //! Tide's first running demo (fx-nkv): a lost-update bug in a small concurrent service, found by
-//! a seed and replayed identically, the fix passing a fixed seed set, and the trust diff of a
-//! patch that widens the service's public interface to carry `Net`. `demo/README.md` is the guide.
+//! a seed and replayed identically, the fix passing a fixed seed set, the trust diff of a patch
+//! that widens the service's public interface to carry `Net`, and, when gdb is available, the
+//! failing seed's replay under rust-gdb. `demo/README.md` is the guide.
 //!
 //! `cargo run -p tide-demo` builds the admission driver and Tide's std with the pinned toolchain
 //! into `$CARGO_TARGET_DIR` (default: `<repo>/target`) and works in its `tide-demo/` directory,
@@ -18,8 +19,12 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs::{self, File};
+use std::io::{self, Read};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 // The driver's private wire format, read with its own strict decoder, as `tide-admit` does.
 use std::collections;
@@ -179,9 +184,10 @@ impl Demo {
         let buggy = run.revision("buggy", &self.buggy)?;
         let widened = run.revision("widened", &self.widened)?;
         let seed = run.find_seed(&buggy, &self.buggy)?;
-        run.record_and_replay(&buggy, seed)?;
+        let recording = run.record_and_replay(&buggy, seed)?;
         run.fixed(&fixed, &self.fixed, seed)?;
         run.authority_diff(&fixed, &widened, &self.widened)?;
+        run.debug(&buggy, seed, &recording)?;
         let shown = run.work.strip_prefix(&run.root).unwrap_or(&run.work);
         step(format!(
             "Done: every step showed what it should. Logs and artifacts: {}",
@@ -357,6 +363,7 @@ struct Run {
     root: PathBuf,
     target: PathBuf,
     work: PathBuf,
+    toolchain: String,
     driver: PathBuf,
     std: PathBuf,
     deps: Vec<PathBuf>,
@@ -437,6 +444,7 @@ impl Run {
             root,
             target,
             work,
+            toolchain,
             driver: driver.into(),
             std,
             deps,
@@ -508,6 +516,10 @@ impl Run {
         log: &str,
         run: &[&OsStr],
     ) -> Result<(ExitStatus, PathBuf), Failure> {
+        self.logged(&mut self.suite_command(library, out, run), log)
+    }
+
+    fn suite_command(&self, library: &Path, out: &str, run: &[&OsStr]) -> Command {
         let mut command = self.driver();
         command
             .args([
@@ -522,7 +534,7 @@ impl Run {
             .arg(library)
             .arg(self.root.join("demo/tests/src/hits_sim.rs"))
             .args(run);
-        self.logged(&mut command, log)
+        command
     }
 
     fn out(&self, name: &str) -> PathBuf {
@@ -662,8 +674,8 @@ impl Run {
     }
 
     /// Step 2: the seed, run alone, records the lost hit, and two replays of the recording each
-    /// reproduce it with a byte-identical trace.
-    fn record_and_replay(&self, buggy: &Path, seed: u64) -> Result<(), Failure> {
+    /// reproduce it with a byte-identical trace. Returns the recording's manifest.
+    fn record_and_replay(&self, buggy: &Path, seed: u64) -> Result<PathBuf, Failure> {
         step(format!(
             "2. Record seed {seed}, then replay the recording twice"
         ));
@@ -781,7 +793,7 @@ impl Run {
             "recording: {}",
             path.strip_prefix(&self.target).unwrap_or(path).display()
         );
-        Ok(())
+        Ok(path.clone())
     }
 
     /// Step 3: the fixed revision passes the whole seed set and the failing seed alone.
@@ -901,6 +913,446 @@ impl Run {
             ));
         }
         Ok(())
+    }
+
+    /// Step 5: the failing seed's replay under rust-gdb in batch mode. gdb follows the driver
+    /// into its sandboxed test child, and its breakpoints in `record_hit` show the lost update: a
+    /// task writing back `seen + 1` over a count already past the `seen` it read. The replay must still reproduce
+    /// the recording under the debugger. Skipped when there is no gdb.
+    fn debug(&self, buggy: &Path, seed: u64, recording: &Path) -> Result<(), Failure> {
+        step(format!(
+            "5. Debug the replay of seed {seed} under rust-gdb, with breakpoints in record_hit"
+        ));
+        // Written on every run, so the by-hand commands in docs/debugging.md find it.
+        let script = self.work.join("debug.gdb");
+        fs::write(&script, GDB_SCRIPT).map_err(|e| setup(format!("{}: {e}", script.display())))?;
+        let Some((gdb, explicit)) = find_gdb() else {
+            println!(
+                "skipped: no gdb (set RUST_GDB to a gdb built with Python, or put gdb on PATH)"
+            );
+            return Ok(());
+        };
+        // A gdb that only happens to be on PATH must run Python, which the script needs, or the
+        // step is skipped; one named by RUST_GDB is required, so its failures fail the step.
+        if !explicit && let Err(why) = probe_gdb(&gdb) {
+            println!(
+                "skipped: the gdb on PATH ({}) cannot run the script: {why} (set RUST_GDB to \
+                 require it)",
+                Path::new(&gdb).display()
+            );
+            return Ok(());
+        }
+        let replay = self.suite_command(
+            buggy,
+            "record",
+            &[OsStr::new("--replay"), recording.as_os_str()],
+        );
+        let mut command = pinned(&self.root, &self.toolchain, "rust-gdb");
+        command
+            .env("RUST_GDB", &gdb)
+            .args(["-nx", "-batch", "-x"])
+            .arg(&script)
+            .arg("--args")
+            .arg(replay.get_program())
+            .args(replay.get_args());
+        // The log is complete only once the driver, which gdb detaches when it follows the test
+        // child, has exited too: `run_bounded` waits until the output pipe closes and no process
+        // of gdb's group is running, and kills the group at the deadline.
+        let run = run_bounded(command, DEBUG_DEADLINE)
+            .map_err(|e| setup(format!("cannot run rust-gdb: {e}")))?;
+        let log = self.work.join("logs/debug.log");
+        fs::write(&log, &run.output).map_err(|e| setup(format!("{}: {e}", log.display())))?;
+        let fail = |message: String| Failure::Step {
+            step: 5,
+            message,
+            log: Some(log.clone()),
+        };
+        let deadline = DEBUG_DEADLINE.as_secs();
+        match run.end {
+            End::Killed => {
+                return Err(fail(format!(
+                    "rust-gdb did not finish within {deadline} s, so its process group was killed"
+                )));
+            }
+            End::NotCleaned(why) => {
+                return Err(fail(format!(
+                    "rust-gdb did not finish within {deadline} s, and its process group could not \
+                     be cleaned up: {why}"
+                )));
+            }
+            End::Exited(status) if !status.success() => {
+                return Err(fail(format!("rust-gdb failed ({status})")));
+            }
+            End::Exited(_) => {}
+        }
+        let text = String::from_utf8_lossy(&run.output);
+        let sandbox = text
+            .lines()
+            .find(|line| line.starts_with("sandbox: "))
+            .ok_or_else(|| fail("the driver reported no sandbox level".into()))?;
+        println!("{sandbox}");
+        let mut lost = None;
+        let (mut entries, mut reads, mut writes) = (0, 0, 0);
+        let mut threads = BTreeSet::new();
+        // Each thread's last read: its write must write back that count plus one.
+        let mut last_read = std::collections::BTreeMap::new();
+        for line in text.lines().filter(|line| line.starts_with("gdb: thread ")) {
+            let access = Access::parse(line)
+                .ok_or_else(|| fail(format!("unreadable breakpoint line: {line}")))?;
+            println!("{line}");
+            threads.insert(access.thread);
+            match access.kind {
+                Kind::Enter => entries += 1,
+                Kind::Read(value) => {
+                    reads += 1;
+                    last_read.insert(access.thread, value);
+                }
+                Kind::Write { seen, over } => {
+                    writes += 1;
+                    if last_read.get(&access.thread) != Some(&seen) {
+                        return Err(fail(format!(
+                            "thread {} wrote {seen} + 1, but its last read was {:?}",
+                            access.thread,
+                            last_read.get(&access.thread)
+                        )));
+                    }
+                    if over > seen && lost.is_none() {
+                        lost = Some((access.thread, seen, over));
+                    }
+                }
+            }
+        }
+        if entries == 0 || entries != reads || reads != writes {
+            return Err(fail(format!(
+                "the breakpoints did not all hit: {entries} record_hit, {reads} reads, {writes} writes"
+            )));
+        }
+        let Some((thread, seen, over)) = lost.filter(|_| threads.len() > 1) else {
+            return Err(fail("gdb showed no lost update between two tasks".into()));
+        };
+        println!(
+            "thread {thread} wrote {seen} + 1 over hits = {over}: it read the count before another \
+             task wrote it, so that task's hit is lost"
+        );
+        let marker = format!("replay reproduced: test={TEST} seed={seed} ");
+        if !text.lines().any(|line| line.starts_with(&marker)) {
+            return Err(fail(
+                "the replay under gdb did not reproduce the recording".into(),
+            ));
+        }
+        println!("the replay under gdb reproduced the recording: the same schedule and trace");
+        Ok(())
+    }
+}
+
+/// The script step 5 gives rust-gdb, written to `debug.gdb` in the work directory. The driver
+/// re-executes itself and then starts the test binary in its sandboxed child (`supervise`), so
+/// gdb follows those two spawns and stays with the parent at every other one, such as the
+/// linker. The driver builds Tide code without debug information, so the breakpoints name
+/// symbols and read the closures' arguments from their registers at entry (x86_64, opt-level 0):
+/// `{closure#0}`, the read, gets `&mut Stats` in `rdi`; `{closure#1}`, the write, gets `&seen` in
+/// `rdi` and `&mut Stats` in `rsi`. `Stats` holds one `u64`, `hits`.
+const GDB_SCRIPT: &str = r#"set pagination off
+set confirm off
+set breakpoint pending on
+set language c
+handle SIGUSR1 nostop noprint pass
+python
+class Follow(gdb.Function):
+    """$follow(): 1 when the forking process is starting the driver again or its test child."""
+    def __init__(self):
+        super().__init__("follow")
+    def invoke(self):
+        frame = gdb.newest_frame()
+        while frame is not None:
+            name = frame.name() or ""
+            if "supervise" in name or "Command>::status" in name:
+                return 1
+            frame = frame.older()
+        return 0
+Follow()
+end
+catch fork
+catch vfork
+commands 1 2
+  silent
+  if $follow()
+    set follow-fork-mode child
+  else
+    set follow-fork-mode parent
+  end
+  continue
+end
+dprintf tide_candidate::record_hit,"gdb: thread %d enters record_hit\n",$_thread
+dprintf 'tide_candidate::record_hit::{closure#0}',"gdb: thread %d reads hits = %lu\n",$_thread,*(unsigned long *)$rdi
+dprintf 'tide_candidate::record_hit::{closure#1}',"gdb: thread %d writes hits = %lu + 1 over hits = %lu\n",$_thread,*(unsigned long *)$rdi,*(unsigned long *)$rsi
+run
+"#;
+
+/// One line the script's breakpoints print: a thread entering `record_hit`, reading the count,
+/// or writing `seen + 1` over the count it finds.
+struct Access {
+    thread: u64,
+    kind: Kind,
+}
+
+enum Kind {
+    Enter,
+    Read(u64),
+    Write { seen: u64, over: u64 },
+}
+
+impl Access {
+    fn parse(line: &str) -> Option<Access> {
+        let (thread, rest) = line.strip_prefix("gdb: thread ")?.split_once(' ')?;
+        let thread = thread.parse().ok()?;
+        let kind = if rest == "enters record_hit" {
+            Kind::Enter
+        } else if let Some(value) = rest.strip_prefix("reads hits = ") {
+            Kind::Read(value.parse().ok()?)
+        } else {
+            let (seen, over) = rest
+                .strip_prefix("writes hits = ")?
+                .split_once(" + 1 over hits = ")?;
+            Kind::Write {
+                seen: seen.parse().ok()?,
+                over: over.parse().ok()?,
+            }
+        };
+        Some(Access { thread, kind })
+    }
+}
+
+/// The gdb rust-gdb runs, as an absolute path, since rust-gdb runs in the repository rather than
+/// the caller's directory, and whether `RUST_GDB` named it: `$RUST_GDB`, else `gdb` on `PATH`. A
+/// `RUST_GDB` naming a path is taken from the caller's directory, and a bare name is looked up on
+/// `PATH`; one that is not found is passed on as given, so a configured debugger that does not
+/// exist fails step 5 instead of skipping it. `None` when `RUST_GDB` is unset or empty and `PATH`
+/// has no `gdb`.
+fn find_gdb() -> Option<(std::ffi::OsString, bool)> {
+    let on_path = |name: &OsStr| {
+        let paths = std::env::var_os("PATH")?;
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(name))
+            .find(|file| file.is_file())
+            .and_then(|file| std::path::absolute(file).ok())
+            .map(PathBuf::into_os_string)
+    };
+    match std::env::var_os("RUST_GDB").filter(|gdb| !gdb.is_empty()) {
+        Some(gdb) if Path::new(&gdb).components().count() > 1 => Some((
+            std::path::absolute(&gdb).map_or(gdb, PathBuf::into_os_string),
+            true,
+        )),
+        Some(gdb) => Some((on_path(&gdb).unwrap_or(gdb), true)),
+        None => on_path(OsStr::new("gdb")).map(|gdb| (gdb, false)),
+    }
+}
+
+/// Whether `gdb` starts and runs Python, which step 5's script needs: why not, if it does not.
+fn probe_gdb(gdb: &OsStr) -> Result<(), String> {
+    let mut command = Command::new(gdb);
+    command.args(["-nx", "-batch", "-ex", "python print(1)"]);
+    let run = run_bounded(command, Duration::from_secs(30)).map_err(|e| e.to_string())?;
+    match run.end {
+        End::Exited(status)
+            if status.success()
+                && String::from_utf8_lossy(&run.output)
+                    .lines()
+                    .any(|l| l == "1") =>
+        {
+            Ok(())
+        }
+        End::Exited(status) => Err(format!("`python print(1)` failed ({status})")),
+        End::Killed | End::NotCleaned(_) => Err("`python print(1)` did not finish in 30 s".into()),
+    }
+}
+
+/// How long step 5's rust-gdb run may take, from start until it and every process it started
+/// have exited. A run takes a few seconds; the driver's own 300 s backstop bounds only the test
+/// evaluation, not a debugger stuck before or after it.
+const DEBUG_DEADLINE: Duration = Duration::from_secs(120);
+
+/// How a `run_bounded` run ended.
+#[derive(Debug)]
+pub enum End {
+    /// The command exited, its output closed, and no process of its group was left running,
+    /// all before the deadline.
+    Exited(ExitStatus),
+    /// The deadline passed first; the process group was killed and no member is left running.
+    Killed,
+    /// The deadline passed first, and the group could not be killed, or still had a running
+    /// member 5 s after the kill: why.
+    NotCleaned(String),
+}
+
+/// What `run_bounded` gave: how the run ended, and everything the command and its descendants
+/// wrote to standard output and error.
+pub struct Bounded {
+    pub end: End,
+    pub output: Vec<u8>,
+}
+
+/// Runs `command` in a new process group, with empty standard input and standard output and
+/// error on one pipe. It returns `End::Exited` once the pipe has closed, the command has exited,
+/// and no process of the group is still running, all observed before `deadline`: a descendant
+/// the command left behind, such as the driver gdb detaches, is waited for too. Otherwise it
+/// kills the group at the deadline and returns `End::Killed`, or `End::NotCleaned` when that
+/// fails.
+///
+/// The contract is that no member of the group is left running when it returns `Exited` or
+/// `Killed`. A killed member whose parent had already exited is reaped by init or the session's
+/// subreaper, like any orphan; this function is not its parent, and becoming a subreaper would
+/// change process-wide behaviour inside a test binary that runs other tests in parallel. A
+/// process that left the group (`setsid`, as the driver's sandboxed test child does) is outside
+/// the contract; the test child dies with the driver that started it (`PR_SET_PDEATHSIG`).
+///
+/// The group's id is the command's pid. The command is reaped only after the group is killed or
+/// found empty, and its exit is detected with `waitid(WNOWAIT)` until then, so the id cannot be
+/// reused while the group is signalled.
+pub fn run_bounded(mut command: Command, deadline: Duration) -> io::Result<Bounded> {
+    let end = Instant::now() + deadline;
+    let (mut reader, writer) = io::pipe()?;
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(writer.try_clone()?)
+        .stderr(writer)
+        .process_group(0)
+        .spawn()?;
+    // The command keeps its copies of the pipe's write end until it is dropped.
+    drop(command);
+    let group = child.id();
+    let (send, receive) = mpsc::channel::<Vec<u8>>();
+    // Not joined: when cleanup fails, a surviving writer can keep it blocked.
+    std::thread::spawn(move || {
+        let mut buffer = [0; 8192];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if send.send(buffer[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
+    });
+    let mut output = Vec::new();
+    let mut closed = false;
+    let mut exited = false;
+    while Instant::now() < end {
+        if closed {
+            exited = exited
+                || match exited_unreaped(group) {
+                    Ok(exited) => exited,
+                    Err(e) => {
+                        kill_group(group);
+                        return Err(e);
+                    }
+                };
+            // Success counts only if every observation, the last included, came before the
+            // deadline.
+            if exited && group_members(group).is_empty() && Instant::now() < end {
+                let status = match child.wait() {
+                    Ok(status) => status,
+                    Err(e) => {
+                        kill_group(group);
+                        return Err(e);
+                    }
+                };
+                return Ok(Bounded {
+                    end: End::Exited(status),
+                    output,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+        let wait = end.saturating_duration_since(Instant::now());
+        match receive.recv_timeout(wait) {
+            Ok(bytes) => output.extend(bytes),
+            Err(RecvTimeoutError::Disconnected) => closed = true,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
+    let end = kill_group(group);
+    if matches!(end, End::Killed) {
+        // The command is killed or had exited, so this does not block.
+        child.wait()?;
+    }
+    // What the killed processes wrote before they died, for at most 2 s: a writer outside the
+    // group, or one that survived, can keep the channel supplied, so the clock bounds the drain.
+    let grace = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < grace {
+        match receive.recv_timeout(grace.saturating_duration_since(Instant::now())) {
+            Ok(bytes) => output.extend(bytes),
+            Err(_) => break,
+        }
+    }
+    Ok(Bounded { end, output })
+}
+
+/// Whether process `pid`, a child of this process, has exited, without reaping it.
+fn exited_unreaped(pid: u32) -> io::Result<bool> {
+    // SAFETY: `info` is a valid, zeroed `siginfo_t` that `waitid` fills; WNOWAIT leaves the child
+    // waitable, so `Child::wait` still reaps it.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        let flags = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
+        if libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, flags) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // WNOHANG leaves `si_pid` zero when the child has not exited.
+        Ok(info.si_pid() != 0)
+    }
+}
+
+/// The processes in process group `group` that are still running (not zombies), from `/proc`.
+fn group_members(group: u32) -> Vec<u32> {
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .filter(|pid| {
+            // `/proc/PID/stat`: `pid (comm) state ppid pgrp ...`; `comm` may hold spaces.
+            fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+                let mut fields = stat
+                    .rsplit_once(") ")
+                    .map_or("", |(_, rest)| rest)
+                    .split(' ');
+                let state = fields.next();
+                let pgrp = fields.nth(1).and_then(|pgrp| pgrp.parse::<u32>().ok());
+                state != Some("Z") && pgrp == Some(group)
+            })
+        })
+        .collect()
+}
+
+/// Sends `SIGKILL` to process group `group`, whose leader is an unreaped child of this process,
+/// and waits up to 5 s for no member to be left running. `kill` does not block.
+fn kill_group(group: u32) -> End {
+    // SAFETY: `kill` takes plain integers and touches no memory.
+    if unsafe { libc::kill(-(group as libc::pid_t), libc::SIGKILL) } != 0 {
+        let error = io::Error::last_os_error();
+        // ESRCH: no process is left in the group.
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return End::NotCleaned(format!("kill of process group {group} failed: {error}"));
+        }
+    }
+    let wait = Instant::now() + Duration::from_secs(5);
+    loop {
+        let members = group_members(group);
+        if members.is_empty() {
+            return End::Killed;
+        }
+        if Instant::now() >= wait {
+            return End::NotCleaned(format!(
+                "processes {members:?} of group {group} were still running 5 s after SIGKILL"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 

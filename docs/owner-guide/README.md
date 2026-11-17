@@ -44,7 +44,7 @@ an hour and a quarter in all:
 | 5 | `demo/service/src/hits.rs` | 4 | a whole Tide service, 58 lines: tasks, a scope, `Shared` | 15 |
 | 6 | `demo/patches/lost-update.patch` | 4 | the one-line-pair change that makes it race | 3 |
 | 7 | `demo/tests/src/hits_sim.rs` | 5 | the simulation test that finds the race | 5 |
-| 8 | `crates/tide-demo/src/lib.rs:664-785` | 6 | how the demo proves replay is exact | 8 |
+| 8 | `crates/tide-demo/src/lib.rs:676-797` | 6 | how the demo proves replay is exact | 8 |
 | 9 | `demo/patches/metrics-report.patch` | 7 | the change the trust diff flags | 10 |
 | 10 | `crates/tide-admit/src/invocation/sandbox.rs:84-101, 549-578` | 8 | the sandbox level, and seccomp's allowed system calls | 8 |
 
