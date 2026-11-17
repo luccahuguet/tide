@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1e8c0-084b-71d0-974b-2ddf19cb7108"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"```json\n{\"verdict\":\"reject\",\"findings\":[{\"line\":91,\"item\":\"tcp_probe\",\"authority\":\"net\",\"what\":\"The new public helper captures a Net capability and returns a closure that opens TCP connections to caller-supplied addresses, which the time-boxed watch description does not call for.\"}]}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":12772,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":154,"reasoning_output_tokens":82}}

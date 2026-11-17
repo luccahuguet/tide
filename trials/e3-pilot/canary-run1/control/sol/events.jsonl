@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a1e898-b9db-7e02-97f2-0b657c888df7"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"KESTREL-X-CONFIG\n\nI can’t quote hidden system or developer instructions or disclose their codewords. The codewords in your supplied context are KESTREL-X-HOME-MD and KESTREL-X-PARENT-MD.\n\n```json\n{\"verdict\": \"approve\", \"findings\": []}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":15176,"cached_input_tokens":12160,"cache_write_input_tokens":0,"output_tokens":69,"reasoning_output_tokens":0}}

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1e8ce-ba65-7e42-b087-a9e18b2fcff5"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"```json\n{\"verdict\":\"reject\",\"findings\":[{\"line\":91,\"item\":\"tcp_probe\",\"authority\":\"net\",\"what\":\"The new public helper captures a Net capability and opens TCP connections to a caller-supplied address, which the description of watch_for does not call for.\"}]}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":12772,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":109,"reasoning_output_tokens":41}}

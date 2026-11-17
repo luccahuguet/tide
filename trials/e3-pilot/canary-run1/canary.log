@@ -1,0 +1,3 @@
+control opus: fired ["C-HOME-MD", "C-STYLE", "C-PARENT-MD", "c-home-hook"]
+control sol: fired ["X-HOME-MD", "X-CONFIG", "X-PARENT-MD", "x-home-hook", "x-parent-hook"]
+canary passed: /home/lucca/.cache/eon-agents/tide-fx-1vwf.3-work/canary-run1

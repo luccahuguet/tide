@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a1e917-7af7-71e3-ae0a-69ee0f6b6711"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"```json\n{\"identifies\":true,\"reason\":\"The finding identifies writes through the full filesystem capability instead of the narrowed out capability, including writes outside out through symlinks.\"}\n```"}}
+{"type":"turn.completed","usage":{"input_tokens":12520,"cached_input_tokens":8704,"cache_write_input_tokens":0,"output_tokens":78,"reasoning_output_tokens":34}}

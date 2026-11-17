@@ -1,0 +1,2286 @@
+{
+  "clis": {
+    "opus": {
+      "cli": "/nix/store/qx0n0mss4z9hlv0lvpvpp12x6ghdiscg-claude-code-2.1.325/bin/claude",
+      "model": "claude-opus-5-5",
+      "sha256": "8b3f0c23bc8295ff90f1f72d67fbfb6ac472c24f840e49cc9e9f835f221ccd6b",
+      "version": "2.1.325 (Claude Code)"
+    },
+    "sol": {
+      "cli": "/home/lucca/.codex/packages/standalone/releases/0.169.0-x86_64-unknown-linux-musl/bin/codex",
+      "model": "gpt-6.1-sol",
+      "sha256": "b452ca20f838a8855a88a41050ee4a694033fff4ea3ecdad5633e6e0e8d13f2b",
+      "version": "codex-cli 0.169.0"
+    }
+  },
+  "created": 1794903729.1843197,
+  "items": {
+    "i01": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i01",
+      "sha256": {
+        "change.patch": "0a2e8a96c708392205d8f596e579d2cfefc0bac0fd872feedd236d516d9ddb9b",
+        "description.md": "093054f27d3e1f11288aa13778515ed86374dbf9b88fb8f40b618d380ad544d9",
+        "item.json": "d5dc1dd86acd4de7f877640db42db19115a05b671c4d8e43bb488f4e229ceb5b",
+        "program": "f1d4e953bde10874d401941ae1b63f6cf58ec3521b752e13f81cf2296d431ec2",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i02": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i02",
+      "sha256": {
+        "change.patch": "0dd021c4a9489dd520a06c0d227d514191ae5c213e944c3752ae8e49b199b0d2",
+        "description.md": "058acd02278cff7e208453701a84af91de0989cea60d2d4112b3acd084305347",
+        "item.json": "87494ecb86595fb47b6ea7428a13c4106afbb0dba85dd524572151c680d2c93b",
+        "program": "ddf18a0d53edf8382d5e80ee40589e2a4eb02fb90d767e470d73fa061b3240da",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i03": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i03",
+      "sha256": {
+        "change.patch": "13ab0fcfa47becc127141057955515006816af6c7aa69573138b5533aeb7863e",
+        "description.md": "9854ec493aa84f0cfbaa64f3da2cb0a1fd308b70e00f6090aa94bbaf1a6f8e1e",
+        "item.json": "bcad6b165f38fd58ae9351f5df7f2bdea40a6f3fdc6ad96f4a919ec2713171b9",
+        "program": "0add7f9c1145e8f8e0e8cca2efe9e39272d0101dbdb2b772b6d6ede94daab6b4",
+        "trust-diff.txt": "3622bdab11e9088f5b366b1c61077a056d5a217c0c7bfe176494bec68ad47c8f"
+      }
+    },
+    "i04": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i04",
+      "sha256": {
+        "change.patch": "160ab7eaaed9726b2adcb2467d83b100b959397225778c9ec7f4a14e607cbb3d",
+        "description.md": "7309a484261d493912a54f236e1cf5a5ab33e5585ae96683869abb590427f624",
+        "item.json": "987c473e5aa796850ce887c58243a13d56302aabb2cd60e9857503de38fb8e9a",
+        "program": "f87fecbc47d15105002de31aad6727f5578213f9177e32f4475d0b199cac41aa",
+        "trust-diff.txt": "e97af32a6f00bad52e2d3ad09d83bc99813b0ad57da8984f8bb34459c46eb10f"
+      }
+    },
+    "i05": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i05",
+      "sha256": {
+        "change.patch": "1b332b2ef30d77bf6b1b1323a0325c42686ce1103835f1002f3e660b7e94e5be",
+        "description.md": "25f3375ed1c642d2a26233fd48137fd33e6caf55613c2e6420892dd74cb1550a",
+        "item.json": "c92b9eb17821616d9156883404b0cf0b40e2e3349f54fd7ea71e1d6af3ace623",
+        "program": "11de53ed0268630d0d2e66fd5c8c3d6e570ba0e0fa709816c582cc1d502e634c",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i06": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i06",
+      "sha256": {
+        "change.patch": "1d2c24a66a258b4c04328e561a4fc2dbfc9829d78f3039fbbf989fe6f0fd6e58",
+        "description.md": "25f3375ed1c642d2a26233fd48137fd33e6caf55613c2e6420892dd74cb1550a",
+        "item.json": "c92b9eb17821616d9156883404b0cf0b40e2e3349f54fd7ea71e1d6af3ace623",
+        "program": "11de53ed0268630d0d2e66fd5c8c3d6e570ba0e0fa709816c582cc1d502e634c",
+        "trust-diff.txt": "7585c8052962b05da0777828342009534ba2ca013fb892782ea8221d82eb393a"
+      }
+    },
+    "i07": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i07",
+      "sha256": {
+        "change.patch": "36684055203e9bd7acefde226c3fe83401e44fb9d7fb10536690bc253f5bcc1b",
+        "description.md": "093054f27d3e1f11288aa13778515ed86374dbf9b88fb8f40b618d380ad544d9",
+        "item.json": "d5dc1dd86acd4de7f877640db42db19115a05b671c4d8e43bb488f4e229ceb5b",
+        "program": "f1d4e953bde10874d401941ae1b63f6cf58ec3521b752e13f81cf2296d431ec2",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i08": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i08",
+      "sha256": {
+        "change.patch": "52ebbe5cf1914cf6d5dd3faed61486a04bf802a2cd5bf14156cadde2a9497e80",
+        "description.md": "d6ea7ef5e603ce16efdc21f7606618df637772d3a2d196de5dea67ee563fcd1d",
+        "item.json": "9cc769a2a281e6b3e99352fecddc3d285dadf07121f9319cad32cb283f8cad20",
+        "program": "f854b8824a5bd05c4718b6411fec4b1514f3544362260cb353ff398c2cf23598",
+        "trust-diff.txt": "f74583fa164746a1d37cd104b031bbbeadd346153cff3f5edf227125e4a255ee"
+      }
+    },
+    "i09": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i09",
+      "sha256": {
+        "change.patch": "70057c34f490b9021194ef925a7e8ed3c97707a3fb5322eed88fa3b5722ff9ce",
+        "description.md": "19e605339e39f171967be063d7dfd9189773aa16888f3ba8f6bbbb31625d9f91",
+        "item.json": "fbb668eb9bc4b2990eb576e3d5a6df23c3b206ec48f9214a347a56b2da1af1fb",
+        "program": "051917783c3d8e3c6e3a8bf86d0626c18e4dcccc0697bf048c62ebc1c6a8bb5f",
+        "trust-diff.txt": "0a315d3e884b84a4875af6e54e6d85c6585fd3ee52f343cab698bb477958adb4"
+      }
+    },
+    "i10": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i10",
+      "sha256": {
+        "change.patch": "749d302e19cd56b8c5608f929d51f511db3a5abb112ba0e6c374c126318330a1",
+        "description.md": "0b85a6c6c519019eb48b9ade20b25c9dd5d316465f412df3b22798041232a022",
+        "item.json": "5c415929cf4948394b98e21fb3fd197c1f322a65f2f1ecbb984d2cec710f5301",
+        "program": "625c2c3ed3bfe5581941ddf2e0a9fe897c2713ea042f489c7fbcc1a4c9e8b250",
+        "trust-diff.txt": "b63908f2146bde38934d533bcc95715bcfd16afe4a5b33b5969e8e6e243cf217"
+      }
+    },
+    "i11": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i11",
+      "sha256": {
+        "change.patch": "752717646468f60b2c8762aa4f1bfb09446852f0b39dd24a3e36e033ff8cde08",
+        "description.md": "b0f7f873c27f342da0af9ccf136efe4e810d6d8a6c8875dc8716e000ea313107",
+        "item.json": "d3f96f46096443512acf3d6d7d048f54840c409fe92acd9f0d104905ab7e82d8",
+        "program": "1d39f6a3bd413bcbce4a0530b5b204a13eb8ff4beeb9cb97e6663555f95fca61",
+        "trust-diff.txt": "e168415efcbc7d4832eb58ba6b73a233aa0e6af6ce70befbfe92c404644f1540"
+      }
+    },
+    "i12": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i12",
+      "sha256": {
+        "change.patch": "991184eac224af47b3d0e4020f68ec5bfad1055cb04848a5d147367c4185c4b1",
+        "description.md": "19e605339e39f171967be063d7dfd9189773aa16888f3ba8f6bbbb31625d9f91",
+        "item.json": "fbb668eb9bc4b2990eb576e3d5a6df23c3b206ec48f9214a347a56b2da1af1fb",
+        "program": "051917783c3d8e3c6e3a8bf86d0626c18e4dcccc0697bf048c62ebc1c6a8bb5f",
+        "trust-diff.txt": "0a315d3e884b84a4875af6e54e6d85c6585fd3ee52f343cab698bb477958adb4"
+      }
+    },
+    "i13": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i13",
+      "sha256": {
+        "change.patch": "a460af602e320e2a2038351a24ef76cf81a5d84f0e47275e40e5dc9db5d10724",
+        "description.md": "0b85a6c6c519019eb48b9ade20b25c9dd5d316465f412df3b22798041232a022",
+        "item.json": "5c415929cf4948394b98e21fb3fd197c1f322a65f2f1ecbb984d2cec710f5301",
+        "program": "625c2c3ed3bfe5581941ddf2e0a9fe897c2713ea042f489c7fbcc1a4c9e8b250",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i14": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i14",
+      "sha256": {
+        "change.patch": "a5d9a12a6abc6076915e3972d35416e9c6a940350f2e8fb220d2a618f77ce9a9",
+        "description.md": "d6ea7ef5e603ce16efdc21f7606618df637772d3a2d196de5dea67ee563fcd1d",
+        "item.json": "9cc769a2a281e6b3e99352fecddc3d285dadf07121f9319cad32cb283f8cad20",
+        "program": "f854b8824a5bd05c4718b6411fec4b1514f3544362260cb353ff398c2cf23598",
+        "trust-diff.txt": "264d4412b8700c6053d79b5f981e4f1bfcef5063fcfff2d5cd47b663550957d3"
+      }
+    },
+    "i15": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i15",
+      "sha256": {
+        "change.patch": "a6f6fc3b0c0c031362bc89641d9d616a773590d1dd4b048b7f23908c8bf6179c",
+        "description.md": "738d56a9a3b7afeccf6e78d173a59703834023e4578f81177539cae99dcee220",
+        "item.json": "1afd6dfc0431e7287fb373eb9c4b64d64e2a94a549dd6de31b761123d737b8ce",
+        "program": "bb019c4af89f53239f23b579d8cacf0f5bb276d914b65c73b273bfbedc500547",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i16": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i16",
+      "sha256": {
+        "change.patch": "a73fdb0b64881ec3a164059eb642c2006b2905a50ae7876d59143b78311cc4b6",
+        "description.md": "7309a484261d493912a54f236e1cf5a5ab33e5585ae96683869abb590427f624",
+        "item.json": "987c473e5aa796850ce887c58243a13d56302aabb2cd60e9857503de38fb8e9a",
+        "program": "f87fecbc47d15105002de31aad6727f5578213f9177e32f4475d0b199cac41aa",
+        "trust-diff.txt": "69300321c5159d62a280f9773540dc71fa29c885b944621f448e9ac538d5cd2c"
+      }
+    },
+    "i17": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i17",
+      "sha256": {
+        "change.patch": "ab22d644d01670bbaffc0384674896266fe47f202fc6073ff956bde58ee67cf9",
+        "description.md": "084174efd2079b72c5f18ecf0fdc160838a2cda1eda5c0e4166677460d6c330b",
+        "item.json": "4b99777cfbd62f778121837a68da24897f16770aa72c5e33cff721c9b50ccb4a",
+        "program": "a352f6bb3451931e165e3233e56fb41d21c8e818b5baf8cdbecbbbc5201a31ac",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i18": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i18",
+      "sha256": {
+        "change.patch": "addb9bcd2f9bb436a1cdbf9fb6dfd1a304e0ebe1a8c8fdcfd77c5f1ce0176d4f",
+        "description.md": "61481d5c16bc7fc3f83733cf1c8d43e1dfb6d55a305ace7fdde3a3532ab3bb68",
+        "item.json": "d92cafdcd69bbdd9af3d7d41d764f6e449da2e74ed312c1595d6b1866822dc98",
+        "program": "8dd3169abc22d1f2423973438f5142ca1a05ab0e7928e61b61987adf4b0ec2e1",
+        "trust-diff.txt": "7fda7eac9f5d63097da2caccd94b421ed611ae37f9f01278cefdc5a1e982ae41"
+      }
+    },
+    "i19": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i19",
+      "sha256": {
+        "change.patch": "b15407aeee9ca7f5c2be8adfdbbd2d5625d76987fc0b16fbaa312ace1b54b35e",
+        "description.md": "058acd02278cff7e208453701a84af91de0989cea60d2d4112b3acd084305347",
+        "item.json": "87494ecb86595fb47b6ea7428a13c4106afbb0dba85dd524572151c680d2c93b",
+        "program": "ddf18a0d53edf8382d5e80ee40589e2a4eb02fb90d767e470d73fa061b3240da",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i20": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i20",
+      "sha256": {
+        "change.patch": "c052e9d228acbb49de33d4d1a551cb799cc6f8f366218c680cb4b035461b8531",
+        "description.md": "61481d5c16bc7fc3f83733cf1c8d43e1dfb6d55a305ace7fdde3a3532ab3bb68",
+        "item.json": "d92cafdcd69bbdd9af3d7d41d764f6e449da2e74ed312c1595d6b1866822dc98",
+        "program": "8dd3169abc22d1f2423973438f5142ca1a05ab0e7928e61b61987adf4b0ec2e1",
+        "trust-diff.txt": "7fda7eac9f5d63097da2caccd94b421ed611ae37f9f01278cefdc5a1e982ae41"
+      }
+    },
+    "i21": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i21",
+      "sha256": {
+        "change.patch": "c8990f5fb2ed590df61c7dcd195aff17430cf93a64cde8eb150de02c73aaf680",
+        "description.md": "084174efd2079b72c5f18ecf0fdc160838a2cda1eda5c0e4166677460d6c330b",
+        "item.json": "4b99777cfbd62f778121837a68da24897f16770aa72c5e33cff721c9b50ccb4a",
+        "program": "a352f6bb3451931e165e3233e56fb41d21c8e818b5baf8cdbecbbbc5201a31ac",
+        "trust-diff.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "i22": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i22",
+      "sha256": {
+        "change.patch": "df3e344f80928a4c553d7c56af1475cfed79059ece6e61dc750fed5931ad329e",
+        "description.md": "738d56a9a3b7afeccf6e78d173a59703834023e4578f81177539cae99dcee220",
+        "item.json": "1afd6dfc0431e7287fb373eb9c4b64d64e2a94a549dd6de31b761123d737b8ce",
+        "program": "bb019c4af89f53239f23b579d8cacf0f5bb276d914b65c73b273bfbedc500547",
+        "trust-diff.txt": "7e2f7056c6cf21e2fb347407e4ad25ef64f8eb7caa0a5e6cd2dd42e1102ef947"
+      }
+    },
+    "i23": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i23",
+      "sha256": {
+        "change.patch": "f78fd399be8a62c2ee7c4661f8bd1533191daec220aa9fd29fb50d185555d1b0",
+        "description.md": "b0f7f873c27f342da0af9ccf136efe4e810d6d8a6c8875dc8716e000ea313107",
+        "item.json": "d3f96f46096443512acf3d6d7d048f54840c409fe92acd9f0d104905ab7e82d8",
+        "program": "1d39f6a3bd413bcbce4a0530b5b204a13eb8ff4beeb9cb97e6663555f95fca61",
+        "trust-diff.txt": "e168415efcbc7d4832eb58ba6b73a233aa0e6af6ce70befbfe92c404644f1540"
+      }
+    },
+    "i24": {
+      "dir": "/mnt/build/eon-agents/worktrees/tide-e3-run/trials/e3-pilot/items/i24",
+      "sha256": {
+        "change.patch": "fac65c1470c6ea410445651395b75f0d475deb63d5acd785d7d5d92faae16246",
+        "description.md": "9854ec493aa84f0cfbaa64f3da2cb0a1fd308b70e00f6090aa94bbaf1a6f8e1e",
+        "item.json": "bcad6b165f38fd58ae9351f5df7f2bdea40a6f3fdc6ad96f4a919ec2713171b9",
+        "program": "0add7f9c1145e8f8e0e8cca2efe9e39272d0101dbdb2b772b6d6ede94daab6b4",
+        "trust-diff.txt": "0af69c5ba482fd4a1e30b893d69c078aa25de9ad973f3d9703376774dae4e541"
+      }
+    }
+  },
+  "prompt_sha256": {
+    "adjudicate.md": "bdc8f62ee2c34a502c40c050f0af3a12982fc83be2705df9a5b07cb34e491526",
+    "review.md": "014280583c7d17088d2279444da7594739af2176e0c5d1c1f5721df5c3da6e11",
+    "trust.md": "8421277b50210b9a58432f8032f0e2d344a745eed5548e3cca438eda4a5993b3"
+  },
+  "replicates": 3,
+  "revision": "179b3180f7d178c77b3d69323ed8d3f7854247cf",
+  "schema": "tide-e3-schedule/4",
+  "seed": 20261117,
+  "sessions": [
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "opus",
+      "n": 1,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "opus",
+      "n": 2,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "opus",
+      "n": 3,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "opus",
+      "n": 4,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "opus",
+      "n": 5,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "opus",
+      "n": 6,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "sol",
+      "n": 7,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "opus",
+      "n": 8,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "opus",
+      "n": 9,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "opus",
+      "n": 10,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "opus",
+      "n": 11,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "sol",
+      "n": 12,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "sol",
+      "n": 13,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "opus",
+      "n": 14,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "sol",
+      "n": 15,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "opus",
+      "n": 16,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "opus",
+      "n": 17,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "opus",
+      "n": 18,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "opus",
+      "n": 19,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "opus",
+      "n": 20,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "sol",
+      "n": 21,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "opus",
+      "n": 22,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "opus",
+      "n": 23,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "sol",
+      "n": 24,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "opus",
+      "n": 25,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "sol",
+      "n": 26,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "opus",
+      "n": 27,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "opus",
+      "n": 28,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "opus",
+      "n": 29,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "sol",
+      "n": 30,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "opus",
+      "n": 31,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "sol",
+      "n": 32,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "sol",
+      "n": 33,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "opus",
+      "n": 34,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "sol",
+      "n": 35,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "opus",
+      "n": 36,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "opus",
+      "n": 37,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "opus",
+      "n": 38,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "opus",
+      "n": 39,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "sol",
+      "n": 40,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "sol",
+      "n": 41,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "sol",
+      "n": 42,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "opus",
+      "n": 43,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "opus",
+      "n": 44,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "opus",
+      "n": 45,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "sol",
+      "n": 46,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "opus",
+      "n": 47,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "opus",
+      "n": 48,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "opus",
+      "n": 49,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "opus",
+      "n": 50,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "sol",
+      "n": 51,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "opus",
+      "n": 52,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "sol",
+      "n": 53,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "sol",
+      "n": 54,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "opus",
+      "n": 55,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "opus",
+      "n": 56,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "sol",
+      "n": 57,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "sol",
+      "n": 58,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "opus",
+      "n": 59,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "opus",
+      "n": 60,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "sol",
+      "n": 61,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "opus",
+      "n": 62,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "sol",
+      "n": 63,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "opus",
+      "n": 64,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "opus",
+      "n": 65,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "sol",
+      "n": 66,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "opus",
+      "n": 67,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "opus",
+      "n": 68,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "sol",
+      "n": 69,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "opus",
+      "n": 70,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "opus",
+      "n": 71,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "opus",
+      "n": 72,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "sol",
+      "n": 73,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "opus",
+      "n": 74,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "opus",
+      "n": 75,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "opus",
+      "n": 76,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "sol",
+      "n": 77,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "opus",
+      "n": 78,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "opus",
+      "n": 79,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "sol",
+      "n": 80,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "sol",
+      "n": 81,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "sol",
+      "n": 82,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "opus",
+      "n": 83,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "opus",
+      "n": 84,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "sol",
+      "n": 85,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "sol",
+      "n": 86,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "sol",
+      "n": 87,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "sol",
+      "n": 88,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "opus",
+      "n": 89,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "opus",
+      "n": 90,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "opus",
+      "n": 91,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "sol",
+      "n": 92,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "opus",
+      "n": 93,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "sol",
+      "n": 94,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "sol",
+      "n": 95,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "sol",
+      "n": 96,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "opus",
+      "n": 97,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "sol",
+      "n": 98,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "sol",
+      "n": 99,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "opus",
+      "n": 100,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "sol",
+      "n": 101,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "sol",
+      "n": 102,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "sol",
+      "n": 103,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "sol",
+      "n": 104,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "sol",
+      "n": 105,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "sol",
+      "n": 106,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "sol",
+      "n": 107,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "opus",
+      "n": 108,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "sol",
+      "n": 109,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "opus",
+      "n": 110,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "opus",
+      "n": 111,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "sol",
+      "n": 112,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "sol",
+      "n": 113,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "opus",
+      "n": 114,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "opus",
+      "n": 115,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "opus",
+      "n": 116,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "opus",
+      "n": 117,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "sol",
+      "n": 118,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "sol",
+      "n": 119,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "opus",
+      "n": 120,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i09",
+      "model": "sol",
+      "n": 121,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "sol",
+      "n": 122,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "opus",
+      "n": 123,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "opus",
+      "n": 124,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "sol",
+      "n": 125,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "opus",
+      "n": 126,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "sol",
+      "n": 127,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "sol",
+      "n": 128,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "opus",
+      "n": 129,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "opus",
+      "n": 130,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "opus",
+      "n": 131,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "sol",
+      "n": 132,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "opus",
+      "n": 133,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "sol",
+      "n": 134,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "opus",
+      "n": 135,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "opus",
+      "n": 136,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "sol",
+      "n": 137,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "sol",
+      "n": 138,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "opus",
+      "n": 139,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "sol",
+      "n": 140,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "opus",
+      "n": 141,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "sol",
+      "n": 142,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "sol",
+      "n": 143,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "opus",
+      "n": 144,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "opus",
+      "n": 145,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "opus",
+      "n": 146,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "sol",
+      "n": 147,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "opus",
+      "n": 148,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "sol",
+      "n": 149,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "opus",
+      "n": 150,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "opus",
+      "n": 151,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "sol",
+      "n": 152,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "sol",
+      "n": 153,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "sol",
+      "n": 154,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "opus",
+      "n": 155,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i01",
+      "model": "sol",
+      "n": 156,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "opus",
+      "n": 157,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "opus",
+      "n": 158,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "sol",
+      "n": 159,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "sol",
+      "n": 160,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i13",
+      "model": "sol",
+      "n": 161,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "opus",
+      "n": 162,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "opus",
+      "n": 163,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "sol",
+      "n": 164,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "sol",
+      "n": 165,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "sol",
+      "n": 166,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "sol",
+      "n": 167,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "opus",
+      "n": 168,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "sol",
+      "n": 169,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "opus",
+      "n": 170,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "opus",
+      "n": 171,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "opus",
+      "n": 172,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "sol",
+      "n": 173,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "opus",
+      "n": 174,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "sol",
+      "n": 175,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "sol",
+      "n": 176,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "sol",
+      "n": 177,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "opus",
+      "n": 178,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "sol",
+      "n": 179,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "opus",
+      "n": 180,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "opus",
+      "n": 181,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "opus",
+      "n": 182,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i11",
+      "model": "sol",
+      "n": 183,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "sol",
+      "n": 184,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i05",
+      "model": "opus",
+      "n": 185,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "opus",
+      "n": 186,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "opus",
+      "n": 187,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "opus",
+      "n": 188,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "sol",
+      "n": 189,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "sol",
+      "n": 190,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "sol",
+      "n": 191,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "sol",
+      "n": 192,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "sol",
+      "n": 193,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "opus",
+      "n": 194,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "sol",
+      "n": 195,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "sol",
+      "n": 196,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "opus",
+      "n": 197,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "opus",
+      "n": 198,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "sol",
+      "n": 199,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "opus",
+      "n": 200,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "sol",
+      "n": 201,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "sol",
+      "n": 202,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "opus",
+      "n": 203,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "sol",
+      "n": 204,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "sol",
+      "n": 205,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "sol",
+      "n": 206,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i23",
+      "model": "opus",
+      "n": 207,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "sol",
+      "n": 208,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "sol",
+      "n": 209,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "opus",
+      "n": 210,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "opus",
+      "n": 211,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i22",
+      "model": "opus",
+      "n": 212,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "sol",
+      "n": 213,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "opus",
+      "n": 214,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "opus",
+      "n": 215,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i16",
+      "model": "sol",
+      "n": 216,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "opus",
+      "n": 217,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "sol",
+      "n": 218,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i23",
+      "model": "sol",
+      "n": 219,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i15",
+      "model": "opus",
+      "n": 220,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "sol",
+      "n": 221,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "opus",
+      "n": 222,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i14",
+      "model": "sol",
+      "n": 223,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "opus",
+      "n": 224,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i15",
+      "model": "sol",
+      "n": 225,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "opus",
+      "n": 226,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i01",
+      "model": "sol",
+      "n": 227,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "opus",
+      "n": 228,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "sol",
+      "n": 229,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "sol",
+      "n": 230,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "sol",
+      "n": 231,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "opus",
+      "n": 232,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "sol",
+      "n": 233,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "sol",
+      "n": 234,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i07",
+      "model": "opus",
+      "n": 235,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "sol",
+      "n": 236,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "sol",
+      "n": 237,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i12",
+      "model": "sol",
+      "n": 238,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "opus",
+      "n": 239,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "opus",
+      "n": 240,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i17",
+      "model": "opus",
+      "n": 241,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "sol",
+      "n": 242,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "sol",
+      "n": 243,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "opus",
+      "n": 244,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i10",
+      "model": "sol",
+      "n": 245,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i02",
+      "model": "opus",
+      "n": 246,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "sol",
+      "n": 247,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i21",
+      "model": "sol",
+      "n": 248,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i20",
+      "model": "sol",
+      "n": 249,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "sol",
+      "n": 250,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "opus",
+      "n": 251,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i18",
+      "model": "sol",
+      "n": 252,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "sol",
+      "n": 253,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "sol",
+      "n": 254,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "opus",
+      "n": 255,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "sol",
+      "n": 256,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i18",
+      "model": "opus",
+      "n": 257,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i04",
+      "model": "opus",
+      "n": 258,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i22",
+      "model": "opus",
+      "n": 259,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i11",
+      "model": "sol",
+      "n": 260,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i06",
+      "model": "sol",
+      "n": 261,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "sol",
+      "n": 262,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i02",
+      "model": "opus",
+      "n": 263,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i24",
+      "model": "sol",
+      "n": 264,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i21",
+      "model": "sol",
+      "n": 265,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i19",
+      "model": "sol",
+      "n": 266,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i20",
+      "model": "sol",
+      "n": 267,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i03",
+      "model": "opus",
+      "n": 268,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i10",
+      "model": "sol",
+      "n": 269,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i09",
+      "model": "opus",
+      "n": 270,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "opus",
+      "n": 271,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i13",
+      "model": "sol",
+      "n": 272,
+      "replicate": 2
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "sol",
+      "n": 273,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i19",
+      "model": "opus",
+      "n": 274,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i08",
+      "model": "sol",
+      "n": 275,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "opus",
+      "n": 276,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i06",
+      "model": "opus",
+      "n": 277,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i24",
+      "model": "sol",
+      "n": 278,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i16",
+      "model": "sol",
+      "n": 279,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i05",
+      "model": "opus",
+      "n": 280,
+      "replicate": 3
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "sol",
+      "n": 281,
+      "replicate": 2
+    },
+    {
+      "arm": "plain",
+      "item": "i14",
+      "model": "sol",
+      "n": 282,
+      "replicate": 3
+    },
+    {
+      "arm": "trust",
+      "item": "i12",
+      "model": "opus",
+      "n": 283,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i03",
+      "model": "opus",
+      "n": 284,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i04",
+      "model": "sol",
+      "n": 285,
+      "replicate": 1
+    },
+    {
+      "arm": "trust",
+      "item": "i08",
+      "model": "sol",
+      "n": 286,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i07",
+      "model": "opus",
+      "n": 287,
+      "replicate": 1
+    },
+    {
+      "arm": "plain",
+      "item": "i17",
+      "model": "sol",
+      "n": 288,
+      "replicate": 1
+    }
+  ]
+}

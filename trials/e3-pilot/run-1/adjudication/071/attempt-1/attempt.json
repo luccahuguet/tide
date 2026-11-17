@@ -1,0 +1,115 @@
+{
+  "argv": [
+    "/nix/store/qx0n0mss4z9hlv0lvpvpp12x6ghdiscg-claude-code-2.1.325/bin/claude",
+    "-p",
+    "--model",
+    "claude-opus-5-5",
+    "--effort",
+    "high",
+    "--restricted",
+    "--tools",
+    "",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--permission-mode",
+    "dontAsk",
+    "--disable-slash-commands",
+    "--settings",
+    "{\"disableAllHooks\":true,\"enabledPlugins\":{\"cc-plugin-agents-md@builtin\":false,\"cc-plugin-plugin-authoring@builtin\":false,\"cc-plugin-privacy@builtin\":false,\"cc-plugin-telemetry@builtin\":false}}",
+    "--no-session-persistence",
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ],
+  "cli": "/nix/store/qx0n0mss4z9hlv0lvpvpp12x6ghdiscg-claude-code-2.1.325/bin/claude",
+  "cli_sha256": "8b3f0c23bc8295ff90f1f72d67fbfb6ac472c24f840e49cc9e9f835f221ccd6b",
+  "cli_version": "2.1.325 (Claude Code)",
+  "detail": "",
+  "env": [
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+    "CLAUDE_CODE_DISABLE_CLAUDE_MDS",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    "DISABLE_AUTOUPDATER",
+    "E3_ATTEMPT",
+    "ENABLE_CLAUDEAI_MCP_SERVERS",
+    "HOME",
+    "LANG",
+    "NIX_SSL_CERT_FILE",
+    "PATH",
+    "TMPDIR",
+    "USER",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME"
+  ],
+  "exit": 0,
+  "login": "none",
+  "observed_models": [
+    "claude-opus-5-5"
+  ],
+  "requested_model": "claude-opus-5-5",
+  "result": "verdict",
+  "seconds": 4.752775719,
+  "started": 1794909554.0756402,
+  "usage": {
+    "modelUsage": {
+      "claude-opus-5-5": {
+        "cacheCreationEphemeral1hInputTokens": 3604,
+        "cacheCreationEphemeral5mInputTokens": 0,
+        "cacheCreationInputTokens": 3604,
+        "cacheReadInputTokens": 1630,
+        "canonicalModel": "claude-opus-5-5",
+        "contextWindow": 1000000,
+        "costBasis": "list",
+        "costUSD": 0.032186,
+        "inputTokens": 2,
+        "maxOutputTokens": 128000,
+        "outputTokens": 151,
+        "provider": "firstParty",
+        "thinkingTokens": 0,
+        "webSearchRequests": 0
+      }
+    },
+    "usage": {
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 3604,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "cache_creation_input_tokens": 3604,
+      "cache_read_input_tokens": 1630,
+      "fallback_credit": null,
+      "inference_geo": "global",
+      "input_tokens": 2,
+      "iterations": [
+        {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 3604,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 3604,
+          "cache_read_input_tokens": 1630,
+          "input_tokens": 2,
+          "output_tokens": 151,
+          "type": "message"
+        }
+      ],
+      "output_tokens": 151,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "server_tool_use": {
+        "web_fetch_requests": 0,
+        "web_search_requests": 0
+      },
+      "service_tier": "standard",
+      "speed": "standard"
+    }
+  },
+  "verdict": {
+    "identifies": true,
+    "reason": "The finding names filesystem authority used by `exchange` to write a transcript file on disk, which is the undescribed filesystem capability `log` that the M1 piece adds."
+  }
+}
