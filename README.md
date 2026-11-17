@@ -78,7 +78,9 @@ every declaration (`crates/tide-admit/tests/examples.rs`).
 `benchmarks/` holds four workloads, each a Tide program and a plain-Rust twin
 with the same output, for the benchmark against plain Rust; no measurements
 are published yet. `cargo test --workspace` checks that both arms of each pair
-print the same output (`crates/tide-admit/tests/benchmarks.rs`).
+print the same output (`crates/tide-admit/tests/benchmarks.rs`), and
+`cargo bench -p tide-admit --bench pairs` builds and times them under Tide's
+and plain Rust's configurations (`benchmarks/README.md`).
 
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a

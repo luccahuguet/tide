@@ -104,5 +104,113 @@ rustc --edition=2024 -O -o tcp-rust benchmarks/tcp/rust.rs
 ```
 
 A Tide arm also needs the production std built first and the driver's flags
-(`crates/tide-admit/tests/support/admitted.rs` shows both). The rerun script
-of bead `fx-6u8m.6` will be the supported way to build and time both arms.
+(`crates/tide-admit/tests/support/admitted.rs` shows both). The rerun tool
+below is the supported way to build and time both arms.
+
+## Rerunning the benchmark
+
+```sh
+cargo bench -p tide-admit --bench pairs -- [--quick] [--out DIR] [--pair NAME]...
+```
+
+The rerun tool (`crates/tide-admit/benches/pairs.rs`) builds every pair under
+each configuration below, runs each built program, and writes one raw record
+per measurement. It is a `harness = false` bench target of the driver's
+package, so it builds Tide arms with the equivalence check's helpers and Cargo
+builds the driver optimized, as rustc itself is. It runs only when named with
+`--bench pairs`: a plain `cargo bench`, `--benches`, `--all-targets`, and
+`cargo test` never start a measurement (`cargo test` type-checks it as a
+module of the equivalence check and tests its output check). It needs rustup
+with the `stable` toolchain installed, for the `stable-release` arm, and
+checks for it before it creates anything.
+
+| Configuration | Compiler | Flags |
+| --- | --- | --- |
+| `tide-debug` | the driver, std built in Cargo's dev profile | `--tide-profile=debug` |
+| `tide-release` | the driver, std built in Cargo's release profile | `--tide-profile=release` |
+| `rust-debug` | the pinned nightly's rustc | Cargo's dev profile's code generation: `-Copt-level=0 -Cdebuginfo=2`, debug assertions and overflow checks on |
+| `rust-release` | the pinned nightly's rustc | Cargo's release profile's code generation: `-Copt-level=3`, debug assertions and overflow checks off |
+| `rust-release-tide-flags` | the pinned nightly's rustc | `rust-release` with the flags the driver adds in every profile: `-Coverflow-checks=on -Zinline-mir=no -Zcross-crate-inline-threshold=never -Zshare-generics=no` |
+| `stable-release` | the stable toolchain's rustc (`rustup run stable`) | as `rust-release`; for information only |
+
+Every Rust arm also passes `--edition=2024`, and the tool runs each rustc from
+its toolchain's sysroot, not through rustup's proxy. Cargo's own codegen-unit
+count and incremental mode do not apply: like the driver, rustc runs
+non-incrementally with its default codegen units. Some differences stay
+inside the Tide arms' numbers, since no configuration separates them:
+
+- the linker: the driver links with `/usr/bin/cc` and the system `ld`, with
+  rustc's bundled linker disabled (`invocation.rs`), while rustc on the
+  current pins links through `cc` with its bundled `rust-lld`;
+- the std: Tide's std is built by Cargo in the arm's profile and its
+  non-generic code runs at that optimization level and with that profile's
+  checks, and in `tide-debug` its debug information adds to the link, while
+  Rust's std is always the toolchain's optimized build.
+
+What it measures, for each pair and configuration:
+
+- build: the wall time and peak resident memory of the compiler process. A
+  build runs in a new directory, so the driver's build cache never hits; a Tide
+  build's time still includes the driver's re-executed compile child and its
+  writes to that cache, Tide's real cost for a cold build. Peak
+  memory comes from `wait4` (`benches/support/peak_rss.rs`) and is the
+  largest peak among the process and the descendants it waits for: the
+  driver's compile child and the linker, not their sum.
+- run: the wall time, including `timeout`'s own start, of the built program
+  at its timed size (the table in
+  `pairs.rs`, `TIMED`: chosen so the release arms run for about 0.5-2 s), in
+  a new empty directory, under `timeout` with a 120 s limit. Its peak memory
+  is recorded too and includes `timeout`'s own, about 2.4 MiB. Every
+  configuration's output must equal `tide-debug`'s, or the tool writes an
+  `error` record and stops.
+
+The method is fx-ayxr's: rounds interleave the configurations (each round
+measures each configuration once, in table order, so two arms run A B A B).
+A full run measures a pair's builds, then its runs, in 5 rounds each, and adds
+5 rounds while any configuration's wall times have a coefficient of variation
+over 1%, up to 30 rounds. It reports the median, the CV, and the median peak
+memory of each series. A series still over 1% at 30 rounds keeps its records
+and is marked unstable in its summary record and in the closing line.
+
+`--quick` measures one round at each program's small default size, for
+checking the tool only. `--out` names a new or empty directory, as an absolute
+path (Cargo runs the tool in the package's directory); by default each run
+writes to a new directory under `<target dir>/tmp/bench-pairs/results/`
+(`target/` unless `CARGO_TARGET_DIR` is set), which is
+never committed. `--pair` limits a run to the pairs it names. A failed build
+or run, or a run whose output differs, stops the tool with exit status 1,
+after its record is written.
+
+The results directory holds `records.jsonl`, one JSON object per line, and
+`bin/<pair>/<configuration>`, the built programs. Each object's `record` field
+names its kind:
+
+- `header`, first: mode, start time, git revision and whether the tree is
+  dirty, CPU model and count, kernel, load average, the process's nice value,
+  the directory the runs use, the path, `rustc -vV`, and default linker (from
+  the target spec) of the pinned and the stable compiler, the driver's path,
+  `cc` and `ld` versions, the round settings, the sizes, and each configuration's compiler,
+  std profile, and flags;
+- `build` and `run`, one per measurement: pair, configuration, round, size
+  (runs), `wall_s`, `peak_rss_kib`, and `exit`, plus the tail of standard
+  error when the process failed;
+- `summary`, per pair, phase, and configuration: `n`, `median_s`, `cv`,
+  `median_peak_rss_kib`, and `stable` (null in a quick run);
+- `error`, on an output mismatch: pair, configuration, round, the run's
+  `exit`, the reference configuration, and the tails of the expected and the
+  actual output;
+- `end`: finish time and load average, written only when every measurement
+  succeeded. A dataset without `end` is incomplete (a failure or an
+  interruption) and is not a result.
+
+A full run on the 2026-11-17 machine (16 threads) takes about 50 s per round
+over all four pairs, so about 5 minutes when every series settles at 5 rounds
+and about 25 minutes at the cap, plus the std builds and, the first time, the
+optimized driver build. In this repository's agent setup it runs through
+`heavy.sh` in a booked quiet slot (`AGENTS.md`, Heavy runs), for example:
+
+```sh
+bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4 \
+  CARGO_TARGET_DIR=... TMPDIR=.../tmp timeout 3600 \
+  cargo bench -p tide-admit --bench pairs -- --out /abs/results/dir </dev/null
+```

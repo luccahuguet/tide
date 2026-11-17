@@ -10,5 +10,13 @@ license.workspace = true
 # RUN-3's sandbox: raw Landlock, seccomp, and process-setup calls (`invocation/sandbox.rs`).
 libc = "=0.2.191"
 
+# The benchmark rerun tool (fx-6u8m.6, benchmarks/README.md). It runs only when named
+# (`--bench pairs`), never under a plain `cargo bench`, `--benches`, or `--all-targets`, nor under
+# `cargo test`; `tests/benchmarks.rs` includes it as a module, so the suite type-checks it.
+[[bench]]
+name = "pairs"
+harness = false
+bench = false
+
 [package.metadata.rust-analyzer]
 rustc_private = true

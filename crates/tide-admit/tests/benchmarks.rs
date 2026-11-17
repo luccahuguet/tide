@@ -14,6 +14,12 @@ use std::process::Output;
 #[path = "support/admitted.rs"]
 mod admitted;
 use admitted::{checked, driver, package, plain_rustc, stderr, timed};
+// The rerun tool, so this suite type-checks it and tests its untimed parts (its statistics, the
+// peak-RSS wrapper, `check_output`, and `close`); never its `main` or a measurement.
+#[path = "../benches/pairs.rs"]
+#[allow(dead_code)]
+mod pairs;
+use pairs::{peak_rss, stats};
 
 /// The pairs whose Tide arm also has the simulated run, `tests::simulated`.
 const SIMULATED: [&str; 1] = ["tasks"];
@@ -218,4 +224,112 @@ fn discovery_never_loses_a_pair_or_skips_a_source() {
         let got = pairs_in(&layout(case, extra, less));
         assert!(got.is_err(), "{case}: accepted {got:?}");
     }
+}
+
+/// The rerun tool's memory measure reports the largest process of the tree it waits for: here
+/// `dd`, a child of the measured shell, filling a 64 MiB buffer.
+#[test]
+fn peak_rss_covers_the_measured_process_tree() {
+    let measured = peak_rss::measure(std::process::Command::new("sh").args([
+        "-c",
+        "dd if=/dev/zero of=/dev/null bs=64M count=1 2>/dev/null; true",
+    ]))
+    .unwrap();
+    assert!(measured.status.success(), "{}", stderr_of(&measured));
+    assert!(
+        measured.peak_rss_kib >= 64 * 1024,
+        "peak RSS {} KiB",
+        measured.peak_rss_kib
+    );
+}
+
+fn stderr_of(measured: &peak_rss::Measured) -> String {
+    String::from_utf8_lossy(&measured.stderr).into_owned()
+}
+
+#[test]
+fn rerun_statistics_median_and_cv() {
+    assert_eq!(stats::median(&[]), None);
+    assert_eq!(stats::median(&[3.0, 1.0, 2.0]), Some(2.0));
+    assert_eq!(stats::median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
+    assert_eq!(stats::cv(&[5.0]), None);
+    assert_eq!(stats::cv(&[0.0, 0.0]), None);
+    assert_eq!(stats::cv(&[2.0, 2.0, 2.0]), Some(0.0));
+    // Mean 10, sample standard deviation 1.
+    let cv = stats::cv(&[9.0, 10.0, 11.0]).unwrap();
+    assert!((cv - 0.1).abs() < 1e-12, "{cv}");
+    assert!(stats::stable(&[1.0, 1.01]));
+    assert!(!stats::stable(&[1.0, 1.1]));
+    assert!(!stats::stable(&[1.0]));
+}
+
+#[test]
+fn rounds_rise_while_any_series_varies_and_stop_at_the_cap() {
+    let steady = vec![1.0, 1.0, 1.0, 1.0, 1.0];
+    let noisy = vec![1.0, 1.2, 1.0, 1.2, 1.0];
+    assert_eq!(
+        stats::more_rounds(&[steady.clone(), steady.clone()], 5, 5, 20),
+        0
+    );
+    assert_eq!(
+        stats::more_rounds(&[steady.clone(), noisy.clone()], 5, 5, 20),
+        5
+    );
+    assert_eq!(stats::more_rounds(&[noisy.clone()], 18, 5, 20), 2);
+    // At the cap it stops though the series still varies: the caller marks it unstable.
+    assert_eq!(stats::more_rounds(&[noisy], 20, 5, 20), 0);
+}
+
+#[test]
+fn rounds_interleave_the_arms() {
+    assert_eq!(
+        stats::interleaved(2, 0..2),
+        [(0, 0), (0, 1), (1, 0), (1, 1)],
+        "two arms run A B A B"
+    );
+    assert_eq!(stats::interleaved(3, 5..6), [(5, 0), (5, 1), (5, 2)]);
+    assert!(stats::interleaved(3, 2..2).is_empty());
+}
+
+#[test]
+fn json_strings_escape_quotes_backslashes_and_controls() {
+    assert_eq!(
+        stats::json_string("rustc \"1\"\\\nhost:\tx\u{1}"),
+        r#""rustc \"1\"\\\nhost:\tx\u0001""#
+    );
+}
+
+/// A run whose output differs from the pair's first run leaves an `error` record naming it, with
+/// its exit status and both outputs' tails, and the records get no `end`; a complete
+/// measurement gets one.
+#[test]
+fn an_output_mismatch_is_recorded_and_leaves_the_dataset_without_end() {
+    let run = |config, stdout: &'static [u8]| pairs::Run {
+        pair: "tcp",
+        config,
+        round: 3,
+        exit: "0",
+        stdout,
+    };
+    let mut records = Vec::new();
+    let mut expected = None;
+    for config in ["tide-debug", "rust-debug"] {
+        pairs::check_output(&mut records, run(config, b"same\n"), &mut expected).unwrap();
+    }
+    assert!(records.is_empty());
+    let failed = pairs::check_output(&mut records, run("rust-release", b"other\n"), &mut expected);
+    assert!(pairs::close(&mut records, failed).is_err());
+    let text = String::from_utf8(records).unwrap();
+    assert_eq!(text.lines().count(), 1, "{text}");
+    for field in [
+        r#"{"record":"error","error":"output mismatch""#,
+        r#""pair":"tcp","config":"rust-release","round":3,"exit":0"#,
+        r#""expected_tail":"same\n","actual_tail":"other\n""#,
+    ] {
+        assert!(text.contains(field), "no {field} in {text}");
+    }
+    let mut complete = Vec::new();
+    pairs::close(&mut complete, Ok(())).unwrap();
+    let complete = String::from_utf8(complete).unwrap();
+    assert!(complete.starts_with(r#"{"record":"end","#), "{complete}");
 }

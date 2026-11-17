@@ -26,7 +26,7 @@ fn std_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = tmp().join("std");
-        support::build_std(&dir)
+        support::build_std(&dir, false)
     })
 }
 

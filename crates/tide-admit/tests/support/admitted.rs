@@ -1,12 +1,15 @@
 //! Builds programs through the admission driver against production std, for the test files that
-//! run admitted programs (`build.rs`, `examples.rs`, `benchmarks.rs`), and the two helpers
-//! more than one of them uses to build or run programs outside the driver.
+//! run admitted programs (`build.rs`, `examples.rs`, `benchmarks.rs`) and the benchmark rerun
+//! tool (`benches/pairs.rs`), and the two helpers more than one of them uses to build or run
+//! programs outside the driver.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
 
 #[path = "../../../tide-std/tests/support/mod.rs"]
 mod support;
+#[allow(unused_imports)] // Only the rerun tool builds std into a directory of its own.
+pub use support::build_std;
 
 pub fn checked(command: &mut Command) -> Output {
     let output = command.stdin(Stdio::null()).output().unwrap();
@@ -27,7 +30,7 @@ pub fn std_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("build/std");
-        support::build_std(&dir)
+        support::build_std(&dir, false)
     })
 }
 
@@ -41,8 +44,14 @@ pub fn package(name: &str, source: &str) -> PathBuf {
     dir
 }
 
+#[allow(dead_code)] // The rerun tool chooses its std with `driver_with`.
 pub fn driver(dir: &Path) -> Command {
-    let std = std_dir();
+    driver_with(std_dir(), dir)
+}
+
+/// The driver building `dir/package/src/demo.rs` into `dir/out` against the std that
+/// `build_std` flattened into `std`.
+pub fn driver_with(std: &Path, dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tide-admit"));
     command
         .args(["--crate-type=bin", "--emit=link"])

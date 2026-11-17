@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// Build the pinned production std and flatten its artifacts for direct rustc/driver consumers.
+/// Build the pinned production std, in Cargo's release profile when `release` is set and its dev
+/// profile otherwise, and flatten its artifacts for direct rustc/driver consumers.
 /// Cargo's dependency directories differ between the supported toolchains. The build is
 /// hermetic (cleared environment, `--frozen`, absolute `RUSTC`); keep it that way.
-pub fn build_std(dir: &Path) -> PathBuf {
+pub fn build_std(dir: &Path, release: bool) -> PathBuf {
     let compiler = Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["--print", "sysroot"])
@@ -38,6 +39,7 @@ pub fn build_std(dir: &Path) -> PathBuf {
                 .unwrap()
                 .join("tide-std/Cargo.toml"),
         )
+        .args(release.then_some("--release"))
         .arg("--target-dir")
         .arg(dir)
         .stdin(Stdio::null())
