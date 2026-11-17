@@ -10,12 +10,19 @@ verdict, so the corpus compares the two checkers (`design/02-memory.md` §11).
 ## Running
 
 ```
-conformance/run.sh [case ...]   # check cases (default: all of cases/)
-conformance/run.sh --trace      # each rule in rules.md and the cases that name it
+cargo run -p tide-conformance                    # check every case in cases/
+cargo run -p tide-conformance -- case ...        # check the cases named
+cargo run -p tide-conformance -- --trace         # each rule in rules.md and the cases that name it
 ```
 
+The runner is the workspace binary `crates/tide-conformance`. The full corpus
+takes minutes, so it is a suite of its own, not part of `cargo test
+--workspace`; that suite tests the runner itself on a copied case. The runner
+starts each toolchain with `rustup run`: `stable` for stable rustc, and the
+channel the root `rust-toolchain.toml` pins for the driver.
+
 By default, the driver builds in the repository's `target/`, the stable
-oracle stub std in `conformance/target/`, the pinned-nightly stub std in
+rustc stub std in `conformance/target/`, the pinned-nightly stub std in
 `conformance/target/admit/`, and case outputs in `conformance/target/conformance/`.
 Set `CARGO_TARGET_DIR` to place the driver build there and use its
 `conformance/` subdirectory instead of `conformance/target/` for both stub
@@ -40,8 +47,13 @@ those codes, with their severity, are the union of the two runs. Library-only li
 to the library build, not its executable test harness. It needs an x86_64 host
 (`authority/admit_hardware` names `core::arch::x86_64`), stable rustc and cargo
 1.96, the nightly that the root `rust-toolchain.toml` pins with `rustc-dev`,
-and the crates in `rustc/std/Cargo.lock`, offline. It prints one line per
-case:
+and the crates in `rustc/std/Cargo.lock`, offline. When it checks
+`authority/float_math`, it also runs the independent oracle
+[`oracles/float_math.py`](oracles/float_math.py) with `/usr/bin/python3 -I`,
+isolated from `PYTHON*` variables such as `PYTHONOPTIMIZE`, which would strip
+its asserts; it loads the system MPFR (`libmpfr.so.6`) and checks that the case's
+generated section matches its own output. It prints one line per case, then
+the count of each verdict:
 
 - `PASS`: rustc's errors match the case's rustc marks, the driver's diagnostics
   match its marks in the driver's codes, and the case has no other `TD`
@@ -54,10 +66,13 @@ case:
   rejects one that neither does, or it crashes (exits with a status other
   than 0 or 1, or panics; the driver's output follows); or the case
   is malformed (no rule line, an ID not in `rules.md`, a malformed mark, an
-  unknown `//@` line).
+  unknown `//@` line), or, for `authority/float_math`, the float oracle exits
+  with an error (its output follows).
 
-It exits 0 when no case fails, 1 when one does, and 2 on a setup error (the
-stub std or the driver does not build, or `rules.md` lists no IDs).
+It exits 0 when no case fails (`AWAITS CHECKER` counts as passing), 1 when
+one does, and 2 on a setup error: the stub std or the driver does not build,
+`rules.md` lists no IDs, a tool it starts cannot run, or the float oracle
+lacks `/usr/bin/python3` or MPFR.
 
 The runner is the trusted operator: it supplies the nightly stub with
 `--tide-std` and its artifact directories with `--tide-dep-dir`. The driver
@@ -70,7 +85,7 @@ content-addressed cache entries live outside it, under the case output directory
 described above.
 This remains a compile-time stub oracle, without an OS build/test sandbox:
 the stub never runs. Live outside-file and environment canaries belong to
-the driver's integration tests, since the stable oracle would read them.
+the driver's integration tests, since stable rustc would read them.
 
 Only the driver's codes are enforced: in any other code, a wrong `TD` mark
 still awaits the checker, and a missing one can let a case pass. The `TD`

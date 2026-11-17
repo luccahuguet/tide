@@ -128,7 +128,8 @@ error: aborting due to 2 previous errors
   The message's suggested fix is shown here because it is part of the
   one-line error itself.
 - The `//~ TD0206` comments in the files are the corpus's expected verdicts.
-  `conformance/run.sh` checks every case against them.
+  The conformance runner (`cargo run -p tide-conformance`) checks every case
+  against them.
 
 ## Read the code
 

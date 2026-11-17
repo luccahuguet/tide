@@ -1,7 +1,7 @@
 //! Programs built against Tide's std injected as `std` (`--extern std=`), as the admission driver
 //! injects it, and run: the entry `#[tide::main]` generates, what the sinks write, and what a
 //! program's result and panics do to its exit status. rustc alone builds them; admission is the
-//! driver's (`conformance/run.sh`).
+//! driver's, which the conformance runner (`crates/tide-conformance`) checks.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};

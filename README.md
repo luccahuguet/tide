@@ -130,9 +130,14 @@ proof status. The root Cargo workspace builds the driver with the nightly
 that `rust-toolchain.toml` pins, with the `rustc-dev` component:
 
 ```
-cargo test --workspace   # the driver's, Tide's std's, and the demo's tests
-conformance/run.sh       # the conformance corpus, through stable rustc and the driver
+cargo test --workspace          # the driver's, Tide's std's, the demo's, and the runner's tests
+cargo run -p tide-conformance   # the conformance corpus, through stable rustc and the driver
 ```
+
+`cargo test --workspace` and the corpus also need the `stable` toolchain
+(`rustup toolchain install stable`) and `/usr/bin/python3` with MPFR
+(`libmpfr.so.6`; on Debian/Ubuntu, `python3` and `libmpfr6`), which the float
+oracle uses.
 
 The trusted build caller invokes the driver directly, for example:
 

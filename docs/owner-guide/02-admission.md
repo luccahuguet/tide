@@ -156,9 +156,9 @@ cat conformance/cases/authority/cap_ambient.rs
 - Lines 7–9: the same for reading the clock. `E0599` is rustc's "no such
   method".
 
-`conformance/run.sh` runs every case through stable rustc (with the stub
-std) and through the driver, and fails if either verdict differs from the
-marks. 389 such cases
+The conformance runner (`cargo run -p tide-conformance`) runs every case
+through stable rustc (with the stub std) and through the driver, and fails if
+either verdict differs from the marks. 389 such cases
 (on `main` today) are the checker's specification in executable form. To see the cases for one
 rule: `bash -c 'grep -rl "rules: CAP-1" conformance/cases'`.
 
@@ -184,7 +184,7 @@ stays a Rust program.
 
 **How we know it's right:** the conformance corpus runs every case through
 both plain rustc and the driver and compares verdicts with the expected ones.
-In the fx-ip4x landing run on `main`, `conformance/run.sh` reported
+In the fx-ip4x landing run on `main`, the conformance runner, then a shell script, reported
 369 PASS, 3 AWAITS CHECKER, 0 FAIL (372 cases), and `cargo test --workspace`
 passed 342 tests. **AWAITS CHECKER** means rustc's verdict and the driver's
 existing codes match, but the case also expects a code the driver doesn't

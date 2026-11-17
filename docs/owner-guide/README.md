@@ -76,6 +76,10 @@ last, and check that you could give each answer yourself.
 
 You need the x86_64 Linux machine the project lives on, with rustup and the
 pinned toolchain (`rustup toolchain install` in the repository installs it).
+`cargo test --workspace` and the conformance corpus also need the `stable`
+toolchain (`rustup toolchain install stable`) and `/usr/bin/python3` with MPFR
+(`libmpfr.so.6`; on Debian/Ubuntu, `python3` and `libmpfr6`), which the float
+oracle uses.
 Run every command from the repository root.
 
 Build the driver and Tide's std, and run the demo once. The first build takes

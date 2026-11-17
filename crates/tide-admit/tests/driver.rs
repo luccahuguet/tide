@@ -1,6 +1,6 @@
 //! The driver as a crate's build sees it: its exit status and its diagnostics. These run
-//! against Rust's own std, which the allowlist checks like `core`; `conformance/run.sh` runs the
-//! corpus against Tide's std.
+//! against Rust's own std, which the allowlist checks like `core`; the conformance runner
+//! (`crates/tide-conformance`) runs the corpus against Tide's std.
 
 use std::path::PathBuf;
 use std::process::Command;

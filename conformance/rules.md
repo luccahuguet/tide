@@ -4,8 +4,9 @@ Every v0-core normative rule in `design/02-memory.md`,
 `design/03-authority-concurrency.md`, and `design/04-contracts.md` that makes
 rustc or the Tide checker accept, reject, or warn on a program at compile time, taken
 at `a3b0177`, plus runtime rules exercised by cases that also run against
-production std. The chapters own the rules. `run.sh` reads IDs from the first
-column, and `run.sh --trace` gives each ID's cases.
+production std. The chapters own the rules. The runner
+(`cargo run -p tide-conformance`) reads IDs from the first column, and its
+`--trace` gives each ID's cases.
 
 Columns: **ID** is the rule's ID, `none yet`, or `= ID` for a row that
 restates a rule whose ID another chapter defines. **Decided by** is `rustc`
