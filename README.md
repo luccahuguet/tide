@@ -67,6 +67,12 @@ identically, and a patch that widens the service's interface to carry `Net`,
 flagged by the trust diff (`demo/README.md`). `cargo test --workspace` runs it
 too.
 
+`examples/` holds small Tide programs, each with a README on what it shows
+and what the Rust version would need instead. Each program declares its
+outcome (it runs with given output, its tests pass, a test fails, or
+admission rejects it with a named code), and `cargo test --workspace` checks
+every declaration (`crates/tide-admit/tests/examples.rs`).
+
 The v0 checker has started, and its first piece is production code:
 `crates/tide-admit`, the admission driver of D18's architecture A. It is a
 rustc driver that enforces the admission allowlist (ADMIT-1, `TD0520`),

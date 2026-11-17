@@ -2,10 +2,10 @@
 //! test caller executes them. This is not the RUN-3 sandbox or Tide's test runtime.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::OnceLock;
 
-#[path = "../../tide-std/tests/support/mod.rs"]
-mod support;
+#[path = "support/admitted.rs"]
+mod admitted;
+use admitted::{checked, driver, package, std_dir, stderr};
 
 const HELLO: &str = include_str!("../../../conformance/cases/authority/root_executable.rs");
 
@@ -490,49 +490,6 @@ fn contract_const_sampled_test_has_an_explicit_limit() {
     assert!(!stderr(&output).contains("E0015"), "{}", stderr(&output));
     checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-profile=release"]));
     checked(&mut Command::new(dir.join("out/demo-test")));
-}
-
-fn checked(command: &mut Command) -> Output {
-    let output = command.stdin(Stdio::null()).output().unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    output
-}
-
-fn stderr(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
-
-fn std_dir() -> &'static Path {
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("build/std");
-        support::build_std(&dir)
-    })
-}
-
-fn package(name: &str, source: &str) -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join("build")
-        .join(name);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("package/src")).unwrap();
-    std::fs::write(dir.join("package/src/demo.rs"), source).unwrap();
-    dir
-}
-
-fn driver(dir: &Path) -> Command {
-    let std = std_dir();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_tide-admit"));
-    command
-        .args(["--crate-type=bin", "--emit=link"])
-        .arg("--tide-std")
-        .arg(std.join("libtide_std.rlib"))
-        .arg("--tide-dep-dir")
-        .arg(std)
-        .arg("--out-dir")
-        .arg(dir.join("out"))
-        .arg(dir.join("package/src/demo.rs"));
-    command
 }
 
 fn paired_test_driver(dir: &Path) -> Command {
