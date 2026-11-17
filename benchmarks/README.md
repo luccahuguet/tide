@@ -33,13 +33,19 @@ Tide's implementation, and that cost is what the pairs measure:
   `tasks` and the counters in `files` and `tcp`; there is no MIR inlining at
   all, no inferred cross-crate inlining, and generics are instantiated per
   crate. A Rust build with the same flags separates this cost from the rest.
-- `contracts`: in debug and test builds the Tide arm checks its contract
-  clauses; release builds erase them. The cost is concentrated in
-  `insert_sorted`, whose `requires(xs.is_sorted())` and
-  `ensures(xs.is_sorted())` each scan the vector, on an insert that is itself
-  linear, so they roughly triple that function's cost. The clauses on
-  `sieve` and `isqrt` cost a constant per call. A debug-build ratio from
-  this pair is therefore not a typical contract cost.
+- `contracts`: in debug builds the Tide arm checks its contract clauses,
+  except sampled ones; release builds erase them all. `insert_sorted`'s
+  `requires(xs.is_sorted())` and `ensures(xs.is_sorted())` are sampled
+  clauses (a method call outside a short list of cheap ones,
+  `crates/tide-macros/src/contract.rs`), which run only in debug test
+  builds. There each scans the vector, on an insert that is itself linear,
+  so together they roughly triple that function's cost. A plain debug
+  build, which is what the rerun tool makes, reports them as unchecked and
+  does not run them. The clauses on `sieve` and `isqrt` and
+  `insert_sorted`'s length `ensures` cost a constant per call, and the
+  `invariant!` a constant per evaluation, at every head of the sieve's
+  loop; all of them run in every debug build. A test-build ratio from this pair would therefore not
+  be a typical contract cost.
 - `files`: each Tide call goes through the root `Fs` that `main` receives
   and resolves its path through the capability
   (`crates/tide-std/src/fs/real.rs`), which costs extra system calls. A
@@ -110,11 +116,13 @@ below is the supported way to build and time both arms.
 ## Rerunning the benchmark
 
 ```sh
-cargo bench -p tide-admit --bench pairs -- [--quick] [--out DIR] [--pair NAME]...
+cargo bench -p tide-admit --bench pairs -- [--quick] [--out DIR] [--pair NAME]... [--phase NAME]...
 ```
 
 The rerun tool (`crates/tide-admit/benches/pairs.rs`) builds every pair under
-each configuration below, runs each built program, and writes one raw record
+each configuration below, rebuilds it after a one-line edit, runs each built
+program, runs the `tasks` pair's Tide arm under the simulator too, runs the
+`contracts` pair's Tide arm as a test build too, and writes one raw record
 per measurement. It is a `harness = false` bench target of the driver's
 package, so it builds Tide arms with the equivalence check's helpers and Cargo
 builds the driver optimized, as rustc itself is. It runs only when named with
@@ -135,8 +143,11 @@ checks for it before it creates anything.
 
 Every Rust arm also passes `--edition=2024`, and the tool runs each rustc from
 its toolchain's sysroot, not through rustup's proxy. Cargo's own codegen-unit
-count and incremental mode do not apply: like the driver, rustc runs
-non-incrementally with its default codegen units. Some differences stay
+count does not apply: like the driver, rustc runs with its default codegen
+units. Nor does Cargo's incremental mode, except in the rebuild phase: there
+the `rust-debug` arm passes `-Cincremental`, as Cargo's dev profile does,
+while every other rustc build, and every driver build, is non-incremental.
+Some differences stay
 inside the Tide arms' numbers, since no configuration separates them:
 
 - the linker: the driver links with `/usr/bin/cc` and the system `ld`, with
@@ -149,13 +160,26 @@ inside the Tide arms' numbers, since no configuration separates them:
 
 What it measures, for each pair and configuration:
 
-- build: the wall time and peak resident memory of the compiler process. A
+- build: the wall time and peak resident memory of the compiler process, and
+  the size of the binary it wrote: its file size and its loaded size, the
+  bytes of its loadable (`PT_LOAD`) segments, which leave out debug
+  information and symbol tables. A
   build runs in a new directory, so the driver's build cache never hits; a Tide
   build's time still includes the driver's re-executed compile child and its
   writes to that cache, Tide's real cost for a cold build. Peak
   memory comes from `wait4` (`benches/support/peak_rss.rs`) and is the
   largest peak among the process and the descendants it waits for: the
   driver's compile child and the linker, not their sum.
+- rebuild, for `tide-debug` and `rust-debug` only, the edit loop's builds: the
+  same as build, after a one-line edit, in a directory warmed by one unmeasured
+  build. Each round's edit adds `let _edit: u64 = <round>;` as the first line
+  of `main`'s body, so every round's source differs. The `rust-debug` rebuilds
+  pass `-Cincremental` with a cache kept in that directory, as Cargo's dev
+  profile does. The driver has no incremental mode: its build cache is keyed
+  by the whole source, so after any edit it misses and the driver compiles the
+  program from scratch. The release configurations have no rebuild phase:
+  neither the driver nor Cargo's release profile is incremental, so a release
+  rebuild is a cold build.
 - run: the wall time, including `timeout`'s own start, of the built program
   at its timed size (the table in
   `pairs.rs`, `TIMED`: chosen so the release arms run for about 0.5-2 s), in
@@ -164,9 +188,53 @@ What it measures, for each pair and configuration:
   configuration's output must equal `tide-debug`'s, or the tool writes an
   `error` record and stops.
 
+- sim, for the `tasks` pair only: under `tide-debug` and `tide-release`, the
+  built program's run (named by its configuration) against a run of the same
+  program under the simulator (`tide-debug-sim`, `tide-release-sim`), at one
+  size (`SIM_SIZE` in `pairs.rs`, smaller than the timed size, since the
+  simulator runs one task at a time). The tool appends a test module,
+  `bench_sim`, to the Tide arm and builds it as a test binary under the
+  configuration: its `timed` test runs the program under the simulator on
+  seed 0 and writes the program's output to standard error, which must equal
+  the real run's output. v0's simulator is its one engine: OS threads, one
+  per task as in the real runtime, that pass a baton so one runs at a time,
+  in the order the seeded scheduler picks (`design/03-authority-concurrency.md`
+  §9.1). The timed span is the whole process, for both arms: the process
+  start (the test harness's too, for a simulated run), the simulation's setup,
+  the program's run under the scheduler, which records every scheduling
+  event as structured data, reading the program's output from the simulated
+  sink, and teardown. Rendering the trace as text is outside it: the timed
+  test never renders it. Before the rounds, an unmeasured run of the
+  `events` test renders the trace once to count the events the scheduler
+  traced in that simulated run. (Until fx-ic2.12, the scheduler formatted
+  its trace as text while it ran, which took about 95% of the CPU in one
+  simulation-heavy test; it now records events as data and formats them only
+  when the trace is read.)
+- test, for the `contracts` pair only: the cost of the contract clauses that
+  run only in a test build. A clause whose expression calls a method outside
+  a short list of cheap ones is sampled (`crates/tide-macros/src/contract.rs`),
+  and runs only in a debug test build; a plain debug build reports it as
+  unchecked and never evaluates it. `insert_sorted`'s two `is_sorted`
+  clauses are sampled. The tool appends a test module, `bench_test`, to the
+  Tide arm and builds it as a debug test build (`tide-debug`, `--test`):
+  its `timed` test calls the program's `run` (`tide-debug-test`) at one
+  size (`TEST_SIZE` in `pairs.rs`, smaller than the timed size, at which
+  one test-build run was estimated to take about 70 s). Each round measures
+  it against three plain programs at the same size: `tide-debug` (sampled
+  clauses unchecked),
+  `tide-release` (every clause erased), and `rust-debug`. A test build's run
+  prints the program's output among the test harness's lines, so its check
+  takes the window of its standard output that equals `tide-debug`'s output,
+  and fails when there is none. Before the rounds, an unmeasured run of the
+  module's `sampled` test calls `insert_sorted` on an unsorted vector and
+  must panic on `xs.is_sorted()`: it shows that the sampled clauses run in
+  that build. Its summary records `sampled_clause_ran`.
+
 The method is fx-ayxr's: rounds interleave the configurations (each round
 measures each configuration once, in table order, so two arms run A B A B).
-A full run measures a pair's builds, then its runs, in 5 rounds each, and adds
+A full run measures a pair's builds, then its rebuilds, then its runs, then
+(for `tasks`) its simulated runs and (for `contracts`) its test-build runs,
+in 5 rounds each, and adds
 5 rounds while any configuration's wall times have a coefficient of variation
 over 1%, up to 30 rounds. It reports the median, the CV, and the median peak
 memory of each series. A series still over 1% at 30 rounds keeps its records
@@ -177,7 +245,10 @@ checking the tool only. `--out` names a new or empty directory, as an absolute
 path (Cargo runs the tool in the package's directory); by default each run
 writes to a new directory under `<target dir>/tmp/bench-pairs/results/`
 (`target/` unless `CARGO_TARGET_DIR` is set), which is
-never committed. `--pair` limits a run to the pairs it names. A failed build
+never committed. `--pair` limits a run to the pairs it names, and `--phase`
+to the phases it names (`build`, `rebuild`, `run`, `sim`, `test`); a phase
+whose runs need built programs builds any the run has not, unmeasured. A
+failed build
 or run, or a run whose output differs, stops the tool with exit status 1,
 after its record is written.
 
@@ -189,13 +260,23 @@ names its kind:
   dirty, CPU model and count, kernel, load average, the process's nice value,
   the directory the runs use, the path, `rustc -vV`, and default linker (from
   the target spec) of the pinned and the stable compiler, the driver's path,
-  `cc` and `ld` versions, the round settings, the sizes, and each configuration's compiler,
-  std profile, and flags;
-- `build` and `run`, one per measurement: pair, configuration, round, size
-  (runs), `wall_s`, `peak_rss_kib`, and `exit`, plus the tail of standard
-  error when the process failed;
+  `cc` and `ld` versions, the round settings, the sizes, each configuration's
+  compiler, std profile, and flags, and the phases (`phases`): each phase's
+  arms, the rebuild phase's edit and the flag it adds to rustc's
+  (`-Cincremental`), the simulator phase's pair, size, and seed, the
+  test-build phase's pair, size, and check, and which phases the run
+  measured (`measured`);
+- `build`, `rebuild`, `run`, `sim`, and `test`, one per measurement: pair,
+  configuration (`<configuration>-sim` for a simulated run,
+  `<configuration>-test` for a test build's run), round,
+  size (runs), `binary_bytes` and `loaded_bytes` (builds and rebuilds), `wall_s`,
+  `peak_rss_kib`, and `exit`, plus the tail of standard error when the process
+  failed;
 - `summary`, per pair, phase, and configuration: `n`, `median_s`, `cv`,
-  `median_peak_rss_kib`, and `stable` (null in a quick run);
+  `median_peak_rss_kib`, and `stable` (null in a quick run), plus
+  `median_binary_bytes` and `median_loaded_bytes` for builds and rebuilds,
+  `trace_events` for a simulated run, and `sampled_clause_ran` for a test
+  build's run;
 - `error`, on an output mismatch: pair, configuration, round, the run's
   `exit`, the reference configuration, and the tails of the expected and the
   actual output;

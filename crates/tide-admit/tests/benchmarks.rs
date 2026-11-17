@@ -333,3 +333,104 @@ fn an_output_mismatch_is_recorded_and_leaves_the_dataset_without_end() {
     let complete = String::from_utf8(complete).unwrap();
     assert!(complete.starts_with(r#"{"record":"end","#), "{complete}");
 }
+
+/// The rebuild's one-line edit adds a statement as the first line of `main`'s body, in every
+/// arm of every pair, and refuses a source without exactly one place to put it.
+#[test]
+fn the_rebuild_edit_opens_main_with_one_new_line() {
+    let source = "#[tide::main]\nfn main(root: Root) -> Result<(), E> {\n    go(root)\n}\n";
+    assert_eq!(
+        pairs::edited(source, 7).unwrap(),
+        "#[tide::main]\nfn main(root: Root) -> Result<(), E> {\n    let _edit: u64 = 7;\n    go(root)\n}\n"
+    );
+    assert!(pairs::edited("fn other() {}\n", 0).is_err());
+    assert!(pairs::edited("fn main() {\n}\nfn main() {\n}\n", 0).is_err());
+    for pair in EXPECTED {
+        for arm in ["tide.rs", "rust.rs"] {
+            let source = std::fs::read_to_string(benchmarks().join(pair).join(arm)).unwrap();
+            let edited = pairs::edited(&source, 0).unwrap_or_else(|e| panic!("{pair}/{arm}: {e}"));
+            assert_eq!(edited.lines().count(), source.lines().count() + 1, "{pair}/{arm}");
+        }
+    }
+}
+
+/// The binary size reads an ELF file's loadable segments, which leave out its debug information,
+/// and nothing from a file that is not a whole 64-bit ELF file.
+#[test]
+fn binary_size_counts_the_loadable_segments() {
+    let exe = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+    let len = exe.len() as u64;
+    let (size, loaded) = pairs::binary_size(&exe[..64 * 1024], len).unwrap();
+    assert_eq!(size, len);
+    // This test binary has debug information, which no segment loads.
+    assert!(loaded > 0 && loaded < size, "{loaded} of {size}");
+    // A synthetic header with two loadable segments and one other, each with a memory size
+    // above its file size: only the loadable segments' file sizes count.
+    let mut elf = vec![0u8; 64 + 3 * 56];
+    elf[..6].copy_from_slice(b"\x7fELF\x02\x01");
+    elf[0x20..0x28].copy_from_slice(&64u64.to_le_bytes()); // e_phoff
+    elf[0x36..0x38].copy_from_slice(&56u16.to_le_bytes()); // e_phentsize
+    elf[0x38..0x3a].copy_from_slice(&3u16.to_le_bytes()); // e_phnum
+    let segments = [(1u32, 1000u64, 1500u64), (4, 70_000, 80_000), (1, 234, 4096)];
+    for (i, (kind, file, memory)) in segments.into_iter().enumerate() {
+        let header = 64 + i * 56;
+        elf[header..header + 4].copy_from_slice(&kind.to_le_bytes()); // p_type
+        elf[header + 0x20..header + 0x28].copy_from_slice(&file.to_le_bytes()); // p_filesz
+        elf[header + 0x28..header + 0x30].copy_from_slice(&memory.to_le_bytes()); // p_memsz
+    }
+    assert_eq!(pairs::binary_size(&elf, 9999), Some((9999, 1234)));
+    assert_eq!(pairs::binary_size(b"#!/bin/sh\n", 10), None);
+    // Program headers past what was read.
+    assert_eq!(pairs::binary_size(&exe[..64], len), None);
+}
+
+/// A test build's run prints the program's output among the test harness's lines: the check
+/// takes the window equal to the reference output, and the whole output when there is none, so
+/// that the comparison fails.
+#[test]
+fn a_test_builds_output_is_found_among_the_harness_lines() {
+    let expected = b"limit: 3\nprimes: 1\n";
+    let framed = b"\nrunning 1 test\ntest bench_test::timed ... limit: 3\nprimes: 1\nok\n";
+    assert_eq!(pairs::within(framed, Some(expected)), expected);
+    let other = b"\nrunning 1 test\nlimit: 3\nprimes: 2\nok\n";
+    assert_eq!(pairs::within(other, Some(expected)), other);
+    assert_eq!(pairs::within(framed, None), framed);
+}
+
+/// A run of the run phase alone, with no build phase to keep its programs, builds them
+/// unmeasured and completes (Codex r2 re-check 2, item 4). It runs the tool in quick mode on
+/// `contracts`, with the pinned compiler in the stable arm's place and the suite's std for both
+/// profiles, so the workspace suite needs neither rustup's stable toolchain nor a release std.
+#[test]
+fn a_run_phase_alone_builds_its_programs_and_completes() {
+    let out = scratch("phase-run");
+    let pinned = pairs::sysroot_rustc(
+        std::process::Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
+            .current_dir(env!("CARGO_MANIFEST_DIR")),
+    )
+    .unwrap();
+    let std = admitted::std_dir().to_path_buf();
+    let mut bench = pairs::Bench::open(
+        pairs::Options {
+            quick: true,
+            out: Some(out.clone()),
+            pairs: vec!["contracts".into()],
+            phases: vec![pairs::Phase::Run],
+        },
+        pairs::Toolchains {
+            pinned: pinned.clone(),
+            stable: pinned,
+            std_dev: std.clone(),
+            std_release: std,
+        },
+    )
+    .unwrap();
+    bench.run().unwrap();
+    let records = std::fs::read_to_string(out.join("records.jsonl")).unwrap();
+    let count = |kind: &str| records.matches(&format!(r#"{{"record":"{kind}","#)).count();
+    assert_eq!(
+        (count("build"), count("run"), count("summary"), count("end")),
+        (0, 6, 6, 1),
+        "{records}"
+    );
+}
