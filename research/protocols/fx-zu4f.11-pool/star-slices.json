@@ -1,0 +1,32 @@
+[
+  {
+    "query": "language:Rust stars:>=1000 pushed:>=2025-11-18T18:01:51Z is:public",
+    "total_count": 2139,
+    "incomplete_results": false,
+    "capped": true
+  },
+  {
+    "query": "language:Rust stars:1000..1999 pushed:>=2025-11-18T18:01:51Z is:public",
+    "total_count": 924,
+    "incomplete_results": false,
+    "capped": false
+  },
+  {
+    "query": "language:Rust stars:>=2000 pushed:>=2025-11-18T18:01:51Z is:public",
+    "total_count": 1215,
+    "incomplete_results": false,
+    "capped": true
+  },
+  {
+    "query": "language:Rust stars:2000..3999 pushed:>=2025-11-18T18:01:51Z is:public",
+    "total_count": 557,
+    "incomplete_results": false,
+    "capped": false
+  },
+  {
+    "query": "language:Rust stars:>=4000 pushed:>=2025-11-18T18:01:51Z is:public",
+    "total_count": 658,
+    "incomplete_results": false,
+    "capped": false
+  }
+]

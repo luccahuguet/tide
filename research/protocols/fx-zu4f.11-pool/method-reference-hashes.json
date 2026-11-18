@@ -1,0 +1,32 @@
+[
+  {
+    "path": "research/protocols/fx-zu4f.9-protocol.md",
+    "commit": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2",
+    "sha256": "56e9f6e14989d66346c229def74b70dbd943697553ac1be0edf337757f737d57"
+  },
+  {
+    "path": "research/41-qin-dataset-search.md",
+    "commit": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2",
+    "sha256": "c88be55c8f680b8f36d966333e2f66168801414c106ba6628e562901d4340c5d"
+  },
+  {
+    "path": "reviews/fx-zu4f.9-r1-codex.md",
+    "commit": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2",
+    "sha256": "786bb52014cc964bc0281cfde71af9d2c52a13748b32cda700ab9678d443140b"
+  },
+  {
+    "path": "reviews/fx-zu4f.9-r2-opus.md",
+    "commit": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2",
+    "sha256": "b576aa870c66cb3cc33ddc890930e03cc8973b9ad22aa4346656b8a85465ed17"
+  },
+  {
+    "path": "research/protocols/fx-zu4f.10-protocol.md",
+    "commit": "63eb32eb31a593354d520474d21416bf248492d4",
+    "sha256": "44490b7ddf5b73844d2f7057bd950bfa15fe54321a29fdf5809a8a7ef82b73af"
+  },
+  {
+    "path": "research/protocols/fx-zu4f.10-pool/scan.py",
+    "commit": "63eb32eb31a593354d520474d21416bf248492d4",
+    "sha256": "8f2afde9707f49a9821093680e36cb1fe7827acec13ae40e7d2158256a0a7898"
+  }
+]

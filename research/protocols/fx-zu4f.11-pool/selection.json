@@ -1,0 +1,24 @@
+{
+  "distinct_repositories": 2139,
+  "after_repository_filter": 2105,
+  "after_activity": 1521,
+  "marker_counts": {
+    "50": 66,
+    "40": 98,
+    "30": 137,
+    "25": 164,
+    "20": 208
+  },
+  "scan_counts": {
+    "50": 5,
+    "40": 5,
+    "30": 5,
+    "25": 5,
+    "20": 8
+  },
+  "chosen_T": 20,
+  "after_markers": 208,
+  "after_scan": 8,
+  "pool_size": 8,
+  "completed_utc": "2026-11-18T20:37:03.339010+00:00"
+}

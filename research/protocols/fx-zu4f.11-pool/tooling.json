@@ -1,0 +1,11 @@
+{
+  "versions": {
+    "python": "Python 3.14.10",
+    "git": "git version 2.43.0",
+    "gh": "gh version 2.104.0 (2026-11-12)\nhttps://github.com/cli/cli/releases/tag/v2.104.0"
+  },
+  "platform": "Linux-7.2.6-76070206-generic-x86_64-with-glibc2.44",
+  "heavy_runs": 0,
+  "upstream_builds_or_executions": 0,
+  "subagents": 0
+}
