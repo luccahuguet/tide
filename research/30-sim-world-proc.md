@@ -6,6 +6,9 @@ Research and decision, 2026-11-13, drafted by GPT-6.1 Sol.
 **All ten recommendations accepted by the coordinator, 2026-11-13
 (fx-f6xp; Decision below). At that decision, sequential reviews had not run.**
 No implementation, builds, Beads writes or Eon changes belong to this bead.
+**Tier update, 2026-11-18 (fx-ayh2.1):** the lifecycle subset of this
+design moved to v0 under owner decision A1; signals, PTYs, parent-only death
+and faults stay Later ([research/40](40-proc-command-v0.md) §6, 03 §9.9).
 
 Evidence labels apply to each following paragraph, list or table:
 

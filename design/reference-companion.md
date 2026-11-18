@@ -591,7 +591,12 @@ let mut input = child.stdin.take().unwrap();   // ChildStdin: write to the child
 input.write_all(b"b\na\n")?;
 drop(input);                                   // close it: sort sees the end
 let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
+let ok = proc.command("make").stdin(Stdio::null()).status()?.success();
 ```
+
+As in Rust, `status` and `spawn` inherit stdin unless you set it, and the
+simulator does not model inherited stdin, so set `Stdio::null()` or
+`piped()` in code you test under simulation (below).
 
 - **Rust's API.** `Command` and `Child` keep Rust's methods and receivers,
   with two exceptions. There is no ambient `Command::new` (`TD0501`), and
@@ -627,15 +632,52 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
   every earlier `println!`, `eprintln!`, `dbg!`, and log record (a log
   record may instead be dropped under overload), so the child's output
   follows them, as in Rust (03 SINK-4).
-- **Signals.** `proc.signals(&[Signal]) -> io::Result<Signals>` subscribes
-  to the listed signals; `Signals::recv` suspends until one arrives.
-- **Paths.** `Command`, `Child`, the pipe ends, `Stdio`, `Signal`, and
-  `Signals` are in `std::process`, and `ReadDir` and `DirEntry` in
-  `std::fs`: Rust's paths, where Rust has the type.
+- **Authority.** A child process is not capability-checked: it runs with
+  everything your process can reach (more, for a setuid program), so
+  `Proc` is ambient authority for the child, and `tide review` lists new
+  paths to `proc` first. Process authority has no end. A child, and
+  anything it starts, keeps running with the process's authority after
+  the call that started it returns, and after the Tide process exits.
+  Lending `&Proc` or a `Command` for one call is not a temporary grant.
+- **`only`** (03 PROC-ONLY). `proc.only(["git", "/usr/bin/tar"])` takes bare
+  names and absolute paths, matched byte for byte against `command`'s
+  program, with no normalization or symlink resolution; `"./tool"` grants
+  nothing. A refused program returns `PermissionDenied` from `spawn`,
+  `output`, or `status` and starts nothing. Std looks a bare name up itself
+  in the `PATH` your process started with (absolute elements only;
+  `NotFound` if it has none), so `.env("PATH", ..)` changes only the
+  child's own `PATH`, unlike Rust. Whoever can write a directory on that
+  `PATH`, or replace the file an entry names, chooses the program.
+  Under `only`, setting an `LD_` or `DYLD_` variable, or a C-library one
+  such as `GCONV_PATH` (the list is in 03 PROC-ONLY), on the command
+  returns `PermissionDenied`. `only` picks the program, not what it does:
+  an allowed shell, interpreter, `env`, `xargs`, or a program that runs
+  what its arguments name (`git -c core.sshCommand=..`, `find -exec`) is
+  full authority. A script, a program steered by the files it reads (git's
+  config and hooks in `current_dir`, a Makefile), or one whose output you
+  read back gives full authority as well (03 PROC-ONLY).
+- **Environment and descriptors.** The child inherits your whole
+  environment, as in Rust, whatever your `Env` allows; use `env_clear` or
+  `env_remove`. `current_dir` needs no `Fs`. The child gets only the three
+  descriptors its `Stdio` sets. The real backend needs Linux 5.11 for
+  that; on an older kernel `spawn`, `output`, and `status` fail and start
+  nothing.
+- **Simulation.** `sim.world.proc("git", model)` declares a model for an
+  exact program spelling (no `PATH` search); `ProcessModel::missing()`
+  makes spawning it return `NotFound`. An unregistered program or an
+  unsupported mode (inherited stdin, `Stdio` from a file or another child's
+  pipe) stops the seed with a coverage report, never starting a host
+  process. Exit codes, per-`Child` waits, `kill`, and piped I/O follow 03
+  §9.9's lifecycle subset; model spellings are provisional. A status with
+  no code (after `kill`, or a model's write to a closed pipe) has
+  `code() == None` and prints as on Linux (`signal: 9 (SIGKILL)`).
+- **Paths.** `Command`, `Child`, the pipe ends, and `Stdio` are in
+  `std::process`, and `ReadDir` and `DirEntry` in `std::fs`: Rust's paths,
+  where Rust has the type.
 - **Receivers.** Only the capability types of 6.1 take `&self` for every
   method. Handles keep Rust's receivers, except `wait_with_output`; of
-  Tide's own handle methods, `File::sync`, `read_owned`, `write_owned`,
-  and `Signals::recv` take `&self`, and `File::close` takes `self`.
+  Tide's own handle methods, `File::sync`, `read_owned`, and `write_owned`
+  take `&self`, and `File::close` takes `self`.
 
 ## 21. Network: HTTP (planned)
 
@@ -682,8 +724,10 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
 
 **Later:** the Bend tandem and `Accel` (D16); deferred overflow traps;
 automatic parallelization; `Shape` reflection; Polonius-precision borrows;
-interactive-proof export; snapshot-and-branch simulation; modeled child
-processes, signals and raw PTYs through Proc (D15; 03 §9.9), including the
+interactive-proof export; snapshot-and-branch simulation; the rest of 03
+§9.9 beyond its v0 lifecycle subset: modeled signals, raw PTYs,
+parent-only process death and process faults through Proc (D15), including
+`Proc::signals` and `Signals`, the
 API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`) and
 subscription rules (one live subscription with `AlreadyExists`, default
 disposition on drop, five-signal set) on both real and simulated backends.
