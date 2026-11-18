@@ -1,10 +1,15 @@
 // Tide v0 paper. Typst source; build with typst 0.15.0 (3ae52774) from the
 // repository flake's nixpkgs pin 567a49d1913ce81ac6e9582e3553dd90a955875f:
 // nix shell github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f#typst \
-//   -c typst compile paper/tide-v0.typ <out>.pdf
+//   -c typst compile --root . paper/tide-v0.typ <out>.pdf
+// Run it from the repository root: `--root .` lets the figures read the committed
+// records they draw (paths starting with `/` are relative to that root). The
+// figures use only Typst's built-in drawing, so the build needs no package
+// download and no network.
 // Links to in-repository reports target their repository paths.
 
-#set document(title: "Tide v0: a capability-safe, replayable subset of Rust for code that agents write", author: "Lucca Huguet")
+// date: none keeps the PDF byte-identical across builds (no build timestamp).
+#set document(title: "Tide v0: a capability-safe, replayable subset of Rust for code that agents write", author: "Lucca Huguet", date: none)
 #set page(paper: "a4", margin: (x: 2.4cm, y: 2.4cm), numbering: "1")
 #set text(size: 10.5pt, lang: "en")
 #set par(justify: true)
@@ -14,6 +19,95 @@
 #show raw.where(block: false): set text(size: 0.95em)
 #show table: set par(justify: false)
 #show quote.where(block: true): set block(inset: (left: 1em))
+#show figure.caption: set align(start)
+
+// ---- Figure data and drawing helpers --------------------------------------
+// Every number a figure shows is read here from a committed file, so the
+// figures regenerate from the data. The only derived values are those the
+// benchmark note and the launch site's scripts/chart-data.ts derive the same
+// way: ratios of two recorded medians, and paired-round counts.
+
+#let fmt(x, d) = {
+  let s = str(calc.round(x, digits: d))
+  if d == 0 { return s }
+  let parts = s.split(".")
+  let frac = if parts.len() > 1 { parts.at(1) } else { "" }
+  parts.at(0) + "." + frac + "0" * (d - frac.len())
+}
+// Three significant digits, as a percentage (the site's toPrecision(3)).
+#let pct3(r) = {
+  let p = 100 * r
+  fmt(p, if p >= 10 { 1 } else { 2 }) + "%"
+}
+
+#let e3 = json("/trials/e3-pilot/result.json")
+#assert(e3.schema == "tide-e3-result/1", message: "unexpected E3 schema")
+// D0's threshold, read from the result's own published sentence.
+#let e3-threshold = float(e3.sentence.match(regex("D0's ([0-9.]+)x threshold")).captures.at(0))
+
+#let bench-path = "/research/36-benchmarks/2026-11-18-bf6b958/records.jsonl"
+#let bench = read(bench-path).split("\n").filter(l => l.trim() != "").map(l => json(bytes(l)))
+#let bench-summaries = bench.filter(r => r.record == "summary")
+#let bench-stable = bench-summaries.filter(r => r.stable == true).len()
+#let bench-cvs = bench-summaries.map(r => r.cv)
+// research/36-benchmarks.md §1: an arm is slower when it is slower in at
+// least 20 of the 30 paired rounds; otherwise the comparison is a tie.
+#let loss-rounds = 20
+#let bench-pairs = ("contracts", "files", "tasks", "tcp")
+
+#let bench-row(record, phase, tide-config, rust-config, pair) = {
+  let summary(config) = {
+    let found = bench.filter(r => r.record == "summary" and r.phase == phase and r.config == config and r.pair == pair)
+    assert(found.len() == 1, message: "missing summary " + phase + " " + config + " " + pair)
+    found.first()
+  }
+  let rounds(config) = {
+    let walls = (:)
+    for r in bench.filter(r => r.record == record and r.config == config and r.pair == pair) {
+      walls.insert(str(r.round), r.wall_s)
+    }
+    walls
+  }
+  let t = summary(tide-config)
+  let u = summary(rust-config)
+  let tr = rounds(tide-config)
+  let ur = rounds(rust-config)
+  assert(tr.len() == ur.len() and tr.len() > 0, message: "unpaired rounds for " + pair)
+  let slower = tr.pairs().filter(((k, w)) => w > ur.at(k)).len()
+  let verdict = if slower >= loss-rounds { "loss" } else if tr.len() - slower >= loss-rounds { "win" } else { "tie" }
+  (pair: pair, ratio: t.median_s / u.median_s, slower: slower, rounds: tr.len(), verdict: verdict)
+}
+
+#let bench-panels = (
+  (label: [Run time in release, against Rust built with Tide's profile flags],
+   rows: bench-pairs.map(p => bench-row("run", "run", "tide-release", "rust-release-tide-flags", p))),
+  (label: [Cold debug build, against Rust's debug build],
+   rows: bench-pairs.map(p => bench-row("build", "build", "tide-debug", "rust-debug", p))),
+)
+
+#let ink = luma(25%)
+#let muted = luma(45%)
+#let accent = rgb("#1a4f8a")
+#let loss-ink = rgb("#9a3b1f")
+#let small(body) = text(size: 8pt, body)
+
+// A horizontal axis of `width` from `lo` to `hi` with ticks, drawn at `y`.
+#let axis(width, lo, hi, ticks, y, unit) = {
+  let x(v) = width * (v - lo) / (hi - lo)
+  place(dx: 0pt, dy: y, line(length: width, stroke: 0.5pt + ink))
+  for t in ticks {
+    place(dx: x(t), dy: y, line(angle: 90deg, length: 3pt, stroke: 0.5pt + ink))
+    place(dx: x(t) - 15pt, dy: y + 4pt, box(width: 30pt, align(center, small[#t#unit])))
+  }
+}
+
+// The pipeline diagram: four stages a simulated test run passes through.
+#let stage(title, body) = rect(width: 100%, height: 100%, inset: 5pt, radius: 2pt, stroke: 0.6pt + ink)[
+  #set par(justify: false, leading: 0.45em)
+  #text(size: 9pt, weight: "bold", title) \
+  #small(body)
+]
+#let arrow = align(center + horizon, text(size: 14pt, fill: ink)[→])
 
 #align(center)[#text(size: 17pt, weight: "bold")[Tide v0: a capability-safe, replayable subset of Rust for code that agents write]]
 
@@ -27,7 +121,7 @@ _Status._ Draft for the v0 alpha, kept in the Tide repository. Design decisions 
 
 When models write most of the code and humans review it, a language should make it cheap to check what a change may do and to reproduce what a program did. Tide is a checked subset of valid Rust 2024 built for that setting. Code reaches files, the network, the clock, the environment or randomness only through capability values it is handed, so a function's signature bounds its authority. Because every source of nondeterminism is such a capability, a test can run under a seeded simulator and a failing run can be replayed from its recorded manifest. Tide v0 is not a new compiler: an admission driver built on a pinned rustc compiles each crate against Tide's own standard library and checks it against Tide's rules before rustc writes any artifact.
 
-We report what v0 shows and what it does not. A seeded test finds a lost update in a small concurrent service, and its replay reproduces the recorded traces byte for byte. Admission has closed three admitted routes from two open rustc soundness bugs, the second found by a red team that tried 48 routes, controls included; other rustc soundness bugs remain open. A pre-registered pilot of the trust diff as a review aid did not meet its threshold: plain review already caught almost every planted change, which left no room to show a benefit. A paired learnability trial found that one model writes Tide about as well as Rust on 30 small tasks: parity within the protocol's margins, not a benefit. Benchmarks against plain Rust show only ties and losses. Two case studies show that admission catches none of the real bugs studied; what Tide adds there is a deterministic test of the fix.
+We report what v0 shows and what it does not. A seeded test finds a lost update in a small concurrent service, and its replay reproduces the recorded traces byte for byte. Admission has closed three admitted routes from two open rustc soundness bugs, the second found by a red team that tried 48 routes, controls included; other rustc soundness bugs remain open. A pre-registered pilot of the trust diff as a review aid did not meet its threshold: plain review already caught almost every planted change, which left no room to show a benefit. A paired learnability trial found that one model writes Tide about as well as Rust on 30 small tasks: parity within the protocol's margins, not a benefit. Benchmarks against plain Rust show only ties and losses. Case studies that rewrite real bugs from Eon and hyper show that admission catches none of them. What Tide adds there is a deterministic simulated test of the fix and, for a race, a seeded test that finds the failing interleaving once someone states the property, over a simulated file system the project did not have to write, and reruns it exactly.
 
 = Motivation
 
@@ -67,13 +161,27 @@ The compiler computes each public item's signature and declared authority and li
 
 = Implementation
 
-The v0 production code is one Cargo workspace under `crates/`, built with the nightly that `rust-toolchain.toml` pins (#link("AGENTS.md")[AGENTS.md], "Verification").
+The v0 production code is one Cargo workspace under `crates/`, built with the nightly that `rust-toolchain.toml` pins (#link("AGENTS.md")[AGENTS.md], "Verification"). @fig-pipeline shows the path a simulated test run takes through its parts.
 
 - *`tide-admit`*, the admission driver, is a `rustc_private` driver on the pinned nightly. It owns every rustc invocation and adds no user-controlled `--extern`, `-L`, `--sysroot`, `--cfg` or semantic `-C` flags (D18). It checks resolved uses before rustc's analysis, then a backstop checks the instances that can run. Today it admits a single crate, or one test suite paired with one library, against Tide's std (#link("demo/README.md")[`demo/README.md`], "What runs today, and what is planned"). It also runs tests (`--tide-run-test`), replays manifests (`--replay`) and prints the trust diff (`--tide-diff`). The planned `tide` command (`tide test`, `tide sim`, `tide review`) does not exist yet; the driver's modes are its partial precursors.
 - *`tide-std`* is Tide's standard library, with its macros in `tide-macros`. It provides the capabilities, structured tasks, channels, `Shared` cells, and the simulator of tasks, channels, `Shared`, files, TCP loopback, the clock, the environment and standard input.
 - *The simulator and replay.* In v0 the simulator runs each task on its own OS thread and passes a baton so that one runs at a time (#link("design/03-authority-concurrency.md")[`design/03-authority-concurrency.md`] §9.1). A `#[sim_test]` runs a test over a fixed set of seeds; a run through the driver records a manifest and a trace, and `--replay` checks the identity and reproduces the run.
 - *The RUN-3 test sandbox.* The type system alone cannot bound what admitted code reaches, because rustc has open soundness bugs that safe code can exploit to forge a capability (D7; §4.1). Test and simulation runs that the driver starts therefore run as a child process inside a kernel sandbox, Landlock and seccomp on Linux, installed between fork and exec (#link("design/03-authority-concurrency.md")[`design/03-authority-concurrency.md`] RUN-3). The driver prints the level before the child starts: `full`, or `partial, not enforced`, naming what the kernel lacks. A test binary run directly gets no sandbox, and the build itself (rustc and the linker) has none yet (RUN-2) (#link("docs/owner-guide/08-sandbox.md")[`docs/owner-guide/08-sandbox.md`]).
 - *`tide-conformance`* checks a conformance corpus: every normative rule in the design chapters carries an ID and is traced to cases that an implementation must pass (D0).
+
+#figure(
+  block(height: 2.7cm, grid(columns: (1fr, 0.55cm, 1fr, 0.55cm, 1fr, 0.55cm, 1fr), rows: 100%,
+    stage[Admission][`tide-admit` runs inside a pinned rustc and checks the subset, authority and `Pure`. A rejected crate gets no artifact.],
+    arrow,
+    stage[RUN-3 sandbox][The test runs as a child process under Landlock and seccomp. The driver prints the level first: `full`, or `partial, not enforced`.],
+    arrow,
+    stage[Simulator][Under `Root::sim(seed)` the seed decides the schedule, and virtual time advances only when every task is blocked.],
+    arrow,
+    stage[Replay][The manifest records the seed, source hashes, build identity and inputs. Replay refuses a mismatched identity.],
+  )),
+  kind: image,
+  caption: [The path of a simulated test run started through the driver (`--tide-run-test`): the admitted crate's test runs in the sandboxed child under the simulator, and the run's manifest is what replay checks. A test binary run directly gets no sandbox and records no manifest, and the build itself has no sandbox yet (RUN-2).],
+) <fig-pipeline>
 
 = Evidence
 
@@ -93,13 +201,57 @@ A red team on 2026-11-17 (`fx-qlek.5`) then tried 48 routes, controls included, 
 
 In all, admission has closed three admitted routes from two rustc soundness bugs: the function-pointer route of \#25860 and both forms of \#57893. The red team also checked that the known reproductions of other routes (\#25860 through closures and trait objects, \#84591, \#100051) are rejected; that covers those reproductions, not every variant, and the \#100051 family stays open in the design (#link("docs/owner-guide/03-soundness-bugs.md")[`docs/owner-guide/03-soundness-bugs.md`], "The hardest question"). rustc has other open `I-unsound` issues. Tide's claim is therefore exact: no _accidental_ ambient authority. Against a malicious dependency, safety rests on rustc's soundness, on the routes closed so far, and, for test runs the driver starts, on the kernel sandbox.
 
+*When capabilities would be unforgeable.* Admitted safe code could forge no capability only once every soundness hole that admitted code can reach is closed. Two routes lead there. First, rustc could fix those holes, with each new toolchain pin audited against admission's allowlist, but fixing the known issues cannot show that no unknown one remains: this route only shrinks the known holes. Second, a machine-checked proof over the admitted subset could show that no admitted program reaches one, and only such a proof could support the word unforgeable. Either way, Tide's own trusted code must also be correct: `tide-std`'s `unsafe` runtime, and the completeness of admission's rules, whose gaps over rustc's holes are what the red team found. A proof of a model covers rustc and that code only as far as the model matches them. That proof is deferred work after the alpha (`fx-ip8d`) and has not started. Until it exists, v0's claim stays no accidental ambient authority, and we do not call v0's capabilities unforgeable.
+
 == E3: a pre-registered negative pilot of the trust diff
 
 E3 asks whether reviewers catch more planted authority-widening changes with the trust diff than with the plain code diff (D0). D0's threshold is 1.5 times as many catches. The protocol was frozen before the run, and the report's first paragraph is the sentence the protocol's §12 requires. We quote it unchanged (#link("trials/e3-pilot/report.md")[`trials/e3-pilot/report.md`]):
 
 #quote(block: true)[In the E3 pilot, Opus and Sol reviewed 12 planted authority-widening changes repeatedly, 6 times per change in each arm. With the trust diff, 66 of 72 review sessions caught the planted widening; with the plain diff, 67 of 72 (ratio 0.99, 95% interval [0.95, 1.00]). This does not meet D0's 1.5x threshold on the point estimate. The interval does not rule out no benefit.]
 
-The ceiling explains the result. The plain arm caught more than two thirds of its plant sessions, and at that rate the gate could not be met whatever the trust arm did: 1.5 × 2S/3 = S, where S is the number of plant sessions per arm, and no arm can catch more than S. The interval is narrow because 11 of the 12 pairs tie at 6 of 6 in both arms; its upper end of 1.00 reflects that ceiling, not evidence about harder changes (report, opening and "Pairs").
+#figure(
+  {
+    let S = e3.gate.S
+    set par(justify: false)
+    let w = 6.0cm
+    let rowh = 0.75cm
+    let catches = box(width: w, height: 2 * rowh + 1.6cm, {
+      let x(v) = w * v / S
+      for (i, (name, k)) in (([trust diff], e3.gate.K_T), ([plain diff], e3.gate.K_P)).enumerate() {
+        let y = 0.2cm + i * rowh
+        place(dx: -2.0cm, dy: y + 0.1cm, box(width: 1.9cm, align(right, small(name))))
+        place(dx: 0pt, dy: y, rect(width: x(k), height: 0.42cm, fill: if i == 0 { accent } else { muted }, stroke: none))
+        place(dx: x(k) + 3pt, dy: y + 0.1cm, small[#k of #S])
+      }
+      let two-thirds = 2 * S / 3
+      place(dx: x(two-thirds), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: muted, thickness: 0.6pt, dash: "dotted")))
+      axis(w, 0, S, (0, 24, 48, 72), 2 * rowh + 0.2cm, "")
+      place(dx: 0pt, dy: 2 * rowh + 0.75cm, small[Sessions caught, of #S per arm. Dotted: the ceiling 2S/3 = #calc.round(two-thirds), above which no 1.5× gain fits.])
+    })
+    let lo = 0.8
+    let hi = calc.max(e3-threshold + 0.1, e3.interval.b)
+    let ratio = box(width: w, height: 2 * rowh + 1.6cm, {
+      let x(v) = w * (v - lo) / (hi - lo)
+      let y = 0.55cm
+      place(dx: x(1.0), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: muted, thickness: 0.5pt, dash: "dotted")))
+      place(dx: x(e3-threshold), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: loss-ink, thickness: 0.8pt, dash: "dashed")))
+      place(dx: x(e3-threshold) - 3.1cm, dy: 0pt, box(width: 3.0cm, align(right, small[D0 threshold, #fmt(e3-threshold, 1)×])))
+      place(dx: x(e3.interval.a), dy: y + 0.18cm, line(length: x(e3.interval.b) - x(e3.interval.a), stroke: 1.2pt + accent))
+      for v in (e3.interval.a, e3.interval.b) {
+        place(dx: x(v), dy: y + 0.08cm, line(angle: 90deg, length: 0.2cm, stroke: 1pt + accent))
+      }
+      place(dx: x(e3.ratio.value) - 3pt, dy: y + 0.18cm - 3pt, circle(radius: 3pt, fill: accent, stroke: none))
+      place(dx: x(1.0) + 4pt, dy: y + 0.36cm, box(width: 3.2cm, small[R = #e3.ratio.text \ 95% interval #e3.interval.text]))
+      axis(w, lo, hi, (0.8, 1.0, 1.2, 1.4, 1.6), 2 * rowh + 0.2cm, "×")
+      place(dx: 0pt, dy: 2 * rowh + 0.75cm, small[Ratio of catches, trust to plain. Gate: #e3.gate.result.])
+    })
+    grid(columns: (2.1cm, w, 1.1cm, w), [], catches, [], ratio)
+  },
+  kind: image,
+  caption: [E3, a pre-registered pilot with a negative result, drawn from #link("trials/e3-pilot/result.json")[`trials/e3-pilot/result.json`]. Left: catches in each arm. The plain arm is above two thirds of its sessions, where 1.5 times its catches exceeds the #e3.gate.S sessions an arm has, so the gate could not be met. Right: the ratio and its 95% bootstrap interval, against D0's threshold.],
+) <fig-e3>
+
+The ceiling explains the result (@fig-e3). The plain arm caught more than two thirds of its plant sessions, and at that rate the gate could not be met whatever the trust arm did: 1.5 × 2S/3 = S, where S is the number of plant sessions per arm, and no arm can catch more than S. The interval is narrow because 11 of the 12 pairs tie at 6 of 6 in both arms; its upper end of 1.00 reflects that ceiling, not evidence about harder changes (report, opening and "Pairs").
 
 Two further observations are described, not tested. Every miss in either arm is on one plant, which keeps a writable directory capability instead of narrowing it with `read_only()`; eleven of its twelve sessions approved it. And the trust arm had 3 false positives, the plain arm none: all three are Sol sessions on one clean change, objecting to write authority on a function that only reads, which v0's trust diff lists as `fs.read, fs.write` as it lists every `&Fs` parameter (report, "What the data shows, and what it cannot").
 
@@ -126,7 +278,7 @@ Both arms worked near ceiling. Median sessions took 40.3 seconds for Tide and 30
 
 #quote(block: true)[*Stability: almost no series met the tool's criterion.* All 60 series of the main run ran to the 30-round cap with a CV above 1% (from 1.04% to 46.7%), so the run marks every one unstable (§1.6). [...] The medians and ratios below are descriptive observations from these unstable runs, not settled measurements.]
 
-The note reads ties and losses from paired rounds: an arm is slower when it is slower in at least 20 of 30 rounds. Its summary (§1.1):
+The note reads ties and losses from paired rounds: an arm is slower when it is slower in at least 20 of 30 rounds. Its summary (§1.1), with the run-time and build ratios drawn in @fig-bench:
 
 - *Building.* A cold debug build takes 3.8 to 4.6 times plain Rust's time; a rebuild after a one-line edit takes 5.2 to 6.3 times incremental Rust's, because the driver has no incremental build. Compiler peak memory is 17% to 39% higher. Release binaries load 1.4 to 2.0 times the bytes of plain Rust built with Tide's profile flags.
 - *Contracts in release.* "No measurable cost in this run": a tie, 0.99x.
@@ -137,17 +289,53 @@ The note reads ties and losses from paired rounds: an arm is slower when it is s
 - *Arithmetic-heavy tasks.* 2.29x plain release Rust, of which 1.74x comes from Tide's profile flags alone; the run does not separate which flag costs what.
 - *Simulator.* One seed under the simulator takes 12.8 times the real run in release builds.
 
+#figure(
+  {
+    set par(justify: false)
+    let w = 9.0cm
+    let rowh = 0.55cm
+    block(width: 100%, inset: (y: 3pt), align(left, text(size: 8.5pt, fill: loss-ink)[*Unstable runs.* #bench-stable of #bench-summaries.len() series in the main run met the benchmark tool's stability criterion (CVs #pct3(calc.min(..bench-cvs)) to #pct3(calc.max(..bench-cvs))). These medians are descriptive, not settled measurements.]))
+    for panel in bench-panels {
+      let hi = calc.ceil(calc.max(..panel.rows.map(r => r.ratio)) * 2) / 2
+      let ticks = range(0, int(hi * 2) + 1).map(t => t / 2).filter(t => hi <= 2 or calc.fract(t) == 0)
+      let x(v) = w * v / hi
+      let h = panel.rows.len() * rowh + 0.9cm
+      block(breakable: false, above: 0.6em, {
+        align(left, text(size: 8.5pt, weight: "bold", panel.label))
+        v(-0.2em)
+        box(width: 100%, height: h, {
+          place(dx: 2.0cm + x(1), dy: 0pt, line(angle: 90deg, length: panel.rows.len() * rowh + 0.1cm, stroke: (paint: muted, thickness: 0.5pt, dash: "dotted")))
+          for (i, r) in panel.rows.enumerate() {
+            let y = 0.1cm + i * rowh
+            let c = if r.verdict == "loss" { loss-ink } else { ink }
+            place(dx: 0pt, dy: y, box(width: 1.85cm, align(right, small(raw(r.pair)))))
+            let (a, b) = if r.ratio >= 1 { (x(1), x(r.ratio)) } else { (x(r.ratio), x(1)) }
+            place(dx: 2.0cm + a, dy: y + 0.17cm, line(length: b - a, stroke: 1pt + c))
+            place(dx: 2.0cm + x(r.ratio) - 3pt, dy: y + 0.17cm - 3pt, circle(radius: 3pt, fill: c, stroke: none))
+            place(dx: 2.0cm + w + 0.3cm, dy: y, small(text(fill: c)[#fmt(r.ratio, 2)× #r.verdict (Tide slower in #r.slower of #r.rounds rounds)]))
+          }
+          place(dx: 2.0cm, dy: 0pt, axis(w, 0, hi, ticks, panel.rows.len() * rowh + 0.15cm, "×"))
+        })
+      })
+    }
+  },
+  kind: image,
+  caption: [Tide's time as a multiple of plain Rust's (medians divided), drawn from the main run's records, #link(bench-path.slice(1))[`research/36-benchmarks/2026-11-18-bf6b958/records.jsonl`]. Above 1× Tide is slower. A row is a loss when Tide was slower in at least #loss-rounds of the paired rounds, otherwise a tie: the counts are made from the records with the note's rule (§1). The release row for `tasks` compares with Rust built with Tide's flags, so it shows the #fmt(bench-panels.at(0).rows.find(r => r.pair == "tasks").ratio, 2)× between the twins, not the #fmt(bench-row("run", "run", "tide-release", "rust-release", "tasks").ratio, 2)× against plain release Rust.],
+) <fig-bench>
+
 We adopt the note's verdict: "Every comparison above is a loss for Tide or a tie. None is a win." Its other limits include different linkers for the two arms and a Tide std built in each arm's profile, so the debug comparisons also compare an unoptimized std with Rust's optimized one (§3). A fast edit loop remains a design target (D12), not a measurement.
 
 == Case studies
 
-Two case studies rewrite four real bug reports in Tide. Admission catches none of them.
+The case studies under #link("examples/case-studies/")[`examples/case-studies/`] rewrite real bug reports in Tide. Admission catches none of them.
 
 *Eon: one slow close blocks every request* (#link("examples/case-studies/eon-slow-close/README.md")[`examples/case-studies/eon-slow-close/`]). Tide's admission would not have rejected this bug: the buggy loop is ordinary Tide. Eon [17] is a terminal workspace whose supervisor answers every control request on one loop thread. In bug eon-8wh7h, closing a tab stopped its terminals one after another on that thread, and each terminal slow to exit cost a 500 ms stop grace. Eon's own reproduction closed a 14-terminal tab in 6992 ms under IO and CPU stress, and the window's Inspect request timed out at 6011 ms against its 6 s deadline. Eon fixed it by stopping a close's terminals together under one shared deadline. The Tide rewrite models the loop's structure, not Eon's code. A `#[sim_test]` sends an Inspect every 250 ms during the close and requires an answer within 6 s. It fails on the buggy revision and passes on the fixed one, in which the bound is a scope deadline that every wait inside shares. Rust can write the same test. What Tide adds is that the test runs in virtual time, deterministically, with no fake clock written for it: the 7 s close takes milliseconds, where Eon's real-time red/green test fails at 3.78 s. Async Rust gets the same from tokio's paused clock; Eon's thread-based supervisor would need a clock it is handed. A third file encodes the still-open eon-pimct, a terminal start that waits on the loop, as a failing test.
 
 *hyper: the pool reaches for an ambient runtime* (#link("examples/case-studies/hyper-ambient-runtime/README.md")[`examples/case-studies/hyper-ambient-runtime/`]). No Tide admission code in this case study catches either reported failure. hyper 0.14's client pool [18] runs its idle-connection reaper on whichever tokio runtime is ambient. One report is a panic in tokio's timer; in the rewrite that timer gets only rustc's `E0433`, because Tide admits no external crate. The other, hyper\#2808, is a reaper that never starts. Tide does not prevent it: a pool whose optional clock is left unset is admitted, and the reaping test fails on it. What Tide gives is the fix's shape: a pool can start its reaper only in a scope its caller hands it and read time only from a `Clock` it is handed. The rewritten pool's `#[sim_test]` shows it closing idle connections on each of 20 seeds.
 
-Both studies point the same way. Tide's contribution to these bugs is a cheap, deterministic test of a property someone had to think of, plus a structure that makes the fix's bound explicit. It does not find the bugs.
+*Eon: discovery races a host's exit* (#link("examples/case-studies/eon-discovery-race/README.md")[`examples/case-studies/eon-discovery-race/`]). Tide's admission would not have rejected this bug either: the buggy discovery is two ordinary file operations through the `Fs` it is handed. In bug eon-8ehhn, Eon's supervisor read a terminal host's record as live, the host then exited, publishing its tombstone and removing its socket, and the supervisor's socket check failed with an error that failed whatever needed discovery. Eon's fix rereads the record once after a failed check, and its deterministic test places the exit by hand, through a hook added to discovery. The Tide rewrite models the order of the four file operations, not Eon's code. Its `#[sim_test]` starts the exit and discovery together with no hook, and every file operation is a scheduling point. On 13 of 100 seeds the seed puts the whole exit between discovery's read and its check, and discovery fails; the runner reruns each failing seed and requires an identical trace. The fixed discovery passes on all 100. With the host's two steps swapped, the fix fails on 11 of 100 seeds, which shows that the fix rests on the host's order, not that Eon's host keeps it. The gain here is not only a deterministic test of the fix, which Eon already had: the seed finds the interleaving without knowing the window in advance, and the failing seed reproduces it. Rust can let a scheduler such as loom or Shuttle find it too, once the project puts its file operations behind a simulated implementation that it writes and maintains, or adopts from a simulation framework; Tide's std provides that file system because `Fs` is a program's only file access (README, "What the Rust version would need").
+
+The studies point the same way. Admission catches none of these bugs. A test of a property someone had to think of is what fails, and Tide makes that test cheap and deterministic: it runs in virtual time, a seed can find the interleaving over the simulated file system that Tide's std already provides, and a failing seed reruns exactly. Where a fix bounds time or authority, Tide also gives it a structure that makes the bound explicit.
 
 = Related work
 
@@ -196,7 +384,7 @@ In-repository reports and design records (relative links):
 5. E3 pilot report: #link("trials/e3-pilot/report.md")[`trials/e3-pilot/report.md`].
 6. E1 gate report: #link("trials/e1-checked/gate-report.md")[`trials/e1-checked/gate-report.md`].
 7. Benchmarks against plain Rust: #link("research/36-benchmarks.md")[`research/36-benchmarks.md`].
-8. Case studies: #link("examples/case-studies/eon-slow-close/README.md")[`examples/case-studies/eon-slow-close/README.md`] and #link("examples/case-studies/hyper-ambient-runtime/README.md")[`examples/case-studies/hyper-ambient-runtime/README.md`].
+8. Case studies: #link("examples/case-studies/eon-slow-close/README.md")[`examples/case-studies/eon-slow-close/README.md`], #link("examples/case-studies/hyper-ambient-runtime/README.md")[`examples/case-studies/hyper-ambient-runtime/README.md`] and #link("examples/case-studies/eon-discovery-race/README.md")[`examples/case-studies/eon-discovery-race/README.md`].
 9. Adversarial review (weaknesses W1 to W8): #link("reviews/2026-11-15-achilles-opus.md")[`reviews/2026-11-15-achilles-opus.md`]; round-1 agent-usability review: #link("reviews/round1-agent-usability.md")[`reviews/round1-agent-usability.md`].
 10. Research notes: #link("research/04-verification.md")[`research/04-verification.md`], #link("research/05-llm-code-empirics.md")[`research/05-llm-code-empirics.md`], #link("research/07-effects-capabilities.md")[`research/07-effects-capabilities.md`], #link("research/16-deterministic-simulation.md")[`research/16-deterministic-simulation.md`], #link("research/28-positioning-and-name.md")[`research/28-positioning-and-name.md`].
 
