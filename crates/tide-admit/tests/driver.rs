@@ -2072,3 +2072,202 @@ pub fn pattern(p: Pun) {
         "{stderr}"
     );
 }
+
+/// A Tide diagnostic as an agent reads it, placed relative to the fixture block that owns it:
+/// (block, line within the block, column, severity, code, message).
+type Placed = (&'static str, usize, usize, String, String, String);
+
+/// A fixture block: its name, whether it owns diagnostics, and its independent top-level items.
+type Block = (&'static str, bool, &'static str);
+
+/// Lays out `blocks` in order as one library, with `gap` before each; returns the source and each
+/// block's name with its first line and the line after its last.
+fn lay_out(blocks: &[Block], gap: &str) -> (String, Vec<(&'static str, usize, usize)>) {
+    let mut source = String::new();
+    let mut lines = Vec::new();
+    for &(name, _, items) in blocks {
+        source.push_str(gap);
+        let first = source.lines().count() + 1;
+        source.push_str(items);
+        lines.push((name, first, first + items.lines().count()));
+    }
+    (source, lines)
+}
+
+/// Places each Tide diagnostic in `stderr` in the block whose lines hold its start; the multiset
+/// comes back sorted. A diagnostic that is malformed or that no block owns is an error.
+fn place(stderr: &str, lines: &[(&'static str, usize, usize)]) -> Result<Vec<Placed>, String> {
+    let mut placed = Vec::new();
+    for diagnostic in stderr.lines() {
+        let Some(severity) = ["error", "warning"]
+            .into_iter()
+            .find(|s| diagnostic.contains(&format!(": {s}: TD")))
+        else {
+            continue;
+        };
+        let parts = (|| {
+            let (line, rest) = diagnostic.strip_prefix("lib.rs:")?.split_once(':')?;
+            let (column, rest) = rest.split_once(": ")?;
+            let (code, message) = rest
+                .strip_prefix(severity)?
+                .strip_prefix(": ")?
+                .split_once(": ")?;
+            Some((
+                line.parse::<usize>().ok()?,
+                column.parse().ok()?,
+                code,
+                message,
+            ))
+        })();
+        let Some((line, column, code, message)) = parts else {
+            return Err(format!("unparsed: {diagnostic}"));
+        };
+        let Some(&(block, first, _)) = lines.iter().find(|&&(_, a, b)| (a..b).contains(&line))
+        else {
+            return Err(format!("in no block: {diagnostic}"));
+        };
+        placed.push((
+            block,
+            line - first + 1,
+            column,
+            severity.into(),
+            code.into(),
+            message.into(),
+        ));
+    }
+    placed.sort();
+    Ok(placed)
+}
+
+/// Harmless edits keep every Tide diagnostic (D14): reversing independent items, inserting blank
+/// and comment lines, adding an unrelated accepted item, and running the driver again change no
+/// diagnostic's block, place within it, severity, code, or message, and lose or add none. A
+/// walk rejection, a backstop rejection (which runs only when the walk finds nothing), and an
+/// accepted control each go through the same edits.
+#[test]
+fn diagnostics_are_stable_under_harmless_source_edits() {
+    let walk: &[Block] = &[
+        (
+            "atomic",
+            true,
+            "pub fn counter() -> u64 {\n    core::sync::atomic::AtomicU64::new(0).into_inner()\n}\n",
+        ),
+        (
+            "env",
+            true,
+            "pub fn mode() -> bool {\n    std::env::var(\"MODE\").is_ok()\n}\n",
+        ),
+        (
+            "print",
+            true,
+            "pub fn say(n: u32) {\n    println!(\"{n}\");\n}\n",
+        ),
+        (
+            "double",
+            false,
+            "pub fn double(x: u32) -> u32 {\n    x * 2\n}\n",
+        ),
+    ];
+    let backstop: &[Block] = &[
+        (
+            "vtable",
+            true,
+            "pub fn leaf(x: &fn()) -> &dyn PartialOrd<fn()> {\n    x\n}\n",
+        ),
+        (
+            "format",
+            true,
+            "pub fn debug<T: std::fmt::Debug>(t: T) -> String {\n    format!(\"{t:?}\")\n}\n\
+             pub fn shown(f: fn()) -> String {\n    debug(f)\n}\n",
+        ),
+    ];
+    let accepted: &[Block] = &[
+        (
+            "total",
+            false,
+            "pub fn total(xs: &[u32]) -> u32 {\n    xs.iter().sum()\n}\n",
+        ),
+        (
+            "point",
+            false,
+            "pub struct Point {\n    pub x: i32,\n}\nimpl Point {\n    pub fn shifted(&self) -> Point {\n        \
+             Point { x: self.x + 1 }\n    }\n}\n",
+        ),
+    ];
+    let unrelated: Block = (
+        "unrelated",
+        false,
+        "pub fn unrelated(x: u32) -> u32 {\n    x + 1\n}\n",
+    );
+    let comments = "\n// A comment between independent items.\n\n";
+    let mut failures = Vec::new();
+    for (case, blocks, flags, exit) in [
+        ("walk", walk, &[][..], 1),
+        ("backstop", backstop, &["--tide-test-backstop"][..], 1),
+        ("accepted", accepted, &[][..], 0),
+    ] {
+        let check = |variant: &str, blocks: &[Block], gap: &str| {
+            let (source, lines) = lay_out(blocks, gap);
+            let (code, stderr) = admit(&format!("stable-{case}-{variant}"), &source, flags);
+            (code, place(&stderr, &lines), stderr)
+        };
+        let (code, base, stderr) = check("original", blocks, "");
+        assert_eq!(code, exit, "{case}: {stderr}");
+        let base = base.unwrap_or_else(|e| panic!("{case}: {e}\n{stderr}"));
+        for &(name, flagged, _) in blocks {
+            assert_eq!(
+                base.iter().any(|d| d.0 == name),
+                flagged,
+                "{case}/{name}: {stderr}"
+            );
+        }
+        if case == "backstop" {
+            // Only the backstop names the instance that runs a denied impl.
+            assert!(
+                base.iter().all(|d| d.5.contains("(it runs as `")),
+                "{stderr}"
+            );
+        }
+
+        // The comparison sees a lost, a duplicated, or a recoded diagnostic, and a moved line
+        // or column.
+        if let Some(first) = stderr.lines().find(|l| l.contains(": error: TD")) {
+            let (_, lines) = lay_out(blocks, "");
+            let (line, rest) = first["lib.rs:".len()..].split_once(':').unwrap();
+            let (column, rest) = rest.split_once(':').unwrap();
+            let line: usize = line.parse().unwrap();
+            let column: usize = column.parse().unwrap();
+            let code = &rest[rest.find("TD").unwrap()..][..6];
+            for corrupt in [
+                stderr.replacen(&format!("{first}\n"), "", 1),
+                stderr.replacen(&format!("{first}\n"), &format!("{first}\n{first}\n"), 1),
+                stderr.replacen(first, &first.replacen(code, "TD0000", 1), 1),
+                stderr.replacen(first, &format!("lib.rs:{}:{column}:{rest}", line + 1), 1),
+                stderr.replacen(first, &format!("lib.rs:{line}:{}:{rest}", column + 1), 1),
+            ] {
+                assert_ne!(place(&corrupt, &lines), Ok(base.clone()), "{corrupt}");
+            }
+        }
+
+        let reversed: Vec<Block> = blocks.iter().rev().copied().collect();
+        let mut extra = vec![unrelated];
+        extra.extend_from_slice(blocks);
+        let mut all = vec![unrelated];
+        all.extend_from_slice(&reversed);
+        for (variant, blocks, gap) in [
+            ("repeat", blocks, ""),
+            ("reversed", &reversed[..], ""),
+            ("comments", blocks, comments),
+            ("unrelated", &extra[..], ""),
+            ("combined", &all[..], comments),
+        ] {
+            let (code, placed, stderr) = check(variant, blocks, gap);
+            if code != exit || placed.as_ref() != Ok(&base) {
+                failures.push(format!(
+                    "{case}/{variant}: exit {code}, {placed:#?}\nexpected {base:#?}\n{stderr}"
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
