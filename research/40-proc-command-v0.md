@@ -1,9 +1,10 @@
 # Proc::command in v0: the bounded process profile (fx-ayh2.1)
 
-Status: design admission for bead fx-ayh2.1, stage 1 (docs only). It moves
-one bounded process profile, real and simulated, into v0. Nothing here is
-implemented; stage 2 implements it after this note, its review rounds and a
-separate red-team pass are accepted. Labels follow research/30: **[repo
+Status: design admission for bead fx-ayh2.1. It moves one bounded process
+profile, real and simulated, into v0. Stage 2 implemented it (`tide-std`'s
+`process.rs` with `process/real.rs` and `process/sim.rs`; §12's witnesses in
+`process/tests.rs`), apart from §6's node crash, which waits for simulated
+nodes; `Proc::exit` stays planned. Labels follow research/30: **[repo
 evidence]** for what the repository says, **[source]** for cited outside
 evidence, **[inference]** for this note's reasoning.
 
@@ -215,7 +216,9 @@ companion and 03.
   explicitly set environment (through `env` or `envs`) has a variable whose
   name starts with `LD_` or `DYLD_`, or that is any name in glibc 2.39's
   `UNSECURE_ENVVARS` (`sysdeps/generic/unsecvars.h`, 34 names: the `LD_` ones, `GCONV_PATH`, `GETCONF_DIR`, `GLIBC_TUNABLES`, `HOSTALIASES`, `LOCALDOMAIN`, `LOCPATH`, the `MALLOC_*` tunable aliases and `MALLOC_TRACE`, `NIS_PATH`, `NLSPATH`, `RESOLV_HOST_CONF`, `RES_OPTIONS`, `TMPDIR`, `TZDIR`), is
-  refused with `PermissionDenied`. It is glibc's list at that version:
+  refused with `PermissionDenied`, as is any name holding `=` (stage 2
+  review s2-r1: Rust passes such a key through, and the child's C library
+  reads the bytes before the `=` as the name). It is glibc's list at that version:
   another C library's variables (musl's `MUSL_LOCPATH`) and names later
   glibc adds are not refused. This is the set
   glibc itself strips for setuid programs because it makes the C library
@@ -285,7 +288,7 @@ it does. That is the contract, and the docs say it in these words.
 | `PATH` | Lookup uses the start-time `PATH` (§3); the command's `PATH` reaches only the child and its own lookups. | A writable directory on the start-time `PATH` lets whoever writes it choose the program. |
 | Loader variables | Refused when set on a command under `only` (§3). | Inherited ones pass; other injection variables are program-specific (§4). |
 | `current_dir` | As in Rust; a relative directory resolves against the parent's current directory. It needs no `Fs`: the child is ambient. Lookup and canonical resolution happen in the parent before it applies, so it cannot change which program starts, also through symlinks or `/proc/self/cwd` (§3). | A relative `#!` interpreter resolves after it (§3); it chooses the files and configuration the program reads (§4). |
-| Descriptors | The child gets exactly its three standard descriptors as `Stdio` configures them. Tide's std opens every descriptor close-on-exec, and the real backend also marks every other descriptor close-on-exec in the child before exec (Linux `close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`, after the standard descriptors are set up), so descriptors the Tide process inherited or a `ffi` call opened do not reach it. The sweep fails closed: if it fails (as on a kernel before 5.11, `EINVAL`), the child exits before exec and `spawn` returns the error. | Descriptors passed deliberately through `Stdio::from(file)` or a pipe end are the child's. |
+| Descriptors | The child gets exactly its three standard descriptors as `Stdio` configures them. Tide's std opens every descriptor close-on-exec, and the real backend also marks every other descriptor close-on-exec in the child before exec (Linux `close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`, after the standard descriptors are set up), so descriptors the Tide process inherited or a `ffi` call opened do not reach it. The sweep fails closed: if it fails (`ENOSYS` before Linux 5.9, `EINVAL` for `CLOSE_RANGE_CLOEXEC` on 5.9–5.10), the child exits before exec and `spawn` returns the error. | Descriptors passed deliberately through `Stdio::from(file)` or a pipe end are the child's. |
 | Symlinks | Resolved by std in the parent to a canonical path, which the child execs (§3); entries name paths, not file contents. | Whoever can replace the file or a link on the path chooses the program. |
 
 ## 6. Simulated lifecycle subset (sim.world.proc in v0)

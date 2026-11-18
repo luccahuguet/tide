@@ -29,8 +29,13 @@ pub fn diff(base: &Path, head: &Path) -> Result<String, String> {
     Ok(compare(&read(base)?, &read(head)?))
 }
 
+// 03 §4.3: new paths to these kinds are listed first.
+const FIRST: [&str; 3] = ["proc", "foreign", "accel"];
+// 03 §4.3: a `proc` line says the child is not capability-checked.
+const PROC_NOTE: &str = " (child is ambient; only names programs, 03 PROC-ONLY)";
+
 fn compare(base: &Artifact, head: &Artifact) -> String {
-    let mut items = String::new();
+    let mut blocks: Vec<(bool, String)> = Vec::new();
     let keys: BTreeSet<_> = base.items.keys().chain(head.items.keys()).collect();
     for key @ (item, kind) in keys {
         let (old, new) = (base.items.get(key), head.items.get(key));
@@ -43,7 +48,7 @@ fn compare(base: &Artifact, head: &Artifact) -> String {
         let empty = Authority::new();
         let (old, new) = (old.unwrap_or(&empty), new.unwrap_or(&empty));
         let mut lines = String::new();
-        let (mut widened, mut narrowed) = (false, false);
+        let (mut widened, mut narrowed, mut first) = (false, false, false);
         for path in old.keys().chain(new.keys()).collect::<BTreeSet<_>>() {
             let (was, is) = (old.get(path), new.get(path));
             for (sign, kinds, other, flag) in
@@ -57,8 +62,11 @@ fn compare(base: &Artifact, head: &Artifact) -> String {
                     .collect();
                 if !kinds.is_empty() {
                     *flag = true;
+                    let added = sign == "+";
+                    first |= added && kinds.iter().any(|k| FIRST.contains(&k.as_str()));
+                    let note = if added && kinds.iter().any(|k| k == "proc") { PROC_NOTE } else { "" };
                     let path = shown_path(path);
-                    let _ = writeln!(lines, "      {sign} {path}: {}", kinds.join(", "));
+                    let _ = writeln!(lines, "      {sign} {path}: {}{note}", kinds.join(", "));
                 }
             }
         }
@@ -69,9 +77,12 @@ fn compare(base: &Artifact, head: &Artifact) -> String {
             _ => "",
         };
         let (item, kind) = (shown(item), shown(kind));
-        let _ = writeln!(items, "  {label} {item} ({kind}){change}");
-        items.push_str(&lines);
+        let mut block = format!("  {label} {item} ({kind}){change}\n");
+        block.push_str(&lines);
+        blocks.push((first, block));
     }
+    blocks.sort_by_key(|(first, _)| !first);
+    let items: String = blocks.into_iter().map(|(_, block)| block).collect();
     let mut holes = String::new();
     let keys: BTreeSet<_> = base.holes.keys().chain(head.holes.keys()).collect();
     for key @ (item, kind, what) in keys {
@@ -427,6 +438,24 @@ mod tests {
 
     fn report(base: &str, head: &str) -> Result<String, String> {
         Ok(compare(&parse(base)?, &parse(head)?))
+    }
+
+    #[test]
+    fn new_proc_paths_come_first_and_name_the_child_as_ambient() {
+        let base = artifact(r##"{"item": "lib::a", "kind": "function", "authority": {}}"##, "");
+        let head = artifact(
+            r##"{"item": "lib::a", "kind": "function", "authority": {"#0": ["net"]}},
+               {"item": "lib::run", "kind": "function", "authority": {"#0": ["proc"]}}"##,
+            "",
+        );
+        let expected = "\
+declared authority (no exercised authority, effects, or proof status)
+  + lib::run (function)
+      + #0: proc (child is ambient; only names programs, 03 PROC-ONLY)
+  ~ lib::a (function) widened
+      + #0: net
+";
+        assert_eq!(report(&base, &head).unwrap(), expected);
     }
 
     #[test]

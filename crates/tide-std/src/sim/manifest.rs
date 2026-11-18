@@ -180,6 +180,15 @@ impl Journal {
         self.update_roots();
     }
 }
+/// The inputs the active recording has journalled so far, for tests of what a root records.
+#[cfg(test)]
+pub(crate) fn recorded_inputs() -> Vec<(String, Vec<u8>, Vec<u8>)> {
+    ACTIVE.with(|slot| {
+        let slot = slot.borrow();
+        let journal = slot.as_ref().unwrap().journal.lock().unwrap();
+        journal.roots.iter().flat_map(|r| &r.inputs).map(|i| (i.kind.clone(), i.key.clone(), i.value.clone())).collect()
+    })
+}
 pub(crate) fn choice(choice: &Choice) {
     ACTIVE.with(|slot| {
         let slot = slot.borrow();
@@ -202,7 +211,7 @@ pub(crate) fn finish(choices: &[Choice], signature: &str, failed: bool) -> crate
     }
     let rendered = trace.render();
     if let Some(expected) = recording.context.as_ref().and_then(|c| c.replay.as_ref()) {
-        assert_eq!(expected.roots, journal.roots, "replay root count mismatch");
+        assert_eq!(expected.roots, journal.roots, "replay root or input mismatch");
         assert_eq!(expected.outcome, signature, "replay outcome mismatch");
         if let Some(difference) = replay::first_difference(&expected.trace, &rendered) {
             panic!("replay {difference}");

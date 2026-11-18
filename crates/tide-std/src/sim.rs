@@ -1,4 +1,4 @@
-// Seeded simulation for tests (03 §9). Tasks, Arc/Weak, Shared, channels, files, TCP loopback, process inputs, clocks and sinks are modeled.
+// Seeded simulation for tests (03 §9). Tasks, Arc/Weak, Shared, channels, files, TCP loopback, process inputs, declared child-process models, clocks and sinks are modeled.
 // Driver-backed evaluation manifests use the private harness below.
 // Other capability operations/setup, faults and nodes are pending.
 
@@ -27,6 +27,7 @@ pub struct SimRoot {
     pub tasks: Tasks,
     pub world: World,
     pub faults: Faults,
+    _coverage: Coverage,
     simulation: Simulation,
 }
 
@@ -42,6 +43,7 @@ impl SimRoot {
         let tasks = simulation.tasks().clone();
         manifest::root(seed, tasks.clone());
         let fs = crate::fs::Fs::simulated(&tasks);
+        let proc = crate::process::Proc::new(Some(tasks.clone()));
         Self {
             fs: fs.clone(),
             net: crate::net::Net::new(Some(tasks.clone())),
@@ -49,14 +51,16 @@ impl SimRoot {
             rand: crate::rand::Rand(Some(tasks.clone())),
             env: crate::env::Env::new(Some(tasks.clone())),
             stdin: crate::io::Stdin(Some(tasks.clone())),
-            proc: crate::process::Proc(Some(tasks.clone())),
+            proc: proc.clone(),
             world: World {
                 fs,
+                proc: proc.clone(),
                 tasks: tasks.clone(),
             },
             faults: Faults {
                 _tasks: tasks.clone(),
             },
+            _coverage: Coverage(proc),
             tasks,
             simulation,
         }
@@ -78,9 +82,26 @@ impl SimRoot {
     }
 }
 
-/// Simulated input setup. File and process inputs are modeled.
+// A process coverage failure stops the seed even when no later operation observed it. A field
+// guard rather than `Drop for SimRoot`, so tests can still move fields out of the root.
+struct Coverage(crate::process::Proc);
+impl Drop for Coverage {
+    fn drop(&mut self) {
+        let failure = self.0.sim.as_ref().and_then(|s| s.lock().ok()?.failure());
+        if let Some(failure) = failure.filter(|_| !std::thread::panicking()) {
+            panic!("{failure}");
+        }
+    }
+}
+
+#[path = "sim/process.rs"]
+pub(crate) mod process;
+pub use process::ProcessModel;
+
+/// Simulated input setup. File and process inputs and process models are modeled.
 pub struct World {
     fs: crate::fs::Fs,
+    proc: crate::process::Proc,
     tasks: Tasks,
 }
 impl World {
@@ -112,6 +133,13 @@ impl World {
         let bytes = bytes.as_ref();
         self.tasks.replay_input("stdin", vec![], bytes.to_vec());
         self.tasks.world_inputs(|inputs| inputs.stdin.extend(bytes));
+    }
+    /// Registers a declarative model for an exact program spelling (03 §9.9): no `PATH` search,
+    /// shell or host execution. Takes no point, draw or time; panics on duplicates and malformed
+    /// models. Under simulation an unregistered program is a coverage failure.
+    #[track_caller]
+    pub fn proc(&self, program: impl AsRef<std::ffi::OsStr>, model: ProcessModel) {
+        crate::process::sim::register(&self.proc, program.as_ref(), model);
     }
     /// Immediately creates or replaces a file and creates its parents, from simulated `/`.
     /// Takes no virtual time and does not schedule. Panics on invalid setup paths.

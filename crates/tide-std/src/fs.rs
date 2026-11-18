@@ -411,6 +411,13 @@ impl std::fmt::Debug for File {
     }
 }
 impl File {
+    /// The descriptor of a real file, for `Stdio::from`; `None` for a simulated one.
+    pub(crate) fn into_fd(self) -> Option<std::os::fd::OwnedFd> {
+        match self.backend {
+            FileBackend::Real(file) => Some(file.into()),
+            FileBackend::Sim(_) => None,
+        }
+    }
     // Sinks are not checkpoints and cannot observe cancellation or report a write failure.
     pub(crate) fn write_sink(&self, bytes: &[u8]) {
         if let FileBackend::Real(file) = &self.backend {

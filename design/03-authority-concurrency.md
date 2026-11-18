@@ -382,7 +382,8 @@ Notes:
   command's final explicitly set environment, where a variable whose name
   starts with `LD_` or `DYLD_`, or that is any name in glibc 2.39's
   `UNSECURE_ENVVARS` (`sysdeps/generic/unsecvars.h`, 34 names: the `LD_` ones, `GCONV_PATH`, `GETCONF_DIR`, `GLIBC_TUNABLES`, `HOSTALIASES`, `LOCALDOMAIN`, `LOCPATH`, the `MALLOC_*` tunable aliases and `MALLOC_TRACE`, `NIS_PATH`, `NLSPATH`, `RESOLV_HOST_CONF`, `RES_OPTIONS`, `TMPDIR`, `TZDIR`), is
-  refused; and NUL bytes in the program, arguments, environment, and
+  refused, as is any name holding `=` (the C library reads the bytes
+  before it as the name, so `GCONV_PATH=/x` would set `GCONV_PATH`); and NUL bytes in the program, arguments, environment, and
   directory (`InvalidInput`, as Rust does). The refused set is what Tide
   knows: it is glibc's list at that version, and another C library's
   variables (musl's `MUSL_LOCPATH`) and names later glibc adds are not
@@ -2395,8 +2396,17 @@ the v0 simulator, `piped` and `null` work on all three descriptors and
 `inherit` on stdout and stderr; inherited stdin, `From<File>`, and piping
 one child into another are unsupported modes, a coverage failure. Signals,
 signal death, PTYs, parent-only death, `run_until_exit`, `proc_snapshot`,
-and the fault set stay **Later**. None of it is implemented yet; §9.8's
-exclusions remain until it ships. [Research/30](../research/30-sim-world-proc.md) records evidence,
+and the fault set stay **Later**. The lifecycle subset is implemented
+(fx-ayh2.1; `crates/tide-std/src/process/sim.rs`), apart from node crash,
+since simulated nodes are not built yet; the rest of §9.9 is not. The v0
+model builder spelling, provisional like the others, is
+`ProcessModel::new()` with command restrictions `args`, `env` and
+`current_dir`, the ordered steps `read(bytes)`, `read_to_end()`, `copy()`,
+`write(bytes)`, `write_err(bytes)`, `close_stdin()`, `close_stdout()`,
+`close_stderr()`, `delay(min, max)`, `choose([models])` and `exit(code)`
+(exit 0 after the last step), and `ignore_sigpipe()`; the simulator runs
+each model on a hidden scheduler task, so its actions, and `kill`'s
+termination, are ready actions the existing scheduler interleaves. [Research/30](../research/30-sim-world-proc.md) records evidence,
 alternatives, the accepted choices and implementation acceptance for
 fx-ayh2. API spellings are provisional.
 In v0 a simulated status with no code therefore comes only from `kill` or

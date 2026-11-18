@@ -340,7 +340,7 @@ do, in every dependency.
 | `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
-| `Proc` (`std::process`; planned) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20), `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
+| `Proc` (`std::process`) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20); planned: `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
 | `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (planned; `false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
 - Their methods take `&self` (provisional; handles' receivers: companion
@@ -509,7 +509,7 @@ require `Pure`.
 ### 6.8 Simulation
 
 Every capability has a deterministic simulated version (partial: not yet
-`Rand` or `Proc`). `Root::sim(seed)`
+`Rand`). `Root::sim(seed)`
 returns a `SimRoot` (`std::sim`) with `Root`'s capability fields, all
 simulated (pass `&sim.fs` and the rest to the code under test), plus
 `sim.world` (setup), `sim.faults` and `sim.node(name)` (faults, crashable

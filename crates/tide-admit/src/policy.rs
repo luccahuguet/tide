@@ -430,6 +430,9 @@ pub const RULES: &[Rule] = &[
     // What `main` may return (reference 6.2); `ExitCode::from(u8)` is a `From` impl.
     allow("std::process::ExitCode::SUCCESS"),
     allow("std::process::ExitCode::FAILURE"),
+    // A child's status, re-exported by `tide_std::process` (research/40 §2): data observers only.
+    allow("std::process::ExitStatus::code"),
+    allow("std::process::ExitStatus::success"),
     // `HashMap` and `HashSet` with Rust's `RandomState`: their methods, but nothing that draws
     // a random key (GLOBAL-5); Tide's std builds maps with a fixed key or a key from `Rand`.
     deny("std::hash::random::RandomState::new", RANDOM_KEY),

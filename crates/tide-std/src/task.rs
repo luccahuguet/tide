@@ -25,6 +25,10 @@ mod net {
     include!("task/net.rs");
 }
 pub(crate) use net::{NetContext, Network};
+mod proc {
+    include!("task/proc.rs");
+}
+pub(crate) use proc::{Ended, ModelContext, ProcContext};
 
 #[derive(Clone)]
 struct Waiter {
@@ -66,6 +70,8 @@ struct Baton {
     // Where each task blocked in a cancellable wait sits, so a cancel there wakes it.
     cancellable: BTreeMap<TaskId, Location>,
     resources: BTreeMap<TaskId, Arc<Signal>>,
+    // Simulated child processes' model tasks (03 §9.9), released when the simulation ends.
+    models: Vec<TaskId>,
 }
 
 // Resource-owned readiness and waker, also usable across independent real runtimes.
@@ -125,6 +131,9 @@ impl Baton {
     fn wait(mut runtime: MutexGuard<'_, Runtime>, task: TaskId) -> MutexGuard<'_, Runtime> {
         let parked = runtime.baton.as_ref().unwrap().parked[task].clone();
         while runtime.baton.as_ref().unwrap().scheduler.current != Some(task) {
+            if runtime.simulation_ended && runtime.baton.as_ref().unwrap().models.contains(&task) {
+                break;
+            }
             runtime = sim_lock(parked.wait(runtime));
         }
         runtime
@@ -723,6 +732,7 @@ impl Simulation {
                 parked: vec![Arc::new(Condvar::new())],
                 cancellable: BTreeMap::new(),
                 resources: BTreeMap::new(),
+                models: Vec::new(),
             }),
             ..Runtime::default()
         }));
@@ -769,6 +779,10 @@ impl Drop for Simulation {
             );
         }
         runtime.simulation_ended = true;
+        let baton = runtime.baton.as_ref().unwrap();
+        for &model in &baton.models {
+            baton.parked[model].notify_one();
+        }
         // Assert unlocked: a failure must not poison the lock or abort an unwind in progress.
         drop(runtime);
         assert!(

@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,961 tokens, recounted on 2026-11-17 with
+Core count: 24,979 tokens, recounted on 2026-11-18 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -83,7 +83,7 @@ Rerun it after any change to the core and update this line.
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
 | `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once (planned) |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
-| `Command::new("git")` | `proc.command("git")` (planned) |
+| `Command::new("git")` | `proc.command("git")` |
 | `TcpStream::connect(a)` | `net.connect(a)` |
 | `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` (planned) |
 
@@ -578,7 +578,7 @@ exhaust CPU, memory, or output, so set time and memory limits. This covers
 `tide eval`, a built binary, and anything else the branch asks you to
 execute still need your session's sandbox.
 
-## 20. Process handles (planned)
+## 20. Process handles
 
 A `Command`, like a `File`, is a resource handle: it carries the authority
 of the `Proc` that made it, because `output()`, `status()`, and `spawn()`
@@ -653,8 +653,8 @@ simulator does not model inherited stdin, so set `Stdio::null()` or
   child's own `PATH`, unlike Rust. Whoever can write a directory on that
   `PATH`, or replace the file an entry names, chooses the program.
   Under `only`, setting an `LD_` or `DYLD_` variable, or a C-library one
-  such as `GCONV_PATH` (the list is in 03 PROC-ONLY), on the command
-  returns `PermissionDenied`. `only` picks the program, not what it does:
+  such as `GCONV_PATH` (the list is in 03 PROC-ONLY), or a name holding
+  `=`, on the command returns `PermissionDenied`. `only` picks the program, not what it does:
   an allowed shell, interpreter, `env`, `xargs`, or a program that runs
   what its arguments name (`git -c core.sshCommand=..`, `find -exec`) is
   full authority. A script, a program steered by the files it reads (git's
@@ -675,6 +675,25 @@ simulator does not model inherited stdin, so set `Stdio::null()` or
   §9.9's lifecycle subset; model spellings are provisional. A status with
   no code (after `kill`, or a model's write to a closed pipe) has
   `code() == None` and prints as on Linux (`signal: 9 (SIGKILL)`).
+  A model is data built with `ProcessModel::new()`: `args`, `env`, and
+  `current_dir` restrict the command it accepts, and the steps `read`,
+  `read_to_end`, `copy`, `write`, `write_err`, `close_stdin`/`stdout`/
+  `stderr`, `delay(min, max)`, `choose([..])`, and `exit(code)` run in
+  order (exit 0 after the last step); `ignore_sigpipe()` makes a write to a
+  closed pipe fail and continue.
+
+```rust
+#[sim_test]
+fn sorts(sim: SimRoot) {
+    let sort = ProcessModel::new().read("b\na\n").read_to_end().write("a\nb\n");
+    sim.world.proc("sort", sort);
+    let mut child = sim.proc.command("sort")
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"b\na\n").unwrap();  // dropped: closed
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.stdout, b"a\nb\n");
+}
+```
 - **Paths.** `Command`, `Child`, the pipe ends, and `Stdio` are in
   `std::process`, and `ReadDir` and `DirEntry` in `std::fs`: Rust's paths,
   where Rust has the type.

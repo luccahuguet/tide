@@ -46,10 +46,9 @@ pub mod math;
 #[path = "../../../../crates/tide-std/src/test/mod.rs"]
 pub mod test;
 
-pub mod process {
-    pub use std::process::{ExitCode, Termination};
-    crate::capability!(Proc);
-}
+// Production owns `Proc`, `Command`, `Child`, the pipe ends, `Stdio` and both backends.
+#[path = "../../../../crates/tide-std/src/process.rs"]
+pub mod process;
 
 #[path = "../../../../crates/tide-std/src/io/mod.rs"]
 pub mod io;
