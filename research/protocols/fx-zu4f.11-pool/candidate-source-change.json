@@ -1,0 +1,14 @@
+{
+  "recorded_utc": "2026-11-18T18:20:13.124459+00:00",
+  "authority": "tide-lead direct follow-up and fx-zu4f.11 latest comment; re-read 2026-11-18",
+  "old_source": "per-marker global GitHub commit search",
+  "new_source": "GitHub repository search language:Rust stars:>=1000 pushed:>=2025-11-18T18:01:51Z, sliced by stars",
+  "reason": "Five secondary HTTP 403 refusals during 39 collection requests despite multi-minute backoffs; before registration and no repository examined",
+  "aborted_evidence_directory": "/mnt/build/tide-agents/fx-zu4f.11-target/aborted-commit-search",
+  "same_snapshot_utc": "2026-11-18T18:01:51Z",
+  "all_other_criteria": "unchanged",
+  "aborted_query_manifest_sha256": "91f0dc90759ba7e23176ba6bd5f2b4876ad91cb26f1c47aa31996e301ee923a5",
+  "aborted_requests": 39,
+  "aborted_secondary_403_refusals": 5,
+  "subsequent_protocol_narrowings": "See protocol.md and mechanical-corrections.json; arm-B exact whole-word expression and source-directory gate are the later coordinator directive."
+}

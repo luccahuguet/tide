@@ -1,0 +1,22 @@
+{
+  "source": "GitHub repository search (amended before registration)",
+  "search_started_utc": "2026-11-18T18:21:38.922946+00:00",
+  "search_ended_utc": "2026-11-18T18:23:36.087378+00:00",
+  "search_requests": 25,
+  "search_distinct_repositories": 2139,
+  "collection_in_progress": false,
+  "snapshot": {
+    "snapshot_utc": "2026-11-18T18:01:51Z",
+    "window_start_utc": "2025-11-18T18:01:51Z",
+    "window_end_exclusive_utc": "2026-11-18T18:01:51Z",
+    "base_commit": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2"
+  },
+  "collection_completed_utc": "2026-11-18T20:34:15.052773+00:00",
+  "last_api_ended_utc": "2026-11-18T20:34:11.384518+00:00",
+  "api_requests": 2164,
+  "api_non_200": 0,
+  "first_clone_and_count_started_utc": "2026-11-18T18:25:40.322825+00:00",
+  "last_clone_and_count_ended_utc": "2026-11-18T20:34:12.193916+00:00",
+  "normalization_completed_utc": "2026-11-18T20:37:03.339010+00:00",
+  "validation_completed_utc": "2026-11-18T20:46:24.374112+00:00"
+}
