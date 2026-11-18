@@ -797,3 +797,18 @@ written by an agent, and never claims AI-written code is bad. Agent-written
 code is Tide's target; marker-associated repositories are this experiment's
 operational selection. Every pool repository's AI-report policy, URL and date
 is recorded after go under the disclosure section.
+
+## Amendment A1: owner-affiliated repositories (before go and before any examination)
+
+Added by tide-lead on 2026-11-18, after the pool was registered in 759a196 and before any
+pool repository was examined, stamped or given go. It changes no pool, rank, eligibility,
+property or caught criterion. It only changes how a catch counts.
+
+Pool rank 8, Yazelix/nova, belongs to the Yazelix GitHub organization, which also hosts the
+owner's own projects (for example Yazelix/starcompass, the source of this repository's
+agent protocols). A catch in a repository owned or maintained by the Tide owner is not an
+external catch. Such a repository stays in the pool and is examined and reported exactly
+like the others. A catch there is reported, in its own row labelled owner-affiliated, and
+does NOT meet the RC's external-catch bar. Pool denominators count it; external-catch
+counts do not. The same rule applies to any other pool repository found to be owned or
+maintained by the owner; the report names the evidence.
