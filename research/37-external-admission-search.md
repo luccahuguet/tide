@@ -15,8 +15,21 @@ The search follows the frozen criteria on bead fx-zu4f.5 and the operational
 protocol tide-lead registered before any candidate was examined:
 `target/work/protocol.md`, SHA-256
 `0e5cebada4f0c379f72480a10331a55a18fdff37377659510f9cea0b6b424fb0`, recorded
-on the bead at 2026-11-18T05:49Z and checked again before this work began. The
-protocol is reproduced verbatim at the end of this record.
+on the bead at 2026-11-18T05:49Z and checked again before this work began (see
+"What 'pre-registered' means here"). The protocol is reproduced verbatim at
+the end of this record.
+
+**What "pre-registered" means here.** Neither the frozen criteria nor the
+protocol reached git before the search began. The bead body required the
+operational protocol to be committed before any candidate was examined. The
+bead body, with its frozen criteria, and the protocol's SHA-256 first entered
+git together in ledger commit 42181e3 at 05:52:57Z, about three minutes after
+the first P2 request at 05:50:10Z. The order of criteria, registration and
+search rests on br's local timestamps alone. The bytes embedded below match
+the recorded hash. This record landed (687c494) before the gap was found; this
+paragraph is a correction. Every timestamp here, git or br, is self-attested.
+Publishing the repository will show only that these commits existed by the
+publication date, not the order before it.
 
 Who did what:
 
