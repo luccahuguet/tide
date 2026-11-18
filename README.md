@@ -131,8 +131,16 @@ run plus admission.
 ### Case studies
 
 [examples/case-studies/](examples/case-studies/) rewrites real projects' bugs
-in Tide. Admission catches neither bug.
+in Tide. Admission catches none of the bugs.
 
+- [eon-discovery-race](examples/case-studies/eon-discovery-race/README.md):
+  Tide's admission would not have rejected Eon's bug, a discovery that fails
+  when a host exits between its record read and its socket check. A
+  `#[sim_test]` running discovery against the exit fails on 13 of 100 seeds
+  and passes on the fix; the simulator reruns each failing seed and checks
+  that its trace matches. Eon's fix landed with a deterministic test; what
+  Tide adds is that the seed finds the interleaving, with no hook written into
+  discovery to place it.
 - [eon-slow-close](examples/case-studies/eon-slow-close/README.md): Tide's
   admission would not have rejected Eon's bug, a request loop blocked behind a
   slow close. A `#[sim_test]` catches it: it fails on the buggy loop and
@@ -202,7 +210,7 @@ Tide v0 alpha, x86_64 Linux only. The alpha includes:
   deadlines, `Shared`, channels, `join`/`par_map`/`par_for`, executable
   contracts, property tests, `#[sim_test]` and the simulator, JSON encoding,
   and deterministic float math.
-- **Runnable evidence**: the demo, the examples, the two case studies, four
+- **Runnable evidence**: the demo, the examples, the case studies, four
   benchmark pairs, and the conformance corpus
   ([conformance/](conformance/README.md)): cases with expected verdicts per
   rule ID, which stable rustc and the driver check.
