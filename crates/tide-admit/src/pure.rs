@@ -34,6 +34,7 @@ use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::ty::elaborate::supertrait_def_ids;
 use rustc_middle::ty::print::with_forced_trimmed_paths;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypingEnv, Unnormalized};
+use rustc_span::Symbol;
 use rustc_trait_selection::infer::InferCtxtExt;
 
 use crate::crates::Crates;
@@ -256,10 +257,29 @@ pub fn needs(key: &str) -> (Need, Need) {
         })
 }
 
-/// Why a type is not `Pure`: the part that is not, and the reason.
+/// Why a type is not `Pure`: the part that is not, the reason, and the fields the decision
+/// that rejected it followed to that part.
 pub struct NotPure<'tcx> {
     part: Ty<'tcx>,
     why: Why,
+    /// One witness path, innermost step first: the walk pushes each step as the failure
+    /// returns through it, so a decision that succeeds records nothing.
+    path: Vec<Step<'tcx>>,
+}
+
+/// A field on a failure's path. References, arrays, std's type arguments, and a closure's
+/// captures pass through unnamed: the type the next step or the part names shows what they
+/// held.
+enum Step<'tcx> {
+    /// A field of the type `adt`, declared by `owner`: the struct or union itself, or an enum
+    /// variant.
+    Field {
+        adt: DefId,
+        owner: DefId,
+        name: Symbol,
+    },
+    /// A component of a tuple type.
+    Tuple(Ty<'tcx>, usize),
 }
 
 #[derive(Clone, Copy)]
@@ -281,7 +301,14 @@ impl<'tcx> NotPure<'tcx> {
         matches!(self.why, Why::TooDeep)
     }
 
-    /// "`ty` is not `Pure`: ..." for a failure found in `ty`.
+    /// Adds the step through which the failure was reached.
+    fn via(mut self, step: Step<'tcx>) -> Self {
+        self.path.push(step);
+        self
+    }
+
+    /// "`ty` is not `Pure`: ..." for a failure found in `ty`, with the path to the part that
+    /// is not `Pure` when one or more fields lead there.
     pub fn message(&self, ty: Ty<'tcx>) -> String {
         let show = |t: Ty<'tcx>| with_forced_trimmed_paths!(t.to_string());
         let why = match self.why {
@@ -293,7 +320,8 @@ impl<'tcx> NotPure<'tcx> {
             Why::Dyn => "has no `Pure` supertrait",
             Why::Opaque => "does not state `Pure` in its bounds",
             Why::Unbounded => "is not bounded by `Pure`",
-            // The part is not shown: it can be exponentially large (`Poly<(T, T)>`).
+            // The part is not shown: it can be exponentially large (`Poly<(T, T)>`), and neither
+            // is the path, which reached no authority.
             Why::TooDeep => {
                 return format!(
                     "`{}` is not `Pure`: it nests types more than {MAX_TYPE_DEPTH} deep, too \
@@ -308,10 +336,40 @@ impl<'tcx> NotPure<'tcx> {
             format!("`{}` is not `Pure`: it {why}", show(ty))
         } else {
             format!(
-                "`{}` is not `Pure`: it reaches `{}`, which {why}",
+                "`{}` is not `Pure`: it reaches `{}`, which {why}{}",
                 show(ty),
-                show(self.part)
+                show(self.part),
+                self.render_path()
             )
+        }
+    }
+
+    /// ", via `A.b` -> `(B, C).1` -> ...", outermost step first, or nothing for no steps. The
+    /// path stops at the first type another crate defines, naming only that type: its fields
+    /// may be private, and what lies past them is its own structure.
+    fn render_path(&self) -> String {
+        let name =
+            |def: DefId| ty::tls::with(|tcx| with_forced_trimmed_paths!(tcx.def_path_str(def)));
+        let mut steps = Vec::new();
+        for step in self.path.iter().rev() {
+            match *step {
+                Step::Field { adt, .. } if !adt.is_local() => {
+                    steps.push(format!("`{}`", name(adt)));
+                    break;
+                }
+                Step::Field {
+                    owner, name: field, ..
+                } => steps.push(format!("`{}.{field}`", name(owner))),
+                Step::Tuple(tuple, i) => steps.push(format!(
+                    "`{}.{i}`",
+                    with_forced_trimmed_paths!(tuple.to_string())
+                )),
+            }
+        }
+        if steps.is_empty() {
+            String::new()
+        } else {
+            format!(", via {}", steps.join(" -> "))
         }
     }
 }
@@ -363,14 +421,23 @@ impl<'a, 'tcx> Pure<'a, 'tcx> {
         depth: usize,
     ) -> Result<(), NotPure<'tcx>> {
         let tcx = self.tcx;
-        let not = |why| Err(NotPure { part: ty, why });
+        let not = |why| {
+            Err(NotPure {
+                part: ty,
+                why,
+                path: Vec::new(),
+            })
+        };
         if !assumed.insert(ty) {
             return Ok(());
         }
         let mut walk = |t| self.walk(env, t, assumed, depth);
         match *ty.kind() {
             ty::Ref(_, t, _) | ty::Slice(t) | ty::Array(t, _) | ty::Pat(t, _) => walk(t),
-            ty::Tuple(ts) => ts.iter().try_for_each(walk),
+            ty::Tuple(ts) => ts
+                .iter()
+                .enumerate()
+                .try_for_each(|(i, t)| walk(t).map_err(|e| e.via(Step::Tuple(ty, i)))),
             ty::RawPtr(..) => not(Why::RawPointer),
             ty::Foreign(_) => not(Why::Foreign),
             ty::FnPtr(_, header) if header.abi() != ExternAbi::Rust => not(Why::ForeignFn),
@@ -429,8 +496,18 @@ impl<'a, 'tcx> Pure<'a, 'tcx> {
                 args.types().try_for_each(walk)
             }
             ty::Adt(..) if depth >= MAX_TYPE_DEPTH => not(Why::TooDeep),
-            ty::Adt(def, args) => def.all_fields().try_for_each(|field| {
-                self.walk(env, self.field_ty(env, field, args), assumed, depth + 1)
+            // `all_fields`'s order: each variant's fields in turn.
+            ty::Adt(def, args) => def.variants().iter().try_for_each(|variant| {
+                variant.fields.iter().try_for_each(|field| {
+                    self.walk(env, self.field_ty(env, field, args), assumed, depth + 1)
+                        .map_err(|e| {
+                            e.via(Step::Field {
+                                adt: def.did(),
+                                owner: variant.def_id,
+                                name: field.name,
+                            })
+                        })
+                })
             }),
             // Primitives, Rust-ABI function pointers and fn items, `!`, and the types of code
             // rustc rejects.

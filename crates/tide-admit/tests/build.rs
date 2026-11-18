@@ -780,6 +780,66 @@ fn check_clause() { tide_candidate::require_pure::<std::time::Clock>(); }
     assert!(!dir.join("out/demo-test").exists());
 }
 
+/// A `Pure` witness stops at a type another crate defines, naming only that type: the paired
+/// library's private field and the structure behind it stay unnamed, while the obligation still
+/// fails under its code at its use (fx-kw8.24).
+#[test]
+fn pure_witness_stops_at_another_crates_type() {
+    let suite = r#"
+#[test]
+fn check_vault() {
+    tide_candidate::require_pure::<tide_candidate::Vault>();
+    tide_candidate::require_pure::<(u8, tide_candidate::Vault)>();
+    tide_candidate::require_pure::<tide_candidate::Sealed<u8>>();
+}
+"#;
+    let dir = package("separate-library-pure-witness", suite);
+    let candidate = dir.join("candidate/src/lib.rs");
+    std::fs::create_dir_all(candidate.parent().unwrap()).unwrap();
+    std::fs::write(
+        &candidate,
+        r#"
+use std::net::Net;
+pub struct Vault { secret_inner: Inner }
+struct Inner { hidden_pair: (u8, Net) }
+pub enum Sealed<T> { Hidden(T, Net) }
+impl Vault {
+    pub fn new(net: Net) -> Self { Vault { secret_inner: Inner { hidden_pair: (0, net) } } }
+    pub fn level(&self) -> u8 { self.secret_inner.hidden_pair.0 }
+}
+pub fn require_pure<T: Pure>() {}
+"#,
+    )
+    .unwrap();
+    let out = paired_test_driver(&dir).output().unwrap();
+    let diagnostic = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{diagnostic}");
+    for message in [
+        "TD0517: `Vault` is not `Pure`: it reaches `Net`, which is never `Pure`, via `Vault`",
+        "TD0517: `(u8, Vault)` is not `Pure`: it reaches `Net`, which is never `Pure`, via \
+         `(u8, Vault).1` -> `Vault`",
+        // The enum, without its variant or its arguments.
+        "TD0517: `Sealed<u8>` is not `Pure`: it reaches `Net`, which is never `Pure`, via \
+         `Sealed`",
+    ] {
+        assert!(
+            diagnostic
+                .lines()
+                .any(|line| line.contains("demo.rs:") && line.ends_with(message)),
+            "{diagnostic}"
+        );
+    }
+    for private in [
+        "secret_inner",
+        "Inner",
+        "hidden_pair",
+        "(u8, Net)",
+        "Hidden",
+    ] {
+        assert!(!diagnostic.contains(private), "{diagnostic}");
+    }
+}
+
 #[test]
 fn arc_and_weak_build_and_execute_against_production_std() {
     let source = format!(

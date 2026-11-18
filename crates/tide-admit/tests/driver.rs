@@ -711,11 +711,90 @@ impl Show for Clock {
             format!("lib.rs:7:21: error: {clock}"),
             format!("lib.rs:30:5: error: {clock}"),
             "lib.rs:33:5: error: TD0517: `W<Clock>` is not `Pure`: it reaches `Clock`, which is \
-             never `Pure`"
+             never `Pure`, via `W.0`"
                 .to_string(),
             // In `make`, the nearest local item that drops the guards.
             format!("lib.rs:36:25: error: {clock}"),
             format!("lib.rs:42:1: error: {clock}"),
+        ],
+        "{stderr}"
+    );
+}
+
+/// A `Pure` failure names one path from the obligation's type to what is not `Pure`, each step
+/// a field of the type that declares it (a struct's, an enum variant's, a tuple's), under the
+/// same code and location; a recursive type stays `Pure` unless it reaches authority, and the
+/// path stops at an opaque type without revealing what it hides (fx-kw8.24).
+#[test]
+fn pure_failures_name_one_witness_path() {
+    let std = tide_std("pure-witness");
+    let source = "\
+use std::net::Net;
+use std::task::Tasks;
+fn need<T: Pure>(_: &T) {}
+pub struct Client {
+    pub id: u32,
+    pub socket: Net,
+}
+pub struct Payload {
+    pub name: String,
+    pub client: Client,
+}
+pub fn nested(p: &Payload) {
+    need(p)
+}
+pub enum Msg {
+    A(u8),
+    B(u8, Vec<Tasks>),
+}
+pub fn variant(m: &Msg) {
+    need(m)
+}
+pub fn tuple(t: &(u8, (Client, u32))) {
+    need(t)
+}
+pub struct List {
+    pub next: Option<Box<List>>,
+    pub items: Vec<u8>,
+}
+pub fn recursive_ok(l: &List) {
+    need(l)
+}
+pub struct Ring {
+    pub next: Option<Box<Ring>>,
+    pub tasks: Tasks,
+}
+pub fn recursive_bad(r: &Ring) {
+    need(r)
+}
+pub fn hidden() -> impl Sized {
+    0u8
+}
+pub struct Wrap<T>(pub T);
+pub fn opaque() {
+    need(&Wrap(hidden()))
+}
+";
+    let (code, stderr) = admit(
+        "pure-witness",
+        source,
+        &["--tide-std", std.to_str().unwrap()],
+    );
+    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(
+        td_lines(&stderr),
+        [
+            "lib.rs:13:5: error: TD0517: `Payload` is not `Pure`: it reaches `Net`, which is \
+             never `Pure`, via `Payload.client` -> `Client.socket`",
+            "lib.rs:20:5: error: TD0517: `Msg` is not `Pure`: it reaches `Tasks`, which is never \
+             `Pure`, via `Msg::B.1`",
+            "lib.rs:23:5: error: TD0517: `(u8, (Client, u32))` is not `Pure`: it reaches `Net`, \
+             which is never `Pure`, via `(u8, (Client, u32)).1` -> `(Client, u32).0` -> \
+             `Client.socket`",
+            "lib.rs:37:5: error: TD0517: `Ring` is not `Pure`: it reaches `Tasks`, which is never \
+             `Pure`, via `Ring.tasks`",
+            "lib.rs:44:5: error: TD0517: `Wrap<impl Sized>` is not `Pure`: it reaches \
+             `impl Sized`, which does not state `Pure` in its bounds, via `Wrap.0`",
         ],
         "{stderr}"
     );
