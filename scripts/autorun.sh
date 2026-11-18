@@ -48,6 +48,17 @@
 # denied with --disallowedTools (git push, gh), a pattern match that other
 # spellings can slip past, so the runner also stops if the upstream ref moves.
 #
+# Memory cap: each session, a correct run included, runs under eon-overseer's
+# agent-scope.sh (bead fx-nph3), named autorun-<bead id> or autorun-correct,
+# inside timeout(1). agent-scope.sh execs `systemd-run --user --scope`, which
+# moves the session into a capped agent-*.slice without forking, detaching, or
+# changing its process group, so timeout's process-group kill and the Ctrl-C
+# forwarding below reach the session's process group as before. As before,
+# a descendant that calls setsid or changes its process group escapes both
+# (the lock line covers that case); it stays in the scope, under the cap, and
+# keeps the scope alive until it exits. Without user systemd, agent-scope.sh
+# warns and runs the session uncapped.
+#
 # Usage: scripts/autorun.sh        (from anywhere inside the repository)
 # Environment:
 #   AUTORUN_MAX_SESSIONS   sessions per run (default 10)
@@ -64,8 +75,11 @@
 #                          (for a correct run, the prompt is "/correct" and
 #                          AUTORUN_BEAD is empty); a JSON object it prints
 #                          with total_cost_usd is its cost.
+#   AUTORUN_AGENT_SCOPE    path of agent-scope.sh (default
+#                          ~/.cache/eon-agents/eon-overseer/agent-scope.sh)
 # Logs, session output, and the lock live in .autorun/ (git-ignored). Ctrl-C
-# stops the current session and the run. Needs br, git, jq, flock, timeout.
+# stops the current session and the run. Needs br, git, jq, flock, timeout,
+# and agent-scope.sh.
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)" || exit 2
@@ -77,6 +91,8 @@ MAX_SESSIONS="${AUTORUN_MAX_SESSIONS:-10}"
 BUDGET="${AUTORUN_BUDGET_USD:-100}"
 SESSION_USD="${AUTORUN_SESSION_USD:-20}"
 TIMEOUT="${AUTORUN_TIMEOUT:-3h}"
+AGENT_SCOPE="${AUTORUN_AGENT_SCOPE:-$HOME/.cache/eon-agents/eon-overseer/agent-scope.sh}"
+[[ -r "$AGENT_SCOPE" ]] || { echo "autorun: cannot read agent-scope.sh at $AGENT_SCOPE (set AUTORUN_AGENT_SCOPE)" >&2; exit 2; }
 
 exec 9>"$STATE/lock"
 # Sessions inherit the lock, so a process one leaves running keeps the next
@@ -195,15 +211,16 @@ correct() {
   [[ -n "$br_ok" ]] || stop "cannot read br state (br list --status all)"
 }
 
-# run_agent <prompt> <cap>: stdout to $out, stderr to $out.err. The session
-# inherits the lock (fd 9) on purpose; see the flock line.
+# run_agent <prompt> <cap>: stdout to $out, stderr to $out.err, under
+# agent-scope.sh's memory cap (see the header). The session inherits the lock
+# (fd 9) on purpose; see the flock line.
 run_agent() {
-  local pid rc
+  local pid rc scope=(bash "$AGENT_SCOPE" "autorun-${id:-correct}")
   if [[ -n "${AUTORUN_AGENT:-}" ]]; then
-    AUTORUN_BEAD="$id" AUTORUN_SESSION_CAP="$2" timeout --kill-after=60 "$TIMEOUT" "$AUTORUN_AGENT" "$1" \
-      </dev/null >"$out" 2>"$out.err" &
+    AUTORUN_BEAD="$id" AUTORUN_SESSION_CAP="$2" timeout --kill-after=60 "$TIMEOUT" \
+      "${scope[@]}" "$AUTORUN_AGENT" "$1" </dev/null >"$out" 2>"$out.err" &
   else
-    timeout --kill-after=60 "$TIMEOUT" claude -p --permission-mode auto \
+    timeout --kill-after=60 "$TIMEOUT" "${scope[@]}" claude -p --permission-mode auto \
       --max-budget-usd "$2" --output-format json \
       --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' -- "$1" \
       </dev/null >"$out" 2>"$out.err" &

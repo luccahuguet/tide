@@ -6,7 +6,11 @@
 # outcomes, and commit ranges it logs, and why it stops. Given "/correct", the
 # stub stands in for a correct run that may report a cost, file a bead, or
 # fail, and the test checks when those runs happen, their allowance, and what
-# they log. Spends no tokens. Needs br, git, jq, flock, timeout, setsid.
+# they log. The stub records its cgroup, so the test also checks that each
+# session runs in agent-scope.sh's agent-*.slice and that timeout and an
+# interrupt empty its scope. Spends no tokens. Needs br, git, jq, flock,
+# timeout, setsid, agent-scope.sh, and user systemd (scopes are real; set
+# AUTORUN_AGENT_SCOPE to test another agent-scope.sh).
 # Usage: scripts/autorun-test.sh
 set -uo pipefail
 RUNNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/autorun.sh"
@@ -19,6 +23,7 @@ fail=0
 # A correct run that sees a bead in AUTORUN_BEAD exits 9.
 cat >"$TMP/stub" <<'EOF'
 #!/usr/bin/env bash
+cat /proc/self/cgroup >>"$STUB_DIR/cgroups"
 if [[ "$1" == /correct ]]; then
   f="$STUB_DIR/actions/correct"
   action="$(head -n1 "$f" 2>/dev/null)"; sed -i 1d "$f" 2>/dev/null
@@ -53,7 +58,9 @@ case "$action" in
   live) setsid "$STUB_DIR/../fake/claude" 60 </dev/null >/dev/null 2>&1 &
     echo $! >"$STUB_DIR/fake.pid"; br close "$AUTORUN_BEAD" --reason done >/dev/null ;;
   fail) exit 1 ;;
-  stall) sleep 30 ;;
+  # The sleep stays in the stub's process group (no job control); "stalling"
+  # holds its pid once it runs.
+  stall) sleep 30 & echo $! >"$STUB_DIR/stalling"; wait $! ;;
   push) git commit -q --allow-empty -m pushed; git push -q 2>/dev/null ;;
   *) : ;;
 esac
@@ -80,7 +87,7 @@ scenario() {
   br create o -t task -p 0 --labels owner --silent >/dev/null
   br defer "$(br create d -t task -p 0 --silent)" >/dev/null
   # As in Tide, .beads/ is tracked, so every br write dirties the tree.
-  printf '.autorun/\nactions/\npicked\ncaps\nprompts\nfake.pid\n' >.git/info/exclude
+  printf '.autorun/\nactions/\npicked\ncaps\nprompts\nfake.pid\ncgroups\nstalling\n' >.git/info/exclude
   git add .beads && git commit -q -m base
   "$@"
   out="$(STUB_DIR="$dir" AUTORUN_AGENT="$TMP/stub" AUTORUN_TIMEOUT="${TO:-30s}" \
@@ -102,9 +109,21 @@ scenario() {
   cd "$TMP" || return
 }
 acts() { printf '%s\n' "${@:2}" >"actions/${!1}"; }
+# scope_ended <cgroups file>: the scope of the last session recorded there
+# holds no process within 5 s (cgroup files report size 0, so read them).
+scope_ended() {
+  local procs="/sys/fs/cgroup$(tail -1 "$1" | cut -d: -f3)/cgroup.procs"
+  [[ "$procs" == */agent.slice/agent-autorun_*.scope/cgroup.procs ]] || return 1
+  for _ in $(seq 50); do [[ -z "$(cat "$procs" 2>/dev/null)" ]] && return 0; sleep 0.1; done
+  return 1
+}
 
 # A correct run logs "/correct" as its bead, and its filed beads as its outcome.
-check_extra() { [[ "$(cut -f4 .autorun/log | tail -1)" == "\$0.25" ]]; }
+# Each session, the correct run included, runs in a slice of its own under
+# agent-scope.sh, named after its bead or "correct".
+check_extra() { [[ "$(cut -f4 .autorun/log | tail -1)" == "\$0.25" &&
+  "$(sed -E 's#^0::/.*/agent\.slice/agent-autorun_(t_[A-Za-z0-9_]+|correct)_([0-9]+)\.slice/agent-autorun_[A-Za-z0-9_]+_\2\.scope$#in \1#; s/^in t_.*/in bead/' cgroups |
+     paste -sd' ')" == "in bead in bead in correct" ]]; }
 scenario no-work "no work remains" "a b /correct" "closed,closed,none" -- \
   eval 'acts a close; acts b close'
 scenario idle "no work remains" "/correct" "none" -- \
@@ -134,7 +153,10 @@ check_extra() { [[ "$(cut -f4 .autorun/log | paste -sd,)" == none,none,???????..
 scenario commit-resets "no work remains" "a a a a b /correct" \
   "handed off,handed off,handed off,closed,closed,none" -- \
   eval 'acts a handoff handoff commit-handoff close; acts b close'
-TO=2s scenario two-failures "2 sessions in a row failed or timed out" "a a" "failed,timed out" -- \
+# The timeout ends the stalled session's whole tree: its sleep had started
+# ("stalling"), and the scope the stall session recorded last is empty.
+check_extra() { [[ -s stalling ]] && scope_ended cgroups; }
+TO=5s scenario two-failures "2 sessions in a row failed or timed out" "a a" "failed,timed out" -- \
   eval 'acts a fail stall'
 scenario failures-reset "no work remains" "a a b b /correct" "failed,closed,failed,closed,none" -- \
   eval 'acts a fail close; acts b fail close'
@@ -194,16 +216,23 @@ MAX=12 scenario tenth-live "is working in this checkout" "a a a a a a a a a a" -
 # SIGTERM (as Ctrl-C would) stops a stalled session and the run.
 mkdir -p "$TMP/interrupt/actions" && cd "$TMP/interrupt" && git init -q &&
   git config user.email t@t && git config user.name t && git commit -q --allow-empty -m base &&
-  br init --prefix t >/dev/null 2>&1 && printf '.beads/\n.autorun/\nactions/\npicked\ncaps\nprompts\n' >.git/info/exclude &&
+  br init --prefix t >/dev/null 2>&1 && printf '.beads/\n.autorun/\nactions/\npicked\ncaps\nprompts\ncgroups\nstalling\n' >.git/info/exclude &&
   echo stall >"actions/$(br create a -t task -p 1 --silent)"
 STUB_DIR="$TMP/interrupt" AUTORUN_AGENT="$TMP/stub" AUTORUN_TIMEOUT=20s "$RUNNER" >"$TMP/interrupt.out" 2>&1 &
 runner=$!
-for _ in $(seq 50); do [[ -s picked ]] && break; sleep 0.1; done
-kill -TERM $runner
-wait $runner
-if grep -q "stopping: interrupted" "$TMP/interrupt.out" && ! pgrep -f "$TMP/stub" >/dev/null; then
-  echo "PASS  interrupt"
-else echo "FAIL  interrupt"; sed "s/^/      /" "$TMP/interrupt.out"; fail=1; fi
+# Signal only once the stub sleeps inside its scope (within 15 s, under the
+# 20 s timeout); a stub that never gets there is a startup failure.
+for _ in $(seq 150); do [[ -s stalling ]] && break; sleep 0.1; done
+if [[ ! -s stalling ]]; then
+  kill -TERM $runner; wait $runner
+  echo "FAIL  interrupt: the stub did not reach its stall sleep within 15 s"; sed "s/^/      /" "$TMP/interrupt.out"; fail=1
+else
+  kill -TERM $runner
+  wait $runner
+  if grep -q "stopping: interrupted" "$TMP/interrupt.out" && scope_ended "$TMP/interrupt/cgroups"; then
+    echo "PASS  interrupt"
+  else echo "FAIL  interrupt"; sed "s/^/      /" "$TMP/interrupt.out"; fail=1; fi
+fi
 
 # A process a session leaves running keeps the next runner out (fail closed).
 check_extra() { "$RUNNER" >/dev/null 2>&1; local rc=$?; pkill -f "^sleep 47$"; [[ $rc -eq 3 ]]; }
@@ -215,5 +244,10 @@ mkdir -p .autorun && exec 8>.autorun/lock && flock -n 8
 "$RUNNER" >/dev/null 2>&1
 if [[ $? -eq 3 ]]; then echo "PASS  lock"; else echo "FAIL  lock: second runner did not exit 3"; fail=1; fi
 exec 8>&-
+
+# Without a readable agent-scope.sh the runner starts nothing.
+mkdir -p "$TMP/noscope" && cd "$TMP/noscope" && git init -q
+AUTORUN_AGENT_SCOPE="$TMP/missing" "$RUNNER" >/dev/null 2>&1
+if [[ $? -eq 2 && ! -e .autorun/lock ]]; then echo "PASS  no-scope"; else echo "FAIL  no-scope: runner did not exit 2 before taking the lock"; fail=1; fi
 
 exit $fail
