@@ -121,6 +121,7 @@ impl NetContext {
         fd: BorrowedFd<'_>,
         write: bool,
         span: Span,
+        until: Option<Duration>,
     ) -> crate::io::Result<()> {
         self.check()?;
         // Allocate before the runtime lock or waiter registration; failure leaves both intact.
@@ -128,7 +129,7 @@ impl NetContext {
         match self.0.wait_with_socket(
             Operation::Net("net.poll", 0),
             span,
-            None,
+            until,
             Cancellation::Checkpoint,
             None,
             Some((
@@ -138,8 +139,19 @@ impl NetContext {
             )),
         )? {
             Wake::Cancelled => Err(crate::io::ErrorKind::Cancelled.into()),
-            _ => Ok(()),
+            // Only `until` ends a socket wait this way: the caller's own deadline passed.
+            Wake::Timeout => Err(crate::io::ErrorKind::TimedOut.into()),
+            Wake::Ready => Ok(()),
         }
+    }
+    // The callback runs on this task in a child scope: its cooperative waits inherit GET's
+    // deadline, while cancellation of that child never cancels the calling scope.
+    pub(crate) fn http_peer<T>(&self, until: Duration, callback: impl FnOnce() -> T) -> T {
+        let tasks = Tasks { simulation: Some(self.0.runtime.clone()), limits: Vec::new() };
+        tasks.scope::<_, TaskError, _>(|scope| {
+            scope.set_deadline(crate::time::Instant(until));
+            Ok(callback())
+        }).expect("HTTP peer scope has no child tasks")
     }
     pub(crate) fn wake(&self) {
         self.0.lock().wake_waiters();

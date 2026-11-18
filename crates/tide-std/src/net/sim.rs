@@ -8,6 +8,8 @@ const BACKLOG: usize = 128;
 #[derive(Default)]
 pub(super) struct SimNet {
     listeners: BTreeMap<u16, Bound>,
+    /// `sim.world.http` peers, by NET-HOST key (research/42 §9).
+    http: BTreeMap<Key, Peer>,
     conns: BTreeMap<usize, Connection>,
     next: usize,
     waiters: Vec<Arc<Signal>>,
@@ -24,6 +26,7 @@ fn port(state: &Mutex<SimNet>, c: &NetContext) -> io::Result<u16> {
                     .values()
                     .flat_map(|conn| conn.ends.iter().filter(|e| e.open).map(|e| e.addr.port())),
             )
+            .chain(s.http.keys().filter(|k| loopback(&k.host)).map(|k| k.port))
             .collect::<BTreeSet<_>>()
     };
     if (49152..=65535).all(|p| taken.contains(&p)) {
@@ -146,7 +149,10 @@ pub(super) fn bind(
             addr.set_port(port(state, c)?);
         }
         let mut s = state.lock().unwrap();
-        if s.listeners.contains_key(&addr.port()) {
+        // HTTP peers reserve their address, wildcard and loopback aliases included.
+        if s.listeners.contains_key(&addr.port())
+            || s.http.keys().any(|k| k.port == addr.port() && loopback(&k.host))
+        {
             return Err(ErrorKind::AddrInUse.into());
         }
         s.listeners.insert(
@@ -505,6 +511,162 @@ impl Drop for Listener {
         }
     }
 }
+/// A host a simulated listener's address can alias: listeners bind 127.0.0.1 or 0.0.0.0.
+fn loopback(host: &Host) -> bool {
+    match host {
+        Host::Ip(ip) => *ip == IpAddr::V4(Ipv4Addr::LOCALHOST) || ip.is_unspecified(),
+        Host::Name(n) => n == "localhost",
+    }
+}
+
+/// A `sim.world.http` peer. The simulator calls it on the requesting task's thread.
+pub(crate) type Peer = Arc<Mutex<Option<Box<dyn Fn(&crate::sim::Request) -> crate::sim::Reply + Send>>>>;
+
+pub(super) fn world_http(
+    state: &Arc<Mutex<SimNet>>,
+    c: &NetContext,
+    addr: &str,
+    peer: Peer,
+    span: Span,
+) -> String {
+    let Some(key) = host::entry(addr) else {
+        panic!("sim.world.http: {addr:?} is not a \"host:port\" entry");
+    };
+    let clash = {
+        let mut s = state.lock().unwrap();
+        if s.http.contains_key(&key) {
+            Some("is already an HTTP peer")
+        } else if loopback(&key.host) && s.listeners.contains_key(&key.port) {
+            Some("is held by a simulated TCP listener")
+        } else {
+            s.http.insert(key.clone(), peer);
+            None
+        }
+    };
+    if let Some(clash) = clash {
+        panic!("sim.world.http: {key} {clash}");
+    }
+    c.record("world.http", 0, span, &format!("addr={key}"));
+    key.to_string()
+}
+
+pub(super) fn clear_http_peers(state: &Arc<Mutex<SimNet>>) {
+    // Captured Net/TCP handles can take this lock when dropped.
+    let peers = std::mem::take(&mut state.lock().unwrap().http);
+    drop(peers);
+}
+
+/// NET-GET steps 4–10 in virtual time (research/42 §9): a domain no peer names is `Dns` at
+/// once; otherwise one packet delay, the peer's reply (or `Refused` with no peer), its `after`,
+/// and a second packet delay, all bounded by the deadline.
+pub(super) fn get(
+    state: &Arc<Mutex<SimNet>>,
+    c: &NetContext,
+    url: &Url,
+    key: &Key,
+    until: Duration,
+    span: Span,
+    delays: &mut Vec<Duration>,
+) -> Result<Vec<u8>, NetError> {
+    use crate::sim::Answer;
+    // None is an arrival beyond representable time (or a peer that never replies).
+    let arrive = |c: &NetContext, at: Option<Duration>| -> Result<(), NetError> {
+        loop {
+            c.check().map_err(|_| NetError::Cancelled)?;
+            let now = c.now();
+            if at.is_some_and(|at| now >= at) {
+                return Ok(());
+            }
+            if now >= until {
+                return Err(NetError::Timeout);
+            }
+            c.wait("net.get", key.port as usize, span, Some(at.map_or(until, |at| at.min(until))), None)
+                .map_err(|_| NetError::Cancelled)?;
+        }
+    };
+    if c.now() >= until {
+        return Err(NetError::Timeout);
+    }
+    if key.host.literal().is_none() && !state.lock().unwrap().http.keys().any(|k| k.host == key.host) {
+        return Err(NetError::Dns);
+    }
+    delays.push(c.latency());
+    arrive(c, c.now().checked_add(delays[0]))?;
+    let peer = state.lock().unwrap().http.get(key).cloned();
+    let Some(peer) = peer else {
+        delays.push(c.latency());
+        arrive(c, c.now().checked_add(delays[1]))?;
+        return Err(NetError::Refused);
+    };
+    let request = crate::sim::Request {
+        url: url.without_fragment(),
+    };
+    // Move the Send-only callback out: waiting for its mutex must release the simulation baton.
+    let callback = loop {
+        c.check().map_err(|_| NetError::Cancelled)?;
+        if c.now() >= until {
+            return Err(NetError::Timeout);
+        }
+        if let Some(callback) = peer.lock().unwrap().take() {
+            break callback;
+        }
+        let signal = state.lock().unwrap().signal();
+        wait(state, c, "net.get.peer", key.port as usize, span, Some(until), signal)
+            .map_err(|_| NetError::Cancelled)?;
+    };
+    let reply = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        c.http_peer(until, || callback(&request))
+    }));
+    *peer.lock().unwrap() = Some(callback);
+    state.lock().unwrap().changed();
+    c.wake();
+    c.check().map_err(|_| NetError::Cancelled)?;
+    if c.now() >= until {
+        return Err(NetError::Timeout);
+    }
+    let reply = reply.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    delays.push(c.latency());
+    if matches!(reply.answer, Answer::Hang) {
+        arrive(c, None)?;
+    }
+    arrive(c, c.now().checked_add(reply.after).and_then(|at| at.checked_add(delays[1])))?;
+    match reply.answer {
+        Answer::Ok(body) if body.len() > BODY_LIMIT => Err(http::invalid_data("response body over 64 MiB")),
+        Answer::Ok(body) => Ok(body),
+        Answer::Status(200..=299) => Ok(Vec::new()),
+        Answer::Status(code) => Err(NetError::Status(code)),
+        Answer::Reset => Err(NetError::Reset),
+        Answer::TlsError => Err(http::invalid_data("TLS: simulated handshake failure")),
+        Answer::Hang => Err(NetError::Timeout),
+    }
+}
+
+/// One `net.get` event per call: the checked key, delays and result, never the path, query or
+/// body, which are payload (03 §9.3).
+pub(super) fn record_get(
+    c: &NetContext,
+    span: Span,
+    url: &Url,
+    key: Option<&Key>,
+    delays: &[Duration],
+    result: &Result<Vec<u8>, NetError>,
+) {
+    let delays: Vec<_> = delays.iter().map(|d| d.as_nanos().to_string()).collect();
+    let result = match result {
+        Ok(body) => format!("ok len={}", body.len()),
+        Err(NetError::Status(code)) => format!("Status({code})"),
+        Err(NetError::Io(e)) => format!("Io({:?})", e.kind()),
+        Err(e) => format!("{e:?}"),
+    };
+    let key = key.map_or_else(|| "-".to_owned(), ToString::to_string);
+    c.record(
+        "net.get",
+        0,
+        span,
+        &format!("scheme={} key={key} delays=[{}] result={result}", url.scheme(), delays.join(",")),
+    );
+}
+
 fn outcome<T>(result: &io::Result<T>) -> String {
     result
         .as_ref()

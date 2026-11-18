@@ -722,6 +722,20 @@ impl Decode for String {
     }
 }
 
+impl Decoder<'_> {
+    /// A string checked by `parse` (`std::net::Url`'s decoding); an error points at its start.
+    #[allow(dead_code)] // tide-admit includes this file without the types that use it.
+    pub(crate) fn parsed<T, E: std::fmt::Display>(
+        &mut self,
+        parse: impl FnOnce(&str) -> Result<T, E>,
+    ) -> Result<T, Error> {
+        self.ws();
+        let start = self.pos;
+        let s = self.string()?;
+        parse(&s).map_err(|e| self.error_at(start, format!("invalid value: {e}")))
+    }
+}
+
 impl<T: Encode + ?Sized> Encode for &T {
     fn __encode(&self, out: &mut Encoder) {
         (**self).__encode(out);

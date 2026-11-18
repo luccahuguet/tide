@@ -183,7 +183,7 @@ impl Child {
             let pidfd = unsafe { OwnedFd::from_raw_fd(fd as i32) };
             let c = context();
             while self.try_wait()?.is_none() {
-                c.socket(pidfd.as_fd(), false, span)?;
+                c.socket(pidfd.as_fd(), false, span, None)?;
             }
         } else {
             self.status = Some(self.child.wait().map_err(io::from_std)?);
@@ -205,7 +205,7 @@ impl Pipe {
         loop {
             c.check()?;
             match f() {
-                Err(rustix::io::Errno::AGAIN) => c.socket(self.0.as_fd(), write, span)?,
+                Err(rustix::io::Errno::AGAIN) => c.socket(self.0.as_fd(), write, span, None)?,
                 Err(rustix::io::Errno::INTR) => {}
                 result => return result.map_err(|e| io::from_std(e.into())),
             }
@@ -264,7 +264,7 @@ pub(super) fn drain(
             }
         }
         if !progressed {
-            c.socket(set.as_fd(), false, span)?;
+            c.socket(set.as_fd(), false, span, None)?;
         }
     }
     let [(_, out), (_, err)] = ends;

@@ -4,7 +4,8 @@ use std::process::{Command, Stdio};
 /// Build the pinned production std, in Cargo's release profile when `release` is set and its dev
 /// profile otherwise, and flatten its artifacts for direct rustc/driver consumers.
 /// Cargo's dependency directories differ between the supported toolchains. The build is
-/// hermetic (cleared environment, `--frozen`, absolute `RUSTC`); keep it that way.
+/// hermetic (cleared environment, `--frozen`, absolute `RUSTC`, the sysroot's `lib` as the only
+/// loader path); keep it that way.
 pub fn build_std(dir: &Path, release: bool) -> PathBuf {
     let compiler = Command::new(std::env::var_os("RUSTC").unwrap_or("rustc".into()))
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -23,6 +24,10 @@ pub fn build_std(dir: &Path, release: bool) -> PathBuf {
         .envs(std::env::vars_os().filter(|(key, _)| key == "HOME" || key == "CARGO_HOME"))
         .env("PATH", "/usr/bin:/bin")
         .env("RUSTC", Path::new(sysroot.trim()).join("bin/rustc"))
+        // As rustup's proxy does: build scripts that run rustc (libc's, through ring) get
+        // cargo's rustlib dir first on the loader path, whose rustc-dev librustc_driver cannot
+        // find libLLVM through its own RUNPATH.
+        .env("LD_LIBRARY_PATH", Path::new(sysroot.trim()).join("lib"))
         .env("CARGO_BUILD_JOBS", "4")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args([

@@ -1,12 +1,15 @@
 # Net::get in v0: one HTTP/1.1 GET, real and simulated (fx-ff13)
 
-Status: design admission for bead fx-ff13, stage 1 (docs only). It fixes
+Status: implemented in bead fx-ff13 stage 2 (`crates/tide-std/src/net/`:
+`host.rs` NET-HOST, `resolve.rs` NET-RESOLVE, `http.rs` the types and real
+backend, `sim.rs` the simulated peers), with the §8 pins in the lockfile
+and NET-HTTP-1 to -5 as tests. Stage 1 was the design admission (docs only).
+The text below is stage 1's record. It fixes
 the contract of `Net::get`, `Url`, `UrlError` and `NetError`, the host
 rule that `Net::only` applies to outbound peer operations, the TLS
 dependency, and the simulated HTTP peer, and gives the soundness verdict
-that owner decision A1 asks for. Nothing here is implemented; stage 2
-implements it after this note, its review rounds and a separate red-team
-pass are accepted. Labels follow research/30 and research/40: **[repo
+that owner decision A1 asks for. Stage 2 follows this note's accepted
+review rounds and separate red-team pass. Labels follow research/30 and research/40: **[repo
 evidence]** for what the repository says, **[source]** for cited outside
 evidence, **[inference]** for this note's reasoning. Revised after the
 Codex supervisor pass s1-r1 (2026-11-18): hosts as written (§§2, 4),
@@ -620,6 +623,8 @@ them exactly and its report lists any that differ:
 - only under `idna_adapter` 1.1.0: `idna_mapping`, `unicode-bidi`,
   `unicode-normalization` and their own dependencies.
 
+Both lockfiles also record `utf_types` 1.0.0, optional `serde`, `serde_core`, `serde_derive` and `syn` 3, and other-target `windows-sys`, `windows-targets`, `windows_*` and `wasi` packages.
+
 `ring` is `tide-std`'s first dependency with C and assembly sources; it
 "requires a C (but not C++) toolchain", and its crates.io package needs no
 Perl ([ring BUILDING.md](https://github.com/briansmith/ring/blob/main/BUILDING.md)).
@@ -694,8 +699,10 @@ trip, `Dns` at once for an unnamed host, and packet loss as delay.
   after one round trip, IP hosts included, even if a TCP listener is there;
   no peer callback runs in that case. The requesting task waits cancellably
   for arrival with `deadline`: `Timeout` exactly at the deadline if it is earlier,
-  `Cancelled` on scope cancellation. A peer that panics panics the
-  requesting task, like any code that task runs.
+  `Cancelled` on scope cancellation. After the callback, `get` checks
+  scope cancellation first (`Cancelled`), then the request deadline
+  (`Timeout`). If neither applies, a peer panic propagates to the
+  requesting task.
 - **Loss and other faults.** `sim.faults.net_drop(p)` and the rest of
   companion 17's fault table stay planned; when built, loss adds
   retransmission delay to these two packets as 17 says. Stage 2 does not

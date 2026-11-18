@@ -33,6 +33,8 @@
 //! - the capability types `Root` carries: the identity `Rand`; `Proc` (processes, below);
 //!   `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
+//! - `net::Net`: real and simulated TCP and HTTP(S) `get` with `Url`, `UrlError`, and
+//!   `NetError`; `sim.world.http` supplies deterministic HTTP peers (03 §1.1, companion 17/21);
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
 //!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
 //!   `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH` with Rust's arithmetic and no `now()` or

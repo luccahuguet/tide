@@ -4143,6 +4143,159 @@ fn tcp_builds_and_runs_against_production_std() {
     }
 }
 
+/// Companion 15.2 builds through tide-admit and its `#[sim_test]` passes (NET-HTTP-3).
+#[test]
+fn companion_fetcher_builds_and_its_sim_test_passes() {
+    let dir = package("net-fetch", include_str!("../../../conformance/cases/authority/net_fetch.rs"));
+    checked(&mut driver(&dir));
+    checked(driver(&dir).arg("--test"));
+    let out = checked(
+        Command::new("timeout")
+            .arg("120")
+            .arg(dir.join("out/demo-test"))
+            .args(["--exact", "tests::slow_host_times_out"])
+            .stdin(Stdio::null()),
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"), "{}", stderr(&out));
+}
+
+/// HTTP peer identity is part of the driver's replay input tape, including its profile.
+#[test]
+fn an_http_seed_replays_and_refuses_changed_or_missing_peer_identity() {
+    use replay_wire::{Manifest, encoded, read};
+    let dir = package("http-replay", r#"
+#[test]
+fn fetched() {
+    use std::net::Url;
+    use std::sim::Reply;
+    use std::time::Duration;
+    let sim = Root::sim(5);
+    sim.world.http("peer.test:443", |_| Reply::ok("replayed"));
+    let body = sim.net.get(&Url::parse("https://peer.test/").unwrap(), sim.clock.now() + Duration::from_secs(1)).unwrap();
+    assert_eq!(body, b"replayed");
+    println!("HTTP_BODY:{body:?}");
+    drop(sim);
+    println!("HTTP_OUTPUT:{body:?}");
+}
+"#);
+    let original = checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "fetched", "--seed", "47"]));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    let path = manifests().pop().unwrap();
+    let recorded: Manifest = read(&path).unwrap();
+    recorded.validate().unwrap();
+    let peer = recorded.roots[0].inputs.iter().find(|i| i.kind == "http").expect("HTTP identity recorded inline");
+    assert_eq!(peer.key, b"peer.test:443");
+    assert_eq!(peer.value, b"net-http-v0");
+    assert!(recorded.trace.contains("HTTP_BODY:"), "HTTP sink output is in the trace");
+    let before = manifests();
+    let run = checked(driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path));
+    assert!(stderr(&run).contains("replay reproduced"), "{}", stderr(&run));
+    let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+    assert_eq!(added.len(), 1);
+    let replayed: Manifest = read(&added[0]).unwrap();
+    assert_eq!(replayed.roots, recorded.roots);
+    assert_eq!(replayed.trace.as_bytes(), recorded.trace.as_bytes());
+    let output = |out: &Output| String::from_utf8_lossy(&out.stdout).lines()
+        .find_map(|l| l.find("HTTP_OUTPUT:").map(|i| l.as_bytes()[i..].to_vec()))
+        .unwrap_or_else(|| panic!("HTTP output witness: {}", String::from_utf8_lossy(&out.stdout)));
+    assert_eq!(output(&run), output(&original));
+    for change in ["profile", "address", "missing"] {
+        let mut changed = recorded.clone();
+        let inputs = &mut changed.roots[0].inputs;
+        let index = inputs.iter().position(|i| i.kind == "http").unwrap();
+        match change {
+            "profile" => inputs[index].value = b"net-http-broken".to_vec(),
+            "address" => inputs[index].key = b"other.test:443".to_vec(),
+            "missing" => { inputs.remove(index); }
+            _ => unreachable!(),
+        }
+        changed.seal();
+        changed.validate().unwrap();
+        std::fs::write(&path, encoded(&changed)).unwrap();
+        let run = driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path).output().unwrap();
+        assert!(!run.status.success() && stderr(&run).contains("replay root or input mismatch"), "{change}: {}", stderr(&run));
+    }
+}
+
+/// NET-HTTP-4: admission admits every public item of Tide's std, re-exports first, so
+/// `tide_std::net` exposes no path to the network beyond `Net`'s methods and their handles. This
+/// lists its public items, `pub use` included, and fails on any addition or removal; the
+/// backend files expose nothing public except `Url`, `UrlError` and `NetError` in `net/http.rs`.
+/// The trait impl headers on `Url` are also fixed, since an impl could expose the wrapped type.
+#[test]
+fn std_net_public_items_are_fixed() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tide-std/src");
+    let public = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(root.join(file))
+            .unwrap()
+            .lines()
+            .map(str::trim_start)
+            .filter(|l| l.starts_with("pub ") && !l.starts_with("pub(") || l.starts_with("pub use"))
+            .map(|l| l.split(['(', '{', '<', ';', '=', ':']).next().unwrap().trim_end().to_owned())
+            .collect()
+    };
+    let net = public("net.rs");
+    assert_eq!(
+        net,
+        [
+            "pub use std",
+            "pub use http",
+            "pub trait ToSocketAddrs",
+            "pub enum Address",
+            "pub trait Sealed",
+            "pub struct Net",
+            "pub fn no_bind",
+            "pub fn only",
+            "pub fn bind",
+            "pub fn connect",
+            "pub fn get",
+            "pub struct TcpListener",
+            "pub struct TcpStream",
+            "pub fn accept",
+            "pub fn local_addr",
+            "pub fn incoming",
+            "pub struct Incoming",
+            "pub fn local_addr",
+            "pub fn peer_addr",
+            "pub fn shutdown",
+        ],
+        "{net:#?}"
+    );
+    let source = std::fs::read_to_string(root.join("net.rs")).unwrap();
+    assert!(source.contains("pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr};"));
+    assert!(source.contains("pub use http::{NetError, Url, UrlError};"));
+    assert!(source.contains("mod address {"), "Address and Sealed stay in a private module");
+    assert_eq!(public("net/host.rs"), ["pub enum Host"], "sealed, unnameable: `mod host` is private");
+    for backend in ["net/real.rs", "net/sim.rs", "net/resolve.rs"] {
+        assert_eq!(public(backend), Vec::<String>::new(), "{backend}");
+    }
+    let http = public("net/http.rs");
+    let types: Vec<_> = http.iter().filter(|l| !l.starts_with("pub fn")).collect();
+    assert_eq!(types, ["pub enum NetError", "pub struct Url", "pub struct UrlError"], "{http:#?}");
+    let fns: Vec<_> = http.iter().filter_map(|l| l.strip_prefix("pub fn ")).collect();
+    assert_eq!(
+        fns,
+        ["is_cancelled", "is_transient", "parse", "scheme", "host_str", "port", "port_or_known_default", "path", "query", "fragment", "as_str"],
+    );
+    let source = std::fs::read_to_string(root.join("net/http.rs")).unwrap();
+    let impls: Vec<_> = source
+        .lines()
+        .map(|line| line.split('{').next().unwrap().trim())
+        .filter(|header| header.starts_with("impl") && header.ends_with(" for Url"))
+        .collect();
+    assert_eq!(
+        impls,
+        [
+            "impl std::fmt::Display for Url",
+            "impl std::fmt::Debug for Url",
+            "impl crate::__codec::Encode for Url",
+            "impl crate::__codec::Decode for Url",
+            "impl std::str::FromStr for Url",
+        ],
+    );
+}
+
 #[test]
 fn tcp_backpressure_deadlock_names_the_connection() {
     let dir = package(

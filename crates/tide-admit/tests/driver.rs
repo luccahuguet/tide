@@ -606,6 +606,7 @@ pub mod time {
 }
 pub mod net {
     pub struct Net(());
+    pub struct Url(());
 }
 pub mod sync {
     pub struct Arc<T>(T);
@@ -1059,6 +1060,39 @@ unsafe extern \"C\" {}
 }
 "#;
     assert_eq!(holes, expected);
+}
+
+/// NET-HTTP-4: a public item that takes `Net` (to call `get`) shows `net` in the trust diff, and
+/// `Url` adds no authority (the fake std here has no `get`; companion 15.2's build admits calls).
+#[test]
+fn net_get_is_admitted_with_net_in_the_trust_diff() {
+    let std = tide_std("trust-diff-net");
+    let std = std.to_str().unwrap();
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("trust-diff-net");
+    let snapshot = |name: &str, source: &str| {
+        let (code, stderr) = admit("trust-diff-net", source, &["--tide-std", std]);
+        assert_eq!(code, 0, "{stderr}");
+        let copy = dir.join(name);
+        std::fs::copy(dir.join("lib.interface.json"), &copy).unwrap();
+        copy
+    };
+    let base = snapshot("base.json", "pub fn path(url: &std::net::Url) -> usize { let _ = url; 0 }\n");
+    let head = snapshot(
+        "head.json",
+        "pub fn path(url: &std::net::Url) -> usize { let _ = url; 0 }\n\
+         pub fn fetch(net: &std::net::Net, url: &std::net::Url) -> bool { let _ = (net, url); true }\n",
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_tide-admit"))
+        .arg("--tide-diff")
+        .args([&base, &head])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "declared authority (no exercised authority, effects, or proof status)\n  \
+         + lib::fetch (function)\n      \
+         + net: net\n"
+    );
 }
 
 /// `--tide-diff` compares two trust artifacts: a `Net` a public item can now reach is listed with

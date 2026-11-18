@@ -1,8 +1,10 @@
 // TCP authority and handles (reference §6.1, §6.7; research/21-channels-tcp.md §§1.9–1.13).
 // Linux only. Real sockets are nonblocking and waits observe scope cancellation/deadlines.
 // Simulated loopback uses bounded streams and seed-drawn 1–10 ms packet delays.
-// Other real hostnames use Rust's inline resolver, which cannot yet be abandoned on cancel;
-// simulation resolves only IP literals and localhost. HTTP, UDP, options and owned I/O are pending.
+// Other real hostnames go through NET-RESOLVE (`net/resolve.rs`), which cancellation abandons;
+// simulation resolves only IP literals and localhost for TCP. `only` keys every outbound peer
+// by NET-HOST (`net/host.rs`). `Net::get` (`net/http.rs`) is one HTTP/1.1 GET; simulated gets
+// reach only `sim.world.http` peers. UDP, options and owned I/O are pending.
 use crate::io::{self, ErrorKind, Read, Write};
 use crate::task::{NetContext, Network};
 pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr};
@@ -12,6 +14,16 @@ mod tcp_real;
 #[path = "net/sim.rs"]
 mod tcp_sim;
 use tcp_sim::SimNet;
+#[path = "net/host.rs"]
+mod host;
+use host::{Host, Key};
+#[path = "net/resolve.rs"]
+mod resolve;
+#[path = "net/http.rs"]
+mod http;
+pub use http::{NetError, Url, UrlError};
+pub(crate) use http::BODY_LIMIT;
+pub(crate) use tcp_sim::Peer;
 type Span = &'static std::panic::Location<'static>;
 
 /// Address data accepted by `Net`, sealed so resolution cannot escape its authority.
@@ -21,13 +33,17 @@ mod address {
     use super::*;
     pub enum Address {
         Socket(SocketAddr),
-        Host(String, u16),
+        Host(Host, u16),
     }
     pub trait Sealed {
         fn address(&self) -> io::Result<Address>;
     }
     impl Sealed for SocketAddr {
         fn address(&self) -> io::Result<Address> {
+            // NET-HOST refuses zone identifiers.
+            if matches!(self, SocketAddr::V6(a) if a.scope_id() != 0) {
+                return Err(ErrorKind::InvalidInput.into());
+            }
             Ok(Address::Socket(*self))
         }
     }
@@ -36,20 +52,16 @@ mod address {
             (**self).address()
         }
     }
+    fn written(written: &str, port: u16) -> io::Result<Address> {
+        Ok(match host::host(written).ok_or(ErrorKind::InvalidInput)? {
+            Host::Ip(ip) => Address::Socket(SocketAddr::new(ip, port)),
+            name => Address::Host(name, port),
+        })
+    }
     impl Sealed for str {
         fn address(&self) -> io::Result<Address> {
-            if let Ok(addr) = self.parse() {
-                return Ok(Address::Socket(addr));
-            }
-            let (host, port) = self.rsplit_once(':').ok_or(ErrorKind::InvalidInput)?;
-            if host.is_empty() || host.contains(':') {
-                return Err(ErrorKind::InvalidInput.into());
-            }
-            Ok(Address::Host(
-                host.to_owned(),
-                port.parse()
-                    .map_err(|_| io::Error::from(ErrorKind::InvalidInput))?,
-            ))
+            let (host, port) = host::split(self).ok_or(ErrorKind::InvalidInput)?;
+            written(host, port)
         }
     }
     impl Sealed for String {
@@ -74,42 +86,42 @@ mod address {
     }
     impl Sealed for (&str, u16) {
         fn address(&self) -> io::Result<Address> {
-            Ok(match self.0.parse::<IpAddr>() {
-                Ok(ip) => Address::Socket(SocketAddr::new(ip, self.1)),
-                Err(_) if self.0.is_empty() => return Err(ErrorKind::InvalidInput.into()),
-                Err(_) => Address::Host(self.0.to_owned(), self.1),
-            })
+            match self.0.parse::<IpAddr>() {
+                Ok(ip) => Ok(Address::Socket(SocketAddr::new(ip, self.1))),
+                Err(_) => written(self.0, self.1),
+            }
         }
     }
     impl Address {
-        pub(super) fn key(&self) -> (String, u16) {
+        /// NET-HOST's key, the only thing `only` compares.
+        pub(super) fn key(&self) -> Key {
             match self {
-                Self::Socket(a) => (a.ip().to_string(), a.port()),
-                Self::Host(h, p) => (
-                    h.parse::<IpAddr>()
-                        .map_or_else(|_| h.to_ascii_lowercase(), |ip| ip.to_string()),
-                    *p,
-                ),
+                Self::Socket(a) => Key {
+                    host: host::ip(a.ip()),
+                    port: a.port(),
+                },
+                Self::Host(h, p) => Key {
+                    host: h.clone(),
+                    port: *p,
+                },
             }
         }
-        pub(super) fn resolve(self, simulated: bool) -> io::Result<Vec<SocketAddr>> {
+        /// IP literals and localhost need no lookup; simulation resolves no other name, and
+        /// the real backend asks NET-RESOLVE, which the caller's cancellation abandons.
+        pub(super) fn resolve(
+            self,
+            c: &NetContext,
+            simulated: bool,
+            span: Span,
+        ) -> io::Result<Vec<SocketAddr>> {
             match self {
                 Self::Socket(a) => Ok(vec![a]),
-                Self::Host(h, p) => {
-                    if let Ok(ip) = h.parse() {
-                        return Ok(vec![SocketAddr::new(ip, p)]);
-                    }
-                    if h.eq_ignore_ascii_case("localhost") {
-                        return Ok(vec![SocketAddr::new(Ipv4Addr::LOCALHOST.into(), p)]);
-                    }
-                    if simulated {
-                        return Err(ErrorKind::InvalidInput.into());
-                    }
-                    // shortcut: inline DNS cannot be cancelled, replace when Net::resolve owns resolution.
-                    std::net::ToSocketAddrs::to_socket_addrs(&(h.as_str(), p))
-                        .map(|it| it.collect())
-                        .map_err(io::from_std)
-                }
+                Self::Host(h, p) => match (h.literal(), &h) {
+                    (Some(ip), _) => Ok(vec![SocketAddr::new(ip, p)]),
+                    _ if simulated => Err(ErrorKind::InvalidInput.into()),
+                    (None, Host::Name(name)) => resolve::lookup(c, name, p, None, span),
+                    (None, Host::Ip(_)) => unreachable!(),
+                },
             }
         }
     }
@@ -120,8 +132,11 @@ mod address {
 pub struct Net {
     network: Network,
     sim: Option<Arc<Mutex<SimNet>>>,
-    only: Option<Arc<[(String, u16)]>>,
+    only: Option<Arc<[Key]>>,
     may_bind: bool,
+    /// A test root that only crate tests add (research/42 §14); no public root override exists.
+    #[cfg(test)]
+    test_roots: Option<Arc<rustls::RootCertStore>>,
 }
 impl Net {
     pub(crate) fn new(tasks: Option<crate::task::Tasks>) -> Self {
@@ -132,20 +147,28 @@ impl Net {
             network: Network::new(tasks),
             only: None,
             may_bind: true,
+            #[cfg(test)]
+            test_roots: None,
         }
     }
+    fn allows(&self, key: &Key) -> bool {
+        self.only.as_ref().is_none_or(|keys| keys.contains(key))
+    }
     pub fn no_bind(&self) -> Self {
+        self.network.context();
         Self {
             may_bind: false,
             ..self.clone()
         }
     }
-    /// Literal case-insensitive host and exact port matching, without lookup. Invalid entries grant nothing.
+    /// NET-HOST: `"host:port"` entries keyed as `connect` and `get` key their peers, matched by
+    /// equality before any lookup. Invalid entries grant nothing. It bounds outbound peer
+    /// operations only: `bind` and accepted peers stay open unless `no_bind` is added too.
     pub fn only(&self, hosts: impl IntoIterator<Item: AsRef<str>>) -> Self {
-        use address::Sealed;
+        self.network.context();
         let hosts: Vec<_> = hosts
             .into_iter()
-            .filter_map(|h| h.as_ref().address().ok().map(|a| a.key()))
+            .filter_map(|h| host::entry(h.as_ref()))
             .filter(|key| self.only.as_ref().is_none_or(|old| old.contains(key)))
             .collect();
         Self {
@@ -161,7 +184,7 @@ impl Net {
         if !self.may_bind {
             return Err(ErrorKind::PermissionDenied.into());
         }
-        let addrs = address::Sealed::address(&addr)?.resolve(self.sim.is_some())?;
+        let addrs = address::Sealed::address(&addr)?.resolve(&c, self.sim.is_some(), span)?;
         let mut error = ErrorKind::InvalidInput.into();
         for addr in addrs {
             let result = if let Some(sim) = &self.sim {
@@ -187,19 +210,15 @@ impl Net {
         let c = self.network.context();
         c.check()?;
         let addr = address::Sealed::address(&addr)?;
-        if self
-            .only
-            .as_ref()
-            .is_some_and(|hosts| !hosts.contains(&addr.key()))
-        {
+        if !self.allows(&addr.key()) {
             return Err(ErrorKind::PermissionDenied.into());
         }
         let mut error = ErrorKind::InvalidInput.into();
-        for addr in addr.resolve(self.sim.is_some())? {
+        for addr in addr.resolve(&c, self.sim.is_some(), span)? {
             let result = if let Some(sim) = &self.sim {
                 tcp_sim::connect(self, sim, &c, addr, span).map(Stream::Sim)
             } else {
-                tcp_real::connect(&c, addr, span).map(Stream::Real)
+                tcp_real::connect(&c, addr, span, None).map(Stream::Real)
             };
             match result {
                 Ok(inner) => {
@@ -213,6 +232,53 @@ impl Net {
             }
         }
         Err(error)
+    }
+}
+
+impl Net {
+    /// One HTTP/1.1 GET (NET-GET, research/42 §3): a 2xx body, or the `NetError` that stopped
+    /// it. Cancellation, the URL's shape and `only` are checked before any lookup, connection
+    /// or simulated peer; `deadline` bounds the whole call.
+    #[track_caller]
+    pub fn get(&self, url: &Url, deadline: crate::time::Instant) -> Result<Vec<u8>, NetError> {
+        let span = std::panic::Location::caller();
+        let c = self.network.context();
+        let checked = url.key();
+        let mut delays = Vec::new();
+        let result = (|| {
+            c.check().map_err(|_| NetError::Cancelled)?;
+            let (tls, key) = checked
+                .as_ref()
+                .ok_or_else(|| NetError::Io(ErrorKind::InvalidInput.into()))?;
+            if !self.allows(key) {
+                return Err(NetError::Denied);
+            }
+            match &self.sim {
+                Some(sim) => tcp_sim::get(sim, &c, url, key, deadline.0, span, &mut delays),
+                None => http::get(self, &c, url, *tls, key, deadline.0, span),
+            }
+        })();
+        if self.sim.is_some() {
+            tcp_sim::record_get(&c, span, url, checked.as_ref().map(|(_, k)| k), &delays, &result);
+        }
+        result
+    }
+    #[track_caller]
+    pub(crate) fn world_http(&self, addr: &str, peer: Peer) -> String {
+        let c = self.network.context();
+        tcp_sim::world_http(self.sim.as_ref().unwrap(), &c, addr, peer, std::panic::Location::caller())
+    }
+    pub(crate) fn clear_http_peers(&self) {
+        tcp_sim::clear_http_peers(self.sim.as_ref().unwrap());
+    }
+    #[cfg(test)]
+    pub(crate) fn with_test_root(&self, der: &[u8]) -> Self {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(rustls::pki_types::CertificateDer::from(der.to_vec())).unwrap();
+        Self {
+            test_roots: Some(Arc::new(roots)),
+            ..self.clone()
+        }
     }
 }
 
@@ -238,11 +304,13 @@ pub struct TcpStream {
 }
 impl std::fmt::Debug for TcpListener {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.network.context();
         self.inner.fmt(f)
     }
 }
 impl std::fmt::Debug for TcpStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.network.context();
         self.inner.fmt(f)
     }
 }
@@ -254,7 +322,7 @@ impl TcpListener {
         c.check()?;
         let (inner, peer) = match &self.inner {
             Listener::Real(l) => {
-                tcp_real::retry(&c, l, false, span, || l.accept()).and_then(|(s, a)| {
+                tcp_real::retry(&c, l, false, span, None, || l.accept()).and_then(|(s, a)| {
                     s.set_nonblocking(true).map_err(io::from_std)?;
                     Ok((Stream::Real(s), a))
                 })?
@@ -280,6 +348,7 @@ impl TcpListener {
         }
     }
     pub fn incoming(&self) -> Incoming<'_> {
+        self.network.context();
         Incoming {
             listener: self,
             ended: false,
@@ -295,6 +364,7 @@ impl Iterator for Incoming<'_> {
     type Item = io::Result<TcpStream>;
     #[track_caller]
     fn next(&mut self) -> Option<Self::Item> {
+        self.listener.network.context();
         if self.ended {
             return None;
         }
@@ -337,7 +407,7 @@ impl Read for &TcpStream {
         match &self.inner {
             Stream::Real(_) if buf.is_empty() => Ok(0),
             Stream::Real(s) => {
-                tcp_real::retry(&c, s, false, span, || std::io::Read::read(&mut &*s, buf))
+                tcp_real::retry(&c, s, false, span, None, || std::io::Read::read(&mut &*s, buf))
             }
             Stream::Sim(s) => s.read(&c, buf, span),
         }
@@ -351,7 +421,7 @@ impl Write for &TcpStream {
         let span = std::panic::Location::caller();
         match &self.inner {
             Stream::Real(s) => {
-                tcp_real::retry(&c, s, true, span, || std::io::Write::write(&mut &*s, buf))
+                tcp_real::retry(&c, s, true, span, None, || std::io::Write::write(&mut &*s, buf))
             }
             Stream::Sim(s) => s.write(&c, buf, span),
         }
@@ -378,6 +448,10 @@ impl Write for TcpStream {
 }
 
 #[cfg(test)]
+#[path = "net/tests.rs"]
+mod http_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -394,6 +468,13 @@ mod tests {
         assert!(catch_unwind(AssertUnwindSafe(|| net.bind("127.0.0.1:0"))).is_err());
         assert!(catch_unwind(AssertUnwindSafe(|| listener.local_addr())).is_err());
         let other = crate::Root::sim(18);
+        assert!(catch_unwind(AssertUnwindSafe(|| net.no_bind())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| net.only(["127.0.0.1:80"]))).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| net.get(&Url::parse("http://127.0.0.1/").unwrap(), other.clock.now()))).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| listener.incoming())).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| format!("{listener:?}"))).is_err());
+        let mut incoming = Incoming { listener: &listener, ended: true };
+        assert!(catch_unwind(AssertUnwindSafe(|| incoming.next())).is_err());
         assert!(catch_unwind(AssertUnwindSafe(|| listener.accept())).is_err());
         other.tasks.checkpoint().unwrap();
         // Outliving handles may drop without a draw or a record in the other world.

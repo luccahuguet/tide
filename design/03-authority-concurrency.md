@@ -209,19 +209,16 @@ Notes:
   `shutdown`, and no-op `flush`. Bind, connect, accept, read, write and shutdown
   are checkpoints with `io::ErrorKind::Cancelled`; address accessors and flush
   are not. `incoming` yields cancellation once then ends, like `stdin.lines`.
-  `no_bind` denies bind with `PermissionDenied`. `only` currently intersects
-  literal case-insensitive host/exact-port grants (IPs compare parsed),
-  without lookup; it limits connect, not bind or accepted peers. NET-HOST's
-  key (below) replaces this literal key for `connect` in `fx-ff13` stage 2
-  (planned). IP literals and `localhost` resolve on both backends. Other
-  real names currently use Rust's inline resolver and cannot be abandoned
-  on cancellation; simulation rejects them. This is a partial
-  implementation limit until `fx-ff13` stage 2 moves both `bind` and
-  `connect` onto the shared resolver (NET-RESOLVE, research/42 §7). HTTP, UDP,
-  owned I/O, options and timeouts remain planned. The adopted mechanisms and
+  `no_bind` denies bind with `PermissionDenied`, before any resolution.
+  `only` intersects NET-HOST keys (below), without lookup; it limits
+  connect and `get`, not bind or accepted peers. IP literals and
+  `localhost` resolve on both backends. Other real names go through the
+  shared resolver (NET-RESOLVE, research/42 §7), which cancellation
+  abandons; simulation rejects them for TCP. UDP, owned I/O, options and
+  TCP timeouts remain planned. The adopted mechanisms and
   limits are recorded in [research/21](../research/21-channels-tcp.md) §§1.9–1.13
   and §4 items 5–14; the node-tier `":7000"` shorthand is not a TCP address here.
-- **NET-HOST. What `only` grants** (v0, planned for `fx-ff13` stage 2;
+- **NET-HOST. What `only` grants** (v0, built in `fx-ff13` stage 2;
   decided 2026-11-18, [research/42](../research/42-net-get-v0.md) §4). An
   entry is
   `"host:port"`, IPv6 in brackets, port 1–65535 required; no wildcards,
@@ -261,7 +258,7 @@ Notes:
   is no private-address filter: a stated limit. fx-6d50's `resolve(host)`
   reuses this key, allowed when some entry names the host on any port, and
   the same private resolver.
-- **HTTP: `Net::get`** (v0, planned; research/42 §§3, 6). One HTTP/1.1
+- **HTTP: `Net::get`** (v0; research/42 §§3, 6). One HTTP/1.1
   GET per call, over TLS for `https` (rustls with ring, compiled-in
   webpki roots, no fallback or skip), one connection per call, closed on
   return. Order: cancellation; shape (`http`/`https`, a host, no userinfo,
@@ -290,8 +287,8 @@ Notes:
   shell is for `Proc`. A URL that redirects fails; private CAs and
   proxy-only networks are unsupported in v0. Names resolve through the
   operator's resolver on a bounded helper pool that a cancelled or timed-out
-  call abandons; both `bind` and `connect` use the same resolver from stage 2,
-  which retires the "cannot be abandoned" limit above. The system resolver may
+  call abandons; `bind` and `connect` use the same resolver, so no lookup
+  is unabandonable. The system resolver may
   share caches across calls and Nets, substitute configured aliases and
   follow DNS aliases. Cancellation abandons the result, not the resolver's
   remaining traffic; a name grant authorizes this operator-controlled

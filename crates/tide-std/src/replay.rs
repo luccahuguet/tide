@@ -222,7 +222,7 @@ impl Manifest {
             for input in &root.inputs {
                 if !matches!(
                     input.kind.as_str(),
-                    "arg" | "environment" | "stdin" | "file" | "proc"
+                    "arg" | "environment" | "stdin" | "file" | "proc" | "http"
                 ) {
                     return Err("replay configuration: unsupported root input".into());
                 }

@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,979 tokens, recounted on 2026-11-18 with
+Core count: 24,968 tokens, recounted on 2026-11-18 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -55,7 +55,7 @@ Rerun it after any change to the core and update this line.
 | `Err(RecvError)` | `Err(RecvError::Disconnected)`, or `Err(e)` and `e.is_cancelled()`: the bare name is now a binding that also catches `Cancelled` | rustc warning only (`non_snake_case`) |
 | `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `TD0913` safe |
 | A pipeline stage returning `Err` when its channel disconnects | return `Ok`: a disconnect alone is not an echo, so the `Err` could outrank the failure that dropped the peer (7.1, 7.3) | — |
-| An `Rc<Cell<u32>>` counter captured by a `world.http` peer (planned) | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
+| An `Rc<Cell<u32>>` counter captured by a `world.http` peer | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `TD0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `TD0610`, `TD0611` |
 | `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `TD0612` |
@@ -188,8 +188,6 @@ mod tests {
 ```
 
 ### 15.2 Bounded concurrent fetcher with a deadline
-
-Planned: it needs `Net::get` and `sim.world.http`.
 
 ```rust
 // src/main.rs
@@ -431,7 +429,8 @@ The rest of 6.8's simulator: fault injection, network time, setup types,
 crashable nodes, records, and replay. Records, the setup types of `args`,
 `env_var`, `stdin`, and `file`, and the per-packet TCP latency are built,
 and so, in part, is the replay manifest (README Status); everything else
-here, `Net::get` timing and packet faults included, is planned.
+here, packet faults included, is planned; `sim.world.http` peers and
+`Net::get` timing are built (research/42 §9).
 
 | Item | Effect |
 | --- | --- |
@@ -459,6 +458,9 @@ here, `Net::get` timing and packet faults included, is planned.
   Registering a peer on a simulated listener's address panics at setup;
   a later bind on a peer's address gives `AddrInUse`, wildcard/loopback
   aliases included.
+- **HTTP peer panics.** After the callback, `get` checks scope cancellation
+  first (`Cancelled`), then the request deadline (`Timeout`). If neither
+  applies, a peer panic propagates to the requesting task.
 - **Setup types.** `world.args` takes any `IntoIterator` of `AsRef<OsStr>`
   items and `env_var(k, v)` two `AsRef<OsStr>` values, as `Command::args`
   and `Command::env` do; `stdin` and `file` contents take `impl
@@ -702,7 +704,7 @@ fn sorts(sim: SimRoot) {
   Tide's own handle methods, `File::sync`, `read_owned`, and `write_owned`
   take `&self`, and `File::close` takes `self`.
 
-## 21. Network: HTTP (planned)
+## 21. Network: HTTP
 
 `Net::get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>` performs
 one HTTP/1.1 GET, over TLS for `https`, and returns a 2xx response's body.

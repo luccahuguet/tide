@@ -15,7 +15,7 @@ The alpha leads with replay and admission:
 
 - **Tests replay.** A test that takes a simulated root (`#[sim_test]`,
   `Root::sim(seed)`) runs under a seeded simulator of tasks, channels,
-  `Shared`, files, TCP loopback, the clock, the environment and stdin. A run
+  `Shared`, files, TCP loopback, HTTP peers (`world.http`), the clock, the environment and stdin. A run
   through `tide-admit --tide-run-test` records a manifest, and `--replay`
   reruns it on the same machine and checks that the event and output traces
   are identical, so a concurrency bug in Tide-written logic becomes an
@@ -205,7 +205,7 @@ Tide v0 alpha, x86_64 Linux only. The alpha includes:
   and test harnesses, writes the trust artifact, compares two artifacts
   (`--tide-diff`), and runs one test in the sandbox (`--tide-run-test`) or
   replays a recording (`--replay`).
-- **Tide's std**: capabilities (`Fs`, `Net` for TCP, `Clock`, environment,
+- **Tide's std**: capabilities (`Fs`, `Net` for TCP and one HTTP/1.1 `get`, `Clock`, environment,
   stdin, output and log sinks), structured tasks with cancellation and
   deadlines, `Shared`, channels, `join`/`par_map`/`par_for`, executable
   contracts, property tests, `#[sim_test]` and the simulator, JSON encoding,
@@ -227,7 +227,7 @@ its interface, and what each std module provides and leaves out.
   `tide review`; fx-a9oh): `tide-admit` is the whole toolchain.
 - **Simulator faults and crashes** (fault injection, crashable nodes;
   fx-djwo).
-- **HTTP, UDP, `Rand` draws and `Proc::exit`**: `Rand` exists as a
+- **UDP, `Rand` draws and `Proc::exit`**: `Rand` exists as a
   capability identity only; `Proc` starts processes (`command`, `only`) but
   has no `exit` yet, and signals and PTYs are Later.
 - **The incremental front end** (D12), contracts in the trust diff, and the
@@ -244,7 +244,8 @@ tracking, FFI, Rust crate import, and production record and replay
 | Scheduling of structured tasks, `Shared` and channels, one task at a time between scheduling points, chosen by the seed | CPU time: virtual time advances only when every task is blocked, so a slow computation never fires a deadline |
 | Virtual time for the clock, sleeps and deadlines | Memory exhaustion, stack depth, and parallel speed-up (`par_*` work runs in order on the calling task) |
 | Files (`sim.fs`), each call with a seed-drawn latency | Disk faults, crashes, links, and partial effects within a compound file operation |
-| TCP loopback on `127.0.0.1`, with bounded streams and half-close | Other hosts, DNS names, UDP, HTTP, and real kernel behaviour such as RST timing |
+| TCP loopback on `127.0.0.1`, with bounded streams and half-close | Other hosts, DNS names, UDP, and real kernel behaviour such as RST timing |
+| `Net::get` against `world.http` peers: replies, statuses, delays, resets, TLS failures | TLS certificate validation and HTTP wire parsing (a peer models the application response) |
 | Arguments, environment variables, stdin, and sink output; child processes as declared `sim.world.proc` models (lifecycle, pipes, `kill`) | Signals, real child processes (only declared models run), randomness, and fault injection |
 
 The real and simulated backends are separate implementations, so a bug that
@@ -429,7 +430,7 @@ others.
   driver, then Tide's incremental front end (D18). The largest parts not
   built yet: the `tide` commands and the incremental front end; packages
   (`tide.toml`, `tide.lock`, per-dependency grants, authority policies)
-  and sealed interfaces; HTTP, UDP, `Rand` draws, and `Proc::exit`; the
+  and sealed interfaces; UDP, `Rand` draws, and `Proc::exit`; the
   simulator's faults, crashes, and nodes; the rest of the test sandbox and
   the unreviewed-branch guarantee (RUN-3, RUN-5); and contracts in the trust
   diff. `design/reference.md` labels each one **(planned)**.

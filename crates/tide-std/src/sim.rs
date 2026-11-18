@@ -7,6 +7,10 @@ use crate::time::Duration;
 
 #[path = "sim/manifest.rs"]
 pub(crate) mod manifest;
+#[path = "sim/http.rs"]
+mod http;
+pub use http::{Reply, Request};
+pub(crate) use http::Answer;
 
 pub(crate) mod runner {
     include!("sim/runner.rs");
@@ -27,6 +31,7 @@ pub struct SimRoot {
     pub tasks: Tasks,
     pub world: World,
     pub faults: Faults,
+    _http_peers: HttpPeers,
     _coverage: Coverage,
     simulation: Simulation,
 }
@@ -44,9 +49,10 @@ impl SimRoot {
         manifest::root(seed, tasks.clone());
         let fs = crate::fs::Fs::simulated(&tasks);
         let proc = crate::process::Proc::new(Some(tasks.clone()));
+        let net = crate::net::Net::new(Some(tasks.clone()));
         Self {
             fs: fs.clone(),
-            net: crate::net::Net::new(Some(tasks.clone())),
+            net: net.clone(),
             clock: simulation.clock().clone(),
             rand: crate::rand::Rand(Some(tasks.clone())),
             env: crate::env::Env::new(Some(tasks.clone())),
@@ -55,11 +61,13 @@ impl SimRoot {
             world: World {
                 fs,
                 proc: proc.clone(),
+                net: net.clone(),
                 tasks: tasks.clone(),
             },
             faults: Faults {
                 _tasks: tasks.clone(),
             },
+            _http_peers: HttpPeers(net),
             _coverage: Coverage(proc),
             tasks,
             simulation,
@@ -82,6 +90,15 @@ impl SimRoot {
     }
 }
 
+// Clear callback/capability cycles while the runtime is still live, including on unwind.
+// A field guard keeps SimRoot's fields movable.
+struct HttpPeers(crate::net::Net);
+impl Drop for HttpPeers {
+    fn drop(&mut self) {
+        self.0.clear_http_peers();
+    }
+}
+
 // A process coverage failure stops the seed even when no later operation observed it. A field
 // guard rather than `Drop for SimRoot`, so tests can still move fields out of the root.
 struct Coverage(crate::process::Proc);
@@ -98,10 +115,11 @@ impl Drop for Coverage {
 pub(crate) mod process;
 pub use process::ProcessModel;
 
-/// Simulated input setup. File and process inputs and process models are modeled.
+/// Simulated input setup: files, process inputs and models, and HTTP peers.
 pub struct World {
     fs: crate::fs::Fs,
     proc: crate::process::Proc,
+    net: crate::net::Net,
     tasks: Tasks,
 }
 impl World {
@@ -140,6 +158,17 @@ impl World {
     #[track_caller]
     pub fn proc(&self, program: impl AsRef<std::ffi::OsStr>, model: ProcessModel) {
         crate::process::sim::register(&self.proc, program.as_ref(), model);
+    }
+    /// A simulated HTTP peer at `addr`, an `only` entry's `"host:port"`, serving `http` and
+    /// `https` URLs to that port. Setup takes no scheduling point, time or draw.
+    ///
+    /// # Panics
+    ///
+    /// When `addr` is not an entry, is already a peer, or a simulated listener holds it.
+    #[track_caller]
+    pub fn http(&self, addr: &str, peer: impl Fn(&Request) -> Reply + Send + 'static) {
+        let key = self.net.world_http(addr, std::sync::Arc::new(std::sync::Mutex::new(Some(Box::new(peer)))));
+        self.tasks.replay_input("http", key.into_bytes(), b"net-http-v0".to_vec());
     }
     /// Immediately creates or replaces a file and creates its parents, from simulated `/`.
     /// Takes no virtual time and does not schedule. Panics on invalid setup paths.
