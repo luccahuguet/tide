@@ -104,7 +104,7 @@ bash -c 'mkdir -p target/guide/std && cargo build --offline --locked -p tide_std
 It lists about ten files, among them `libtide_std.rlib` (the std; `.rlib` is
 a compiled Rust library) and a
 `libtide_macros-….so` (its built-in attributes such as `#[tide::main]`). It's
-the recipe in the repository `README.md`'s demo build, made to fit one line.
+the cargo recipe in `docs/driver.md`, made to fit one line.
 If you rebuild Tide's std later, run it again.
 
 If you set `CARGO_TARGET_DIR`, the build goes there instead of `target/`;

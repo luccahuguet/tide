@@ -39,7 +39,7 @@ cargo run -p tide-conformance   # the conformance corpus, through stable rustc a
 ```
 
 The first run installs the pinned nightly with `rustc-dev` (about 1.4 GB)
-and compiles a rustc driver, so it is slow. [README.md](README.md), Status,
+and compiles a rustc driver, so it is slow. [docs/driver.md](docs/driver.md)
 says what each part checks.
 
 ## How to contribute

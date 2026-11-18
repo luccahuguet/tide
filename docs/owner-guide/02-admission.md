@@ -206,5 +206,5 @@ planned and not built.
   Tide's own fast front end, planned, tested against A).
 - `design/03-authority-concurrency.md` §2.5 (ADMIT-1, the allowlist and the
   backstop; ADMIT-2, the driver owns rustc).
-- The repository `README.md`, Status: every check the driver enforces today.
+- `docs/driver.md`: every check the driver enforces today.
 - `conformance/README.md` and `conformance/rules.md`.

@@ -53,7 +53,7 @@ the workspace's crates on first use.
   The level depends on the kernel the container runs on: a Docker Desktop VM
   whose kernel lacks Landlock or its scopes prints
   `sandbox: partial, not enforced: …` instead. Read the line your run prints;
-  README's RUN-3 paragraph says what each level means.
+  [driver.md](driver.md)'s RUN-3 paragraph says what each level means.
 
 The image was checked on Linux only: on 2026-11-18, an x86_64 Linux host
 (Linux 7.2.6, Docker 29.10.0) built it from a clean clone and, in the

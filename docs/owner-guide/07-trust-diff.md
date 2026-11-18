@@ -101,7 +101,7 @@ cat target/guide/unsafe/unsafe_hole.interface.json
   that hides what it carries, so the artifact lists it as possible authority,
   to be safe. A formatter wraps whatever it is writing to, which the
   artifact can't see, so it lists it as opaque, the conservative listing the
-  repository `README.md` Status describes.
+  `docs/driver.md` describes.
 - The diff names the function (`hits::serve`), the verdict (`widened`), and
   the path (`metrics: net`). A reviewer learns that from four lines.
 - The diff says what it covers: "declared authority (no exercised authority,
@@ -176,5 +176,5 @@ The alpha publishes the result, met or not.
 - `design/01-design.md` D11 (trust surface).
 - `design/03-authority-concurrency.md` §4.1 (declared and exercised authority),
   §4.3 (the trust diff `tide review` will print).
-- The repository `README.md`, Status: the trust artifact and `--tide-diff`.
+- `docs/driver.md`: the trust artifact and `--tide-diff`.
 - `demo/README.md`, step 4.

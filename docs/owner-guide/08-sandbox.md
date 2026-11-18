@@ -184,6 +184,6 @@ explanation; the kernel is the backstop**, for test runs today.
 - `design/01-design.md` D7, the "Kernel enforcement" bullet.
 - `design/03-authority-concurrency.md` §2.6 (RUN-1 the guarantee, RUN-2 the
   build, RUN-3 test processes, RUN-4 the remaining holes).
-- The repository `README.md`, "Sandbox (RUN-3, in part)".
+- `docs/driver.md`, "Sandbox (RUN-3, in part)"; the repository `README.md`, "Sandbox" and "Known holes".
 - `crates/tide-admit/src/invocation/sandbox.rs` (the code) and
   `crates/tide-admit/tests/build.rs` (the tests named `run3_*`).

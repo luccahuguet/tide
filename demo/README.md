@@ -294,5 +294,5 @@ and verdicts. The stub's own `Net` additions (`get`, `drop_all`, `NetError`,
   checked dialect);
 - `design/03-authority-concurrency.md` §4.3 (trust diff), §6.1 and §6.5
   (scopes, `Shared::with`), §9.6 (REPLAY-1, REPLAY-2);
-- the repository `README.md` for the driver's flags, the replay manifest, and
+- [`docs/driver.md`](../docs/driver.md) for the driver's flags, the replay manifest, and
   the RUN-3 sandbox.

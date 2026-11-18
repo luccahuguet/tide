@@ -94,7 +94,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; …
 
 `full` means Landlock and seccomp both confine the test. When the kernel lacks
 Landlock, its scopes or seccomp, or they are disabled or blocked, the line
-reads `sandbox: partial, not enforced: …` and names what is missing; README's
+reads `sandbox: partial, not enforced: …` and names what is missing; [driver.md](driver.md)'s
 RUN-3 paragraph says what each level means.
 `target/quickstart-tests/sorted_insert-test --list` lists the generated tests.
 

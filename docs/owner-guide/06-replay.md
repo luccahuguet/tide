@@ -196,6 +196,6 @@ shows it: identical traces three times over.
   (production record and replay, v1).
 - `design/03-authority-concurrency.md` §9.6 (REPLAY-1, the manifest; REPLAY-2,
   the identity check).
-- The repository `README.md`, Status: the replay paragraphs list exactly what
+- `docs/driver.md`: the replay paragraphs list exactly what
   is checked.
 - `demo/README.md`, "What the demo does", step 2.
