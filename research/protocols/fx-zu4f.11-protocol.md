@@ -812,3 +812,25 @@ like the others. A catch there is reported, in its own row labelled owner-affili
 does NOT meet the RC's external-catch bar. Pool denominators count it; external-catch
 counts do not. The same rule applies to any other pool repository found to be owned or
 maintained by the owner; the report names the evidence.
+
+## Amendment A2: owner-affiliated repository removed (supersedes A1; before go and before any examination)
+
+Relayed owner decision (Lucca, through tide-desk, 2026-11-18), recorded by tide-lead:
+"nah, remove nova / we dont want to shit the bed twice / eon is already enough self-own,
+plus eon is replacing nova". It was decided before any pool repository was examined and
+before go.
+
+Yazelix/nova (registered pool rank 8) is EXCLUDED from the pool because it is
+owner-affiliated: it is the owner's own project, in the Yazelix organization. This is an
+owner-affiliation exclusion and says nothing about the repository's code. A2 supersedes A1:
+there is no owner-affiliated row left to report.
+
+The working pool is research/protocols/fx-zu4f.11-pool/pool-amended.tsv: the registered
+pool.tsv minus that one row, 7 repositories, with ranks 1-7 unchanged. pool.tsv stays as
+registered, with its proof, as the record of what the mechanical selection produced. There is
+NO backfill. The selection rule stays mechanical, and the next repository by that rule
+would lie below the registered T floor, which the rule does not allow. Every denominator
+uses 7, and the report states the exclusion and this reason.
+
+The registration-time proof of this file (with A1) is fx-zu4f.11-protocol.md.a1.ots. It
+verifies against the file at commit 9d797ef. This file, with A2, is stamped anew before go.
