@@ -1,0 +1,48 @@
+{
+  "bead": "fx-zu4f.10",
+  "base_commit": "a28b4df0b49731a20e9f181ab788fc5ce498a53a",
+  "verified_utc": "2026-11-18T17:02:03.853879+00:00",
+  "python": "3.14.10",
+  "counts": {
+    "snapshot": 1000,
+    "after_stars": 369,
+    "after_scan": 24,
+    "pool": 24
+  },
+  "fewer_than_30": "All 24 scan survivors retained; no replacements.",
+  "first_failure_counts": {
+    "no-std-concurrency-use": 282,
+    "stars<1000": 613,
+    "kept": 24,
+    "forbidden-source": 54,
+    "forbidden-normal-dependency": 9,
+    "not-github": 18
+  },
+  "times": {
+    "snapshot_start": "2026-11-18T16:32:08.021571+00:00",
+    "snapshot_end": "2026-11-18T16:32:18.626595+00:00",
+    "stars_first_request": "2026-11-18T16:32:55.856567+00:00",
+    "stars_last_request": "2026-11-18T16:40:04.555880+00:00",
+    "archive_start": "2026-11-18T16:41:56.475915+00:00",
+    "archive_end": "2026-11-18T16:48:43.193287+00:00"
+  },
+  "github_metadata_requests": 651,
+  "distinct_github_response_hashes": 648,
+  "scanner_sha256": "8f2afde9707f49a9821093680e36cb1fe7827acec13ae40e7d2158256a0a7898",
+  "protocol_sha256": "44490b7ddf5b73844d2f7057bd950bfa15fe54321a29fdf5809a8a7ef82b73af",
+  "verification": [
+    "Synthetic scanner self-test passed.",
+    "Snapshot hashes, API order/uniqueness and request-start spacing passed.",
+    "Stars verified against saved raw gh api repository responses.",
+    "All 369 pinned archive hashes and sizes verified; request spacing passed.",
+    "All 1000 scan rows and the exact first-survivors pool verified.",
+    "Two complete offline scans produced byte-identical scan-output.tsv and pool.tsv; scanner, stars and archive manifest unchanged."
+  ],
+  "development_disclosure": [
+    "Earlier unregistered scans were interrupted or failed during mechanical scanner development; no earlier output supplies the pool.",
+    "A cfg(test) field delimiter bug and quadratic whitespace normalization were fixed and covered by synthetic checks before the two successful scans.",
+    "Only metadata and the mechanical archive scan were used; no candidate history, issues, PRs, policies or manually assessed source; no upstream build/run."
+  ],
+  "raw_evidence": "TARGET/archives and TARGET/registration/github; no archive or upstream code executed.",
+  "registration_state": "Step 1 only. Coordinator stamps and records hashes before go; no .ots proof or external timestamp claimed here."
+}
