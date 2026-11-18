@@ -435,7 +435,7 @@ here, `Net::get` timing and packet faults included, is planned.
 
 | Item | Effect |
 | --- | --- |
-| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"` (an `only` entry's form; invalid or duplicate panics), serving `http` and `https` alike; `req.url() -> &Url` removes the fragment; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)` (a final status, 200–599; others panic), `Reply::hang()`, `Reply::reset()` (`Reset`), `Reply::tls_error()` (`Io`, `InvalidData`); every reply obeys 21's body limit |
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.faults.net_drop(p: f64)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | per-packet network faults (below) |
 | `sim.faults.partition(&[&a], &[&b])`, `heal()` | cut links between node groups |
@@ -453,8 +453,12 @@ here, `Net::get` timing and packet faults included, is planned.
 - **Network time.** Without faults, each packet takes 1–10 ms, drawn from
   the seed, and a `Net::get` is one round trip (2–20 ms, connection setup
   and name resolution included) plus the reply's `after(d)`. An address
-  with no peer gives `Refused` after one round trip; a host that no peer or
-  node names gives `Dns` at once.
+  with no HTTP peer, IP hosts included, gives `Refused` after one round
+  trip; a domain that no peer or node names gives `Dns` at once. A
+  simulated `get` reaches only `world.http` peers, never TCP listeners.
+  Registering a peer on a simulated listener's address panics at setup;
+  a later bind on a peer's address gives `AddrInUse`, wildcard/loopback
+  aliases included.
 - **Setup types.** `world.args` takes any `IntoIterator` of `AsRef<OsStr>`
   items and `env_var(k, v)` two `AsRef<OsStr>` values, as `Command::args`
   and `Command::env` do; `stdin` and `file` contents take `impl
@@ -682,15 +686,66 @@ simulator does not model inherited stdin, so set `Stdio::null()` or
 ## 21. Network: HTTP (planned)
 
 `Net::get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>` performs
-an HTTP(S) GET and returns the body. `NetError` has
+one HTTP/1.1 GET, over TLS for `https`, and returns a 2xx response's body.
+`NetError` (`#[non_exhaustive]`) has
 `Timeout` (the operation's deadline passed), `Cancelled`, `Denied` (a host
 outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
 response), and `Io(io::Error)`; `is_cancelled()` and `is_transient()`
 (`Timeout`, `Reset`, `Refused`, and `Status` 408, 429, or 5xx) classify
 them. `NetError` is not `PartialEq`: test it with `matches!`.
 `Url::parse(&str) -> Result<Url, UrlError>`; `Url` has the `url` crate's
-accessors (`host_str`, `port_or_known_default`, `path`, `as_str`) and
-`Display`. Simulated HTTP peers are in 17.
+accessors (`scheme`, `host_str`, `port`, `port_or_known_default`, `path`,
+`query`, `fragment`, `as_str`), no setters, `Display`, `Eq`, `Hash`, `Ord`
+and `Encode`/`Decode` as a JSON string. Simulated HTTP peers are in 17.
+
+- **Wire.** The request is fixed: `GET`, `Host`, `User-Agent: tide`,
+  `Accept: */*`, `Connection: close`; no body, no custom header, no
+  cookies. `Host` uses the key's host (IPv6 in brackets), with the port
+  unless it is the scheme's default; SNI uses the key's DNS host, never
+  an IP host. The fragment is not sent. One connection per call, closed on
+  return; no pool, TLS session reuse or Tide-owned cache. The system
+  resolver may share caches across calls and Nets, substitute configured
+  aliases and follow DNS aliases. Cancellation abandons its result, not
+  its remaining traffic; a name grant authorizes this operator-controlled
+  mechanism.
+- **Refused before the network.** A scheme other than `http` or `https`,
+  or a URL with userinfo (`user:pw@`), is `Io` with `InvalidInput`; a host
+  outside `only` is `Denied`. `Url::parse` refuses non-ASCII input, and
+  in an `http` or `https` host a `%`, an empty label (`a..b`) or an `xn--`
+  label (no internationalized hosts in v0): percent-encode non-ASCII paths
+  and queries.
+- **Not followed or read.** A 3xx is `Status(code)`: fetch the final URL.
+  Proxy variables, `SSL_CERT_FILE` and system trust stores are ignored;
+  TLS trusts Mozilla's roots compiled in (`webpki-roots`), so a private CA
+  fails with `Io`, `InvalidData`, as any TLS handshake/verification or
+  malformed-response failure does. So are a `101` (no upgrade is asked for) and a body over 64 MiB
+  (provisional). Interim 1xx heads are skipped; a `204` or `304` ends at
+  its head (`204` is `Ok` and empty). A close-delimited HTTPS body ends
+  only at TLS `close_notify`; a bare close is `Reset`. A complete framed
+  2xx body remains `Ok` on a bare close. If all connection attempts fail,
+  all-refused gives `Refused`, otherwise `Io` of the first non-refusal error.
+- **TLS guard.** `NoKeyLog`, resumption disabled; Tide never constructs
+  `KeyLogFile` and ignores `SSLKEYLOGFILE`. Disabling rustls `logging`
+  alone does not establish this.
+- **Simulation limit.** A peer models an application response, not TLS
+  certificate validation or wire parsing. Simulated HTTPS success asserts
+  a successful authenticated transport; it does not prove one.
+  `Request::url()` removes the fragment. Every `Reply`, `Reply::ok`
+  included, obeys the 64 MiB body limit: larger is `Io(InvalidData)`.
+- **What `only` bounds.** Outbound peer operations (`get`, `connect`,
+  planned peer/resolve operations) under 03's NET-HOST rule: exact
+  `"host:port"` keys, every IPv4 spelling as its address, names never
+  matching their addresses, checked before their lookup. A URL without a
+  port keys as 80 for `http` and 443 for `https`. It does not
+  limit `bind` or accepted connections: a binding-capable Net can resolve
+  arbitrary bind names even if binding fails, and communicate with
+  unlisted inbound peers.
+  `only([])` alone is not network silence; delegate `only([..]).no_bind()`
+  for an outbound-only destination grant. Not addresses: a name reaches
+  whatever its DNS gives, loopback included, and `https` authenticates the
+  name only once the handshake completes. Not data: a URL's path and query reach the
+  allowed host, and an allowed relay host is full network authority
+  (research/42 §6).
 
 ## Appendix A. Later tiers (not in v0)
 

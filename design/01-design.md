@@ -505,6 +505,19 @@ scanning.
 - Files support append and explicit durability (`File::sync`,
   `Fs::sync_dir`); durability is part of the simulator's filesystem model
   (D15).
+- **Network** (v0; decided 2026-11-18 under owner decision A1, bead
+  `fx-ff13`, research/42). `net.get(&url, deadline)` is one HTTP/1.1 GET,
+  TLS for `https` through rustls with compiled-in roots, a fixed request
+  and no redirect, proxy or session state, real and simulated
+  (`sim.world.http`). `net.only(["host:port"])` grants exact destinations
+  for outbound peer operations (`get`, `connect`, planned peer/resolve
+  operations), checked before their lookup (03 NET-HOST). It does not
+  limit `bind` or accepted connections: bind can resolve arbitrary names
+  even if it fails, and unlisted inbound peers can exchange data.
+  `only([])` alone is not network silence; delegate `only([..]).no_bind()`
+  for an outbound-only destination grant. It bounds destinations, not
+  data: path and query reach the allowed host; an allowed relay host is
+  full network authority.
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
