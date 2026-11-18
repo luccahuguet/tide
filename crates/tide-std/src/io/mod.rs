@@ -2,7 +2,7 @@
 //! (bead `fx-ecb`): the `Read`, `Write`, `Seek`, and `BufRead` traits with Rust's provided
 //! methods and adapters (`Bytes`, `Chain`, `Take`, `Split`, `Lines`), `BufReader`, `BufWriter`,
 //! `IntoInnerError`, `Error`, `ErrorKind`, `Result`, and Rust's `Cursor` and `SeekFrom`, with
-//! the traits implemented for `&[u8]`, `Vec<u8>`, `&mut [u8]`, and `Cursor`.
+//! the traits implemented for `&[u8]`, `Vec<u8>`, `VecDeque<u8>`, `&mut [u8]`, and `Cursor`.
 //!
 //! The supported items follow Rust's API with `BufWriter<W: Sized>`. Per TASK-6, its Drop
 //! discards pending bytes and logs a warning with their count; call `flush` or `into_inner` to write them. `ErrorKind`
@@ -20,7 +20,8 @@
 //! return `Ok`, and provide no `lock()`; use `BufWriter::new(stdout())` for batching.
 //! `net::TcpStream` implements these `Read`/`Write` traits, owned and borrowed.
 //! Not provided here: vectored I/O, `LineWriter`, `copy`, `empty`,
-//! `sink`, `repeat`, `io::read_to_string`, `BufWriter::into_parts`, and `BufError`.
+//! `sink`, `repeat`, `io::read_to_string`, `BufWriter::into_parts`, `BufError`, and `BufRead`
+//! for `VecDeque<u8>` (it implements `Read` and `Write` only).
 
 include!("shared.rs");
 

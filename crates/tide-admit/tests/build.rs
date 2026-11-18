@@ -77,6 +77,122 @@ fn main() { let _ = std::io::Error::last_os_error(); }
     );
 }
 
+/// One body, built through the driver against production std and with plain rustc against
+/// Rust's std: `Read` and `Write` for `VecDeque<u8>` print the same transcript in both.
+#[test]
+fn vec_deque_reads_and_writes_as_rusts_std() {
+    const BODY: &str = r#"
+use std::collections::VecDeque;
+use std::io::{Read, Write};
+
+/// "abcdef" stored wrapped: the front slice "ab" ends the buffer, the back slice "cdef" starts it.
+fn ring() -> VecDeque<u8> {
+    let mut q = VecDeque::with_capacity(8);
+    q.extend(*b"cdef");
+    q.push_front(b'b');
+    q.push_front(b'a');
+    assert_eq!(q.as_slices(), (&b"ab"[..], &b"cdef"[..]));
+    q
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+fn rest(q: &VecDeque<u8>) -> String {
+    text(&q.iter().copied().collect::<Vec<u8>>())
+}
+
+fn res<T: std::fmt::Debug>(r: std::io::Result<T>) -> String {
+    match r {
+        Ok(v) => format!("Ok({v:?})"),
+        Err(e) => format!("Err({:?}: {e})", e.kind()),
+    }
+}
+
+fn run() {
+    // `read` drains the front slice only, then the back.
+    let mut q = ring();
+    let mut buf = [0u8; 8];
+    let r = q.read(&mut buf);
+    println!("read wrapped: {} {:?} rest {:?}", res(r), text(&buf), rest(&q));
+    let r = q.read(&mut buf[..3]);
+    println!("read short: {} {:?} rest {:?}", res(r), text(&buf[..3]), rest(&q));
+    let r = q.read(&mut []);
+    println!("read none: {} rest {:?}", res(r), rest(&q));
+
+    // `read_exact` across the slice boundary, at it, and one past the end.
+    for n in [0, 1, 2, 3, 6, 7] {
+        let mut q = ring();
+        let mut buf = vec![b'.'; n];
+        let r = q.read_exact(&mut buf);
+        println!("read_exact {n} wrapped: {} {:?} rest {:?}", res(r), text(&buf), rest(&q));
+    }
+    for n in [3, 4] {
+        let mut q = VecDeque::from(b"abc".to_vec());
+        let mut buf = vec![b'.'; n];
+        let r = q.read_exact(&mut buf);
+        println!("read_exact {n} flat: {} {:?} rest {:?}", res(r), text(&buf), rest(&q));
+    }
+
+    // Whole reads take both slices.
+    let mut q = ring();
+    let mut v = b">".to_vec();
+    let r = q.read_to_end(&mut v);
+    println!("read_to_end: {} {:?} rest {:?}", res(r), text(&v), rest(&q));
+    let mut q = ring();
+    let mut s = String::from(">");
+    let r = q.read_to_string(&mut s);
+    println!("read_to_string: {} {s:?} rest {:?}", res(r), rest(&q));
+    let mut q = VecDeque::from(vec![b'x', 0xff]);
+    let mut s = String::from(">");
+    let r = q.read_to_string(&mut s);
+    println!("read_to_string invalid: {} {s:?} rest {:?}", res(r), rest(&q));
+
+    // Provided methods over the impl.
+    let mut q = ring();
+    let mut v = Vec::new();
+    let r = (&mut q).take(4).read_to_end(&mut v);
+    println!("take 4: {} {:?} rest {:?}", res(r), text(&v), rest(&q));
+    let bytes: Vec<u8> = ring().bytes().map(|b| b.unwrap()).collect();
+    println!("bytes: {:?}", text(&bytes));
+
+    // An empty deque.
+    let mut q = VecDeque::new();
+    let mut one = [b'.'];
+    println!("empty read: {}", res(q.read(&mut one)));
+    println!("empty read_exact 0: {}", res(q.read_exact(&mut [])));
+    println!("empty read_exact 1: {} {:?}", res(q.read_exact(&mut one)), text(&one));
+    let mut v = Vec::new();
+    println!("empty read_to_end: {} {:?}", res(q.read_to_end(&mut v)), text(&v));
+    let mut s = String::new();
+    println!("empty read_to_string: {} {s:?}", res(q.read_to_string(&mut s)));
+    println!("empty write none: {} rest {:?}", res(q.write(b"")), rest(&q));
+
+    // `Write` appends at the back, past the wrap.
+    let mut q = ring();
+    println!("write: {}", res(q.write(b"gh")));
+    println!("write_all: {}", res(q.write_all(b"ij")));
+    println!("write!: {}", res(write!(q, "{}", 42)));
+    println!("flush: {} rest {:?}", res(q.flush()), rest(&q));
+    let mut s = String::new();
+    println!("round trip: {} {s:?}", res(q.read_to_string(&mut s)));
+    println!("END");
+}
+"#;
+    let dir = package("vec-deque-io", &format!("{BODY}\n#[tide::main]\nfn main() {{ run(); }}\n"));
+    checked(&mut driver(&dir));
+    let tide = checked(&mut Command::new(dir.join("out/demo")));
+    let rust_code = dir.join("rust.rs");
+    std::fs::write(&rust_code, format!("{BODY}\nfn main() {{ run(); }}\n")).unwrap();
+    plain_rustc(&rust_code, &dir.join("rust"));
+    let rust = checked(&mut Command::new(dir.join("rust")));
+    let transcript = String::from_utf8(rust.stdout).unwrap();
+    assert!(transcript.ends_with("END\n"), "{transcript}");
+    assert!(tide.stderr.is_empty(), "{}", stderr(&tide));
+    assert_eq!(String::from_utf8(tide.stdout).unwrap(), transcript);
+}
+
 #[test]
 fn executable_contracts_run_in_debug_test_and_erase_in_release() {
     for (name, source, count, marker) in [

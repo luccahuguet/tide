@@ -759,6 +759,57 @@ impl Write for Vec<u8> {
     }
 }
 
+/// Reads from the front of the deque, which drains. As Rust's, `read` takes only the front slice
+/// `as_slices` returns, so a wrapped deque needs a second read; the other methods take both.
+impl Read for std::collections::VecDeque<u8> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let n = Read::read(&mut self.as_slices().0, buf)?;
+        self.drain(..n);
+        Ok(n)
+    }
+
+    /// Past the end, as Rust's: the deque is cleared and `buf` is left as it was.
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        if buf.len() > self.len() {
+            self.clear();
+            return Err(Error::READ_EXACT_EOF);
+        }
+        let (front, back) = self.as_slices();
+        let (to_front, to_back) = buf.split_at_mut(front.len().min(buf.len()));
+        to_front.copy_from_slice(&front[..to_front.len()]);
+        to_back.copy_from_slice(&back[..to_back.len()]);
+        self.drain(..buf.len());
+        Ok(())
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize> {
+        let len = self.len();
+        buf.try_reserve(len)?;
+        let (front, back) = self.as_slices();
+        buf.extend_from_slice(front);
+        buf.extend_from_slice(back);
+        self.clear();
+        Ok(len)
+    }
+}
+
+/// Appends to the back of the deque.
+impl Write for std::collections::VecDeque<u8> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.extend(buf);
+        Ok(buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+        self.extend(buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
 /// Writes into the front of the slice, which shrinks; a write past its end is short.
 impl Write for &mut [u8] {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
