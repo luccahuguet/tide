@@ -1,0 +1,139 @@
+{
+  "inputs_sha256": {
+    "../../research/37-external-admission-search.md": "a2ac59f8a4e6e15b39c2483033432975a7f0db1434656ef3ea184f873240c610",
+    "../../research/38-external-concurrency-search.md": "ad54b1ee4abdf744378ad12dd56df9c3e8b3491be2c90071c5fef0e1718be47a",
+    "../../research/39-std-concurrency-search.md": "a79aa358959eba10e6e83d8ff117a9379a895c4c26e38be14b4c4b3e510d84e1",
+    "../../research/47-malware-rescreen.md": "6c6111b7789d0fedd34a4439c403c103b2f8a57442360afe9083660ffc3b896e",
+    "../../research/41-qin-dataset-search.md": "c88be55c8f680b8f36d966333e2f66168801414c106ba6628e562901d4340c5d",
+    "../../research/44-fx-zu4f.10-concurrency-round.md": "249c18151c03a2e3b71e841b848e7bcf645dfe06279c958cdc482ee9714bc042",
+    "../../research/protocols/fx-zu4f.10-record/arm-b-ledger.tsv": "5a884b74909c9dfe233c326ebd6d41d29f063662e2ea5b9c2a1f487b8fb5ed95",
+    "../../research/46-fx-zu4f.11-agent-marker-round.md": "48f11d35c64ba3b0a7d10f112d19a06e24c57851429604423130fdcbbc3f84dc",
+    "../../research/protocols/fx-zu4f.11-record/b-candidates.tsv": "20b19ebff79e6559af0848a72c2d96bfb80cd84a3e0799106dbe70567defc45e"
+  },
+  "fx-zu4f.10_provisional": false,
+  "landed": {
+    "proc": {
+      "capability": "Proc::command",
+      "bead": "fx-ayh2.1",
+      "commit": "e0b0d6216bed121c784c76e27b10582a2e0053ed"
+    },
+    "get": {
+      "capability": "Net::get",
+      "bead": "fx-ff13",
+      "commit": "8ac13175c98ec29b3f313a860d657e1c34c1fafe"
+    },
+    "resolve": {
+      "capability": "Net::resolve",
+      "bead": "fx-6d50",
+      "commit": "d378a7d39e0edc70cbb409e53d28ad042f0c1606"
+    }
+  },
+  "not_landed": {
+    "udp": "UDP (bind_udp/UdpSocket, UDP DNS): planned, no bead"
+  },
+  "sources": {
+    "fx-zu4f.5": {
+      "revision": "5dc6b40e0254d5dd83ab83b0f2d5a1dd2c2ec6dc",
+      "present_at_revision": []
+    },
+    "fx-zu4f.6": {
+      "revision": "7863e8f54110a63e5e435999a0a52182d433704e",
+      "present_at_revision": []
+    },
+    "fx-zu4f.7": {
+      "revision": "afb17ea7af79c1db2d6a55322f2ab56a209ce845",
+      "present_at_revision": []
+    },
+    "fx-zu4f.8": {
+      "revision": "972aba0ee5917a0a70e59f6b2e7429e6e2378e74",
+      "present_at_revision": [
+        "proc",
+        "get"
+      ]
+    },
+    "fx-zu4f.9": {
+      "revision": "1e673c525ca7d0a24c881d664a2bf98d78717cef",
+      "present_at_revision": []
+    },
+    "fx-zu4f.10": {
+      "revision": "a28b4df0b49731a20e9f181ab788fc5ce498a53a",
+      "present_at_revision": []
+    },
+    "fx-zu4f.11": {
+      "revision": "ea7bb313eac1a66f37b643393bbd5f7dfdeb91e2",
+      "present_at_revision": []
+    }
+  },
+  "counts": {
+    "fx-zu4f.5": {
+      "rows": 87,
+      "gate": 12,
+      "capability_named": 10,
+      "pool": 1,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.6": {
+      "rows": 32,
+      "gate": 15,
+      "capability_named": 7,
+      "pool": 0,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.7": {
+      "rows": 162,
+      "gate": 26,
+      "capability_named": 0,
+      "pool": 0,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.8": {
+      "rows": 87,
+      "gate": 1,
+      "capability_named": 1,
+      "pool": 0,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.9": {
+      "rows": 100,
+      "gate": 68,
+      "capability_named": 4,
+      "pool": 0,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.10": {
+      "rows": 5100,
+      "gate": 18,
+      "capability_named": 5,
+      "pool": 2,
+      "udp_only": 0,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    },
+    "fx-zu4f.11": {
+      "rows": 49,
+      "gate": 13,
+      "capability_named": 6,
+      "pool": 1,
+      "udp_only": 1,
+      "resolve_only": 0,
+      "manual": 0,
+      "crosscheck_disagreements": 0
+    }
+  }
+}
