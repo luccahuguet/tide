@@ -7,7 +7,7 @@ it. It summarizes 01 and the normative chapters `02-memory.md`,
 until the E1 gate (D0). `reference-companion.md`, loaded on demand, holds
 Rust-habit tables, example programs, readings where the documents
 disagree, and the sections cited here as "companion N".
-Budget: under 25,000 tokens (D14).
+Budget: 25,000 tokens (D14).
 
 **(provisional)** marks a detail no normative document decides; this
 reference picks the most Rust-like option consistent with the decisions.
@@ -341,7 +341,7 @@ do, in every dependency.
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20); planned: `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
-| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (planned; `false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
+| `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1); creating synchronization handles (7.4); planned: `fault_point(name) -> bool` (`false` outside simulation, companion 17) | `limit(n) -> Tasks` |
 
 - Capability methods take `&self` (provisional; handles: companion 20).
   For many draws, `let mut rng = rand.rng();` returns a planned `Pure`
