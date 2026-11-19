@@ -305,9 +305,9 @@ mod tests {
         // A sibling's failure unparks a sleeper; so does an explicit cancel.
         for explicit in [false, true] {
             let result: Result<(), TaskError> = tasks.scope(|scope| {
-                let sleeper = scope.spawn(|| clock.sleep(long).map_err(|_| TaskError::Cancelled));
+                let sleeper = scope.spawn(|| Ok(clock.sleep(long)?));
                 let until = clock.now() + long;
-                scope.spawn(move || clock.sleep_until(until).map_err(|_| TaskError::Cancelled));
+                scope.spawn(move || Ok(clock.sleep_until(until)?));
                 std::thread::sleep(Duration::from_millis(30));
                 if explicit {
                     scope.cancel();

@@ -1336,7 +1336,7 @@ fn parallel_sum(tasks: &Tasks, xs: &[u64]) -> Result<u64, TaskError> {
     let mid = xs.len() / 2;
     let mut sums = [0u64; 2];
     let [lo, hi] = &mut sums;
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.spawn(|| { *lo = xs[..mid].iter().sum(); Ok(()) });
         s.spawn(|| { *hi = xs[mid..].iter().sum(); Ok(()) });
         Ok(())

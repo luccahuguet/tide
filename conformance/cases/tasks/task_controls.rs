@@ -11,7 +11,7 @@ fn isolated_result<'a>(tasks: &Tasks, _: &'a str) -> std::marker::PhantomData<&'
 fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
     let counts = Shared::new((0usize, 0usize), tasks);
     let limited = tasks.limit(2);
-    limited.scope(|s| {
+    limited.scope::<_, TaskError, _>(|s| {
         for _ in 0..6 {
             s.spawn(|| {
                 counts
@@ -21,9 +21,7 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
                         assert!(c.0 <= 2);
                     })
                     .unwrap();
-                clock
-                    .sleep(Duration::from_millis(1))
-                    .map_err(|_| TaskError::Cancelled)?;
+                clock.sleep(Duration::from_millis(1))?;
                 counts.with(|c| c.0 -= 1).unwrap();
                 Ok(())
             });
@@ -36,7 +34,7 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
             assert!(c.1 > 0 && c.1 <= 2);
         })
         .unwrap();
-    tasks.limit(0).scope(|_| Ok(()))?;
+    tasks.limit(0).scope::<_, TaskError, _>(|_| Ok(()))?;
 
     let one = tasks.limit(1);
     let result: Result<(), TaskError> = one.scope(|s| {
@@ -50,20 +48,18 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
         Ok(())
     });
     assert_eq!(result, Err(TaskError::DeadlineExceeded));
-    assert_eq!(one.scope(|s| s.spawn(|| Ok(19)).join())?, 19);
+    assert_eq!(one.scope::<_, TaskError, _>(|s| s.spawn(|| Ok(19)).join())?, 19);
 
     let at = clock.now() + Duration::from_millis(2);
     let result: Result<(), TaskError> = tasks.scope(|s| {
         s.set_deadline(at);
         s.set_deadline(at + Duration::from_secs(20));
-        s.spawn(|| {
-            assert_eq!(clock.sleep_until(at), Err(Cancelled));
-            Err::<(), _>(TaskError::Cancelled)
-        });
+        // `Ok` from the sleep would leave the scope `Ok`: the cancellation is observed.
+        s.spawn(|| Ok(clock.sleep_until(at)?));
         Ok(())
     });
     assert_eq!(result, Err(TaskError::DeadlineExceeded));
-    let partial = tasks.scope(|s| {
+    let partial = tasks.scope::<_, TaskError, _>(|s| {
         s.set_deadline(clock.now() + Duration::from_millis(2));
         s.spawn(|| {
             assert_eq!(clock.sleep(Duration::from_secs(20)), Err(Cancelled));
@@ -73,14 +69,14 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
     })?;
     assert_eq!(partial, 41);
 
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.cancel();
         for _ in 0..3 {
             assert_eq!(tasks.checkpoint(), Err(Cancelled));
         }
         tasks.shield(|| {
             tasks.checkpoint().unwrap();
-            tasks.scope(|inner| {
+            tasks.scope::<_, TaskError, _>(|inner| {
                 inner.set_deadline(clock.now());
                 assert_eq!(tasks.checkpoint(), Err(Cancelled));
                 Ok(())
@@ -105,14 +101,14 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
     })?;
     assert_eq!(panic.message, "contained task panic");
     assert_eq!(panic.to_string(), "contained task panic");
-    one.scope(|s| {
+    one.scope::<_, TaskError, _>(|s| {
         s.spawn(|| {
             assert_eq!(tasks.spawn_isolated(|| 73).unwrap(), 73);
             Ok(())
         })
         .join()
     })?;
-    tasks.checkpoint().map_err(|_| TaskError::Cancelled)
+    Ok(tasks.checkpoint()?)
 }
 
 #[tide::main]

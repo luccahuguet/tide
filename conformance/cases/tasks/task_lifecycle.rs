@@ -23,7 +23,7 @@ fn lifecycle(tasks: &Tasks) -> Result<(), TaskError> {
     traits::<std::rc::Rc<()>>();
     let mut count = 0;
     let text = String::from("lifecycle");
-    let borrowed = tasks.scope(|s| {
+    let borrowed = tasks.scope::<_, TaskError, _>(|s| {
         passed(s, text.as_str());
         chained(s);
         drop(s.spawn(|| {

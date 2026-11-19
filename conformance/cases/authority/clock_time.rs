@@ -44,7 +44,7 @@ fn sleeps(clock: &Clock, tasks: &Tasks) -> Result<(), Cancelled> {
     let long = Duration::from_secs(600);
     let failed: Result<(), TaskError> = tasks.scope(|s| {
         // The sibling's failure cancels the scope and ends this sleep.
-        let sleeper = s.spawn(|| clock.sleep(long).map_err(|_| TaskError::Cancelled));
+        let sleeper = s.spawn(|| Ok(clock.sleep(long)?));
         s.spawn(|| Err::<(), _>(TaskError::DeadlineExceeded));
         assert_eq!(sleeper.join(), Err(TaskError::Cancelled));
         assert_eq!(clock.sleep(long), Err(Cancelled));
