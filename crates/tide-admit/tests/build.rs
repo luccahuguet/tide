@@ -4166,6 +4166,161 @@ fn resolve_builds_and_runs_against_production_std() {
     assert_eq!(values, vec![real.as_str(); 4], "{simulated}");
 }
 
+/// RAND-1, RAND-2: `Rand`'s one value/panic suite executes through tide-admit; the real run and
+/// every simulated seed give the same observations, and a seed's manifest replays byte for byte,
+/// `rand` events included.
+#[test]
+fn rand_builds_and_runs_against_production_std() {
+    use replay_wire::{Manifest, read};
+    let dir = package("rand", include_str!("../../../conformance/cases/authority/rand.rs"));
+    checked(&mut driver(&dir));
+    let out = checked(Command::new("timeout").arg("45").arg(dir.join("out/demo")).stdin(Stdio::null()));
+    let real = String::from_utf8(out.stdout).unwrap();
+    let real = real.strip_prefix("RAND_VALUES:").unwrap().strip_suffix("\nRAND_RAN\n").unwrap().to_owned();
+    // The case asserts its expected line itself; a mismatch fails `checked` above.
+    checked(driver(&dir).arg("--test"));
+    let out = checked(
+        Command::new("timeout")
+            .arg("45")
+            .arg(dir.join("out/demo-test"))
+            .args(["--exact", "simulated_rand", "--nocapture"])
+            .stdin(Stdio::null()),
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"), "{}", stderr(&out));
+
+    checked(driver(&dir).args(["--test", "--tide-run-test", "simulated_rand", "--seed", "47"]));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    let path = manifests().pop().unwrap();
+    let recorded: Manifest = read(&path).unwrap();
+    recorded.validate().unwrap();
+    // Simulated prints are sink records; the case prints no quote or backslash.
+    let values: Vec<_> = recorded.trace.split("RAND_VALUES:").skip(1).map(|t| t.split(['"', '\\']).next().unwrap()).collect();
+    assert_eq!(values, [real.as_str()]);
+    assert!(recorded.trace.contains("\"kind\":\"rand\",\"operation\":\"rand.random_range\""), "{}", recorded.trace);
+    assert!(recorded.trace.contains("\"operation\":\"rand.from_rand\""));
+    assert!(recorded.trace.contains("RAND_WORDS:"));
+    let before = manifests();
+    let replay = checked(driver(&dir).args(["--test", "--replay"]).arg(&path));
+    assert!(stderr(&replay).contains("replay reproduced"), "{}", stderr(&replay));
+    let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+    assert_eq!(added.len(), 1);
+    let replayed: Manifest = read(&added[0]).unwrap();
+    assert_eq!(replayed.roots, recorded.roots);
+    assert_eq!(replayed.trace.as_bytes(), recorded.trace.as_bytes());
+}
+
+/// RAND-4: a real draw reads only `getrandom(2)`. Under a seccomp filter that fails it with
+/// `EPERM` and leaves `/dev/urandom` readable, the draw panics naming `EPERM`: a file fallback
+/// would have answered instead.
+#[test]
+fn a_real_draw_under_a_getrandom_eperm_filter_panics_without_fallback() {
+    use std::os::unix::process::CommandExt;
+    // Every system call is allowed except getrandom, which fails with EPERM.
+    fn deny_getrandom() -> std::io::Result<()> {
+        let op = |code: u32, k: u32, jt: u8, jf: u8| libc::sock_filter { code: code as u16, jt, jf, k };
+        let filter = [
+            op(libc::BPF_LD | libc::BPF_W | libc::BPF_ABS, 0, 0, 0), // seccomp_data.nr
+            op(libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K, libc::SYS_getrandom as u32, 0, 1),
+            op(libc::BPF_RET | libc::BPF_K, libc::SECCOMP_RET_ERRNO | libc::EPERM as u32, 0, 0),
+            op(libc::BPF_RET | libc::BPF_K, libc::SECCOMP_RET_ALLOW, 0, 0),
+        ];
+        let program = libc::sock_fprog { len: filter.len() as u16, filter: filter.as_ptr().cast_mut() };
+        // SAFETY: plain system calls on this pre-exec child; `program` outlives the seccomp call.
+        unsafe {
+            if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
+                || libc::syscall(libc::SYS_seccomp, libc::SECCOMP_SET_MODE_FILTER, 0, &program) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
+    let dir = package(
+        "rand-eperm",
+        "#[tide::main]\nfn main(root: Root) {\n    println!(\"RAND_WORDS:{} {}\", root.rand.next_u64(), root.rand.next_u64());\n}\n",
+    );
+    checked(&mut driver(&dir));
+    let open = checked(Command::new(dir.join("out/demo")).stdin(Stdio::null()));
+    let words = String::from_utf8(open.stdout).unwrap();
+    let words: Vec<_> = words.trim().strip_prefix("RAND_WORDS:").unwrap().split(' ').collect();
+    assert_ne!(words[0], words[1]);
+    assert!(std::fs::File::open("/dev/urandom").is_ok());
+    let mut filtered = Command::new(dir.join("out/demo"));
+    // SAFETY: the hook makes only async-signal-safe system calls.
+    unsafe { filtered.pre_exec(deny_getrandom) };
+    let out = filtered.stdin(Stdio::null()).output().unwrap();
+    assert_eq!(out.status.code(), Some(101), "{}", stderr(&out));
+    assert!(stderr(&out).contains("Rand: getrandom(2) failed with EPERM"), "{}", stderr(&out));
+    assert!(out.stdout.is_empty());
+}
+
+/// RAND-4: `tide_std::rand` exposes `Rand`'s five draws and two sealed traits whose methods
+/// take an unnameable token; this lists its public items, `pub use` included, and fails on
+/// additions, so a later std edit cannot add an unreviewed path to the source.
+#[test]
+fn std_rand_public_items_are_fixed() {
+    let source = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../tide-std/src/rand.rs")).unwrap();
+    let public: Vec<_> = source
+        .lines()
+        .map(str::trim_start)
+        .filter(|l| l.starts_with("pub ") && !l.starts_with("pub(") || l.starts_with("pub use"))
+        .map(|l| l.split(['(', '{', '<', ';', '=', ':']).next().unwrap().trim_end().to_owned())
+        .collect();
+    assert_eq!(
+        public,
+        [
+            "pub struct Token",
+            "pub trait Uniform",
+            "pub trait Range",
+            "pub trait SampleUniform",
+            "pub trait SampleRange",
+            "pub fn next_u64",
+            "pub fn fill_bytes",
+            "pub fn random_range",
+            "pub fn random_bool",
+            "pub fn shuffle",
+        ],
+        "{public:#?}"
+    );
+    assert!(source.contains("mod sealed {"), "Token, Uniform and Range stay in a private module");
+    assert!(source.contains("pub struct Token(pub(super) ());"), "only `rand` makes a Token");
+    assert_eq!(source.matches("rustix::rand::getrandom(").count(), 1, "one OS call site");
+    // Flags 0, shared with RAND-4's seam: the call site and its one flags constant are fixed.
+    assert!(source.contains("rustix::rand::getrandom(dest, FLAGS)"));
+    assert!(source.contains("const FLAGS: rustix::rand::GetRandomFlags = rustix::rand::GetRandomFlags::empty();"));
+    assert_eq!(source.matches("FLAGS").count(), 3, "FLAGS is defined once and passed to the seam and the call");
+    assert!(!source.contains("/dev/"), "no file fallback");
+}
+
+/// RAND-DRAW: each draw is admitted with `rand` declared in the trust diff (research/53 §8).
+#[test]
+fn rand_draws_are_admitted_with_rand_in_the_trust_diff() {
+    let snapshot = |name: &str, source: &str| {
+        let dir = package(name, source);
+        checked(driver(&dir).args(["--crate-type=lib", "--emit=metadata"]));
+        dir.join("out/demo.interface.json")
+    };
+    let base = snapshot("trust-diff-rand-base", "pub fn tidy(s: &str) -> usize { s.len() }\n");
+    let head = snapshot(
+        "trust-diff-rand-head",
+        "pub fn tidy(s: &str) -> usize { s.len() }\n\
+         pub fn deal(rand: &std::rand::Rand, deck: &mut [u8]) -> (u64, bool, i32) {\n    \
+             let mut id = [0u8; 16];\n    \
+             rand.fill_bytes(&mut id);\n    \
+             rand.shuffle(deck);\n    \
+             (rand.next_u64(), rand.random_bool(0.5), rand.random_range(-3..=3))\n\
+         }\n",
+    );
+    let out = checked(Command::new(env!("CARGO_BIN_EXE_tide-admit")).arg("--tide-diff").args([&base, &head]));
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "declared authority (no exercised authority, effects, or proof status)\n  \
+         + demo::deal (function)\n      \
+         + rand: rand\n"
+    );
+}
+
 /// Companion 15.2 builds through tide-admit and its `#[sim_test]` passes (NET-HTTP-3).
 #[test]
 fn companion_fetcher_builds_and_its_sim_test_passes() {

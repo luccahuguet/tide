@@ -957,6 +957,28 @@ impl Tasks {
         f(&mut context.lock().inputs)
     }
 
+    /// A simulated `Rand` call (03 §9.3): one scheduling point with no time and no checkpoint,
+    /// then `draw` takes its words from the `rand` sub-stream while this task holds the baton,
+    /// and one `rand` event records the word count and `draw`'s JSON result fields.
+    pub(crate) fn rand_op<T>(
+        &self,
+        name: &'static str,
+        span: Span,
+        draw: impl FnOnce(&mut dyn FnMut() -> u64) -> (T, String),
+    ) -> T {
+        let context = self.context().expect("simulated Rand needs its simulation");
+        context.point(Operation::Rand(name), span);
+        let mut runtime = context.lock();
+        let scheduler = &mut runtime.baton.as_mut().unwrap().scheduler;
+        let mut words = 0;
+        let (value, result) = draw(&mut || {
+            words += 1;
+            scheduler.rand_word()
+        });
+        scheduler.rand_event(context.task.unwrap(), name, span, words, &result);
+        value
+    }
+
     pub(crate) fn world_inputs(&self, f: impl FnOnce(&mut crate::env::Inputs)) {
         let context = self.context().expect("input setup needs a simulation");
         f(&mut context.lock().inputs);
@@ -1065,11 +1087,6 @@ impl Tasks {
             .unwrap()
             .scheduler
             .records()
-    }
-
-    pub(crate) fn unmodeled(&self, capability: &str) -> ! {
-        self.context(); // Reject handles from another or an ended simulation first.
-        panic!("simulated {capability} operations are not available yet")
     }
 
     pub(crate) fn real() -> Self {

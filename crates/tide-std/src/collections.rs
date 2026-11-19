@@ -21,8 +21,8 @@ pub mod hash_map {
     use std::hash::{BuildHasher, Hash};
 
     /// The default collection builder (03 GLOBAL-5). `default()` uses a fixed key;
-    /// `from_rand()` uses OS-seeded keys and requires randomness authority.
-    /// Simulated randomness is unavailable; `from_rand` rejects it until its backend exists.
+    /// `from_rand()` requires randomness authority: real keys are Rust's OS-seeded per-thread
+    /// keys; simulated, two `rand` words prefix the fixed-key hasher (research/53 §5).
     #[derive(Clone)]
     pub struct RandomState(std::hash::DefaultHasher);
     impl std::fmt::Debug for RandomState {
@@ -32,12 +32,17 @@ pub mod hash_map {
         }
     }
     impl RandomState {
+        #[track_caller]
         pub fn from_rand(rand: &crate::rand::Rand) -> RandomState {
-            if let Some(tasks) = &rand.0 {
-                tasks.unmodeled("Rand");
+            match rand.simulated_keys(std::panic::Location::caller()) {
+                Some((k0, k1)) => {
+                    let mut hasher = std::hash::DefaultHasher::new();
+                    std::hash::Hasher::write_u64(&mut hasher, k0);
+                    std::hash::Hasher::write_u64(&mut hasher, k1);
+                    RandomState(hasher)
+                }
+                None => RandomState(std::hash::RandomState::new().build_hasher()),
             }
-            crate::task::outside_simulation();
-            RandomState(std::hash::RandomState::new().build_hasher())
         }
     }
     impl Default for RandomState {

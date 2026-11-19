@@ -378,8 +378,7 @@ Notes:
   panics when virtual elapsed time exceeds `Duration::MAX -
   Duration::from_secs(946_684_800)`, before recording a clock event. Monotonic
   time and sleeps remain usable through `Duration::MAX`.
-- **RAND-DRAW. Randomness** (v0, planned until bead `fx-qlek.20`'s
-  stage 2; research/53). `Rand`'s draws take `&self`, never suspend, are
+- **RAND-DRAW. Randomness** (v0; research/53). `Rand`'s draws take `&self`, never suspend, are
   not checkpoints, and return no error. Each is defined over 64-bit words from its backend: `next_u64()`
   is one word; `fill_bytes(&mut [u8])` fills the slice (simulated: words
   little-endian, the last truncated; empty takes none);
@@ -2220,7 +2219,7 @@ recommendations and the original-evaluation artifact decision.
 This promises same-machine replay with identical pinned trusted artifacts,
 sysroot and C runtime; it adds no signing or sandbox. Direct binary execution
 has no verified-manifest guarantee. Tasks, `Shared`, files, file setup,
-clocks, TCP loopback, process inputs and sinks are modeled; other capabilities carry simulated identities but
+clocks, TCP loopback, process inputs, random draws and sinks are modeled; other capabilities carry simulated identities but
 their operations, other world setup, faults, nodes and the `tide` commands
 remain planned. Extra simulation parameters use the shared property runner's generation,
 requires guidance and filtering, and shrinking with the simulator seed kept fixed.
@@ -2264,7 +2263,7 @@ its level; the README's status lists the parts of RUN-3 still missing.
   To `get` by synthetic address, register an HTTP peer at that address.
   Simulated TCP stays loopback-only. One `net.resolve` trace event
   records the checked host and the result.
-- **Simulated draws** (planned with RAND-DRAW; research/53 §§4–5). One
+- **Simulated draws** (RAND-DRAW; research/53 §§4–5). One
   `rand` sub-stream per simulation, SplitMix64 from
   `seed ^ 0x7469_6465_7261_6e64`
   ("tiderand"), separate from the scheduler, file, net and process

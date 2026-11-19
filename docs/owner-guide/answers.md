@@ -111,8 +111,8 @@ yet: an agent runs them, usually when a code change lands. A rehearsal pin bump 
 
 **10. "What actually runs today?"**
 `tide-admit` (the checker), Tide's std with files, TCP, one HTTP GET, name
-lookup, starting processes, clock, environment, stdin and structured tasks,
+lookup, starting processes, clock, random draws, environment, stdin and structured tasks,
 the simulator and replay for tests, the trust artifact and its diff, the
 test sandbox, and a demo that shows all of it in one command. Not yet: the
-`tide` command, packages, UDP, randomness, fault injection, the fast
+`tide` command, packages, UDP, `Rand::rng()`, fault injection, the fast
 incremental checker, proofs. [10]

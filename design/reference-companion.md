@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,960 tokens, recounted on 2026-11-19 with
+Core count: 24,932 tokens, recounted on 2026-11-19 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -81,7 +81,7 @@ Rerun it after any change to the core and update this line.
 | `t.elapsed()` | `clock.now().duration_since(t)`; for `SystemTime`, `clock.system_time().duration_since(t)` |
 | `std::thread::sleep(d)` | `clock.sleep(d)?`; in a scope with your own error enum, `clock.sleep(d).map_err(TaskError::from)?` (7.1) |
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
-| `rand::rng().random_range(0..n)`, `thread_rng().gen_range(0..n)`, `gen_bool(p)`, `v.shuffle(&mut rng)` | `rand.random_range(0..n)`, `rand.random_bool(p)`, `rand.shuffle(&mut v)` with `rand: &Rand` (22, planned) |
+| `rand::rng().random_range(0..n)`, `thread_rng().gen_range(0..n)`, `gen_bool(p)`, `v.shuffle(&mut rng)` | `rand.random_range(0..n)`, `rand.random_bool(p)`, `rand.shuffle(&mut v)` with `rand: &Rand` (22) |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
 | `Command::new("git")` | `proc.command("git")` |
 | `TcpStream::connect(a)` | `net.connect(a)` |
@@ -804,7 +804,7 @@ and `Encode`/`Decode` as a JSON string. Simulated HTTP peers are in 17.
   allowed host, and an allowed relay host is full network authority
   (research/42 §6).
 
-## 22. Randomness (planned)
+## 22. Randomness
 
 `Rand` (`std::rand`; 03 RAND-DRAW, research/53) has `&self` draws that
 never suspend, are not checkpoints, and return no error:

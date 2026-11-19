@@ -7,7 +7,7 @@ description = "Conformance rustc oracle: a compile-time fixture of Tide std, inj
 
 [dependencies]
 libm = { version = "=0.2.16", default-features = false, features = ["force-soft-floats"] }
-rustix = { version = "=1.1.6", default-features = false, features = ["fs", "std", "event", "net"] }
+rustix = { version = "=1.1.6", default-features = false, features = ["fs", "std", "event", "net", "rand"] }
 # Production's net module (included below) and its pins (research/42 §8).
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 ring = { version = "=0.17.14" }

@@ -30,7 +30,7 @@
 //! - `arena::{Arena, Id}`: generational graph handles, checked disjoint mutable access,
 //!   stale-handle rejection, and provisional slot-order iteration (reference §3.6).
 //!   Handles have no cross-arena identity check; `Id<T>` is `Pure` for every `T`;
-//! - the capability types `Root` carries: the identity `Rand`; `Proc` (processes, below);
+//! - the capability types `Root` carries: `Rand` (randomness, below); `Proc` (processes, below);
 //!   `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
 //! - `net::Net`: real and simulated TCP and HTTP(S) `get` with `Url`, `UrlError`, and
@@ -174,7 +174,10 @@
 //!   replaces a file and creates parents immediately, without time or a scheduling point.
 //!   Setup errors panic. Simulated compound operations apply whole; links, crashes and disk
 //!   faults are not modeled. Real files reject use in simulation; simulated handles reject
-//!   use outside their own simulation. Simulated `Rand` rejects Rand-backed hashing.
+//!   use outside their own simulation;
+//! - randomness (`rand.rs`; 03 RAND-DRAW, §9.3; research/53): `Rand`'s five draws, real from
+//!   Linux `getrandom(2)` with no file fallback, simulated from the seed's `rand` sub-stream,
+//!   one scheduling point and one `rand` event per call.
 //!
 //! # Contract implementation limits
 //!
@@ -246,7 +249,7 @@
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
 //! Not provided yet: other capability operations and attenuation of reference 6.1 (UDP,
-//! random draws, `Proc::exit`, signals, PTYs); the `trace` sink;
+//! `Rand::rng`, `Proc::exit`, signals, PTYs); the `trace` sink;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! unsized Arc/Weak payloads (`Arc<dyn Trait>`, `Arc<str>`, `Arc<[T]>`);
 //! other `sync` items,
@@ -261,10 +264,10 @@
 //! `root.rs` (with `convert.rs`, `arena.rs`, `codec.rs` and `json.rs`), `fs.rs`, `test`,
 //! `task.rs` (including its scheduler, channel and network adapters), `net.rs` (with its
 //! backends), `par.rs`, `sync.rs` (with
-//! `sync/mpsc.rs`), `sim.rs` (with its runner), `env.rs`, `log.rs`, `io/`, and `time.rs`
+//! `sync/mpsc.rs`), `sim.rs` (with its runner), `env.rs`, `log.rs`, `io/`, `rand.rs` and `time.rs`
 //! share their definitions with the conformance fixture std. The prelude's `#[pure]` export
-//! also comes from `root.rs`. The identity-only capability types use `root.rs`'s `capability!`
-//! in both crates.
+//! also comes from `root.rs`. Capability types without fields of their own (`Rand`,
+//! `Stdin`) use `root.rs`'s `capability!` in both crates.
 
 include!("root.rs");
 
@@ -289,13 +292,7 @@ pub mod net;
 
 pub mod time;
 
-pub mod rand {
-    crate::capability!(
-        /// Randomness authority, used by `collections::hash_map::RandomState::from_rand`.
-        /// It has no draw methods yet.
-        Rand
-    );
-}
+pub mod rand;
 
 pub mod env;
 pub mod log;

@@ -9,7 +9,7 @@
 //! and `std::json` (`codec.rs` and `json.rs`)), `std::io`'s core (`io/shared.rs`),
 //! its real and simulated file surface (`fs.rs`), property tests (`test`), task runtime and scheduler
 //! (`task.rs`), `Arc`, `Weak`, and `Shared` (`sync.rs`), seeded simulations and their runner
-//! (`sim.rs`), parallel regions (`par.rs`), `std::time` (`time.rs`), and executable
+//! (`sim.rs`), parallel regions (`par.rs`), `std::time` (`time.rs`), `Rand` (`rand.rs`), and executable
 //! contracts (`contract.rs`). It declares
 //! identity-only capabilities with `capability!`, giving those
 //! types the same definitions and paths in both crates.
@@ -57,9 +57,9 @@ pub mod env;
 #[path = "../../../../crates/tide-std/src/log.rs"]
 pub mod log;
 
-pub mod rand {
-    crate::capability!(Rand);
-}
+// Production owns `Rand`, its draws and both backends.
+#[path = "../../../../crates/tide-std/src/rand.rs"]
+pub mod rand;
 
 
 // Production owns the complete real/simulated file surface, including its runtime behavior.

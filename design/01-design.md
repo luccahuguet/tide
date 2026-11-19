@@ -523,7 +523,7 @@ scanning.
   permits resolution of its host. A name grant does not grant its
   addresses. See 03 §1.1.
 - **Randomness** (v0; decided 2026-11-19 under the relayed owner decision
-  on bead `fx-qlek.20`, research/53; planned until its stage 2). `Rand` has five draws: `next_u64`,
+  on bead `fx-qlek.20`, research/53). `Rand` has five draws: `next_u64`,
   `fill_bytes`, `random_range` (integers, unbiased by rejection),
   `random_bool` and `shuffle`, named as current Rust `rand` names them.
   Real draws read Linux `getrandom(2)` and claim nothing beyond it;

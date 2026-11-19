@@ -239,14 +239,8 @@ mod tests {
     fn simulation_identities_never_use_host_files_or_randomness() {
         let (fs, rand, tasks) = {
             let sim = crate::Root::sim(0);
-            assert!(
-                catch_unwind(AssertUnwindSafe(|| {
-                    crate::collections::hash_map::RandomState::from_rand(&sim.rand)
-                }))
-                .is_err()
-            );
             assert!(catch_unwind(AssertUnwindSafe(|| crate::Root::sim(1))).is_err());
-            // None of those unsupported operations adds a scheduling point or sink event.
+            // The rejected nested simulation adds no scheduling point or sink event.
             assert!(sim.trace().is_empty());
             (sim.fs.clone(), sim.rand.clone(), sim.tasks.clone())
         };

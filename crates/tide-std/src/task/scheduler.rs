@@ -42,6 +42,8 @@ pub(super) enum Operation {
     /// A process operation or simulated-child action on instance `usize` (03 §9.9).
     Proc(&'static str, usize),
     Input(&'static str),
+    /// A `Rand` call or `RandomState::from_rand` (03 §9.3).
+    Rand(&'static str),
     Channel(&'static str, usize),
     Arc(&'static str, usize),
 }
@@ -281,6 +283,7 @@ pub(super) struct Scheduler {
     fs_rng: u64,
     net_rng: u64,
     proc_rng: u64,
+    rand_rng: u64,
     step: usize,
     events: Vec<Record>,
     sink_events: Vec<(&'static str, Vec<u8>, Duration)>,
@@ -311,6 +314,7 @@ impl Scheduler {
             fs_rng: seed ^ 0x7469_6465_6669_6c65,  // "tidefile"
             net_rng: seed ^ 0x7469_6465_6e65_7421, // "tidenet!"
             proc_rng: seed ^ 0x7469_6465_7072_6f63, // "tideproc"
+            rand_rng: seed ^ 0x7469_6465_7261_6e64, // "tiderand"
             step: 0,
             events: Vec::new(),
             sink_events: Vec::new(),
@@ -786,6 +790,16 @@ impl Scheduler {
         index(&mut self.proc_rng, bound)
     }
 
+    // The `rand` sub-stream (03 §9.3): one raw SplitMix64 output per word.
+    pub(super) fn rand_word(&mut self) -> u64 {
+        splitmix(&mut self.rand_rng)
+    }
+
+    pub(super) fn rand_event(&mut self, task: TaskId, name: &'static str, span: Span, words: u64, result: &str) {
+        let tail = format!(",\"words\":{words}{result}");
+        self.event(task, Pending { operation: Operation::Rand(name), span }, "rand", None, Tail::Owned(tail));
+    }
+
     pub(super) fn proc_event(&mut self, task: TaskId, name: &'static str, id: usize, span: Span, detail: &str) {
         let mut tail = String::from(",\"proc\":");
         quoted(&mut tail, detail);
@@ -894,15 +908,19 @@ fn operation(out: &mut String, pending: Pending, cells: &[usize], origin: Option
 fn index(rng: &mut u64, bound: u64) -> u64 {
     let threshold = bound.wrapping_neg() % bound;
     loop {
-        *rng = rng.wrapping_add(0x9e37_79b9_7f4a_7c15);
-        let z = *rng;
-        let z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-        let z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-        let draw = z ^ (z >> 31);
+        let draw = splitmix(rng);
         if draw >= threshold {
             return draw % bound;
         }
     }
+}
+
+fn splitmix(rng: &mut u64) -> u64 {
+    *rng = rng.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let z = *rng;
+    let z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    let z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
 }
 
 // JSON strings for spans and sink messages; each record must stay on one physical line.
@@ -950,7 +968,7 @@ impl Operation {
             Self::WorldFile => ("world.file", None),
             Self::Net(name, id) => (name, Some(id)),
             Self::Proc(name, id) => (name, Some(id)),
-            Self::Input(name) => (name, None),
+            Self::Input(name) | Self::Rand(name) => (name, None),
             Self::Channel(name, id) => (name, Some(id)),
             Self::Arc(name, id) => (name, Some(id)),
         }
@@ -967,6 +985,7 @@ impl Operation {
             | Self::ClockSystemTime(_)
             | Self::Sleep { .. }
             | Self::Input(_)
+            | Self::Rand(_)
             | Self::Net(..) => "cap",
             Self::Proc(..) => "proc",
             Self::File(_) => "io_wait",

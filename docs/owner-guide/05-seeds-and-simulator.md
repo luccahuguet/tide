@@ -145,8 +145,9 @@ loop.
 - **Models built today:** tasks, channels, `Shared`, files, TCP on the local
   address, HTTP peers declared in `world.http` (with `Net::resolve` giving
   their names synthetic addresses), child processes declared as
-  `sim.world.proc` models, the clock, the environment, and stdin.
-  **Planned:** simulated randomness, fault injection (dropped packets, disk
+  `sim.world.proc` models, the clock, the environment, stdin, and `Rand`
+  draws from the seed.
+  **Planned:** fault injection (dropped packets, disk
   errors, crashes and restarts), and `tide sim` for whole programs. Today the
   simulator runs tests, not whole programs.
 - **Default strategy is random.** Other strategies that hunt for rare

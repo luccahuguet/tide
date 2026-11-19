@@ -20,7 +20,7 @@ to do one kind of thing.
 | `Fs` | files and directories |
 | `Net` | network: TCP connections, one HTTP GET, and name lookup |
 | `Clock` | read the time, sleep |
-| `Rand` | randomness (planned: today it exists but has no methods) |
+| `Rand` | randomness: `next_u64`, `fill_bytes`, `random_range`, `random_bool`, `shuffle` (planned: `rng() -> Pcg64`) |
 | `Env` | program arguments and environment variables |
 | `Stdin` | read standard input |
 | `Proc` | start other programs (`command`; no `exit` yet) |

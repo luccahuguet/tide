@@ -1,6 +1,7 @@
 # Rand draws in v0 (fx-qlek.20)
 
-Status: stage 1, the design admission. Stage 2 builds it. This note fixes
+Status: built. Stage 1 was the design admission; stage 2 built it (§12,
+"Built"). This note fixes
 which `Rand` operations v0 admits, their contracts, the real backend and
 its dependency, the simulated backend and its replay reading, what
 `RandomState::from_rand` does under simulation, and the trust-diff
@@ -460,7 +461,7 @@ row, points it to companion 22, and replaces the `Pcg64` bullet with the
 draws' two panic rules and their sources: 24,999 to 24,960 tokens by
 `scripts/count-tokens.sh`, inside D14's 25,000. The draws stay labelled
 planned in the reference, 03, 01 and companion 22 until stage 2 builds
-them. Stage 2 drops those labels and the reference's two `partial` notes
+them. Stage 2 drops those labels (24,932 tokens) and the reference's two `partial` notes
 on `Rand` (§6.4, §6.8), which frees tokens, and keeps `rng() -> Pcg64`
 planned. The rules are in companion 22 and 03 RAND-DRAW.
 
@@ -511,3 +512,32 @@ RAND-4. Their done condition is the bead's Acceptance:
   named source check: the single `rustix::rand::getrandom` call site and
   the seam's position. Two real `next_u64` draws differ. A
   `tide_std::rand` public items guard fails on additions.
+
+**Built** (stage 2). `crates/tide-std/src/rand.rs` holds the five draws,
+the sealed traits and the real source; the conformance stub std includes
+the same file. Choices made while building, none changing a contract above:
+
+- **Sealing.** `SampleUniform` and `SampleRange` have private supertraits
+  whose methods take a `Token` only `rand` can make. A generic bound naming
+  the public trait would otherwise expose the supertrait's methods.
+- **Real words.** Each word is one 8-byte `getrandom(2)` request; calls do
+  not batch their words. `fill_bytes` requests the whole slice and loops.
+- **Order of checks.** An argument check panics before the call's
+  scheduling point, so a rejected call leaves no trace line. The identity
+  checks (a real `Rand` in a simulation, a simulated one outside its own)
+  also run before any word.
+- **Trace.** A simulated call is one `cap` scheduling point and one `rand`
+  event, operation `rand.next_u64`, `rand.fill_bytes`, `rand.random_range`,
+  `rand.random_bool`, `rand.shuffle` or `rand.from_rand`, with `"words"`
+  and `"result"` (the value) or `"len"` (`fill_bytes`, `shuffle`).
+- **RAND-4's filter was feasible**, so the named source check is not the
+  proof. The tide-admit build test
+  `a_real_draw_under_a_getrandom_eperm_filter_panics_without_fallback`
+  runs a real draw in a child under a test-only seccomp filter that fails
+  `getrandom` with `EPERM` and allows every other call, `/dev/urandom`
+  reads included: the draw panics naming `EPERM`, where any file fallback
+  would have answered. `std_rand_public_items_are_fixed` also asserts the
+  single `rustix::rand::getrandom` call site.
+- **Stream isolation.** `rand::tests` runs two tasks whose calls take 1 or
+  100 words; outside the `rand` lines their traces (schedule, file
+  latencies) are identical.

@@ -227,8 +227,8 @@ macro_rules! capability {
     ($(#[$attr:meta])* $name:ident) => {
         $(#[$attr])*
         #[derive(Clone)]
-        // The handle distinguishes simulated identities before their operations are modeled.
-        pub struct $name(#[allow(dead_code)] pub(crate) Option<crate::task::Tasks>);
+        // The simulation this capability belongs to; `None` is the real backend.
+        pub struct $name(pub(crate) Option<crate::task::Tasks>);
     };
 }
 pub(crate) use capability;

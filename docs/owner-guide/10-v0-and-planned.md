@@ -20,11 +20,11 @@ Three words to keep straight:
 | Area | What works | Chapter |
 | --- | --- | --- |
 | Admission | `tide-admit` checks one crate (or a test suite paired with one library) against Tide's std: 57 `TD` codes, the allowlist, the backstop | 2 |
-| Capabilities | `Root`, `Fs`, `Net` (TCP, one HTTP GET, name lookup), `Proc` (`command`), `Clock`, `Env`, `Stdin`, `Tasks`, attenuation; `Pure` | 1 |
+| Capabilities | `Root`, `Fs`, `Net` (TCP, one HTTP GET, name lookup), `Proc` (`command`), `Clock`, `Rand` (five draws), `Env`, `Stdin`, `Tasks`, attenuation; `Pure` | 1 |
 | Soundness routes | `TD0206` closes rust#25860's function-pointer route; `TD0402` closes rust#57893 (red team fx-qlek.5) | 3 |
 | Concurrency | scopes, cancellation, deadlines, channels, `Shared`, `join`, `par_map`, `par_for` | 4 |
 | Contracts | `#[requires]`, `#[ensures]`, `invariant!` as runtime checks and property tests | — |
-| Simulation | `#[sim_test]`, `Root::sim(seed)`: tasks, channels, `Shared`, files, local TCP, HTTP peers, declared child processes, clock, env, stdin | 5 |
+| Simulation | `#[sim_test]`, `Root::sim(seed)`: tasks, channels, `Shared`, files, local TCP, HTTP peers, declared child processes, clock, env, stdin, random draws | 5 |
 | Replay | `--tide-run-test` with `--seed`, and `--replay` with the identity check; tests, same machine | 6 |
 | Trust diff | `<crate>.interface.json` and `--tide-diff`: declared authority and `unsafe` holes | 7 |
 | Sandbox | RUN-3 for the driver's test runs, with the level reported | 8 |
@@ -41,8 +41,8 @@ The biggest gaps (the repository `README.md`'s tier list names them too):
   (D12). Today each check is a full rustc run.
 - **Packages**: `tide.toml`, `tide.lock`, dependencies, per-dependency grants,
   authority policies, sealed interfaces (`tide.seal`).
-- **More of the world**: UDP, randomness draws (`Rand` exists with no
-  methods), and `Proc::exit`. HTTP is one GET, and processes start through
+- **More of the world**: UDP, `Rand::rng() -> Pcg64` (the five draws
+  exist), and `Proc::exit`. HTTP is one GET, and processes start through
   `Proc::command`.
 - **More of the simulator**: fault injection, crashes and restarts, nodes, and
   `tide sim` for whole programs.

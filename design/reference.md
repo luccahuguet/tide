@@ -337,7 +337,7 @@ do, in every dependency.
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
 | `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get`, `resolve` (6.7); planned: `bind_udp(addr)` | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
-| `Rand` (`std::rand`) | planned: `next_u64()`, `fill_bytes(&mut [u8])`, `random_range(a..b)` (integers), `random_bool(p)`, `shuffle(&mut [T])` (companion 22), `rng() -> Pcg64` | — |
+| `Rand` (`std::rand`) | `next_u64()`, `fill_bytes(&mut [u8])`, `random_range(a..b)` (integers), `random_bool(p)`, `shuffle(&mut [T])` (companion 22); planned: `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20); planned: `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
@@ -440,8 +440,7 @@ at compile time by `const fn`. Build a value that needs run-time work in
 
 `HashMap::new()` uses a fixed hash key, so iteration order is deterministic
 (but unspecified). For untrusted keys use
-`HashMap::with_hasher(RandomState::from_rand(&rand))` (partial: a simulated
-`Rand` panics). `Arc` has no
+`HashMap::with_hasher(RandomState::from_rand(&rand))`. `Arc` has no
 `strong_count`, `weak_count`, `get_mut`, `try_unwrap`, or `into_inner`,
 because their results depend on other tasks; `make_mut` stays.
 
@@ -512,7 +511,7 @@ outbound-only grants. `NetError`, `Url`, `UrlError`: companion 21.
 ### 6.8 Simulation
 
 `Root::sim(seed) -> SimRoot` (`std::sim`) supplies deterministic simulated
-capabilities (partial: not yet `Rand`); pass `&sim.fs`, etc.
+capabilities; pass `&sim.fs`, etc.
 to tests. It supplies `sim.world` (setup, HTTP peers), planned `sim.faults`
 and `sim.node(name)` (faults, crashable nodes: companion 17), and
 inspection methods. Any plain or property test runs as its main task:
