@@ -1,8 +1,8 @@
 {
   "budget": 25000,
-  "whole": 24960,
+  "whole": 24932,
   "whole_source": "design/reference-companion.md (Core count)",
-  "sections_sum": 24932,
+  "sections_sum": 24904,
   "sections": [
     {
       "heading": "Preamble",
@@ -49,49 +49,49 @@
     {
       "heading": "6. Authority: capabilities",
       "first_line": 326,
-      "last_line": 570,
-      "tokens": 5987
+      "last_line": 569,
+      "tokens": 5959
     },
     {
       "heading": "7. Concurrency",
-      "first_line": 571,
-      "last_line": 766,
+      "first_line": 570,
+      "last_line": 765,
       "tokens": 4651
     },
     {
       "heading": "8. Parallelism",
-      "first_line": 767,
-      "last_line": 799,
+      "first_line": 766,
+      "last_line": 798,
       "tokens": 724
     },
     {
       "heading": "9. Errors and panics",
-      "first_line": 800,
-      "last_line": 813,
+      "first_line": 799,
+      "last_line": 812,
       "tokens": 310
     },
     {
       "heading": "10. Contracts",
-      "first_line": 814,
-      "last_line": 949,
+      "first_line": 813,
+      "last_line": 948,
       "tokens": 3113
     },
     {
       "heading": "11. Unsafe, trust holes, and review",
-      "first_line": 950,
-      "last_line": 970,
+      "first_line": 949,
+      "last_line": 969,
       "tokens": 622
     },
     {
       "heading": "12. Modules and packages",
-      "first_line": 971,
-      "last_line": 1057,
+      "first_line": 970,
+      "last_line": 1056,
       "tokens": 1712
     },
     {
       "heading": "13. Toolchain loop (planned)",
-      "first_line": 1058,
-      "last_line": 1078,
+      "first_line": 1057,
+      "last_line": 1077,
       "tokens": 401
     }
   ]

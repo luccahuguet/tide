@@ -230,8 +230,8 @@ has no `#[tide::main]`. A driver compiled with `TIDE_DEFAULT_STD=PATH` and
 `TIDE_DEFAULT_DEP_DIR=DIR`, as the Nix flake's `tidelang-admit` is, uses that
 std and directory instead when given no `--tide-std`; an explicit
 `--tide-std` replaces both. Tide's std is `crates/tide-std`, with its macros in
-`crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types
-(`Rand` and `Proc` remain identities), `Pure`, and the `out`, `err` and log sinks
+`crates/tide-macros`: so far `#[tide::main]`, `Root` and the capability types,
+`Pure`, and the `out`, `err` and log sinks
 (`print!`, `println!`, `eprint!`, `eprintln!`, `error!` through `trace!`), ordinary and property `#[test]`, `#[sim_test]`,
 the prelude's `Error` derive with thiserror semantics (without `error(fmt = ..)`,
 backtrace detection/`#[backtrace]`, or `Error::provide`; mixed transparent and
@@ -352,8 +352,8 @@ name), `env_var` overwrites a key, and `stdin` appends bytes; unset inputs are
 empty. Env/input operations schedule with zero latency and no random draw.
 `records()` assembles lines per stream, strips newlines, converts bytes lossily
 to UTF-8, and emits unterminated tails last; the node is `main` outside nodes.
-`SimRoot` has no log configuration. Other capabilities carry simulated identities; Rand-backed hash
-initialization panics until its simulated backend exists.
+`SimRoot` has no log configuration. Other capabilities carry simulated identities; `Rand` draws and
+`RandomState::from_rand` keys come from the seed.
 
 Without requires discards, `#[sim_test] fn t(sim: SimRoot)` runs seeds `0..100`;
 `#[sim_test(seeds = 20)]` runs `0..20`. Each entry re-executes its driver-built
@@ -365,8 +365,8 @@ causes, and traces on failure. Success emits at most one summary line, captured
 by libtest; seed-start records stay internal. Signal/timeout or a missing summary
 names the last started seed; ordinary failures name the failing seeds. The
 internal `TIDE_SIM_SEED=<decimal u64>` hook selects one fresh seed when running
-the test binary; it does no build/source identity validation. Simulated HTTP/randomness,
-other world setup and faults remain planned. Extra parameters, such as
+the test binary; it does no build/source identity validation. Other world
+setup and faults remain planned. Extra parameters, such as
 `#[sim_test] fn t(sim: SimRoot, sizes: Vec<u16>)`, use the property runner's
 guidance, filtering, vacuity floor and shrinking. Each case and shrink attempt
 gets a fresh simulator with the same case seed; only the parameters shrink.

@@ -129,10 +129,10 @@ below.
   1.31x between Tide and its plain-Rust twin built with the same flags.
   One seed of that `tasks` program under the simulator took 12.8 times the
   real run, in release.
-- **Missing pieces.** No UDP, no randomness draws, no `Proc::exit`, no
-  signals, no FFI (calls into C), no fault injection in the simulator, and
-  no `tide` command: `tide-admit` is the whole toolchain
-  ([Not in this alpha](../README.md#not-in-this-alpha)).
+- **Missing pieces.** No UDP, no `Rand::rng()` generator (`Rand`'s five
+  draws are there), no `Proc::exit`, no signals, no FFI (calls into C), no
+  fault injection in the simulator, and no `tide` command: `tide-admit` is
+  the whole toolchain ([Not in this alpha](../README.md#not-in-this-alpha)).
 - **A boundary that rests on rustc.** Admission closes three known routes
   through rustc's soundness bugs, compiler bugs that let safe code break
   Rust's guarantees; the others stay open, and code under an `unsafe`
@@ -153,8 +153,8 @@ below.
 
 - You need a second crate, from crates.io or your own workspace, an async
   runtime, or C libraries.
-- You need anything under Missing pieces above, such as UDP, randomness
-  draws, signals or process exit.
+- You need anything under Missing pieces above, such as UDP, signals or
+  process exit.
 - You ship on macOS, Windows or embedded targets, or need fast incremental
   builds today.
 - Your code needs custom macros, build scripts, weak atomic orderings or much

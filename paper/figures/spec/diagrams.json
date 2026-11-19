@@ -58,8 +58,8 @@
         "omits": ["Other hosts, UDP, TLS certificate validation, HTTP wire parsing", "TLS certificate validation and HTTP wire parsing"] },
       { "area": "Processes", "models": ["Child processes as declared models", "child processes as declared `sim.world.proc` models"],
         "omits": ["Signals, real child processes", "Signals, real child processes (only declared models run)"] },
-      { "area": "Environment", "models": ["Arguments, environment variables, standard input, sink output", "Arguments, environment variables, stdin, and sink output"],
-        "omits": ["Randomness, fault injection", "randomness, and fault injection"] }
+      { "area": "Environment", "models": ["Arguments, environment variables, standard input, sink output; `Rand` draws from the seed", "`Rand` draws from the seed"],
+        "omits": ["Fault injection", "and fault injection"] }
     ]
   },
   "tiers": {

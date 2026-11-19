@@ -93,7 +93,8 @@ Output (11 beads; `❄` means deferred, scheduled after the alpha):
 ```
 
 The bead titles are as filed: fx-tl1u's `command` and `only` have landed
-(fx-ayh2.1), and fx-muza's code is spelled in the older `FX` form.
+(fx-ayh2.1), and fx-9bzp's five `Rand` draws have landed (fx-qlek.20) and
+only `rng() -> Pcg64` remains planned.
 
 And check what commands exist:
 
