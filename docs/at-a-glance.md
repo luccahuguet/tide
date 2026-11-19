@@ -9,22 +9,24 @@ trust.
    rejects each crate before rustc compiles it. Its rules' rejections carry
    a `TD` code, such as `TD0501`, that says why. What rustc rejects, such as
    a call to a function Tide's std lacks, gets rustc's errors.
-3. **Authority shows in the signature.** Code reaches the outside world only
+3. **Authority shows in the signature.** Code reaches the outside world
    through [capabilities](/design/reference.md#61-the-rule-and-the-capability-set)
-   it is handed (`&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc`, `&Rand`).
-   Printing aside, a function's parameters bound what it can do, up to
-   [rustc's soundness bugs](/README.md#forge-routes).
+   it is handed (`&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc`, `&Rand`), so a
+   function's parameters bound what it can do. The claim is no accidental
+   ambient authority in admitted safe code, apart from printing and outside
+   the `unsafe` grant, up to [rustc's soundness bugs](/README.md#forge-routes).
 4. **Authority can be narrowed.** `fs.dir(path, mode)` confines files to a
-   directory, and `only([...])` limits hosts, programs or variables, with
-   [limits](/docs/tide-or-rust.md#what-tide-gives-you): incoming connections
-   stay open until `no_bind()`, and an allowed shell allows anything.
+   directory, and `only([...])` limits hosts, programs or variables
+   ([limits](/docs/tide-or-rust.md#what-tide-gives-you)). A network `only`
+   limits outbound peers, and listening remains possible unless the
+   capability is narrowed with `no_bind()`. An allowed shell allows anything.
 5. **Tests replay.** A `#[sim_test]` runs under a seeded simulator, and
    `tide-admit` replays a failing run on the same machine with identical
    traces. Replay reproduces the
    [simulator's model](/README.md#simulator-fidelity), not the machine.
 6. **Any change can get a trust diff.** `tide-admit --tide-diff` summarizes
-   what a change may do: public items whose authority widened or narrowed,
-   and `unsafe` sites added or removed. The
+   what a change may do: public items whose declared authority widened or
+   narrowed, and `unsafe` sites added or removed. The
    [E3 pilot](/README.md#e3-does-the-trust-diff-help-reviewers-pre-registered-pilot-negative)
    found no evidence that it helps reviewers.
 7. **Built for agents.** The core reference that teaches Tide to a model fits
