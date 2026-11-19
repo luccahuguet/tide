@@ -1,0 +1,74 @@
+[
+  {
+    "topic": "blockchain",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:blockchain",
+    "total_count": 33,
+    "capped": false
+  },
+  {
+    "topic": "ethereum",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:ethereum",
+    "total_count": 16,
+    "capped": false
+  },
+  {
+    "topic": "cryptocurrency",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:cryptocurrency",
+    "total_count": 8,
+    "capped": false
+  },
+  {
+    "topic": "web3",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:web3",
+    "total_count": 3,
+    "capped": false
+  },
+  {
+    "topic": "solana",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:solana",
+    "total_count": 6,
+    "capped": false
+  },
+  {
+    "topic": "bitcoin",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:bitcoin",
+    "total_count": 7,
+    "capped": false
+  },
+  {
+    "topic": "zk",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:zk",
+    "total_count": 4,
+    "capped": false
+  },
+  {
+    "topic": "zero-knowledge",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:zero-knowledge",
+    "total_count": 12,
+    "capped": false
+  },
+  {
+    "topic": "evm",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:evm",
+    "total_count": 6,
+    "capped": false
+  },
+  {
+    "topic": "defi",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:defi",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "topic": "smart-contracts",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:smart-contracts",
+    "total_count": 9,
+    "capped": false
+  },
+  {
+    "topic": "cryptography",
+    "query": "language:Rust stars:>=1000 archived:false fork:false topic:cryptography",
+    "total_count": 24,
+    "capped": false
+  }
+]
