@@ -1,0 +1,242 @@
+[
+  {
+    "term": "ML-KEM",
+    "query": "\"ML-KEM\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "MLKEM",
+    "query": "MLKEM language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Kyber",
+    "query": "Kyber language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "ML-DSA",
+    "query": "\"ML-DSA\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "MLDSA",
+    "query": "MLDSA language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Dilithium",
+    "query": "Dilithium language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "SLH-DSA",
+    "query": "\"SLH-DSA\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "SLHDSA",
+    "query": "SLHDSA language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "SPHINCS",
+    "query": "SPHINCS language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "FN-DSA",
+    "query": "\"FN-DSA\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "FNDSA",
+    "query": "FNDSA language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Falcon",
+    "query": "Falcon language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "HQC",
+    "query": "HQC language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "McEliece",
+    "query": "McEliece language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "post-quantum",
+    "query": "\"post-quantum\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 2,
+    "capped": false
+  },
+  {
+    "term": "postquantum",
+    "query": "postquantum language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "PQC",
+    "query": "PQC language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "rosenpass",
+    "query": "rosenpass language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  },
+  {
+    "term": "quantum-resistant",
+    "query": "\"quantum-resistant\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "quantum-safe",
+    "query": "\"quantum-safe\" language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "ML-KEM",
+    "query": "\"ML-KEM\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 3,
+    "capped": false
+  },
+  {
+    "term": "MLKEM",
+    "query": "MLKEM in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Kyber",
+    "query": "Kyber in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "ML-DSA",
+    "query": "\"ML-DSA\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  },
+  {
+    "term": "MLDSA",
+    "query": "MLDSA in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Dilithium",
+    "query": "Dilithium in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "SLH-DSA",
+    "query": "\"SLH-DSA\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  },
+  {
+    "term": "SLHDSA",
+    "query": "SLHDSA in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "SPHINCS",
+    "query": "SPHINCS in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  },
+  {
+    "term": "FN-DSA",
+    "query": "\"FN-DSA\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "FNDSA",
+    "query": "FNDSA in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "Falcon",
+    "query": "Falcon in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 5,
+    "capped": false
+  },
+  {
+    "term": "HQC",
+    "query": "HQC in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "McEliece",
+    "query": "McEliece in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "post-quantum",
+    "query": "\"post-quantum\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 11,
+    "capped": false
+  },
+  {
+    "term": "postquantum",
+    "query": "postquantum in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 0,
+    "capped": false
+  },
+  {
+    "term": "PQC",
+    "query": "PQC in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 2,
+    "capped": false
+  },
+  {
+    "term": "rosenpass",
+    "query": "rosenpass in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  },
+  {
+    "term": "quantum-resistant",
+    "query": "\"quantum-resistant\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 4,
+    "capped": false
+  },
+  {
+    "term": "quantum-safe",
+    "query": "\"quantum-safe\" in:readme language:Rust stars:>=1000 archived:false fork:false",
+    "total_count": 1,
+    "capped": false
+  }
+]
