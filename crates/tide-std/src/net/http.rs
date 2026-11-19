@@ -579,6 +579,30 @@ pub(super) fn dial(
     Err(first.map_or(NetError::Refused, NetError::Io))
 }
 
+/// Every lookup failure is `Dns`; cancellation and the passed deadline keep their variants. A
+/// resolver's own `TimedOut` before the deadline is a resolver failure.
+fn lookup_error(e: io::Error, until: Duration) -> NetError {
+    match e.kind() {
+        _ if e.is_cancelled() => NetError::Cancelled,
+        ErrorKind::TimedOut if expired(until) => NetError::Timeout,
+        _ => NetError::Dns,
+    }
+}
+
+/// NET-RESOLVE-CALL steps 4–6 on the real backend (research/48 §3); steps 1–3 ran in
+/// `Net::resolve`. Port 0 asks the resolver what `connect`'s lookup asks, without a port.
+pub(super) fn resolve(c: &NetContext, host: &Host, until: Duration, span: Span) -> Result<Vec<IpAddr>, NetError> {
+    if expired(until) {
+        return Err(NetError::Timeout);
+    }
+    if let Some(ip) = host.literal() {
+        return Ok(vec![ip]);
+    }
+    let Host::Name(name) = host else { unreachable!() };
+    let addrs = resolve::lookup(c, name, 0, Some(until), span).map_err(|e| lookup_error(e, until))?;
+    Ok(addrs.into_iter().map(|a| a.ip()).collect())
+}
+
 /// NET-GET steps 4–10 on the real backend; steps 1–3 ran in `Net::get`.
 pub(super) fn get(
     net: &Net,
@@ -596,11 +620,7 @@ pub(super) fn get(
         Some(ip) => vec![SocketAddr::new(ip, key.port)],
         None => {
             let Host::Name(name) = &key.host else { unreachable!() };
-            resolve::lookup(c, name, key.port, Some(until), span).map_err(|e| match e.kind() {
-                _ if e.is_cancelled() => NetError::Cancelled,
-                ErrorKind::TimedOut => NetError::Timeout,
-                _ => NetError::Dns,
-            })?
+            resolve::lookup(c, name, key.port, Some(until), span).map_err(|e| lookup_error(e, until))?
         }
     };
     let socket = dial(c, addrs, span, until)?;

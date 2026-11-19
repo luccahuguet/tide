@@ -10,6 +10,9 @@ pub(super) struct SimNet {
     listeners: BTreeMap<u16, Bound>,
     /// `sim.world.http` peers, by NET-HOST key (research/42 §9).
     http: BTreeMap<Key, Peer>,
+    /// Distinct domain hosts of those peers in setup order, `localhost` excepted: the n-th
+    /// resolves to 198.18.0.0 + n (research/48 §6). Never cleared during a run.
+    names: Vec<Host>,
     conns: BTreeMap<usize, Connection>,
     next: usize,
     waiters: Vec<Arc<Signal>>,
@@ -86,7 +89,17 @@ impl End {
         });
     }
 }
+/// Synthetic addresses run from 198.18.0.1 through 198.19.255.254.
+const NAMES: usize = 131_070;
 impl SimNet {
+    /// A host's simulated address: its literal, or its synthetic address if a peer names it.
+    fn address(&self, host: &Host) -> Option<IpAddr> {
+        let n = match host.literal() {
+            Some(ip) => return Some(ip),
+            None => self.names.iter().position(|h| h == host)? + 1,
+        };
+        Some(Ipv4Addr::from(u32::from(Ipv4Addr::new(198, 18, 0, 0)) + n as u32).into())
+    }
     fn changed(&mut self) {
         for signal in self.waiters.drain(..) {
             signal.wake();
@@ -538,7 +551,12 @@ pub(super) fn world_http(
             Some("is already an HTTP peer")
         } else if loopback(&key.host) && s.listeners.contains_key(&key.port) {
             Some("is held by a simulated TCP listener")
+        } else if s.address(&key.host).is_none() && s.names.len() == NAMES {
+            Some("needs a synthetic address past 198.19.255.254")
         } else {
+            if s.address(&key.host).is_none() {
+                s.names.push(key.host.clone());
+            }
             s.http.insert(key.clone(), peer);
             None
         }
@@ -587,7 +605,7 @@ pub(super) fn get(
     if c.now() >= until {
         return Err(NetError::Timeout);
     }
-    if key.host.literal().is_none() && !state.lock().unwrap().http.keys().any(|k| k.host == key.host) {
+    if state.lock().unwrap().address(&key.host).is_none() {
         return Err(NetError::Dns);
     }
     delays.push(c.latency());
@@ -665,6 +683,25 @@ pub(super) fn record_get(
         span,
         &format!("scheme={} key={key} delays=[{}] result={result}", url.scheme(), delays.join(",")),
     );
+}
+
+/// NET-RESOLVE-CALL steps 4–6 in simulation (research/48 §6): no virtual time, draw or lookup.
+pub(super) fn resolve(state: &Mutex<SimNet>, c: &NetContext, host: &Host, until: Duration) -> Result<Vec<IpAddr>, NetError> {
+    if c.now() >= until {
+        return Err(NetError::Timeout);
+    }
+    state.lock().unwrap().address(host).map(|ip| vec![ip]).ok_or(NetError::Dns)
+}
+
+/// One `net.resolve` event per call: the checked host key and the addresses or variant.
+pub(super) fn record_resolve(c: &NetContext, span: Span, host: Option<&Host>, result: &Result<Vec<IpAddr>, NetError>) {
+    let result = match result {
+        Ok(addrs) => format!("ok {addrs:?}"),
+        Err(NetError::Io(e)) => format!("Io({:?})", e.kind()),
+        Err(e) => format!("{e:?}"),
+    };
+    let host = host.map_or_else(|| "-".to_owned(), ToString::to_string);
+    c.record("net.resolve", 0, span, &format!("host={host} result={result}"));
 }
 
 fn outcome<T>(result: &io::Result<T>) -> String {

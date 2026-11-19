@@ -4143,6 +4143,29 @@ fn tcp_builds_and_runs_against_production_std() {
     }
 }
 
+/// NET-RESOLVE-1: `Net::resolve`'s one equivalence suite executes through tide-admit; the real
+/// run and every simulated seed give the same values and `NetError` variants.
+#[test]
+fn resolve_builds_and_runs_against_production_std() {
+    let dir = package("resolve", include_str!("../../../conformance/cases/authority/resolve.rs"));
+    checked(&mut driver(&dir));
+    let out = checked(Command::new("timeout").arg("45").arg(dir.join("out/demo")).stdin(Stdio::null()));
+    let real = String::from_utf8(out.stdout).unwrap();
+    let real = real.strip_prefix("RESOLVE_VALUES:").unwrap().strip_suffix("\nRESOLVE_RAN\n").unwrap().to_owned();
+    checked(driver(&dir).arg("--test"));
+    let out = checked(
+        Command::new("timeout")
+            .arg("45")
+            .arg(dir.join("out/demo-test"))
+            .args(["--exact", "simulated_resolve", "--nocapture"])
+            .stdin(Stdio::null()),
+    );
+    let simulated = String::from_utf8_lossy(&out.stdout);
+    assert!(simulated.contains("1 passed"), "{simulated}");
+    let values: Vec<_> = simulated.split("RESOLVE_VALUES:").skip(1).map(|text| text.lines().next().unwrap()).collect();
+    assert_eq!(values, vec![real.as_str(); 4], "{simulated}");
+}
+
 /// Companion 15.2 builds through tide-admit and its `#[sim_test]` passes (NET-HTTP-3).
 #[test]
 fn companion_fetcher_builds_and_its_sim_test_passes() {
@@ -4250,6 +4273,7 @@ fn std_net_public_items_are_fixed() {
             "pub fn bind",
             "pub fn connect",
             "pub fn get",
+            "pub fn resolve",
             "pub struct TcpListener",
             "pub struct TcpStream",
             "pub fn accept",

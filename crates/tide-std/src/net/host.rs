@@ -81,6 +81,12 @@ pub(crate) fn host(written: &str) -> Option<Host> {
     url::Host::parse(written).ok().map(key_host)
 }
 
+/// `resolve`'s host, keyed as `connect((host, port))` keys its host (research/48 §2): an IP
+/// address as written, unbracketed or bracketed for IPv6, else the v0 host rule.
+pub(crate) fn tuple(written: &str) -> Option<Host> {
+    written.parse::<IpAddr>().map_or_else(|_| host(written), |a| Some(ip(a)))
+}
+
 /// An `only` entry or a `connect`/`bind` address written `"host:port"` (IPv6 in brackets).
 pub(crate) fn split(address: &str) -> Option<(&str, u16)> {
     let (host, port) = address.rsplit_once(':')?;

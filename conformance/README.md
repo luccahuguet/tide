@@ -485,6 +485,7 @@ bounded backlog/backpressure, wildcard binding and cancelled connect/read/write.
 `authority/tcp_deadlock.rs` executes a test with a full socket and no reader and must report
 `net.write(conn)` with the call site. These execute in the ordinary trusted harness,
 not RUN-3's planned socket-denying sandbox. The TCP model's capacities and delays
-remain provisional; other real hostnames use inline uncancellable Rust resolution,
-while simulation supports only IP literals and `localhost`. HTTP remains a stub; UDP is absent.
+remain provisional; other real hostnames use the shared resolver pool, which cancellation
+and deadlines abandon, while simulated TCP supports only IP literals and `localhost`. The stub
+std includes production `net.rs`, so `Net::get` and `Net::resolve` are real; UDP is absent.
 See `research/21-channels-tcp.md` §§1.9–1.13 and §4 items 5–14 for the adopted limits.

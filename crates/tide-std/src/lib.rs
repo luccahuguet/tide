@@ -245,8 +245,8 @@
 //! non-panic path, a drop panic surfaces in the scope's caller.
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
-//! Not provided yet: other capability operations and attenuation of reference 6.1 (HTTP/UDP,
-//! explicit name resolution, random draws, `Proc::exit`, signals, PTYs); the `trace` sink;
+//! Not provided yet: other capability operations and attenuation of reference 6.1 (UDP,
+//! random draws, `Proc::exit`, signals, PTYs); the `trace` sink;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! unsized Arc/Weak payloads (`Arc<dyn Trait>`, `Arc<str>`, `Arc<[T]>`);
 //! other `sync` items,
@@ -276,15 +276,15 @@ crate::declare_prelude! {
 pub mod test;
 pub mod fs;
 
-/// TCP authority and handles on real Linux and simulated loopback. See
-/// `research/21-channels-tcp.md` §§1.9–1.13 for the adopted model.
+/// Network authority: TCP on real Linux and simulated loopback (`research/21-channels-tcp.md`
+/// §§1.9–1.13), `get` (research/42) and `resolve` (research/48).
 /// `bind`, `connect`, `accept`, reads, writes and `shutdown` are cancellable checkpoints;
 /// address accessors and no-op `flush` are not. `incoming` yields cancellation once then ends.
-/// `only` matches literal hosts/ports without lookup and intersects; it does not limit binds
+/// `only` matches NET-HOST keys without lookup and intersects; it does not limit binds
 /// or accepted peers. `no_bind` denies binding. Simulated capacities/backlog/latencies are
 /// provisional: 65,536 bytes per direction, 128 connections, 1–10 ms per packet.
-/// Real nonliteral/non-localhost names use inline Rust resolution that is not yet cancellable;
-/// simulation rejects them. HTTP, UDP, resolver APIs, options and owned I/O remain planned.
+/// Real names other than `localhost` go through the shared resolver, which cancellation and
+/// deadlines abandon; simulated TCP rejects them. UDP, options and owned I/O remain planned.
 pub mod net;
 
 pub mod time;

@@ -489,18 +489,21 @@ through `crates/tide-std/src/io/shared.rs`. It follows Rust's supported API with
 `TcpStream` with owned/borrowed `io::Read` and `io::Write`, address accessors and
 `shutdown`. Real Linux sockets are nonblocking; socket waits observe cancellation and
 scope deadlines. `incoming()` yields `Cancelled` once, then ends. `only(hosts)`
-intersects literal case-insensitive host/port grants without lookup, affects only
-outgoing connections, and `no_bind()` denies binding with `PermissionDenied`.
-Address arguments are sealed data; IP literals and `localhost` work on both backends.
-Other real names use Rust's inline resolver, which cannot yet be abandoned on
-cancellation; simulation rejects them. `sim.net` models `127.0.0.1` (including
+intersects NET-HOST `host:port` keys without lookup, affects only outgoing peer
+operations (`connect`, `get`, `resolve`), and `no_bind()` denies binding with
+`PermissionDenied`. Address arguments are sealed data; IP literals and `localhost`
+work on both backends. Other real names go through one shared resolver pool, which
+cancellation and deadlines abandon; simulated TCP rejects them. `sim.net` models `127.0.0.1` (including
 wildcard listeners), deterministic ephemeral ports, bounded streams, half-close and
 EOF. Its 128-connection backlog, 65,536-byte directional capacity, 49152–65535
 port range and 1–10 ms packet delays are provisional. One admitted suite compares
 values/ErrorKinds on real `127.0.0.1:0` and simulated loopback, excluding ports and
 timing; timing-dependent post-close errors use allowed sets. The model and
 limits follow [the TCP research](../research/21-channels-tcp.md#19-net-shape-addresses-and-attenuation).
-HTTP, UDP, `Net::resolve`, owned I/O, socket options, clone and timeouts remain planned.
+`Net::get` (one HTTP/1.1 GET) and `Net::resolve` (a granted host's addresses; simulated
+`world.http` domains get synthetic `198.18.0.n` addresses) are built
+([research/42](../research/42-net-get-v0.md), [research/48](../research/48-net-resolve-v0.md)).
+UDP, owned I/O, socket options, clone and timeouts remain planned.
 
 `std::fs` provides real and simulated files through the same `Fs`: path reads
 and writes, `OpenOptions`, `File` with `Read`/`Write`/`Seek`, directory mutation

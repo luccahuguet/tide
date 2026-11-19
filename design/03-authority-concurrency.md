@@ -238,7 +238,7 @@ Notes:
   ASCII-lowercased with one trailing dot dropped; then the port. A URL
   without a port keys as 80 for `http` and 443 for `https`. Matching
   is key equality, checked before lookup for outbound peer operations
-  (`get`, `connect`, planned peer/resolve operations), so a refused peer
+  (`get`, `connect`, `resolve`, planned peer operations), so a refused peer
   is never resolved, dialled or shown to a simulated peer. `only` does not
   limit `bind` or accepted connections: a binding-capable Net can resolve
   arbitrary bind names even if binding fails, and communicate with
@@ -256,8 +256,8 @@ Notes:
   `get` has authenticated the name before it sends any HTTP data; and a
   holder of the same `Net` can `connect` there and send raw bytes. There
   is no private-address filter: a stated limit.
-- **Name resolution: `Net::resolve`** (decided, planned until built;
-  research/48, bead `fx-6d50`). `resolve(host: &str, deadline: Instant)
+- **Name resolution: `Net::resolve`** (v0, built in `fx-6d50` stage 2;
+  research/48). `resolve(host: &str, deadline: Instant)
   -> Result<Vec<IpAddr>, NetError>` returns a nonempty list on `Ok`. A
   real non-literal lookup preserves the resolver's order and duplicates.
   Given the same resolver answer, it returns the list `connect`'s lookup
@@ -2219,7 +2219,7 @@ its level; the README's status lists the parts of RUN-3 still missing.
   that no peer or node names gives `Dns` at once. Registering a peer on a
   simulated TCP listener's address panics at setup; a later bind on a
   peer's address gives `AddrInUse` (wildcard/loopback aliases included).
-  A simulated `Net::resolve` (planned; research/48 §6) takes no time and
+  A simulated `Net::resolve` (research/48 §6) takes no time and
   no draw. Of the domains other than `localhost`, those named by a
   `world.http` peer resolve to `198.18.0.n`, with ordinals starting at 1
   and counting distinct domain peer host keys after NET-HOST

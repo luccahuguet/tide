@@ -109,9 +109,11 @@ fn denied_and_refused_shapes_need_no_lookup() {
     }
     assert_eq!(resolve::CALLS.with(|n| n.get()), before);
 }
-// NET-HTTP-5: no_bind refuses before any resolution; the counter does see a real lookup.
+// NET-HTTP-5: no_bind refuses before any resolution; the counter does see a lookup (the seam
+// answers it, so no live resolver query is sent).
 #[test]
 fn no_bind_refuses_before_resolution() {
+    seam(|_| Ok(vec![Ipv4Addr::LOCALHOST.into()]));
     let before = resolve::CALLS.with(|n| n.get());
     let e = Net::new(None).only([""; 0]).no_bind().bind(("unlisted.test", 8080)).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::PermissionDenied);
@@ -736,4 +738,165 @@ fn simulated_packet_arrival_overflow_obeys_deadlines_and_cancellation() {
     let sim = crate::Root::sim(0);
     sim.world.http("fast.test:80", |_| Reply::ok("on time").after(Duration::from_millis(1)));
     assert_eq!(sim.net.get(&url("http://fast.test/"), sim_deadline(&sim, Duration::from_secs(1))).unwrap(), b"on time");
+}
+
+// NET-RESOLVE-1 (seam half), -2 and -3 (research/48 §11). No case sends a live resolver query:
+// real non-literal lookups ask the `#[cfg(test)]` seam in `net/resolve.rs`.
+fn ips(list: &[&str]) -> Vec<IpAddr> {
+    list.iter().map(|ip| ip.parse().unwrap()).collect()
+}
+fn seam(answer: impl Fn(&str) -> std::io::Result<Vec<IpAddr>> + Send + Sync + 'static) {
+    resolve::SEAM.with(|s| *s.borrow_mut() = Some(Arc::new(answer)));
+}
+#[test]
+fn real_resolve_refusals_and_literals_make_no_lookup() {
+    seam(|name| Err(std::io::Error::other(format!("unexpected lookup of {name}"))));
+    let before = resolve::CALLS.with(|n| n.get());
+    let net = Net::new(None);
+    let soon = real_deadline(Duration::from_secs(5));
+    let past = crate::time::Instant(crate::time::monotonic());
+    for shape in ["", ".", "a..b", "example.com:443", "http://x/", "b%C3%BCcher.example", "xn--bcher-kva.example", "*.test"] {
+        assert!(matches!(net.resolve(shape, soon), Err(NetError::Io(e)) if e.kind() == ErrorKind::InvalidInput), "{shape}");
+    }
+    assert!(matches!(net.only(["svc.test:443"]).resolve("other.test", soon), Err(NetError::Denied)));
+    assert!(matches!(net.only([""; 0]).resolve("127.0.0.1", soon), Err(NetError::Denied)));
+    assert!(matches!(net.resolve("svc.test", past), Err(NetError::Timeout)));
+    assert_eq!(net.resolve("::ffff:127.0.0.1", soon).unwrap(), ips(&["127.0.0.1"]));
+    assert_eq!(net.only(["localhost:8080"]).resolve("LOCALHOST.", soon).unwrap(), ips(&["127.0.0.1"]));
+    assert_eq!(resolve::CALLS.with(|n| n.get()), before);
+}
+#[test]
+fn real_resolve_returns_connects_answer_and_maps_failures_to_dns() {
+    let answer = ips(&["192.0.2.7", "2001:db8::1", "192.0.2.7", "::ffff:192.0.2.8"]);
+    let supplied = answer.clone();
+    seam(move |name| {
+        assert_eq!(name, "svc.test");
+        Ok(supplied.clone())
+    });
+    let net = Net::new(None).only(["SVC.test.:443"]);
+    let resolved = net.resolve("svc.test", real_deadline(Duration::from_secs(5))).unwrap();
+    // `connect`'s lookup of the same tuple, with ports removed: same order, duplicates and
+    // representations (the mapped entry stays IPv6).
+    let c = Network::new(None).context();
+    let span = std::panic::Location::caller();
+    let dialed = address::Sealed::address(&("svc.test", 443u16)).unwrap().resolve(&c, false, span).unwrap();
+    assert!(dialed.iter().all(|a| a.port() == 443));
+    assert_eq!(dialed.iter().map(SocketAddr::ip).collect::<Vec<_>>(), answer);
+    assert_eq!(resolved, answer);
+    let deadline = real_deadline(Duration::from_secs(5));
+    seam(|_| Err(std::io::Error::other("no such name")));
+    assert!(matches!(Net::new(None).resolve("nothing.invalid", deadline), Err(NetError::Dns)));
+    // R2: NET-HOST leaves label lengths to the resolver, whose failure is `Dns`.
+    let long = format!("{}.test", "a".repeat(64));
+    assert!(matches!(Net::new(None).resolve(&long, deadline), Err(NetError::Dns)));
+    seam(|_| Ok(Vec::new()));
+    assert!(matches!(Net::new(None).resolve("empty.test", deadline), Err(NetError::Dns)));
+    // The resolver's own timeout before the call's deadline is a resolver failure, for `get` too.
+    seam(|_| Err(std::io::ErrorKind::TimedOut.into()));
+    assert!(matches!(Net::new(None).resolve("slow.test", deadline), Err(NetError::Dns)));
+    assert!(matches!(Net::new(None).get(&url("http://slow.test/"), deadline), Err(NetError::Dns)));
+}
+#[test]
+fn real_resolve_abandons_held_lookups_which_release_their_slots() {
+    use crate::task::{TaskError, Tasks};
+    let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    let held = gate.clone();
+    seam(move |_| {
+        let (open, bell) = &*held;
+        drop(bell.wait_while(open.lock().unwrap(), |open| !*open).unwrap());
+        Ok(ips(&["192.0.2.1"]))
+    });
+    let net = Net::new(None);
+    let start = std::time::Instant::now();
+    let r = Tasks::real().scope::<_, TaskError, _>(|scope| {
+        scope.set_deadline(real_deadline(Duration::from_millis(100)));
+        Ok(net.resolve("held.test", real_deadline(Duration::from_secs(10))))
+    });
+    assert!(matches!(r, Ok(Err(NetError::Cancelled))), "{r:?}");
+    // Seven more held lookups time out; with the cancelled one they fill the 8-slot pool.
+    for _ in 1..8 {
+        assert!(matches!(net.resolve("held.test", real_deadline(Duration::from_millis(50))), Err(NetError::Timeout)));
+    }
+    assert!(start.elapsed() < Duration::from_secs(3), "{:?}", start.elapsed());
+    let waiting = std::time::Instant::now();
+    assert!(matches!(net.resolve("queued.test", real_deadline(Duration::from_millis(100))), Err(NetError::Timeout)));
+    assert!(waiting.elapsed() >= Duration::from_millis(100));
+    // Letting the abandoned lookups finish frees their slots for the next call.
+    seam(|_| Ok(ips(&["192.0.2.2"])));
+    *gate.0.lock().unwrap() = true;
+    gate.1.notify_all();
+    assert_eq!(net.resolve("next.test", real_deadline(Duration::from_secs(5))).unwrap(), ips(&["192.0.2.2"]));
+}
+
+#[test]
+fn simulated_resolve_numbers_peer_domains_in_setup_order() {
+    use crate::sim::{Reply, SimRoot};
+    let resolve = |sim: &SimRoot, host: &str| sim.net.resolve(host, sim_deadline(sim, Duration::from_secs(1)));
+    let sim = SimRoot::new(5);
+    assert_eq!(resolve(&sim, "localhost").unwrap(), ips(&["127.0.0.1"]));
+    sim.world.http("localhost:8080", |_| Reply::hang());
+    sim.world.http("192.0.2.9:80", |_| Reply::hang());
+    sim.world.http("a.test:443", |_| Reply::hang());
+    sim.world.http("A.test.:80", |_| Reply::hang());
+    sim.world.http("b.test:80", |_| Reply::hang());
+    // R2: NET-HOST does not check label lengths, so a 64-octet label resolves in simulation.
+    let long = format!("{}.test", "a".repeat(64));
+    sim.world.http(&format!("{long}:80"), |_| Reply::hang());
+    let before = sim.elapsed();
+    assert_eq!(resolve(&sim, "localhost").unwrap(), ips(&["127.0.0.1"]));
+    assert_eq!(resolve(&sim, "a.test").unwrap(), ips(&["198.18.0.1"]));
+    assert_eq!(resolve(&sim, "b.test").unwrap(), ips(&["198.18.0.2"]));
+    assert_eq!(resolve(&sim, &long).unwrap(), ips(&["198.18.0.3"]));
+    assert_eq!(resolve(&sim, "192.0.2.9").unwrap(), ips(&["192.0.2.9"]));
+    assert!(matches!(resolve(&sim, "c.test"), Err(NetError::Dns)));
+    assert_eq!(sim.elapsed(), before, "no virtual time");
+    let trace = sim.trace();
+    assert_eq!(trace.matches("net.resolve").count(), 7, "{trace}");
+    assert!(trace.contains("host=a.test result=ok [198.18.0.1]") && trace.contains("host=c.test result=Dns"), "{trace}");
+    // A name grant does not grant the synthetic address, even with a peer there.
+    sim.world.http("198.18.0.1:443", |_| Reply::ok("x"));
+    let named = sim.net.only(["a.test:443"]);
+    assert!(matches!(named.get(&url("https://198.18.0.1/"), sim_deadline(&sim, Duration::from_secs(1))), Err(NetError::Denied)));
+    assert_eq!(sim.net.get(&url("https://198.18.0.1/"), sim_deadline(&sim, Duration::from_secs(1))).unwrap(), b"x");
+    // Simulated TCP stays loopback-only.
+    assert_eq!(sim.net.connect("a.test:443").unwrap_err().kind(), ErrorKind::InvalidInput);
+    assert_eq!(sim.net.connect("198.18.0.1:443").unwrap_err().kind(), ErrorKind::ConnectionRefused);
+}
+#[test]
+fn simulated_resolve_takes_no_draw_and_replays() {
+    use crate::sim::{Reply, SimRoot};
+    // R1: one host key takes one ordinal, so the ordinal counts earlier distinct peer names.
+    let run = |seed, hidden: bool, calls: bool| {
+        let sim = SimRoot::new(seed);
+        if hidden {
+            sim.world.http("hidden.test:80", |_| Reply::hang());
+            sim.world.http("HIDDEN.test.:443", |_| Reply::hang());
+        }
+        sim.world.http("visible.test:443", |_| Reply::ok("v"));
+        let net = sim.net.only(["visible.test:443"]);
+        let at = sim_deadline(&sim, Duration::from_secs(1));
+        let resolved = calls.then(|| {
+            assert!(matches!(net.resolve("hidden.test", at), Err(NetError::Denied)));
+            net.resolve("visible.test", at).unwrap()
+        });
+        assert_eq!(net.get(&url("https://visible.test/"), at).unwrap(), b"v");
+        let next = sim.net.network.context().latency();
+        (resolved, next, sim.elapsed(), sim.trace())
+    };
+    for seed in 0..4 {
+        let (shown, next, elapsed, trace) = run(seed, false, true);
+        assert_eq!(shown, Some(ips(&["198.18.0.1"])));
+        assert_eq!(run(seed, true, true).0, Some(ips(&["198.18.0.2"])));
+        let (_, plain_next, plain_elapsed, _) = run(seed, false, false);
+        assert_eq!((next, elapsed), (plain_next, plain_elapsed), "the same draws and time as without resolve");
+        assert_eq!(trace, run(seed, false, true).3, "replays byte for byte");
+        assert_eq!(trace.matches("net.resolve").count(), 2, "{trace}");
+    }
+    let sim = SimRoot::new(1);
+    let r = sim.tasks.scope::<_, crate::task::TaskError, _>(|s| {
+        s.cancel();
+        Ok(sim.net.resolve("127.0.0.1", sim.clock.now()))
+    });
+    assert!(matches!(r, Ok(Err(NetError::Cancelled))), "{r:?}");
+    assert!(sim.trace().contains("host=127.0.0.1 result=Cancelled"), "{}", sim.trace());
 }

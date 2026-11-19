@@ -335,7 +335,7 @@ do, in every dependency.
 | Capability (path) | Main methods | Attenuation |
 | --- | --- | --- |
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
-| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get` (6.7); planned: `bind_udp(addr)`, `resolve(host, deadline)` (companion 21) | `only(hosts) -> Net`, `no_bind() -> Net` |
+| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get`, `resolve` (6.7); planned: `bind_udp(addr)` | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
 | `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
@@ -502,9 +502,10 @@ require `Pure`.
 
 `get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>`: one
 HTTP/1.1 GET, TLS for `https`, 2xx body; no redirects or proxies.
-`only` checks exact `"host:port"` keys before outbound lookup
-(`get`, `connect`, planned UDP peers/resolve), not data. It leaves bind-name
-resolution (even on failure) and unlisted inbound peers unrestricted.
+`resolve(host: &str, deadline)`: likewise, `Vec<IpAddr>`.
+`only` checks exact `"host:port"` keys (`resolve`: any port)
+before lookup (`get`, `connect`, `resolve`, planned UDP), not data. It
+leaves bind-name resolution (even on failure) and unlisted inbound peers open.
 `only([])` is not network silence; delegate `only([..]).no_bind()` for
 outbound-only grants. `NetError`, `Url`, `UrlError`: companion 21.
 `TcpStream` is `io::Read + io::Write`, also for `&TcpStream`.
@@ -530,7 +531,7 @@ it can spawn, wait and read virtual time.
 - **Time.** Monotonic starts at zero, wall time at 2000-01-01. Virtual time
   jumps to the next timer only when all tasks block. Computation and
   `Clock`, `Rand`, `Env`, `Tasks` calls take none; file operations up to
-  1 ms (provisional); `Net::get`: companion 17. Bound `sim.elapsed()` by
+  1 ms (provisional); `Net`: companion 17. Bound `sim.elapsed()` by
   your deadline or allow slack. If no task can ever run again, the run
   fails with a deadlock report.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,

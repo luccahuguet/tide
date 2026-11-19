@@ -4,7 +4,9 @@
 // Other real hostnames go through NET-RESOLVE (`net/resolve.rs`), which cancellation abandons;
 // simulation resolves only IP literals and localhost for TCP. `only` keys every outbound peer
 // by NET-HOST (`net/host.rs`). `Net::get` (`net/http.rs`) is one HTTP/1.1 GET; simulated gets
-// reach only `sim.world.http` peers. UDP, options and owned I/O are pending.
+// reach only `sim.world.http` peers. `Net::resolve` returns a granted host's addresses
+// (research/48); simulation gives `world.http` domains synthetic 198.18.0.n addresses.
+// UDP, options and owned I/O are pending.
 use crate::io::{self, ErrorKind, Read, Write};
 use crate::task::{NetContext, Network};
 pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr};
@@ -260,6 +262,33 @@ impl Net {
         })();
         if self.sim.is_some() {
             tcp_sim::record_get(&c, span, url, checked.as_ref().map(|(_, k)| k), &delays, &result);
+        }
+        result
+    }
+    /// One name lookup (NET-RESOLVE-CALL, research/48 §3): the host's addresses, never empty,
+    /// or the `NetError` that stopped it. Cancellation, the host's shape and `only` (an entry
+    /// for the host on any port) are checked before any lookup; IP literals and `localhost`
+    /// need none. It binds no later call: `connect` and `get` look the name up again.
+    #[track_caller]
+    pub fn resolve(&self, host: &str, deadline: crate::time::Instant) -> Result<Vec<IpAddr>, NetError> {
+        let span = std::panic::Location::caller();
+        let c = self.network.context();
+        let checked = host::tuple(host);
+        let result = (|| {
+            c.check().map_err(|_| NetError::Cancelled)?;
+            let host = checked
+                .as_ref()
+                .ok_or_else(|| NetError::Io(ErrorKind::InvalidInput.into()))?;
+            if !self.only.as_ref().is_none_or(|keys| keys.iter().any(|k| k.host == *host)) {
+                return Err(NetError::Denied);
+            }
+            match &self.sim {
+                Some(sim) => tcp_sim::resolve(sim, &c, host, deadline.0),
+                None => http::resolve(&c, host, deadline.0, span),
+            }
+        })();
+        if self.sim.is_some() {
+            tcp_sim::record_resolve(&c, span, checked.as_ref(), &result);
         }
         result
     }

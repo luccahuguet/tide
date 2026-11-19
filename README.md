@@ -205,7 +205,7 @@ Tide v0 alpha, x86_64 Linux only. The alpha includes:
   and test harnesses, writes the trust artifact, compares two artifacts
   (`--tide-diff`), and runs one test in the sandbox (`--tide-run-test`) or
   replays a recording (`--replay`).
-- **Tide's std**: capabilities (`Fs`, `Net` for TCP and one HTTP/1.1 `get`, `Clock`, environment,
+- **Tide's std**: capabilities (`Fs`, `Net` for TCP, one HTTP/1.1 `get` and `resolve`, `Clock`, environment,
   stdin, output and log sinks), structured tasks with cancellation and
   deadlines, `Shared`, channels, `join`/`par_map`/`par_for`, executable
   contracts, property tests, `#[sim_test]` and the simulator, JSON encoding,
@@ -245,7 +245,7 @@ tracking, FFI, Rust crate import, and production record and replay
 | Virtual time for the clock, sleeps and deadlines | Memory exhaustion, stack depth, and parallel speed-up (`par_*` work runs in order on the calling task) |
 | Files (`sim.fs`), each call with a seed-drawn latency | Disk faults, crashes, links, and partial effects within a compound file operation |
 | TCP loopback on `127.0.0.1`, with bounded streams and half-close | Other hosts, DNS names, UDP, and real kernel behaviour such as RST timing |
-| `Net::get` against `world.http` peers: replies, statuses, delays, resets, TLS failures | TLS certificate validation and HTTP wire parsing (a peer models the application response) |
+| `Net::get` against `world.http` peers: replies, statuses, delays, resets, TLS failures; `Net::resolve` (synthetic `198.18.0.n` addresses for `world.http` domains) | TLS certificate validation and HTTP wire parsing (a peer models the application response) |
 | Arguments, environment variables, stdin, and sink output; child processes as declared `sim.world.proc` models (lifecycle, pipes, `kill`) | Signals, real child processes (only declared models run), randomness, and fault injection |
 
 The real and simulated backends are separate implementations, so a bug that

@@ -1,7 +1,7 @@
 # Net::resolve in v0: a name lookup under NET-HOST (fx-6d50)
 
-Status: stage 1, the design admission (docs only). Stage 2 implements it
-after this note's review rounds and a separate red-team pass. This note
+Status: built (fx-6d50 stage 2); stage 1 was the design admission, which
+passed its review rounds and a separate red-team pass. This note
 fixes the contract of `Net::resolve`, what `Net::only` lets it look up,
 its simulated backend and its trust-diff reading, and gives the soundness
 verdict that owner decision A1 asks for. It reuses research/42's NET-HOST
@@ -151,8 +151,8 @@ thread's spawn error included, as `get` maps them) and `Io(InvalidInput)`;
 never `Refused`, `Reset` or `Status`. `is_transient()` is false for `Dns`, as today: a transient
 resolver failure (`EAI_AGAIN`) and a missing name both map to `Dns`,
 because the system resolver does not distinguish them reliably and
-`get` already maps every lookup failure that way (`http.rs`, lookup
-`map_err`). A caller that retries `Dns` does so knowingly.
+`get` already maps every lookup failure that way (`http.rs`,
+`lookup_error(e, until)`). A caller that retries `Dns` does so knowingly.
 
 **Not a binding of later calls.** `resolve`'s answer does not fix what a
 later `connect(name)` or `get` dials: each looks the name up again, and
@@ -427,6 +427,8 @@ resolving and then connecting by address, which under a name grant is
 `Denied`; it fails loudly, never silently differently.
 
 ## 11. Stage 2
+
+Done in stage 2; kept as the plan of record.
 
 Stage 2 implements §§2–6 and adds cases for the planned `conformance/rules.md`
 rows NET-RESOLVE-1 to -3. When the code lands, drop the `planned` label

@@ -1,4 +1,5 @@
-// NET-RESOLVE (research/42 §7): the one private resolver that `bind`, `connect` and `get` share.
+// NET-RESOLVE (research/42 §7): the one private resolver that `bind`, `connect`, `get` and
+// `resolve` share.
 // The system resolver (`getaddrinfo` through Rust's `ToSocketAddrs`) runs on a helper thread,
 // at most POOL at once, while the calling task waits cancellably and, when the call has one,
 // until its deadline. On cancellation or deadline the caller returns at once and the lookup is
@@ -31,7 +32,13 @@ static SLOTS: Mutex<Pool> = Mutex::new(Pool {
 thread_local! {
     /// Lookups this thread started, for NET-HTTP-5's observation of zero resolver calls.
     pub(super) static CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// The test seam (research/48 §11): when set, lookups this thread starts ask it on the
+    /// helper thread instead of the system resolver, to supply or hold an answer, so no test
+    /// sends a live resolver query.
+    pub(super) static SEAM: std::cell::RefCell<Option<Answer>> = const { std::cell::RefCell::new(None) };
 }
+#[cfg(test)]
+pub(super) type Answer = Arc<dyn Fn(&str) -> std::io::Result<Vec<IpAddr>> + Send + Sync>;
 
 /// Ends with the deadline's `TimedOut`, the scope's `Cancelled`, or the lookup's result; a
 /// lookup with no address is `NotFound`.
@@ -64,14 +71,22 @@ pub(super) fn lookup(
     }
     #[cfg(test)]
     CALLS.with(|n| n.set(n.get() + 1));
+    #[cfg(test)]
+    let seam = SEAM.with(|s| s.borrow().clone());
     let slot: Arc<Mutex<Option<std::io::Result<Vec<SocketAddr>>>>> = Arc::default();
     let signal = Arc::new(Signal::new());
     let (out, done, name) = (slot.clone(), signal.clone(), name.to_owned());
     let spawned = std::thread::Builder::new()
         .name("tide-resolve".into())
         .spawn(move || {
-            let result = std::net::ToSocketAddrs::to_socket_addrs(&(name.as_str(), port))
-                .map(|it| it.collect());
+            let system = || std::net::ToSocketAddrs::to_socket_addrs(&(name.as_str(), port)).map(|it| it.collect());
+            #[cfg(test)]
+            let result = match seam {
+                Some(answer) => answer(&name).map(|ips| ips.into_iter().map(|ip| SocketAddr::new(ip, port)).collect()),
+                None => system(),
+            };
+            #[cfg(not(test))]
+            let result = system();
             *out.lock().unwrap() = Some(result);
             done.wake();
             SLOTS.lock().unwrap().release();

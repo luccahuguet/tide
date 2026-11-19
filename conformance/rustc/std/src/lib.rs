@@ -70,7 +70,8 @@ pub mod fs;
 #[path = "../../../../crates/tide-std/src/time.rs"]
 pub mod time;
 
-// Production owns TCP, `Net::get`, `Url` and `NetError`; simulated HTTP peers are in `sim`.
+// Production owns TCP, `Net::get`, `Net::resolve`, `Url` and `NetError`; simulated HTTP peers
+// are in `sim`.
 pub mod net {
     include!("../../../../crates/tide-std/src/net.rs");
     impl Net {
