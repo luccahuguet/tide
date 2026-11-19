@@ -84,7 +84,7 @@ Output (11 beads; `❄` means deferred, scheduled after the alpha):
 ❄ fx-m6mk [● P3] [task] - `Secret<T>`, `std::trace::span`, and the `log::`/`tracing::` prefixed log macros
 ❄ fx-8cpg [● P3] [task] - Atomics through `&Tasks`, and `std::sync::raw`
 ❄ fx-x78i [● P3] [task] - Contracts and grants in the trust artifact and `--tide-diff`
-❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `FX0516`)
+❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `TD0516`)
 ❄ fx-x2oo [● P3] [task] - Packages: Tide dependencies, per-dependency grants, and `tide.lock`
 ❄ fx-a9oh [● P3] [task] - The `tide` CLI over the driver: `check`, `test`, `sim`, with NDJSON diagnostics and fix plans
 ❄ fx-djwo [● P3] [task] - Simulator faults and crashable nodes: `sim.faults`, `sim.node`, crash and restart, `Tasks::fault_point`
