@@ -8,13 +8,13 @@ interface allows, when another agent's branch is safe to test without a VM,
 how process handles work, the HTTP API, or what v0 leaves out. Its sections
 continue the core's numbering, and a bare section number below 14 refers to
 the core.
-Sections 14–16 tabulate or illustrate rules the core states; 17–21 and
+Sections 14–16 tabulate or illustrate rules the core states; 17–22 and
 Appendix A hold what the core only points to. It is outside the core's
 25,000-token budget (D14). **(planned)** and **(partial)** mean what they
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,999 tokens, recounted on 2026-11-19 with
+Core count: 24,960 tokens, recounted on 2026-11-19 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -81,7 +81,7 @@ Rerun it after any change to the core and update this line.
 | `t.elapsed()` | `clock.now().duration_since(t)`; for `SystemTime`, `clock.system_time().duration_since(t)` |
 | `std::thread::sleep(d)` | `clock.sleep(d)?`; in a scope with your own error enum, `clock.sleep(d).map_err(TaskError::from)?` (7.1) |
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
-| `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once (planned) |
+| `rand::rng().random_range(0..n)`, `thread_rng().gen_range(0..n)`, `gen_bool(p)`, `v.shuffle(&mut rng)` | `rand.random_range(0..n)`, `rand.random_bool(p)`, `rand.shuffle(&mut v)` with `rand: &Rand` (22, planned) |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
 | `Command::new("git")` | `proc.command("git")` |
 | `TcpStream::connect(a)` | `net.connect(a)` |
@@ -803,6 +803,40 @@ and `Encode`/`Decode` as a JSON string. Simulated HTTP peers are in 17.
   name only once the handshake completes. Not data: a URL's path and query reach the
   allowed host, and an allowed relay host is full network authority
   (research/42 §6).
+
+## 22. Randomness (planned)
+
+`Rand` (`std::rand`; 03 RAND-DRAW, research/53) has `&self` draws that
+never suspend, are not checkpoints, and return no error:
+
+| Method | Result |
+| --- | --- |
+| `next_u64() -> u64` | one 64-bit word |
+| `fill_bytes(&mut [u8])` | fills the slice from the source |
+| `random_range(a..b)`, `random_range(a..=b)` | a uniform integer (`u8`–`u64`, `i8`–`i64`, `usize`, `isize`); unbiased by rejection |
+| `random_bool(p: f64) -> bool` | `true` with probability `floor(p * 2^64) / 2^64`, always for `p == 1.0` |
+| `shuffle(&mut [T])` | a uniform permutation (Fisher-Yates) |
+
+- **Panics.** An empty range (`5..5`, `5..=4`) and `p` outside
+  `[0.0, 1.0]`, NaN included, panic before drawing.
+- **Real draws** are Linux `getrandom(2)` output, as unpredictable as the
+  kernel's generator and no more; use `fill_bytes` for keys and nonces. A
+  draw blocks only before the kernel's pool is first initialized at boot;
+  each call is a system call, so a hot loop of millions of draws is slow
+  until the planned `rng() -> Pcg64`.
+- **Simulated draws** come from the seed's own stream: the same seed gives
+  the same values, every draw is a scheduling point that takes no time,
+  and replay reproduces them (03 §9.3). They are predictable from the
+  seed, so never secret. "Uniform" describes the sampling algorithm, not
+  exhaustive or independent seed coverage: distinct seeds give distinct
+  first raw words only, and a long simulated byte string has at most the
+  seed's 64 bits of variation.
+- **Hashing.** `RandomState::from_rand(&rand)` keys a map from the OS
+  (real runs: Rust's per-thread keys, correlated and visible through the
+  built hasher; for hash-flooding resistance, not secrets), or from the
+  seed under simulation, where map order then varies by seed.
+- No float ranges, 128-bit ranges, `choose` or `random_ratio`:
+  `slice[rand.random_range(0..slice.len())]`, `random_range(0..d) < n`.
 
 ## Appendix A. Later tiers (not in v0)
 

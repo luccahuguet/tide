@@ -92,7 +92,7 @@ shielded. Every capability error type has a cancellation variant whose
 | `ReadDir`, `DirEntry` | iteration, `path`, `file_name`, `metadata`, `file_type` | none | iteration, `metadata`, `file_type` |
 | `TcpStream`, `TcpListener`, `UdpSocket` | `read`, `write`, `read_owned`, `write_owned`, `accept`, `send_to`, `recv_from`, `shutdown` | none | all |
 | `Clock` | `now() -> Instant`, `system_time()`, `sleep(d)`, `sleep_until(t)` | `monotonic_only()` | `sleep`, `sleep_until` |
-| `Rand` | `next_u64`, `gen_range`, `gen_bool`, `fill_bytes`, `shuffle`, `rng() -> Pcg64` | none | none |
+| `Rand` | `next_u64`, `fill_bytes`, `random_range`, `random_bool`, `shuffle`; planned: `rng() -> Pcg64` | none | none |
 | `Env` | `args()`, `var(k)`, `vars()`, `current_dir()` | `only(["HOME", ..])`, `args_only()` | none |
 | `Stdin` | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal` | none | all reads |
 | `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn() -> io::Result<Child>`), `exit(code)`; Later: `signals(&[Signal]) -> io::Result<Signals>` (§9.9) | `only(["git", ..])` (PROC-ONLY) | `output`, `status`, `Child::wait` and `wait_with_output`, pipe-end reads and writes; Later: `Signals::recv` |
@@ -378,9 +378,24 @@ Notes:
   panics when virtual elapsed time exceeds `Duration::MAX -
   Duration::from_secs(946_684_800)`, before recording a clock event. Monotonic
   time and sleeps remain usable through `Duration::MAX`.
-- **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
-  value. Authority is spent at seeding; drawing from a `Pcg64` is
-  authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
+- **RAND-DRAW. Randomness** (v0, planned until bead `fx-qlek.20`'s
+  stage 2; research/53). `Rand`'s draws take `&self`, never suspend, are
+  not checkpoints, and return no error. Each is defined over 64-bit words from its backend: `next_u64()`
+  is one word; `fill_bytes(&mut [u8])` fills the slice (simulated: words
+  little-endian, the last truncated; empty takes none);
+  `random_range(a..b)` or `(a..=b)`, over the integer types up to 64 bits
+  and `usize`/`isize`, is uniform by rejection, never modulo bias: with
+  `s` values, words below `s.wrapping_neg() % s` are redrawn and the
+  result is `low + x % s` (a full 64-bit range takes one word);
+  `random_bool(p)` takes one word `x` and is `x < floor(p * 2^64)`, or
+  `true` for `p == 1.0`; `shuffle(&mut [T])` is Fisher-Yates from the end
+  over `random_range(0..=i)`. An empty range, or `p` outside `[0.0, 1.0]`
+  or NaN, panics before any draw. Real words are Linux `getrandom(2)`
+  output (flags 0, so a draw blocks only before the kernel pool is first
+  initialized), 8 bytes little-endian, read through rustix; an OS error
+  other than `EINTR`, which is retried, panics. No claim is made beyond
+  the OS source's. Simulated draws are §9.3's. `rng() -> Pcg64`, a `Pure`
+  generator seeded by one draw, stays planned (research/53 §6).
 - **Processes.** A child process is not capability-checked, so `Proc` is
   ambient authority for the child: the child runs with at least the
   operating-system authority of the Tide process (more for a setuid
@@ -705,7 +720,7 @@ What replaces each use of global state:
 | a global cache, memo table, or interner | a value owned by the caller and passed by `&mut`; in concurrent code, a `Shared<Cache>` |
 | `#[global_allocator]` | the binary's manifest; allocator thread caches belong to the runtime |
 | per-core counters | `metrics` output (§2.4); a `Shared` or atomic when the program must read the value back |
-| `thread_rng()` | `rand.rng()` once, then pass the `Pcg64` |
+| `thread_rng()` | a `&Rand` parameter: `rand.random_range(a..b)` |
 | a global logger | the sinks (§2.4) |
 | global configuration | a `Pure + Sync` config value built in `main` and passed by reference |
 
@@ -1376,6 +1391,11 @@ is ambient; only names programs, 03 PROC-ONLY)`. A `net` line's `only`
 list names outbound destinations under NET-HOST (§1.1), not data, and its
 hosts are the names `resolve` may look up; without
 `no_bind` the `Net` can still resolve bind names and accept unlisted peers.
+A `rand` line means the item can draw values (unpredictable ones from
+`getrandom`; under simulation, the seed's, which are predictable) and key
+maps with
+`RandomState::from_rand` (Rust's cached OS keys, which may come from
+`/dev/urandom`; research/53 §5), and reaches nothing else.
 `--full` prints every public item's declared and exercised authority.
 
 ### 4.4 `tide fix --thread`
@@ -2244,6 +2264,27 @@ its level; the README's status lists the parts of RUN-3 still missing.
   To `get` by synthetic address, register an HTTP peer at that address.
   Simulated TCP stays loopback-only. One `net.resolve` trace event
   records the checked host and the result.
+- **Simulated draws** (planned with RAND-DRAW; research/53 §§4–5). One
+  `rand` sub-stream per simulation, SplitMix64 from
+  `seed ^ 0x7469_6465_7261_6e64`
+  ("tiderand"), separate from the scheduler, file, net and process
+  streams, so a run that never draws keeps every other stream's draws. A
+  word is one output; the same seed gives the same words, and two seeds
+  differ from the first word. Each `Rand` call, `RandomState::from_rand`
+  included, is one scheduling point with zero latency and no checkpoint,
+  so the seed's interleaving fixes which task takes which word; clones
+  share the stream. Each records one `rand` event with its task,
+  operation, span, words taken, and result (the length for `fill_bytes`
+  and `shuffle`). Draws are a function of the seed and std, which the
+  manifest records (REPLAY-1); they are not injected inputs, and a replay
+  divergence names the first differing event (§9.7). `from_rand` takes two
+  words as a hash-key prefix, so map order varies by seed and replays
+  exactly. A real `Rand` used in a simulation panics, as a real `Fs`
+  does. Separate streams isolate consumption, not information. A simulated
+  Rand word can reveal the seed and permit prediction of other simulator
+  streams. Rand clones share draw position; there is no confidentiality
+  boundary between their users. Simulation is for reproducible exploration,
+  not hiding test decisions from hostile code.
 - Implemented TCP loopback (`sim.net`) has one host, `127.0.0.1`; a `0.0.0.0`
   bind listens there too and reports the wildcard address. Port zero draws an
   unused port in 49152–65535 from a separate net sub-stream. Bind/accept take
@@ -3004,12 +3045,11 @@ fn money_is_conserved(sim: SimRoot) {
         (0..4).map(|_| Shared::new(Account { balance: 100 }, &sim.tasks)).collect();
     sim.tasks.scope(|s| {
         for _ in 0..8 {
-            let mut rng = sim.rand.rng();
-            let accounts = &accounts;
+            let (accounts, rand) = (&accounts, &sim.rand);
             s.spawn(move || {
                 for _ in 0..20 {
-                    let (i, j) = (rng.gen_range(0..4), rng.gen_range(0..4));
-                    let _ = transfer(&accounts[i], &accounts[j], rng.gen_range(0..50));
+                    let (i, j) = (rand.random_range(0..4), rand.random_range(0..4));
+                    let _ = transfer(&accounts[i], &accounts[j], rand.random_range(0..50));
                 }
                 Ok::<(), TaskError>(())
             });

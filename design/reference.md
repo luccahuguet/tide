@@ -337,16 +337,15 @@ do, in every dependency.
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
 | `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get`, `resolve` (6.7); planned: `bind_udp(addr)` | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
-| `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
+| `Rand` (`std::rand`) | planned: `next_u64()`, `fill_bytes(&mut [u8])`, `random_range(a..b)` (integers), `random_bool(p)`, `shuffle(&mut [T])` (companion 22), `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
 | `Proc` (`std::process`) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20); planned: `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
 | `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1); creating synchronization handles (7.4); planned: `fault_point(name) -> bool` (`false` outside simulation, companion 17) | `limit(n) -> Tasks` |
 
 - Capability methods take `&self` (provisional; handles: companion 20).
-  For many draws, `let mut rng = rand.rng();` returns a planned `Pure`
-  `Pcg64` with `&mut self` methods (`next_u64`, `gen_range`, `gen_bool`,
-  `shuffle`); `Pcg64::seed_from_u64(n)` needs no capability.
+  Draws are unbiased; an empty range or `p` outside `[0, 1]` panics. Real
+  ones come from Linux `getrandom`, simulated ones from the seed.
 - Capabilities are not `Copy` or `Pure` (6.6). They are `Clone` (same
   authority; provisional) and `Send + Sync`, so scoped children may borrow
   them. Pass them by reference: `fs: &Fs`.

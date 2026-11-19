@@ -522,6 +522,15 @@ scanning.
   uses the shared resolver. An `only` entry on any port
   permits resolution of its host. A name grant does not grant its
   addresses. See 03 §1.1.
+- **Randomness** (v0; decided 2026-11-19 under the relayed owner decision
+  on bead `fx-qlek.20`, research/53; planned until its stage 2). `Rand` has five draws: `next_u64`,
+  `fill_bytes`, `random_range` (integers, unbiased by rejection),
+  `random_bool` and `shuffle`, named as current Rust `rand` names them.
+  Real draws read Linux `getrandom(2)` and claim nothing beyond it;
+  simulated draws come from the seed's own sub-stream, so a seed replays
+  them exactly. `RandomState::from_rand` works under simulation, keyed from
+  that stream. `rng() -> Pcg64` stays planned: a second generator type
+  whose output stream would be a stability contract (03 RAND-DRAW).
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
