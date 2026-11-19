@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 25,000 tokens, recounted on 2026-11-19 with
+Core count: 24,999 tokens, recounted on 2026-11-19 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
