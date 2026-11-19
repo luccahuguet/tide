@@ -354,14 +354,16 @@ Each path runs the [demo](demo/README.md): a seeded simulation finds a lost
 update in a small concurrent service and replays it twice with identical
 traces, the fixed revision passes the same seeds, and the trust diff shows a
 patch widening the service's interface. The alpha runs on x86_64 Linux; the
-browser and Docker paths provide one. The `github.com/luccahuguet/tide` URLs
-work once the repository is public.
+browser and Docker paths provide one.
 
 1. **In the browser, with nothing installed.**
    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/luccahuguet/tide)
    The codespace builds the repository's
    [dev container](.devcontainer/devcontainer.json), the `Dockerfile`'s dev
-   image. In its terminal, run `nix run .#tide-demo`.
+   image. In its terminal, run `nix run .#tide-demo`. The image has no gdb,
+   so step 5, the replay under a debugger, prints `skipped: no gdb`; the
+   rustup path, on a machine with a gdb built with Python on `PATH`, runs it
+   ([demo/README.md](demo/README.md)).
 2. **With rustup and no Nix.** On x86_64 Linux with rustup 1.28 or later,
    git, and a C toolchain at `/usr/bin/cc` and `/usr/bin/ld`, which Cargo and
    the driver link with (on Debian or Ubuntu, `build-essential`):
@@ -382,7 +384,8 @@ work once the repository is public.
 4. **With Docker, on macOS or Windows:** in a clone,
    `docker build --platform linux/amd64 --target try -t tide-try .`, then
    `docker run --rm --platform linux/amd64 tide-try`
-   ([docs/docker.md](docs/docker.md)).
+   ([docs/docker.md](docs/docker.md)). The image holds no `.git`, so the
+   demo's step 0 prints `revision:  unknown`.
 
 Measured on 2026-11-19 on an x86_64 Linux host with 16 CPUs, over its own
 connection, whose bandwidth was not measured;
@@ -392,12 +395,16 @@ capped at 4 cores and 4 jobs. The rustup, `nix run` and Docker runs used 4
 Cargo jobs, and their containers 4 CPUs; the devcontainer's runtime had no
 CPU or Cargo-job cap. The rustup row used rustup's minimal profile; the
 default profile also installs rust-docs, clippy and rustfmt, which the row
-does not count. Download times depend on the connection, and no download
-volume was measured, so the table gives disk and image sizes:
+does not count. The owner measured the Codespaces row's codespace times
+under the conditions the row gives; of them, only the time to a ready
+codespace is approximate, the owner's estimate. Its devcontainer CLI times
+are from the host above. Download times depend on
+the connection, and no download volume was measured, so the table gives
+disk and image sizes:
 
 | Path | Size | Measured time |
 | --- | --- | --- |
-| Codespaces | nothing on your machine; the codespace builds the 6.09 GB dev image, and the demo's build output, 1.3 GiB under `nix run`, goes to the demo's cache directory in the codespace | not yet measured on Codespaces; the devcontainer CLI built the container from a clean clone in 6 minutes, then `nix run .#tide-demo` took 49 s |
+| Codespaces | nothing on your machine; the codespace builds the 6.09 GB dev image, and the demo's build output, 1.3 GiB under `nix run`, goes to the demo's cache directory in the codespace | in a codespace from the dev container configuration "Tide", on GitHub's default 2-core machine in US East, at revision `d48b1aa`: about 10 minutes (an estimate) from Create to a ready codespace, then `nix run .#tide-demo` timed at 2m13.715s real (about 2 min 14 s), measured by the owner; on the host above, the devcontainer CLI built the container from a clean clone in 6 minutes, then `nix run .#tide-demo` took 49 s |
 | rustup | on disk afterwards: about 1.4 GiB in `~/.rustup` (the pinned nightly with `rustc-dev` and `rust-src`), 83 MiB in `~/.cargo`, and 1.3 GiB of build output in `target/` | 19 s to install the toolchain, then 51 s for the first `cargo run` (16 s once built) |
 | `nix run` | a 2.1 GiB closure in the Nix store, plus 1.3 GiB of build output in the demo's cache | 48 s with the closure already in the store; fetching and building it in an empty store took 80 s |
 | Docker | the try image, 2.42 GB on disk, 769 MB as a gzip-compressed `docker save`; built from a clone, with its build stages left in Docker's build cache ([docs/docker.md](docs/docker.md#measured-times)); the run's build output goes with the container | about 3 minutes to build the image, then 36 s to run |

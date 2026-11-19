@@ -9,7 +9,7 @@ names follow research/35 §4.
 | `packages.tidelang-std` | Tide's std, `lib/deps/libtide_std.rlib`, beside its dependencies and `tide-macros` in the same `lib/deps` |
 | `packages.tide-demo` | A script that runs the [demo](../demo/README.md) (`cargo run -p tide-demo`) from the flake's sources with the dev shell's settings; [Demo](#demo) says where it writes |
 | `apps.tidelang-admit` (`default`) | Runs `tide-admit` |
-| `apps.tide-demo` | Runs `packages.tide-demo`: `nix run .#tide-demo`, or `nix run github:luccahuguet/tide#tide-demo` with no clone once the repository is public |
+| `apps.tide-demo` | Runs `packages.tide-demo`: `nix run .#tide-demo`, or `nix run github:luccahuguet/tide#tide-demo` with no clone |
 | `devShells.default` | The pinned toolchain, cargo included, set up so a driver Cargo builds there gets the packages' sysroot, linker and runtime directories |
 | `checks.link` | In the build sandbox, the driver alone admits, links and runs `examples/contracts/sorted_insert.rs`, and runs its generated contract test through `--tide-run-test` (RUN-3); no executable or shared object it uses names `/usr/bin` |
 
@@ -90,8 +90,12 @@ tests in the flake; `cargo test --workspace` owns them.
 `packages.tide-demo` runs the demo the way the dev shell would: `RUSTC`,
 `TIDE_LINKER_BIN` and `TIDE_RUNTIME_LIB_DIRS` as above, and Cargo with the
 crates `Cargo.lock` names vendored, so it builds offline. Its sources are
-the workspace, `demo/` and `rust-toolchain.toml`, read-only in the store,
-so the demo prints `revision:  unknown`.
+the workspace, `demo/` and `rust-toolchain.toml`, read-only in the store
+and without `.git`, so the app sets `TIDE_REVISION` to the flake's
+revision (`self.rev`, else `self.dirtyRev` for a tree with uncommitted
+changes), which step 0 prints when git cannot name one. A flake read from a
+plain directory has no revision, so the app unsets the variable and the
+demo prints `revision:  unknown`, as in the Docker images.
 
 Where the demo writes: it and its children write under `$CARGO_TARGET_DIR` when it is set, else
 under `$XDG_CACHE_HOME/tide-demo` (by default `~/.cache/tide-demo`). A

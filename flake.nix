@@ -184,7 +184,9 @@
       # holds only what the demo runs, so a rustup elsewhere on the caller's PATH is not taken:
       # of the toolchain, only its cargo component, since RUSTC names the sysroot's rustc, which
       # keeps the closure free of the docs, clippy and rustfmt. Without gdb, the demo skips its
-      # debugger step.
+      # debugger step. demoSrc has no .git, so TIDE_REVISION carries the flake's revision for the
+      # demo's step 0, and is unset when the flake has none (a plain directory, as in Docker).
+      revision = self.rev or self.dirtyRev or null;
       demo = pkgs.writeShellApplication {
         name = "tide-demo";
         text = ''
@@ -199,6 +201,7 @@
           export RUSTC=${sysroot}/bin/rustc
           export TIDE_LINKER_BIN=${linkerBin}
           export TIDE_RUNTIME_LIB_DIRS=${runtimeLibDirs}
+          ${if revision == null then "unset TIDE_REVISION" else "export TIDE_REVISION=${revision}"}
           target="''${CARGO_TARGET_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/tide-demo}"
           case "$target" in
             /*) ;;

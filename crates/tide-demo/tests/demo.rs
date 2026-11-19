@@ -2,12 +2,12 @@
 //! when the fix is missing or the patch under review no longer widens the interface. Each run
 //! works in its own directory under Cargo's test scratch directory, unique to the test process,
 //! and removes it when the case ends, whether it passes, fails, or panics. Four more cases check
-//! step 5's bounded debugger run, and two the toolchain a run without rustup uses, without
-//! building anything.
-use std::path::PathBuf;
-use std::process::Command;
+//! step 5's bounded debugger run, two the toolchain a run without rustup uses, and one the
+//! revision step 0 prints, without building anything.
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-use tide_demo::{Demo, End, Failure, PINNED, Revision, run_bounded};
+use tide_demo::{Demo, End, Failure, PINNED, Revision, run_bounded, source_revision};
 
 /// A case's work directory; dropping it removes the directory.
 struct Work(PathBuf);
@@ -69,6 +69,118 @@ fn a_dropped_widening_fails_step_4() {
         ..demo
     };
     assert_eq!(failed_step(demo), 4);
+}
+
+/// The variables through which [`the_revision_comes_from_git_then_the_recorded_value_then_unknown`]
+/// runs itself again as a caller whose environment routes git to another repository.
+const PROBE_ROOT: &str = "TIDE_DEMO_TEST_REVISION_ROOT";
+const PROBE_HEAD: &str = "TIDE_DEMO_TEST_REVISION_HEAD";
+
+/// Git for the revision test's fixture repositories. It sees none of the caller's environment or
+/// configuration: no `GIT_DIR` or other routing variable, no system or global config, no hooks or
+/// templates. It writes only under `dir`.
+fn git(home: &Path, dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(["-c", "core.hooksPath=/dev/null"])
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {out:?}");
+    String::from_utf8(out.stdout).unwrap().trim().to_owned()
+}
+
+/// A fixture repository `home/name` with one empty commit, and its `HEAD`.
+fn repository(home: &Path, name: &str) -> (PathBuf, String) {
+    let dir = home.join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    git(home, &dir, &["init", "-q", "--template="]);
+    git(home, &dir, &["commit", "-q", "--allow-empty", "-m", name]);
+    let head = git(home, &dir, &["rev-parse", "HEAD"]);
+    (dir, head)
+}
+
+/// The decoy's `HEAD` and every ref, to show that nothing wrote to it.
+fn refs(home: &Path, dir: &Path) -> String {
+    git(home, dir, &["for-each-ref", "--format=%(refname) %(objectname)"])
+        + "\n"
+        + &git(home, dir, &["symbolic-ref", "HEAD"])
+        + "\n"
+        + &git(home, dir, &["rev-parse", "HEAD"])
+}
+
+/// Step 0's revision: git's `HEAD` first, marked when the tree has uncommitted changes or git
+/// cannot tell whether it has, then the flake's recorded revision when git cannot name one (as
+/// for the store copy `nix run` runs from), then `unknown`. Git looks only at the root it is
+/// given, whatever repository the caller's environment routes it to, and the fixture writes only
+/// its own repositories.
+#[test]
+fn the_revision_comes_from_git_then_the_recorded_value_then_unknown() {
+    if let Some(root) = std::env::var_os(PROBE_ROOT) {
+        // The caller's environment routes git to the decoy: the fixture still writes a new
+        // repository of its own, and the query reads each root it is given.
+        let root = PathBuf::from(root);
+        let home = root.parent().unwrap();
+        let (probe, probe_head) = repository(home, "probe");
+        assert_eq!(source_revision(&probe, None), probe_head);
+        let head = std::env::var(PROBE_HEAD).unwrap();
+        assert_eq!(source_revision(&root, None), head);
+        return;
+    }
+    let (_, work) = demo("revision");
+    let home = work.0.as_path();
+    let (checkout, head) = repository(home, "checkout");
+    assert_eq!(source_revision(&checkout, Some("recorded")), head);
+
+    // The fixture and the query from a caller whose environment names another repository, work
+    // tree and an index git cannot read: this test runs itself again with them set, and its probe
+    // above builds a fixture repository and checks both clean `HEAD`s. The other repository's
+    // `HEAD` and refs are unchanged.
+    let (decoy, _) = repository(home, "decoy");
+    let decoy_refs = refs(home, &decoy);
+    let name = "the_revision_comes_from_git_then_the_recorded_value_then_unknown";
+    let probe = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--test-threads=1"])
+        .env(PROBE_ROOT, &checkout)
+        .env(PROBE_HEAD, &head)
+        .env("GIT_DIR", decoy.join(".git"))
+        .env("GIT_WORK_TREE", &decoy)
+        .env("GIT_INDEX_FILE", "/dev/null")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let report = String::from_utf8_lossy(&probe.stdout);
+    assert!(probe.status.success() && report.contains("1 passed"), "{probe:?}");
+    assert_eq!(refs(home, &decoy), decoy_refs);
+
+    // An untracked file is an uncommitted change.
+    std::fs::write(checkout.join("new"), "").unwrap();
+    assert_eq!(
+        source_revision(&checkout, Some("recorded")),
+        format!("{head} (with uncommitted changes)")
+    );
+    // An index git cannot read: `HEAD` still resolves, but status fails, so the revision says
+    // it cannot tell rather than claim a clean tree.
+    std::fs::write(checkout.join(".git/index"), "not an index").unwrap();
+    assert_eq!(
+        source_revision(&checkout, Some("recorded")),
+        format!("{head} (uncommitted changes unknown)")
+    );
+
+    // A directory that does not exist: git fails there whatever repository holds the scratch
+    // directory.
+    let missing = work.0.join("missing");
+    assert_eq!(source_revision(&missing, Some("recorded")), "recorded");
+    assert_eq!(source_revision(&missing, Some("")), "unknown");
+    assert_eq!(source_revision(&missing, None), "unknown");
 }
 
 /// `PINNED`, the identity a run without rustup checks the toolchain on `PATH` against, is the
