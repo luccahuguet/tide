@@ -1,0 +1,92 @@
+fx-zu4f.15 pool selection
+record: research/47-malware-rescreen.md at fc43b37a8852092eecf9fe832e5e06d1a26d10e9
+record SHA-256: 6c6111b7789d0fedd34a4439c403c103b2f8a57442360afe9083660ffc3b896e
+std types looked up at R = 972aba0ee5917a0a70e59f6b2e7429e6e2378e74, under crates/tide-std/src
+
+section 7 rows parsed: 87 (lines 393-479)
+RULING-0039 table-form `?` rows (lines 125-128): chrono_anchor, amaperf
+
+RUSTSEC-2023-0097 lazystatic: not selected
+  evidence: research/47-malware-rescreen.md line 394 (section 7 row); line 613 (section 8 final pass)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate lazystatic, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0098 if-cfg: not selected
+  evidence: research/47-malware-rescreen.md line 395 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete) (access failures: 1)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate if-cfg, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0099 envlogger: not selected
+  evidence: research/47-malware-rescreen.md line 396 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate envlogger, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0100 xrvrv: not selected
+  evidence: research/47-malware-rescreen.md line 397 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate xrvrv, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0101 oncecell: not selected
+  evidence: research/47-malware-rescreen.md line 398 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate oncecell, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0102 serd: not selected
+  evidence: research/47-malware-rescreen.md line 399 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate serd, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2023-0103 postgress: not selected
+  evidence: research/47-malware-rescreen.md line 400 (section 7 row)
+  capability_run: exit 1; E0433 x2 (serde_json, 29:15, 29:35)
+  outcome: not caught (port incomplete)
+  C1 pass (exit 1)
+  C2 FAIL (codes: E0433)
+  C3 not reached
+  C4 not reached
+  C5 pass (crate postgress, incident amaperf: amaperf in the RULING-0039 list)
+RUSTSEC-2026-0039 chrono_anchor: SELECTED
+  evidence: research/47-malware-rescreen.md line 450 (section 7 row); line 618 (section 8 final pass)
+  capability_run: exit 1; E0277 x1 (34:44: `?` cannot convert Cancelled to TaskError)
+  outcome: not caught (port incomplete) (access failures: 3)
+  C1 pass (exit 1)
+  C2 pass (codes: E0277)
+  C3 pass (Cancelled -> TaskError)
+  C4 pass (Cancelled defined at R: crates/tide-std/src/task.rs:1871:pub struct Cancelled;)
+  C5 pass (crate chrono_anchor, incident time-utility: chrono_anchor in the RULING-0039 list)
+
+rows with no failing capability-passing run recorded (C1 fails):
+  76: (empty)
+  2: not run (leg 1 failed)
+  1: not written (capability absent on paper)
+  total 79
+
+selected by the rule: RUSTSEC-2026-0039
+bead-named row RUSTSEC-2026-0039 selected by the rule: yes
+
+POOL (1), in ascending ID order:
+RUSTSEC-2026-0039	chrono_anchor	research/47-malware-rescreen.md line 450

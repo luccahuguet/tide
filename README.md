@@ -63,11 +63,26 @@ handed, and its tests replay a failing run exactly.
    others stay open.
 9. **Evidence, negatives included.** Our pilot and our searches for real bugs
    fixed their methods before looking at results, and published whatever
-   they found. For the pilot and four of the searches, that order rests on
-   our own records (self-attested). The other searches' method files carry
-   an OpenTimestamps proof, a timestamp anchored in a public blockchain,
-   which shows only that each file existed by its attestation time. When
-   those searches examined their candidates still rests on our records. The
+   they found. Our screen of all 87 malicious-crate advisories in RustSec,
+   Rust's public database of security advisories (a malicious crate is a
+   package published to attack its users), caught none of them. Tide's std
+   had a gap, the screen exposed it, we fixed it, and re-tested under a new
+   registration: a method recorded in advance, before the re-test ran
+   ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)). That
+   separate re-test, chosen after the screen had seen its one row, found a
+   catch. Our port (a rewrite in Tide) of that crate is rejected by
+   admission, as it already was in the screen, and a version handed the
+   authority it uses is now admitted. The registration carries an
+   OpenTimestamps proof, a timestamp anchored in a public blockchain, which
+   shows that a file existed by a given time. Every check is consistent
+   with the registration being anchored before the fix landed, and
+   independent proof of that order is not established. The re-test ran
+   admission and type-checking only; no port was executed. For the pilot
+   and four of the searches, the claim that methods were fixed before
+   results were examined rests on our own records (self-attested). The
+   other searches' method files carry an OpenTimestamps proof too, which
+   shows only that each file existed by its attestation time; when those
+   searches examined their candidates still rests on our records. The
    [status page](https://tidelang.com/status/) lists every round with its
    counts and its qualifier.
 <!-- /at-a-glance -->
@@ -85,7 +100,8 @@ The alpha leads with replay and admission:
 
 - **Tests replay.** A test that takes a simulated root (`#[sim_test]`,
   `Root::sim(seed)`) runs under a seeded simulator of tasks, channels,
-  `Shared`, files, TCP loopback, HTTP peers (`world.http`), the clock, the environment and stdin. A run
+  `Shared`, files, TCP loopback, HTTP peers (`world.http`), declared child
+  processes (`sim.world.proc`), the clock, the environment and stdin. A run
   through `tide-admit --tide-run-test` records a manifest, and `--replay`
   reruns it on the same machine and checks that the event and output traces
   are identical, so a concurrency bug in Tide-written logic becomes an
@@ -121,6 +137,62 @@ removed. It shows declared authority only, not what code exercises. The E3
 pilot below tested it as a review aid and gives no evidence that it helps.
 
 ## Evidence
+
+### A malicious crate rejected, then admitted with its authority declared
+
+[research/49](research/49-fx-zu4f.15-chrono-anchor-retest.md) records a
+catch on a separate re-test, not in the screen it re-tests. Our
+pre-registered screen of all 87 malicious-crate advisories in RustSec,
+Rust's public security-advisory database, caught 0 of 87 (tracker issue
+fx-zu4f.8; IDs of this form name issues in the project's tracker;
+[research/47](research/47-malware-rescreen.md)). On the later re-test,
+RUSTSEC-2026-0039, the advisory for `chrono_anchor`, a crate that tried to
+send a project's `.env` files to a server impersonating `timeapi.io`, meets
+the screen's unchanged caught rule. A port is the crate's code rewritten in
+Tide. The rule has two legs:
+
+- **Leg 1: the faithful port is rejected**, as it already was in the
+  screen. A port of the crate's malicious code draws `TD0602` twice, on two `thread::spawn` calls (a Rust thread in
+  place of a task scope), and `TD0501` three times, on two ambient
+  `Command::new` calls and an ambient `thread::sleep`.
+- **Leg 2: the capability-passing port is now admitted.** A port that
+  receives the authority it uses as parameters is admitted with no
+  diagnostic, and its trust artifact declares task authority (`bg`, the
+  task scope it is handed), clock and process authority. This leg is what
+  changed.
+
+How it came about: Tide's std had a gap, the fx-zu4f.8 screen exposed it, we
+fixed it, and re-tested under a new registration. In the screen, the second
+leg failed because the documented idiom `clock.sleep(d)?` did not compile in
+a task body. A std fix (issue fx-qlek.18) added the missing conversion, and
+a re-test (issue fx-zu4f.15) checked the row at the fixed revision with the
+same port files, byte for byte. The fix reverses an earlier removal of the
+same conversion: a review (issue fx-nkv.3) had removed it on purpose,
+because it breaks type inference for an unannotated `tasks.scope(..)?`
+(rustc's `E0283`). The owner's decision of 2026-11-19 reversed that
+removal, and 17 scope sites now name their error type. Every check is
+consistent with the re-test's registration being anchored, by an
+OpenTimestamps proof in a Bitcoin block, before the fix landed, and
+independent proof of that order is not established (research/49 §3).
+
+What it does not show:
+
+- **Not a first-time catch, and not a rate.** The one-row pool was chosen
+  after the screen had seen its rows, the outcome was close to predictable,
+  and the screen's result stays 0 caught of 87.
+- **Admission and type-checking only.** No port was executed.
+- **No judgment of intent.** The admitted port still starts the same
+  processes with the same arguments; what changes is that its authority is
+  declared. The port was written from a public quote of code already known
+  to be malicious.
+
+The other external search rounds (issues fx-zu4f.5 to .7 and .9 to .11)
+caught nothing. Each is a documented negative, except that fx-zu4f.10 keeps
+one unresolved row whose required evidence, an upstream pull-request thread,
+was unavailable (B23.128,
+[research/44](research/44-fx-zu4f.10-concurrency-round.md)). The
+[status page](https://tidelang.com/status/) lists every round with its
+counts and its qualifier.
 
 ### E3: does the trust diff help reviewers? (pre-registered pilot, negative)
 
@@ -201,7 +273,7 @@ run plus admission.
 ### Case studies
 
 [examples/case-studies/](examples/case-studies/) rewrites real projects' bugs
-in Tide. Admission catches none of the bugs.
+in Tide. Admission catches none of these three bugs.
 
 - [eon-discovery-race](examples/case-studies/eon-discovery-race/README.md):
   Tide's admission would not have rejected Eon's bug, a discovery that fails

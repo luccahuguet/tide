@@ -41,11 +41,25 @@ tasks, with this model. What it doesn't, as the report itself says:
 - All four final failures were literal structure-check slips, two per arm,
   not wrong behavior.
 
-### E3: protocol frozen, no data yet
+### E3: run, published, negative
 
 E1 suggests models can write Tide at little extra cost, on small tasks
-with one model. It doesn't show Tide is worth adopting.
-That's E3's job, and the alpha leads with it.
+with one model. It doesn't show Tide is worth adopting. E3 was the first
+test of a benefit, and it found no evidence that the trust diff helps
+reviewers. The alpha therefore leads with replay and admission, and
+presents the trust diff only as a summary of what a change may do (owner
+decision A1, 2026-11-17).
+
+The report's first paragraph, the sentence the protocol required, as
+published in [`trials/e3-pilot/report.md`](../../trials/e3-pilot/report.md):
+
+> In the E3 pilot, Opus and Sol reviewed 12 planted authority-widening changes repeatedly, 6 times per change in each arm. With the trust diff, 66 of 72 review sessions caught the planted widening; with the plain diff, 67 of 72 (ratio 0.99, 95% interval [0.95, 1.00]). This does not meet D0's 1.5x threshold on the point estimate. The interval does not rule out no benefit.
+
+Why the bar couldn't be met: the plain arm caught more than two thirds of
+its plant sessions (67 of 72), and at that rate 1.5 times its catches is
+more than an arm's 72 sessions, so no trust-arm result could have met the
+bar. 11 of the 12 pairs tie at 6 of 6 in both arms. The interval's upper
+end of 1.00 reflects that ceiling, not evidence about harder changes.
 
 In three sentences: twelve small changes each come in two versions, an
 honest one and one that quietly takes extra authority. Fresh AI reviewers
@@ -53,15 +67,14 @@ review every version, both with the trust diff and without it. If reviewers
 with the trust diff catch the sneaky version at least 1.5 times as often,
 D0's bar is met.
 
-E3's pilot protocol landed on 2026-11-17 (bead fx-1vwf.1), before any
-plant existed: [`trials/e3-pilot/protocol.md`](../../trials/e3-pilot/protocol.md).
-It is now frozen: the arms, prompts, budget, models, sample, seed, grading
+How it was set up. E3's pilot protocol landed on 2026-11-17 (bead
+fx-1vwf.1), before any plant existed: [`trials/e3-pilot/protocol.md`](../../trials/e3-pilot/protocol.md).
+It was then frozen: the arms, prompts, budget, models, sample, seed, grading
 rules, threshold and statistics don't change. Before the first review
 session, the only change allowed is one the run can't proceed without,
 recorded on fx-1vwf.3 and drawing on no plant's content; that includes
 fixing the judges' prompt if they fail a control. After the first session
-nothing changes, and a change the run would need voids it. **No review has
-run yet, so E3 has no data.** The design:
+nothing changes, and a change the run would need voids it. The design:
 
 - **Codebase:** about 1,900 lines of Tide that the driver admitted before
   E3 existed (the demo service and E1's reference solutions), so nobody
@@ -157,13 +170,72 @@ Built with the protocol:
   directory's `.claude/settings.json`. The canary runs again before the
   first session and after every breach fix.
 
-Still to come:
+The plants (fx-1vwf.2) were sealed before any review, and fx-1vwf.3 ran
+the controls, the 288 sessions and the judges, graded them, and wrote the
+report. What the report also describes, without testing it: every miss in
+either arm is on one plant, which keeps a writable directory capability
+instead of narrowing it; and the trust arm had 3 false positives, the
+plain arm none. The pilot did not test changes too large to read in full,
+or human reviewers. A follow-up on harder cases, and per-operation file
+authority in the diff, are planned after the alpha.
 
-- **The plants** (fx-1vwf.2, in progress): the 12 pairs, sealed before any
-  review.
-- **The runs, grading and report** (fx-1vwf.3): the controls, the 288
-  sessions (the protocol budgets about 5 to 15 hours, one at a time), the
-  judges, and the published result.
+### Admission on real malicious code: the chrono_anchor re-test
+
+E1 and E3 are trials. The external searches ask something else: does
+Tide catch real bugs, or real malicious code, that someone else found?
+Each search is a tracker issue (fx-zu4f.5 onward). Each fixed its rules
+before it looked (for the earliest rounds, that order rests on our own
+records only; for later rounds, an OpenTimestamps proof shows each method
+file existed by a given time, but when the round looked still rests on our
+records), and most found nothing; the
+[status page](https://tidelang.com/status/) lists every round with its
+counts and its qualifier. One re-test found a catch, recorded in
+[`research/49-fx-zu4f.15-chrono-anchor-retest.md`](../../research/49-fx-zu4f.15-chrono-anchor-retest.md).
+
+- **The screen.** A screen registered in advance (tracker issue
+  fx-zu4f.8) took all 87 malicious-crate advisories in
+  RustSec, Rust's public security-advisory database, and ported each one it
+  could reach into Tide. A row is **caught** when both legs hold: the
+  faithful port of the malicious code draws a `TD` code on an operation such
+  as an ambient process, network or clock call (leg 1), and a version handed
+  the authority it uses as capability parameters is admitted cleanly
+  (leg 2). It caught 0 of 87 ([`research/47`](../../research/47-malware-rescreen.md)).
+- **The gap.** Its nearest miss was `chrono_anchor` (RUSTSEC-2026-0039), a
+  crate that tried to send a project's `.env` files to a server
+  impersonating `timeapi.io`. Leg 1 passed. Leg 2 failed because the
+  documented idiom `clock.sleep(d)?` didn't compile inside a task body.
+  The std had no conversion from a sleep's cancellation error into a
+  task's error, and that was deliberate: an earlier review (fx-nkv.3) had
+  removed the conversion because it breaks type inference for an
+  unannotated `tasks.scope(..)?` (rustc's `E0283`). The owner's decision
+  of 2026-11-19 reversed that removal, at a cost: 17 scope sites now name
+  their error type.
+- **The catch.** Tide's std had a gap, the fx-zu4f.8 screen exposed it, we
+  fixed it (the std fix, issue fx-qlek.18), and re-tested under a new
+  registration (the re-test, issue fx-zu4f.15). At the fixed revision, with the same port files byte for
+  byte, the faithful port draws `TD0602` twice (two `thread::spawn` calls)
+  and `TD0501` three times (two ambient `Command::new` calls and an ambient
+  `thread::sleep`), as it already did in the screen, and the
+  capability-passing version is now admitted with its task authority (`bg`,
+  the task scope it is handed), clock and process authority declared. The test ran admission and
+  type-checking only; no port was executed.
+- **The order.** The re-test's registration has an OpenTimestamps proof in
+  a Bitcoin block. Every check is consistent with that anchoring coming
+  before the fix landed, and independent proof of that order is not
+  established (research/49 §3).
+
+How to say it on a call: "Tide's std had a gap, our screen of all 87
+malicious-crate advisories exposed it, we fixed it, and re-tested under a
+new registration; the faithful port is rejected, and the version that
+declares its authority is now admitted. Every check is consistent with the registration
+being anchored before the fix landed, and independent proof of that order
+is not established. The re-test ran admission and type-checking only; no
+port was executed." Never say Tide caught it the first time, and
+never quote it as a rate: the one-row pool was chosen after the screen had
+seen its rows, the outcome was close to predictable, and the screen's
+result stays 0 caught of 87. Admission also doesn't judge intent: the admitted
+version still starts the same processes; what changes is that its authority
+is declared.
 
 ## Run it
 
@@ -193,8 +265,13 @@ Then read the top of the report, which states the verdict and its limits:
 bash -c 'sed -n "1,45p" trials/e1-checked/gate-report.md'
 ```
 
-E3 has no results to reproduce yet. Read what its protocol says it can
-conclude, and its gate:
+For E3, read the result as published, then what its protocol says it can
+conclude, and its gate. Every number in the report comes from
+`trials/e3-pilot/result.json`:
+
+```sh
+bash -c 'sed -n "1,11p" trials/e3-pilot/report.md'
+```
 
 ```sh
 bash -c 'sed -n "/^## 1\./,/^## 2\./{/^## 2\./!p};/^### 10\.2/,/^### 10\.3/{/^### 10\.3/!p}" trials/e3-pilot/protocol.md'
@@ -206,6 +283,8 @@ bash -c 'sed -n "/^## 1\./,/^## 2\./{/^## 2\./!p};/^### 10\.2/,/^### 10\.3/{/^##
   recomputed from the 120 stored sessions.
 - In the report, the sentence "It is not a confidence-bound claim". That is
   the honest framing to use on a call.
+- In E3's report, "The interval does not rule out no benefit." and "its
+  upper end of 1.00 reflects that ceiling".
 - In E3's section 1, "A met threshold is a result for this setting, not a
   general claim about review with Tide." In 10.2, "This is a point estimate
   on a fixed sample, as E1's gate was."
@@ -218,22 +297,21 @@ bash -c 'sed -n "/^## 1\./,/^## 2\./{/^## 2\./!p};/^### 10\.2/,/^### 10\.3/{/^##
 **Agree with the premise.** E1 is the cost line: switching to Tide costs a
 model little on these tasks. It was never the reason to switch. The reason is
 what Tide gives a reviewer and a tester: authority you can read in a
-signature, replay of concurrency bugs, and the trust diff. E3 is the first
-measurement of that benefit. Half its plants deliberately use mechanisms the
-v0 trust diff isn't expected to show, so the protocol expects any gain to
-come from the other half, and the result is published either way. The bar
-is a point estimate; the report also gives an interval over the 12 changes
-and must say when it doesn't rule out no benefit. Its protocol is frozen,
-but no review has run, so it has no data yet. Don't hint at a result.
+signature, replay of concurrency bugs, and the trust diff. E3 was the first
+measurement of the trust diff's benefit, and it gives no evidence of one:
+66 of 72 catches
+with the trust diff against 67 of 72 without it. Say so plainly, and quote
+the report's first paragraph rather than paraphrasing it.
 
-**If asked "and if E3 fails?":** then the pilot missed its preset 1.5×
-target, and Tide says so, with the actual catch rates, false positives and
-their uncertainty. Missing the target doesn't by itself show there's no
-benefit: a 1.3× improvement misses it, and a small pilot can be
-inconclusive. Report what was measured; don't round it up or down. The other benefits
-(replay, the sandbox, readable authority) stand on their own demos, and the
-diff's planned v1 parts (exercised authority, behavior diffs) are the next
-thing to measure.
+**If asked "so the trust diff failed?":** the pilot missed its preset 1.5×
+target, and Tide says so. It could not have met it: plain review of these
+small changes already caught almost every plant, which left no room to show
+a benefit. That is a limit of the pilot, not evidence about larger changes,
+which it did not test. Tide now presents the trust diff only as a summary
+of what a change may do, with no claim that it improves catching. The other
+benefits (replay, admission, the sandbox, readable authority) stand on their
+own demos, and the chrono_anchor re-test below is admission evidence on
+real malicious code.
 
 **Also be ready for:** "E1 is all-Claude." True: one writer model, and the
 grading chain was Claude-reviewed too. A second writer model is recommended
@@ -252,4 +330,7 @@ agreement by reviewing model.
   `reviews/fx-1vwf.1-*.md` (the reviews it passed before it landed).
 - `br show fx-1vwf` (E3's plan), `br show fx-1vwf.2` (the plants) and
   `br show fx-1vwf.3` (the runs, grading and report).
+- `trials/e3-pilot/report.md` (E3's result, with its limits).
+- `research/49-fx-zu4f.15-chrono-anchor-retest.md` (the re-test and its
+  disclosure) and `research/47-malware-rescreen.md` (the screen it re-tests).
 - `reviews/2026-11-15-achilles-opus.md` W2 (the critique E3 answers).

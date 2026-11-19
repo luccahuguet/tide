@@ -20,23 +20,15 @@ Three words to keep straight:
 | Area | What works | Chapter |
 | --- | --- | --- |
 | Admission | `tide-admit` checks one crate (or a test suite paired with one library) against Tide's std: 57 `TD` codes, the allowlist, the backstop | 2 |
-| Capabilities | `Root`, `Fs`, `Net` (TCP), `Clock`, `Env`, `Stdin`, `Tasks`, attenuation; `Pure` | 1 |
+| Capabilities | `Root`, `Fs`, `Net` (TCP, one HTTP GET, name lookup), `Proc` (`command`), `Clock`, `Env`, `Stdin`, `Tasks`, attenuation; `Pure` | 1 |
 | Soundness routes | `TD0206` closes rust#25860's function-pointer route; `TD0402` closes rust#57893 (red team fx-qlek.5) | 3 |
 | Concurrency | scopes, cancellation, deadlines, channels, `Shared`, `join`, `par_map`, `par_for` | 4 |
 | Contracts | `#[requires]`, `#[ensures]`, `invariant!` as runtime checks and property tests | — |
-| Simulation | `#[sim_test]`, `Root::sim(seed)`: tasks, channels, `Shared`, files, local TCP, clock, env, stdin | 5 |
+| Simulation | `#[sim_test]`, `Root::sim(seed)`: tasks, channels, `Shared`, files, local TCP, HTTP peers, declared child processes, clock, env, stdin | 5 |
 | Replay | `--tide-run-test` with `--seed`, and `--replay` with the identity check; tests, same machine | 6 |
 | Trust diff | `<crate>.interface.json` and `--tide-diff`: declared authority and `unsafe` holes | 7 |
 | Sandbox | RUN-3 for the driver's test runs, with the level reported | 8 |
-| Evidence | the demo (`cargo run -p tide-demo`), E1 passed, the red team (fx-qlek.5), 389 conformance cases | 2, 9 |
-
-### Under way
-
-- **E3**, the review experiment. Its protocol, prompts and review path are
-  frozen, and its isolation canary passed at landing (fx-1vwf.1, with two
-  Claude surfaces unproven); the plants are being written
-  (fx-1vwf.2), and the runs, grading and report follow (fx-1vwf.3). No
-  review has run, so it has no data yet. Chapter 9.
+| Evidence | the demo (`cargo run -p tide-demo`), E1 passed, E3 published (negative), the red team (fx-qlek.5), the chrono_anchor re-test (research/49), 392 conformance cases | 2, 9 |
 
 ### Planned for v0, not built
 
@@ -49,8 +41,9 @@ The biggest gaps (the repository `README.md`'s tier list names them too):
   (D12). Today each check is a full rustc run.
 - **Packages**: `tide.toml`, `tide.lock`, dependencies, per-dependency grants,
   authority policies, sealed interfaces (`tide.seal`).
-- **More of the world**: HTTP, UDP, randomness draws (`Rand` exists with no
-  methods), starting processes (`Proc` exists with no operations).
+- **More of the world**: UDP, randomness draws (`Rand` exists with no
+  methods), and `Proc::exit`. HTTP is one GET, and processes start through
+  `Proc::command`.
 - **More of the simulator**: fault injection, crashes and restarts, nodes, and
   `tide sim` for whole programs.
 - **More of the sandbox and review**: the build sandbox (RUN-2), escaping test
@@ -74,7 +67,7 @@ Count how much of the agent-facing reference is labelled as not built:
 bash -c 'grep -o "(planned)" design/reference.md | wc -l'
 ```
 
-Output: `12`. Each is a place where the reference teaches agents a surface and
+Output: `10`. Each is a place where the reference teaches agents a surface and
 labels it **(planned)**, so they don't assume it exists.
 
 List the v0 gaps that the claims audit (fx-p44q) filed as beads:
@@ -83,7 +76,7 @@ List the v0 gaps that the claims audit (fx-p44q) filed as beads:
 br list --label v0-gap
 ```
 
-Output (13 beads; `❄` means deferred, scheduled after the alpha):
+Output (11 beads; `❄` means deferred, scheduled after the alpha):
 
 ```text
 ❄ fx-2hr5 [● P3] [task] - The blocking runtime and `[bin] runtime`
@@ -91,15 +84,16 @@ Output (13 beads; `❄` means deferred, scheduled after the alpha):
 ❄ fx-m6mk [● P3] [task] - `Secret<T>`, `std::trace::span`, and the `log::`/`tracing::` prefixed log macros
 ❄ fx-8cpg [● P3] [task] - Atomics through `&Tasks`, and `std::sync::raw`
 ❄ fx-x78i [● P3] [task] - Contracts and grants in the trust artifact and `--tide-diff`
-❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `TD0516`)
+❄ fx-muza [● P3] [task] - Authority policies (`[[policy]]`, `FX0516`)
 ❄ fx-x2oo [● P3] [task] - Packages: Tide dependencies, per-dependency grants, and `tide.lock`
 ❄ fx-a9oh [● P3] [task] - The `tide` CLI over the driver: `check`, `test`, `sim`, with NDJSON diagnostics and fix plans
 ❄ fx-djwo [● P3] [task] - Simulator faults and crashable nodes: `sim.faults`, `sim.node`, crash and restart, `Tasks::fault_point`
 ❄ fx-tl1u [● P3] [task] - Real `Proc` backend: `command`, `exit`, `only`, process handles (companion 20)
 ❄ fx-9bzp [● P3] [task] - `Rand` draws and `Pcg64`
-❄ fx-6d50 [● P3] [task] - UDP and name resolution for `Net`: `bind_udp`, `UdpSocket`, `Net::resolve`
-❄ fx-ff13 [● P3] [task] - HTTP for `Net`: `Net::get`, `NetError`, `Url`, and simulated HTTP peers
 ```
+
+The bead titles are as filed: fx-tl1u's `command` and `only` have landed
+(fx-ayh2.1), and fx-muza's code is spelled in the older `FX` form.
 
 And check what commands exist:
 
@@ -146,9 +140,10 @@ bash -c 'sed -n "1,60p" reviews/fx-p44q-audit.md'
 This is the adversarial review's top finding (Achilles W1). It is the strongest
 critique of Tide. Concede what's true, then answer.
 
-**True today:** the driver admits one crate with no dependencies, and std has
-no TLS, HTTP, processes, or Unix sockets yet. "In any dependency" holds only
-because there are none. The README was reworded to say so (fx-p44q).
+**True today:** the driver admits one crate with no dependencies. The std
+has grown: one HTTP GET with TLS, name lookup, and starting processes landed
+for the alpha, but there is no UDP and no Unix sockets. "In any dependency"
+holds only because there are none. The README was reworded to say so (fx-p44q).
 
 **The answer:**
 
@@ -165,10 +160,11 @@ because there are none. The README was reworded to say so (fx-p44q).
 3. **Tide's bet**, a hypothesis: much of the risk in agent-written code is in
    its own logic, the Tide-written part. Achilles W1's Eon example shows
    that's not yet true for process-heavy programs (Eon's lifecycle races need
-   processes and terminals, which v0 can't express), which is why point 4
-   sets the priority.
+   processes and terminals; v0 now starts processes but has no terminals or
+   signals), which is why point 4 sets the priority.
 4. **What the critic gets right** sets the priorities: the effect surface
-   (TLS, processes, Unix sockets) should come ahead of later-tier language
+   (processes and HTTP landed for the alpha; UDP and Unix sockets remain)
+   should come ahead of later-tier language
    features, and a coverage audit of three real programs should decide it.
    That's an owner's scope call.
 

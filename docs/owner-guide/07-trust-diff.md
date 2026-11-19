@@ -164,12 +164,15 @@ widening needs a human".
 - Contracts, grants, and approvals in the diff are planned. Today the diff is
   a precursor to `tide review`, which doesn't exist yet.
 
-**Whether it helps reviewers is an experiment, not a claim.** E3 (chapter 9)
-will measure it: its protocol is frozen, and it has no data yet. Half of its
-planted changes deliberately use mechanisms the v0 diff can't see. D0's bar:
-reviewers with the trust diff catch the planted widening in at least 1.5
-times as many review sessions as reviewers given the same change without it.
-The alpha publishes the result, met or not.
+**Whether it helps reviewers was an experiment, and the pilot was
+negative.** E3 (chapter 9) asked whether reviewers with the trust diff catch
+planted widening in at least 1.5 times as many review sessions as reviewers
+given the same change without it, D0's bar. Half of its planted changes
+deliberately used mechanisms the v0 diff can't see. Reviewers caught 66 of
+72 plant sessions with the trust diff and 67 of 72 without it: no evidence
+that it helps, on small changes that plain review already caught almost
+every time. So present the trust diff as a summary of what a change may do,
+never as something that makes reviewers catch more.
 
 ## Going deeper
 
