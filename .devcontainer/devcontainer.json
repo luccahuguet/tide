@@ -1,0 +1,12 @@
+// GitHub Codespaces and other dev-container tools: the Dockerfile's dev image, Nix with the
+// flake's driver, demo and dev shell already built (docs/docker.md). In the container's
+// terminal, `nix run .#tide-demo` runs the demo.
+{
+  "name": "Tide",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "target": "dev"
+  },
+  "remoteUser": "ubuntu"
+}

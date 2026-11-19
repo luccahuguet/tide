@@ -37,7 +37,9 @@ needs:
   toolchain and Nix's linker. When `PATH` has no rustup, the demo checks that
   the rustc (`$RUSTC`, else `rustc` on `PATH`) and the cargo on `PATH` report
   the pinned toolchain's release and commit hashes, and fails if either does
-  not; its builds then run that cargo with `RUSTC` set to that rustc;
+  not; its builds then run that cargo with `RUSTC` set to that rustc.
+  `nix run .#tide-demo` runs the demo in that environment with nothing
+  else installed ([docs/nix.md](../docs/nix.md#demo));
 - `git`, to apply the demo's patches;
 - for step 5 only, a gdb built with Python: `$RUST_GDB`, else `gdb` on
   `PATH`. Without one, or when the gdb on `PATH` cannot run Python, step 5

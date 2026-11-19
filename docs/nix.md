@@ -7,7 +7,9 @@ names follow research/35 §4.
 | --- | --- |
 | `packages.tidelang-admit` (`default`) | The `tide-admit` driver, built with the pinned nightly, with Nix's C toolchain as its linker and `tidelang-std` as its default std |
 | `packages.tidelang-std` | Tide's std, `lib/deps/libtide_std.rlib`, beside its dependencies and `tide-macros` in the same `lib/deps` |
+| `packages.tide-demo` | A script that runs the [demo](../demo/README.md) (`cargo run -p tide-demo`) from the flake's sources with the dev shell's settings; [Demo](#demo) says where it writes |
 | `apps.tidelang-admit` (`default`) | Runs `tide-admit` |
+| `apps.tide-demo` | Runs `packages.tide-demo`: `nix run .#tide-demo`, or `nix run github:luccahuguet/tide#tide-demo` with no clone once the repository is public |
 | `devShells.default` | The pinned toolchain, cargo included, set up so a driver Cargo builds there gets the packages' sysroot, linker and runtime directories |
 | `checks.link` | In the build sandbox, the driver alone admits, links and runs `examples/contracts/sorted_insert.rs`, and runs its generated contract test through `--tide-run-test` (RUN-3); no executable or shared object it uses names `/usr/bin` |
 
@@ -83,13 +85,43 @@ build, the driver's tests and the conformance corpus use, and is not
 stripped. The driver is built with `--release`. Neither package runs its
 tests in the flake; `cargo test --workspace` owns them.
 
+## Demo
+
+`packages.tide-demo` runs the demo the way the dev shell would: `RUSTC`,
+`TIDE_LINKER_BIN` and `TIDE_RUNTIME_LIB_DIRS` as above, and Cargo with the
+crates `Cargo.lock` names vendored, so it builds offline. Its sources are
+the workspace, `demo/` and `rust-toolchain.toml`, read-only in the store,
+so the demo prints `revision:  unknown`.
+
+Where the demo writes: it and its children write under `$CARGO_TARGET_DIR` when it is set, else
+under `$XDG_CACHE_HOME/tide-demo` (by default `~/.cache/tide-demo`). A
+relative `CARGO_TARGET_DIR` is taken from the directory the demo was
+started in, as Cargo takes it. The target's `tide-demo-home/` holds their
+Cargo home and temporary directory (`CARGO_HOME`, `TMPDIR`), so a caller's
+`~/.cargo` and the configuration files in it are neither read nor
+written; Cargo's environment configuration, such as `RUSTFLAGS` and
+`CARGO_*` variables, still applies. The one exception is the C linker's
+temporary files when the driver links: the driver starts its compiler with
+an empty environment, so they go to `/tmp`. With a read-only root
+filesystem, the target and a writable `/tmp` are all the demo needs.
+Nix's own writes while it fetches or builds the app, to the store and its
+cache, are Nix's, not the demo's.
+
+Its `PATH` holds only Cargo, the C toolchain, git and coreutils, and
+replaces the caller's, so a rustup there is not used. Of the toolchain,
+only its cargo component (`toolchain.availableComponents.cargo`) is on
+`PATH`, since `RUSTC` names the sysroot's rustc, which keeps the docs,
+clippy and rustfmt out of its 2.1 GiB closure (4.3 GiB with the joined
+toolchain on `PATH`). Without gdb, the demo skips its debugger step.
+
 ## Inputs (AP-DEPENDENCY-001)
 
 **nixpkgs** `567a49d1913c` (2026-06-16), Eon's pin.
 
 - Capability: `stdenv` (the GCC cc wrapper, binutils, glibc) for linking,
   and `makeRustPlatform`'s `importCargoLock` and `cargoSetupHook`, which
-  vendor `Cargo.lock`'s crates for an offline Cargo build.
+  vendor `Cargo.lock`'s crates for an offline Cargo build; for the demo's
+  script, `writeShellApplication`, `gitMinimal` and coreutils.
 - Alternatives: a newer nixpkgs gains nothing the build uses. Sharing
   Eon's pin keeps one C toolchain in the store for both projects.
 

@@ -154,10 +154,69 @@
       };
 
       tide-admit = lib.getExe' tidelang-admit "tide-admit";
+
+      # The demo's sources, as a clone has them: the workspace, the demo's service and patches,
+      # and the toolchain pin the demo reads, with Cargo pointed at the vendored dependencies so
+      # its builds run offline.
+      demoSrc = pkgs.runCommand "tide-demo-src" { } ''
+        cp -r ${
+          lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./crates
+              ./demo
+              ./rust-toolchain.toml
+            ];
+          }
+        } $out
+        chmod u+w $out
+        mkdir $out/.cargo
+        # The config names the vendored crates `cargo-vendor-dir`, relative to the sources.
+        cp ${cargoDeps}/.cargo/config.toml $out/.cargo/config.toml
+        ln -s ${cargoDeps} $out/cargo-vendor-dir
+      '';
+
+      # `nix run .#tide-demo`: README's `cargo run -p tide-demo`, in the dev shell's environment,
+      # from the read-only sources, writing under $CARGO_TARGET_DIR with its Cargo home and
+      # temporary directory there; docs/nix.md's Demo section states the write boundary. PATH
+      # holds only what the demo runs, so a rustup elsewhere on the caller's PATH is not taken:
+      # of the toolchain, only its cargo component, since RUSTC names the sysroot's rustc, which
+      # keeps the closure free of the docs, clippy and rustfmt. Without gdb, the demo skips its
+      # debugger step.
+      demo = pkgs.writeShellApplication {
+        name = "tide-demo";
+        text = ''
+          export PATH=${
+            lib.makeBinPath [
+              toolchain.availableComponents.cargo
+              pkgs.stdenv.cc
+              pkgs.gitMinimal
+              pkgs.coreutils
+            ]
+          }
+          export RUSTC=${sysroot}/bin/rustc
+          export TIDE_LINKER_BIN=${linkerBin}
+          export TIDE_RUNTIME_LIB_DIRS=${runtimeLibDirs}
+          target="''${CARGO_TARGET_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/tide-demo}"
+          case "$target" in
+            /*) ;;
+            *) target="$PWD/$target" ;;
+          esac
+          export CARGO_TARGET_DIR="$target"
+          export CARGO_HOME="$target/tide-demo-home/cargo"
+          export TMPDIR="$target/tide-demo-home/tmp"
+          mkdir -p "$CARGO_HOME" "$TMPDIR"
+          cd ${demoSrc}
+          exec cargo run --offline --locked -p tide-demo
+        '';
+      };
     in
     {
       packages.${system} = {
         inherit tidelang-admit tidelang-std;
+        tide-demo = demo;
         default = tidelang-admit;
       };
 
@@ -166,6 +225,11 @@
           type = "app";
           program = tide-admit;
           meta.description = "Tide's admission driver, with Tide's std built in";
+        };
+        tide-demo = {
+          type = "app";
+          program = lib.getExe demo;
+          meta.description = "Tide's demo: a lost update found by seed, replayed, and a widened interface";
         };
         default = tidelang-admit;
       };

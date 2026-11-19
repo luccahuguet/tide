@@ -302,6 +302,60 @@ with `TD0501` for reaching for the file system without an `Fs`.
 
 ## Try it
 
+Each path runs the [demo](demo/README.md): a seeded simulation finds a lost
+update in a small concurrent service and replays it twice with identical
+traces, the fixed revision passes the same seeds, and the trust diff shows a
+patch widening the service's interface. The alpha runs on x86_64 Linux; the
+browser and Docker paths provide one. The `github.com/luccahuguet/tide` URLs
+work once the repository is public.
+
+1. **In the browser, with nothing installed.**
+   [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/luccahuguet/tide)
+   The codespace builds the repository's
+   [dev container](.devcontainer/devcontainer.json), the `Dockerfile`'s dev
+   image. In its terminal, run `nix run .#tide-demo`.
+2. **With rustup and no Nix.** On x86_64 Linux with rustup 1.28 or later,
+   git, and a C toolchain at `/usr/bin/cc` and `/usr/bin/ld`, which Cargo and
+   the driver link with (on Debian or Ubuntu, `build-essential`):
+
+   ```sh
+   git clone https://github.com/luccahuguet/tide && cd tide
+   # The nightly rust-toolchain.toml pins, with rustc-dev and rust-src. A rustup
+   # older than 1.28 installs it at the first cargo run, so skip this line there.
+   rustup toolchain install
+   cargo run -p tide-demo
+   ```
+
+3. **With Nix and no clone:** `nix run github:luccahuguet/tide#tide-demo`
+   (add `--extra-experimental-features 'nix-command flakes'` unless both are
+   enabled). It needs no rustup and no system C compiler. The demo writes
+   under its own cache directory, or `$CARGO_TARGET_DIR` when set
+   ([docs/nix.md](docs/nix.md#demo) says where and gives the exceptions).
+4. **With Docker, on macOS or Windows:** in a clone,
+   `docker build --platform linux/amd64 --target try -t tide-try .`, then
+   `docker run --rm --platform linux/amd64 tide-try`
+   ([docs/docker.md](docs/docker.md)).
+
+Measured on 2026-11-19 on an x86_64 Linux host with 16 CPUs, over its own
+connection, whose bandwidth was not measured;
+[reviews/fx-qlek.7-s3-measurements.md](reviews/fx-qlek.7-s3-measurements.md)
+gives the conditions and the log lines behind each number. Nix builds were
+capped at 4 cores and 4 jobs. The rustup, `nix run` and Docker runs used 4
+Cargo jobs, and their containers 4 CPUs; the devcontainer's runtime had no
+CPU or Cargo-job cap. The rustup row used rustup's minimal profile; the
+default profile also installs rust-docs, clippy and rustfmt, which the row
+does not count. Download times depend on the connection, and no download
+volume was measured, so the table gives disk and image sizes:
+
+| Path | Size | Measured time |
+| --- | --- | --- |
+| Codespaces | nothing on your machine; the codespace builds the 6.09 GB dev image, and the demo's build output, 1.3 GiB under `nix run`, goes to the demo's cache directory in the codespace | not yet measured on Codespaces; the devcontainer CLI built the container from a clean clone in 6 minutes, then `nix run .#tide-demo` took 49 s |
+| rustup | on disk afterwards: about 1.4 GiB in `~/.rustup` (the pinned nightly with `rustc-dev` and `rust-src`), 83 MiB in `~/.cargo`, and 1.3 GiB of build output in `target/` | 19 s to install the toolchain, then 51 s for the first `cargo run` (16 s once built) |
+| `nix run` | a 2.1 GiB closure in the Nix store, plus 1.3 GiB of build output in the demo's cache | 48 s with the closure already in the store; fetching and building it in an empty store took 80 s |
+| Docker | the try image, 2.42 GB on disk, 769 MB as a gzip-compressed `docker save`; built from a clone, with its build stages left in Docker's build cache ([docs/docker.md](docs/docker.md#measured-times)); the run's build output goes with the container | about 3 minutes to build the image, then 36 s to run |
+
+### Install the driver
+
 On x86_64 Linux, [docs/install.md](docs/install.md) installs the driver
 through the repository's Nix flake, with no rustup and no system C compiler,
 and explains each step. It needs `curl`, `xz` and `git`, about 10 GB of
@@ -327,9 +381,9 @@ result/bin/tide-admit --test --emit=link --crate-name=sorted_insert \
 
 The example prints `[3, 7, 9, 14, 20]`, and its test, generated from the
 function's contract, passes in the kernel sandbox. On macOS or Windows,
-[docs/docker.md](docs/docker.md) runs the same route in a Linux container.
+[docs/docker.md](docs/docker.md)'s dev image runs the same route in a Linux
+container.
 
-The [demo](demo/README.md) shows replay and the trust diff end to end,
 [docs/debugging.md](docs/debugging.md) covers replays under a debugger, and
 the [owner's guide](docs/owner-guide/README.md) walks through each feature
 with runnable commands.
@@ -405,7 +459,7 @@ kernel lacks, in which case the run continues under what remains.
 
 - **Observed `full` on Linux only**: on an x86_64 host (Linux 7.2.6, Landlock
   ABI 10) and in the clean container of the install check (fx-qlek.1,
-  [docs/install.md](docs/install.md)), and in the Docker image under Docker's
+  [docs/install.md](docs/install.md)), and in the Docker dev image under Docker's
   default seccomp profile on that host (fx-qlek.2,
   [docs/docker.md](docs/docker.md)). No macOS or Windows run has been
   observed; there the level depends on the kernel of Docker's Linux VM.
