@@ -6,7 +6,7 @@ use std::task::{TaskError, Tasks};
 pub fn run(tasks: &Tasks) -> Result<u64, TaskError> {
     let mut total = 0u64;
     let mut items = vec![1u64, 2, 3];
-    let sum = tasks.scope(|s| {
+    let sum = tasks.scope::<_, TaskError, _>(|s| {
         let a = s.spawn(|| Ok(items.iter().sum::<u64>()));
         let b = s.spawn(|| {
             total += 1;

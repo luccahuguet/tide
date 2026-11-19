@@ -4,8 +4,8 @@ use std::io;
 use std::task::{Cancelled, TaskError, Tasks};
 
 fn cancellation(tasks: &Tasks) -> Result<(), TaskError> {
-    tasks.checkpoint().map_err(|_| TaskError::Cancelled)?;
-    tasks.yield_now().map_err(|_| TaskError::Cancelled)?;
+    tasks.checkpoint()?;
+    tasks.yield_now()?;
     let value = tasks.scope(|s| -> Result<_, TaskError> {
         let ready = s.spawn(|| Ok(7));
         s.cancel();
@@ -14,7 +14,8 @@ fn cancellation(tasks: &Tasks) -> Result<(), TaskError> {
             let e: io::Error = tasks.checkpoint().unwrap_err().into();
             assert!(e.is_cancelled());
             assert_eq!(e.kind(), io::ErrorKind::Cancelled);
-            let _: Cancelled = tasks.yield_now().unwrap_err();
+            let cancelled: Cancelled = tasks.yield_now().unwrap_err();
+            assert!(cancelled.is_cancelled());
         }
         assert_eq!(ready.join()?, 7);
         s.spawn(|| {
@@ -27,7 +28,7 @@ fn cancellation(tasks: &Tasks) -> Result<(), TaskError> {
         .join()
     })?;
     assert_eq!(value, 9);
-    tasks.checkpoint().map_err(|_| TaskError::Cancelled)?;
+    tasks.checkpoint()?;
 
     let failed: Result<(), TaskError> = tasks.scope(|s| {
         let first = s.spawn(|| Err::<(), _>(TaskError::DeadlineExceeded));
@@ -35,7 +36,7 @@ fn cancellation(tasks: &Tasks) -> Result<(), TaskError> {
         // Without observing a checkpoint this is independent, despite cancellation.
         let second = s.spawn(|| Err::<(), _>(TaskError::Cancelled));
         let echo = s.spawn(|| {
-            tasks.checkpoint().map_err(|_| TaskError::Cancelled)?;
+            tasks.checkpoint()?;
             Ok(())
         });
         assert_eq!(second.join(), Err(TaskError::Cancelled));
@@ -43,7 +44,7 @@ fn cancellation(tasks: &Tasks) -> Result<(), TaskError> {
         Ok(())
     });
     assert_eq!(failed, Err(TaskError::DeadlineExceeded));
-    tasks.yield_now().map_err(|_| TaskError::Cancelled)?;
+    tasks.yield_now()?;
     Ok(())
 }
 

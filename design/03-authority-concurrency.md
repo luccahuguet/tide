@@ -1514,6 +1514,18 @@ pub enum TaskError { Cancelled, DeadlineExceeded }
 pub struct Panicked { pub message: String }   // provisional
 ```
 
+The `Cancelled` a checkpoint returns (its `is_cancelled()` is always
+true, §1.1) converts into `TaskError::Cancelled` and into an `io::Error` of
+kind `Cancelled`, so `clock.sleep(d)?` works in a function whose error is
+`TaskError`, `io::Error`, or a boxed error, and in a task body whose scope
+error is `TaskError` or `Box<dyn Error + Send + Sync>` (the scope requires
+`E: From<TaskError> + Send`). `?` makes one conversion: in a scope whose
+error is your own enum, write `clock.sleep(d).map_err(TaskError::from)?`, and
+cancellation arrives through its `#[from] TaskError` variant. Since `?` can
+reach `TaskError` from two types, a `?` whose error type nothing else fixes,
+such as `tasks.scope(..)?`, needs that type named:
+`tasks.scope::<_, TaskError, _>(..)?`.
+
 Children may borrow anything that outlives the `scope` call. A scope passed
 down (`fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`) takes children
 that own their data or borrow what the signature ties to it. A child's panic propagates (TASK-1), so

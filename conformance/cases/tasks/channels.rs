@@ -40,7 +40,7 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
     tx.try_send(21).unwrap();
     assert_eq!(tx.try_send(22), Err(TrySendError::Full(22)));
     let copy = tx.clone();
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.spawn(move || {
             copy.send(22).unwrap();
             Ok(())
@@ -68,7 +68,7 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
 
     let (tx, rx) = sync_channel(0, tasks);
     assert_eq!(tx.try_send(31), Err(TrySendError::Full(31)));
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.spawn(move || {
             tx.send(32).unwrap();
             tx.send(33).unwrap();
@@ -84,7 +84,7 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
 
     let (tx, rx) = sync_channel(1, tasks);
     tx.send(41).unwrap();
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.cancel();
         assert_eq!(rx.recv(), Err(RecvError::Cancelled));
         assert_eq!(
@@ -105,19 +105,19 @@ fn exercise(tasks: &Tasks, clock: &Clock) -> Result<(), TaskError> {
     })?;
 
     // Deadlines cancel blocked send and receive operations through the shared wait primitive.
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.set_deadline(clock.now() + Duration::from_millis(1));
         assert_eq!(rx.recv(), Err(RecvError::Cancelled));
         Ok(())
     })?;
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         let at = clock.now() + Duration::from_millis(1);
         s.set_deadline(at);
         assert_eq!(rx.recv_deadline(at), Err(RecvTimeoutError::Cancelled));
         Ok(())
     })?;
     tx.send(51).unwrap();
-    tasks.scope(|s| {
+    tasks.scope::<_, TaskError, _>(|s| {
         s.set_deadline(clock.now() + Duration::from_millis(1));
         assert_eq!(tx.send(52), Err(SendError::Cancelled(52)));
         Ok(())
