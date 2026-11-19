@@ -1,0 +1,22 @@
+{
+  "name": "tide-paper-figures",
+  "private": true,
+  "type": "module",
+  "description": "Static SVG figures for paper/tide-v0.typ, generated from committed records.",
+  "scripts": {
+    "build": "cd ../.. && node paper/figures/build.mjs",
+    "check": "cd ../.. && node paper/figures/build.mjs --check"
+  },
+  "dependencies": {
+    "d3-scale": "4.0.2"
+  },
+  "overrides": {
+    "d3-array": "3.2.4",
+    "d3-color": "3.1.0",
+    "d3-format": "3.1.0",
+    "d3-interpolate": "3.0.1",
+    "d3-time": "3.1.0",
+    "d3-time-format": "4.1.0",
+    "internmap": "2.0.3"
+  }
+}

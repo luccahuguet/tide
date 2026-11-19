@@ -1,0 +1,36 @@
+{
+  "source": "paper/figures/records/demo-run.txt",
+  "seeds": 16,
+  "buggy_failing": [
+    0,
+    2,
+    4,
+    8,
+    9,
+    10,
+    12,
+    14
+  ],
+  "fixed_failing": [],
+  "recorded_seed": 0,
+  "runs": [
+    {
+      "run": "recording",
+      "events": 40,
+      "event_trace": "9d66e1613fc69090",
+      "output_trace": "db1996770f19511f"
+    },
+    {
+      "run": "replay-1",
+      "events": 40,
+      "event_trace": "9d66e1613fc69090",
+      "output_trace": "db1996770f19511f"
+    },
+    {
+      "run": "replay-2",
+      "events": 40,
+      "event_trace": "9d66e1613fc69090",
+      "output_trace": "db1996770f19511f"
+    }
+  ]
+}

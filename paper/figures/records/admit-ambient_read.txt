@@ -1,0 +1,8 @@
+# commit: a913f46ead5d5bd4d432a82f554fedb4809b2e83 (tree clean)
+# command: tide-admit --tide-std $TARGET/debug/libtide_std.rlib --tide-dep-dir <each library directory of the demo's build> --crate-type=lib --emit=metadata --out-dir <dir> examples/capabilities/ambient_read.rs
+# normalization: the worktree's absolute path prefix is dropped, so paths are repository-relative; the last line is the exit status
+
+examples/capabilities/ambient_read.rs:20:21: error[E0425]: cannot find function `read_to_string` in module `std::fs`: not found in `std::fs`
+examples/capabilities/ambient_read.rs:20:12: error: TD0501: `std::fs::read_to_string` is not admitted
+error: aborting due to 2 previous errors
+exit 1

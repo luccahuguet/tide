@@ -1,0 +1,13 @@
+{
+  "source": "trials/e3-pilot/result.json",
+  "S": 72,
+  "K_T": 66,
+  "K_P": 67,
+  "ratio": 0.9850746268656716,
+  "interval": [
+    0.9473684210526315,
+    1
+  ],
+  "threshold": 1.5,
+  "gate": "not met"
+}

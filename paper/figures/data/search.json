@@ -1,0 +1,206 @@
+[
+  {
+    "round": "fx-zu4f.15",
+    "record": "research/49-fx-zu4f.15-chrono-anchor-retest.md",
+    "catch": true,
+    "note": "Pool chosen after fx-zu4f.8's screen had seen the row; admission and type-checking only, no port executed",
+    "pool": {
+      "n": 1,
+      "unit": "row"
+    },
+    "screened": {
+      "n": 1,
+      "unit": "row"
+    },
+    "eligible": {
+      "n": 1,
+      "unit": ""
+    },
+    "caught": {
+      "n": 1,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.8",
+    "record": "research/47-malware-rescreen.md",
+    "catch": false,
+    "pool": {
+      "n": 87,
+      "unit": "advisories"
+    },
+    "screened": {
+      "n": 87,
+      "unit": "advisories"
+    },
+    "eligible": null,
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.5",
+    "record": "research/37-external-admission-search.md",
+    "catch": false,
+    "pool": {
+      "n": 147,
+      "unit": "= 87 advisories + 60 results"
+    },
+    "screened": {
+      "n": 87,
+      "unit": "advisories"
+    },
+    "eligible": null,
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.6",
+    "record": "research/38-external-concurrency-search.md",
+    "catch": false,
+    "pool": {
+      "n": 160,
+      "unit": "results"
+    },
+    "screened": {
+      "n": 32,
+      "unit": "issues"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": ""
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.7",
+    "record": "research/39-std-concurrency-search.md",
+    "catch": false,
+    "pool": {
+      "n": 162,
+      "unit": "issues"
+    },
+    "screened": {
+      "n": 119,
+      "unit": "issues"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": ""
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.9",
+    "record": "research/41-qin-dataset-search.md",
+    "catch": false,
+    "pool": {
+      "n": 100,
+      "unit": "bugs"
+    },
+    "screened": {
+      "n": 100,
+      "unit": "bugs"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": ""
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.10",
+    "record": "research/44-fx-zu4f.10-concurrency-round.md",
+    "catch": false,
+    "pool": {
+      "n": 24,
+      "unit": "crates"
+    },
+    "screened": {
+      "n": 5076,
+      "unit": "rows; 10 crates' cores"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": "(1 unresolved)"
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.11",
+    "record": "research/46-fx-zu4f.11-agent-marker-round.md",
+    "catch": false,
+    "pool": {
+      "n": 7,
+      "unit": "repositories"
+    },
+    "screened": {
+      "n": 42,
+      "unit": "candidates; 7 cores"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": ""
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.12",
+    "record": "research/52-fx-zu4f.12-crypto-crates-round.md",
+    "catch": false,
+    "pool": {
+      "n": 30,
+      "unit": "crates"
+    },
+    "screened": {
+      "n": 9,
+      "unit": "fix candidates; 430 property rows"
+    },
+    "eligible": {
+      "n": 0,
+      "unit": "(47 modeled)"
+    },
+    "caught": {
+      "n": 0,
+      "unit": ""
+    }
+  },
+  {
+    "round": "fx-zu4f.13",
+    "record": "research/51-fx-zu4f.13-landed-capability-rescreen.md",
+    "catch": false,
+    "same_catch_as": "fx-zu4f.15",
+    "note": "Pool chosen after its rows were seen; its one catch is fx-zu4f.15's, counted once",
+    "pool": {
+      "n": 4,
+      "unit": "rows"
+    },
+    "screened": {
+      "n": 4,
+      "unit": "rows"
+    },
+    "eligible": null,
+    "caught": {
+      "n": 1,
+      "unit": "(fx-zu4f.15's)"
+    }
+  }
+]

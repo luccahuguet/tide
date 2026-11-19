@@ -1,0 +1,6 @@
+-pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError> {
++pub fn serve(tasks: &Tasks, metrics: &Net, load: &Load) -> Result<u64, ServeError> {
+declared authority (no exercised authority, effects, or proof status)
+  + <hits::ServeError as core::convert::From<tide_std::io::Error>>::from (associated function)
+  ~ hits::serve (function) widened
+      + metrics: net

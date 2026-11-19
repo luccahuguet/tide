@@ -1,0 +1,25 @@
+{
+  "format": "tide-replay/2",
+  "test": "every_view_is_counted",
+  "seed": "0",
+  "build": {
+    "source": {
+      "file:hits_sim.rs": "hits_sim.rs:61f8059e537c60b5…"
+    },
+    "library": {
+      "file:hits.rs": "hits.rs:0544f7bd5e14fef5…"
+    },
+    "dependencies": "… 36 entries: each library file and its SHA-256",
+    "compiler": "rustc 1.99.0-nightly (771916f90 2026-08-08);…",
+    "profile": "debug",
+    "driver": "8a355ef0383522d9…",
+    "…": "also recorded, not shown: target, options, versions"
+  },
+  "roots": [{ "ordinal": 0, "seed": "0", "inputs": [] }],
+  "injected": [],
+  "outcome": "panic: Some(\"assertion `left == right` failed: lost hits…",
+  "trace": "… 40 events, one JSON object each",
+  "trace_hash": "9d66e1613fc69090…",
+  "input_hash": "e3e554a9935cdfd6…",
+  "…": "also recorded, not shown: evaluation, config, choices, complete"
+}

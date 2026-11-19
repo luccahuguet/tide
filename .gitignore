@@ -26,3 +26,6 @@ target
 .doctor/
 # scripts/autorun.sh run log, session output, and lock
 .autorun/
+
+# paper figure builder's npm install (paper/figures/package-lock.json pins it)
+paper/figures/node_modules/

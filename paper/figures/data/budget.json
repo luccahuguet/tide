@@ -1,0 +1,98 @@
+{
+  "budget": 25000,
+  "whole": 24960,
+  "whole_source": "design/reference-companion.md (Core count)",
+  "sections_sum": 24932,
+  "sections": [
+    {
+      "heading": "Preamble",
+      "first_line": 1,
+      "last_line": 18,
+      "tokens": 350
+    },
+    {
+      "heading": "0. How to use this document",
+      "first_line": 19,
+      "last_line": 29,
+      "tokens": 238
+    },
+    {
+      "heading": "1. What is unchanged",
+      "first_line": 30,
+      "last_line": 52,
+      "tokens": 620
+    },
+    {
+      "heading": "2. Surface: `!` forms, derives, attributes",
+      "first_line": 53,
+      "last_line": 119,
+      "tokens": 1759
+    },
+    {
+      "heading": "3. Lifetimes",
+      "first_line": 120,
+      "last_line": 249,
+      "tokens": 2700
+    },
+    {
+      "heading": "4. Integers, floats, conversions",
+      "first_line": 250,
+      "last_line": 294,
+      "tokens": 1065
+    },
+    {
+      "heading": "5. Traits and generics",
+      "first_line": 295,
+      "last_line": 325,
+      "tokens": 680
+    },
+    {
+      "heading": "6. Authority: capabilities",
+      "first_line": 326,
+      "last_line": 570,
+      "tokens": 5987
+    },
+    {
+      "heading": "7. Concurrency",
+      "first_line": 571,
+      "last_line": 766,
+      "tokens": 4651
+    },
+    {
+      "heading": "8. Parallelism",
+      "first_line": 767,
+      "last_line": 799,
+      "tokens": 724
+    },
+    {
+      "heading": "9. Errors and panics",
+      "first_line": 800,
+      "last_line": 813,
+      "tokens": 310
+    },
+    {
+      "heading": "10. Contracts",
+      "first_line": 814,
+      "last_line": 949,
+      "tokens": 3113
+    },
+    {
+      "heading": "11. Unsafe, trust holes, and review",
+      "first_line": 950,
+      "last_line": 970,
+      "tokens": 622
+    },
+    {
+      "heading": "12. Modules and packages",
+      "first_line": 971,
+      "last_line": 1057,
+      "tokens": 1712
+    },
+    {
+      "heading": "13. Toolchain loop (planned)",
+      "first_line": 1058,
+      "last_line": 1078,
+      "tokens": 401
+    }
+  ]
+}

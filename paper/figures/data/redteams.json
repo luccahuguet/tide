@@ -1,0 +1,45 @@
+{
+  "source": "paper/figures/spec/redteams.json",
+  "teams": [
+    {
+      "name": "Admission and the RUN-3 sandbox",
+      "when": "2026-11-17, Claude Opus 5.5",
+      "routes": true,
+      "held": 42,
+      "blocking": 2,
+      "blocking_fixed": 2,
+      "nonblocking": 2,
+      "controls": 2
+    },
+    {
+      "name": "Proc::command design",
+      "when": "3 rounds, Claude Opus 5.5",
+      "routes": false,
+      "held": 27,
+      "blocking": 5,
+      "blocking_fixed": 5,
+      "nonblocking": 11,
+      "controls": 0
+    },
+    {
+      "name": "Net::get design",
+      "when": "2 rounds, GPT-6.1 Sol",
+      "routes": false,
+      "held": 12,
+      "blocking": 1,
+      "blocking_fixed": 1,
+      "nonblocking": 3,
+      "controls": 0
+    },
+    {
+      "name": "Net::resolve design",
+      "when": "1 round, GPT-6.1 Sol",
+      "routes": false,
+      "held": 15,
+      "blocking": 0,
+      "blocking_fixed": 0,
+      "nonblocking": 2,
+      "controls": 0
+    }
+  ]
+}

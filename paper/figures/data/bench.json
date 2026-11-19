@@ -1,0 +1,78 @@
+{
+  "source": "research/36-benchmarks/2026-11-18-bf6b958/records.jsonl",
+  "loss_rounds": 20,
+  "stable": 0,
+  "series": 60,
+  "cv_min": 0.010356,
+  "cv_max": 0.467203,
+  "panels": [
+    {
+      "label": "Run time in release, against Rust built with Tide's profile flags",
+      "rows": [
+        {
+          "pair": "contracts",
+          "ratio": 0.9949895574385036,
+          "slower": 11,
+          "rounds": 30,
+          "verdict": "tie"
+        },
+        {
+          "pair": "files",
+          "ratio": 1.040009250265945,
+          "slower": 26,
+          "rounds": 30,
+          "verdict": "loss"
+        },
+        {
+          "pair": "tasks",
+          "ratio": 1.3139789748806896,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        },
+        {
+          "pair": "tcp",
+          "ratio": 1.1771944141723902,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        }
+      ]
+    },
+    {
+      "label": "Cold debug build, against Rust's debug build",
+      "rows": [
+        {
+          "pair": "contracts",
+          "ratio": 4.604348767353124,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        },
+        {
+          "pair": "files",
+          "ratio": 3.9252959991021825,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        },
+        {
+          "pair": "tasks",
+          "ratio": 3.823766249754914,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        },
+        {
+          "pair": "tcp",
+          "ratio": 4.434145252643621,
+          "slower": 30,
+          "rounds": 30,
+          "verdict": "loss"
+        }
+      ]
+    }
+  ],
+  "tasks_twin_ratio": 1.3139789748806896,
+  "tasks_plain_ratio": 2.2868288610227925
+}

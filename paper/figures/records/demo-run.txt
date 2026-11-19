@@ -1,0 +1,44 @@
+# commit: a913f46ead5d5bd4d432a82f554fedb4809b2e83 (tree clean)
+# command: CARGO_TARGET_DIR=$TARGET cargo run -p tide-demo, 2026-11-19, x86_64 Linux
+# normalization: the target directory's absolute path is written $TARGET; cargo's build lines are dropped; the last line is the exit status
+
+== 0. Toolchain and build
+revision:  a913f46ead5d5bd4d432a82f554fedb4809b2e83
+toolchain: rustc 1.99.0-nightly (771916f90 2026-08-08)
+driver:    $TARGET/debug/tide-admit
+std:       $TARGET/debug/libtide_std.rlib
+
+== 1. Find a seed that exposes the bug (buggy revision, demo/patches/lost-update.patch)
+simulation every_view_is_counted: 8 passed; 8 failed (16 seeds)
+failing seeds: 0 2 4 8 9 10 12 14 (each cause: lost hits)
+same code and input on every seed; only the schedule differs
+first failing seed: 0
+
+== 2. Record seed 0, then replay the recording twice
+cause: assertion `left == right` failed: lost hits
+                 events  event trace       output trace
+recording            40  9d66e1613fc69090  db1996770f19511f
+replay-1             40  9d66e1613fc69090  db1996770f19511f
+replay-2             40  9d66e1613fc69090  db1996770f19511f
+output: views served: 2, hits recorded: 1
+both replays reproduce the recording: identical event and output traces
+recording: tide-demo/out/record/target/sim/run-2128917-1795079674031530661-0-8e1b41fa7ed41e09-0-0-e30f84a27d5b9452-0/run.manifest.json
+
+== 3. Run the fixed revision (demo/service) over the fixed seed set
+seed set: the suite's #[sim_test(seeds = 16)], seeds 0 to 15, the set step 1 searched
+simulation every_view_is_counted: 16 passed; 0 failed (16 seeds); 16/16 cases passed (accepted/generated)
+seed 0 on its own: passed
+
+== 4. Authority diff of demo/patches/metrics-report.patch
+-pub fn serve(tasks: &Tasks, load: &Load) -> Result<u64, ServeError> {
++pub fn serve(tasks: &Tasks, metrics: &Net, load: &Load) -> Result<u64, ServeError> {
+declared authority (no exercised authority, effects, or proof status)
+  + <hits::ServeError as core::convert::From<tide_std::io::Error>>::from (associated function)
+  ~ hits::serve (function) widened
+      + metrics: net
+
+== 5. Debug the replay of seed 0 under rust-gdb, with breakpoints in record_hit
+skipped: no gdb (set RUST_GDB to a gdb built with Python, or put gdb on PATH)
+
+== Done: every step showed what it should. Logs and artifacts: $TARGET/tide-demo
+exit 0

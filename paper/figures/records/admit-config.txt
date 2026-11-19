@@ -1,0 +1,5 @@
+# commit: a913f46ead5d5bd4d432a82f554fedb4809b2e83 (tree clean)
+# command: the same tide-admit invocation on examples/capabilities/config.rs
+# normalization: none; the driver printed nothing; the last line is the exit status
+
+exit 0

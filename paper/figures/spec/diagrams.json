@@ -1,0 +1,107 @@
+{
+  "about": "Declarative specs for the paper's diagrams. Every `src` must occur verbatim in the file its section names (build.mjs checks it): each cell carries a quote that must still occur in its source. A related-work cell marked \"unshaded\" states a design claim, not a v0 result, and is drawn without the holds shading.",
+  "pipeline": {
+    "boxes": [
+      { "title": "Admission", "body": "`tide-admit` runs inside a pinned rustc and checks the subset, authority and `Pure`. A rejected crate gets no artifact." },
+      { "title": "RUN-3 sandbox", "body": "The test runs as a child process under Landlock and seccomp. The driver prints the level first: `full`, or `partial, not enforced`." },
+      { "title": "Simulator", "body": "Under `Root::sim(seed)` the seed decides the schedule, and virtual time advances only when every task is blocked." },
+      { "title": "Replay", "body": "The manifest records the seed, source hashes, build identity and inputs. Replay refuses a mismatched identity." }
+    ],
+    "input": "crate source",
+    "output": "manifest and trace",
+    "source": "paper/tide-v0.typ",
+    "src": ["gates every crate before rustc writes any artifact for it", "installed between fork and exec", "virtual time, the simulator's own clock, advances only when every task is blocked", "replay refuses to run against a mismatched identity"]
+  },
+  "related": {
+    "source": "paper/tide-v0.typ",
+    "columns": ["Authority in signatures", "Enforced in dependencies", "Seeded schedule search", "Exact replay"],
+    "none": "—",
+    "rows": [
+      { "tool": "Tide", "cells": [
+        ["yes", "so a function's signature bounds what it may do"],
+        ["yes, by design; v0 admits one crate", "by design in dependencies too (v0 admits a single crate)", "unshaded"],
+        ["yes", "Tide fixes the schedule from a seed and searches seeds"],
+        ["yes, of the simulator's model", "Replay reproduces the model, not the program"] ] },
+      { "tool": "Plain Rust", "cells": [
+        ["no: authority is ambient", "Rust's authority is _ambient_"],
+        ["no", "Any Rust function, in any dependency, can open a file"],
+        ["no", "cannot in general be rerun deterministically from a seed"],
+        ["no", "cannot in general be rerun deterministically from a seed"] ] },
+      { "tool": "cap-std", "cells": [
+        ["for code that uses it", "the `cap-std` crate"],
+        ["no: std stays reachable", "because the code can always reach `std`"],
+        null, null ] },
+      { "tool": "Effect", "cells": [
+        ["by convention, in its R type", "Its `R` is a convention"],
+        ["no", "nothing stops a dependency from calling `fetch`"],
+        null, null ] },
+      { "tool": "loom, Shuttle", "cells": [
+        null, null,
+        ["over code the project puts behind a simulation", "once the project puts its file operations behind a simulated implementation"],
+        null ] },
+      { "tool": "rr", "cells": [
+        null, null,
+        ["no: chaos mode, but no seed", "rr's chaos mode randomizes schedules, but no seed reproduces a run"],
+        ["yes, of one recorded real run", "records a run of an unmodified Linux program and replays it deterministically"] ] }
+    ]
+  },
+  "sim_model": {
+    "source": "README.md",
+    "rows": [
+      { "area": "Tasks", "models": ["Scheduling of structured tasks, `Shared` and channels, chosen by the seed", "chosen by the seed"],
+        "omits": ["CPU time: a slow computation never fires a deadline", "so a slow computation never fires a deadline"] },
+      { "area": "Clock", "models": ["Virtual time for the clock, sleeps and deadlines", "Virtual time for the clock, sleeps and deadlines"],
+        "omits": ["Memory exhaustion, stack depth, parallel speed-up", "Memory exhaustion, stack depth, and parallel speed-up"] },
+      { "area": "Files", "models": ["Files, each call with a seed-drawn latency", "each call with a seed-drawn latency"],
+        "omits": ["Disk faults, crashes, partial effects", "Disk faults, crashes, links, and partial effects"] },
+      { "area": "Network", "models": ["TCP on the local host; `Net::get` against declared peers; `Net::resolve`", "TCP loopback on `127.0.0.1`"],
+        "omits": ["Other hosts, UDP, TLS certificate validation, HTTP wire parsing", "TLS certificate validation and HTTP wire parsing"] },
+      { "area": "Processes", "models": ["Child processes as declared models", "child processes as declared `sim.world.proc` models"],
+        "omits": ["Signals, real child processes", "Signals, real child processes (only declared models run)"] },
+      { "area": "Environment", "models": ["Arguments, environment variables, standard input, sink output", "Arguments, environment variables, stdin, and sink output"],
+        "omits": ["Randomness, fault injection", "randomness, and fault injection"] }
+    ]
+  },
+  "tiers": {
+    "source": "design/01-design.md",
+    "columns": [
+      { "tier": "v0 core", "row": "| v0 core |", "items": [
+        ["Capabilities and `Root`", "capabilities and `Root`"],
+        ["`Pure`; sinks", "`Pure`; sinks;"],
+        ["Structured tasks, channels, `Shared`", "structured tasks on blocking and thread runtimes; channels and `Shared::with`"],
+        ["Parallel regions (partial runtime)", "`join`, `par_map`, `par_for`"],
+        ["Executable contracts", "executable contracts"],
+        ["Declared authority and trust holes in the trust diff", "declared authority and trust holes in the trust diff"],
+        ["The test sandbox on Linux", "the test sandbox on Linux"],
+        ["The admission allowlist", "the admission allowlist (D7)"],
+        ["`Proc::command`, real and simulated", "the bounded process profile, real and simulated"],
+        ["Simulator crashes and restarts (planned)", "the simulator with crash, restart, and durability"],
+        ["Tide's incremental front end (planned)", "then Tide's incremental front end for the edit loop"] ] },
+      { "tier": "v1", "row": "| v1 |", "items": [
+        ["Proofs of contracts (`prove` mode)", "`prove` mode with `spec fn`"],
+        ["Exercised-authority tracking", "exercised-authority tracking"],
+        ["The evented runtime", "the evented runtime"],
+        ["Direct import of Rust crates behind wrappers", "direct Rust crate import with RUST-2 wrappers"],
+        ["Production record and replay", "production record and replay"],
+        ["Kernel enforcement for deployed binaries", "kernel enforcement of authority for deployed binaries (D7)"] ] },
+      { "tier": "Later", "row": "| Later |", "items": [
+        ["The Bend tandem", "Bend tandem (D16)"],
+        ["Automatic parallelization", "automatic parallelization"],
+        ["Signals and pseudo-terminals for child processes", "modeled signals, raw PTYs"] ] }
+    ]
+  },
+  "merge": {
+    "source": "GOVERNANCE.md",
+    "steps": [
+      { "title": "Frozen candidate", "body": "The change, frozen for review; every reviewer is read-only.", "src": "each reviewer read-only on a frozen candidate" },
+      { "title": "Codex pass", "body": "`gpt-6.1-sol`, effort high. The author fixes or rebuts each finding; the supervisor re-checks until it reports the tree clean.", "src": "the supervisor re-checks them until it reports the tree clean" },
+      { "title": "Opus review", "body": "On the Codex-clean tree. The author fixes or rebuts; the reviewer that found each finding re-checks only its fix.", "src": "the reviewer that found each finding re-checks only its fix or rebuttal" },
+      { "title": "Lands on main", "body": "The human maintainer remains final merge authority.", "src": "human maintainer remains final merge authority" }
+    ],
+    "exceptions": [
+      { "at": 1, "text": "Provider refuses the Codex pass: an Opus stand-in review takes its place and records the refusal.", "src": "an Opus stand-in review takes its place" },
+      { "at": 1, "text": "Planning-only changes skip the Codex pass.", "src": "planning-only changes (bead filings) skip the supervisor pass" },
+      { "at": 3, "text": "A protocol-import update that only regenerates files from a pinned source, with its check passing, skips both reviews.", "src": "skips the Opus review and the supervisor pass" }
+    ]
+  }
+}

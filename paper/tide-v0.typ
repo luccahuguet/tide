@@ -2,10 +2,11 @@
 // repository flake's nixpkgs pin 567a49d1913ce81ac6e9582e3553dd90a955875f:
 // nix shell github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f#typst \
 //   -c typst compile --root . paper/tide-v0.typ <out>.pdf
-// Run it from the repository root: `--root .` lets the figures read the committed
-// records they draw (paths starting with `/` are relative to that root). The
-// figures use only Typst's built-in drawing, so the build needs no package
-// download and no network.
+// Run it from the repository root: `--root .` lets the paper read the committed
+// records its captions cite (paths starting with `/` are relative to that root).
+// The figures are committed SVG files and excerpts that paper/figures/build.mjs
+// generates from committed records (paper/figures/README.md); the paper only
+// embeds them, so the build needs no package download and no network.
 // Every link to a file in the repository goes through #repo below, which pins it
 // to one release tag. Until the RC sets them, the repository URL and the tag are
 // placeholders; a build can also pass them with
@@ -39,96 +40,44 @@
   if links-pending { label } else { link(tide-repository + "/" + kind + "/" + tide-tag + "/" + path, label) }
 }
 
-// ---- Figure data and drawing helpers --------------------------------------
-// Every number a figure shows is read here from a committed file, so the
-// figures regenerate from the data. The only derived values are those the
-// benchmark note and the launch site's scripts/chart-data.ts derive the same
-// way: ratios of two recorded medians, and paired-round counts.
-
-#let fmt(x, d) = {
-  let s = str(calc.round(x, digits: d))
-  if d == 0 { return s }
-  let parts = s.split(".")
-  let frac = if parts.len() > 1 { parts.at(1) } else { "" }
-  parts.at(0) + "." + frac + "0" * (d - frac.len())
-}
-// Three significant digits, as a percentage (the site's toPrecision(3)).
-#let pct3(r) = {
-  let p = 100 * r
-  fmt(p, if p >= 10 { 1 } else { 2 }) + "%"
-}
-
+// ---- Figures -------------------------------------------------------------
+// paper/figures/build.mjs draws every figure from committed records, and its
+// --check fails when a committed figure differs from what the records give.
+// Captions read the same records for the numbers they quote.
 #let e3 = json("/trials/e3-pilot/result.json")
-#assert(e3.schema == "tide-e3-result/1", message: "unexpected E3 schema")
-// D0's threshold, read from the result's own published sentence.
-#let e3-threshold = float(e3.sentence.match(regex("D0's ([0-9.]+)x threshold")).captures.at(0))
-
 #let bench-path = "/research/36-benchmarks/2026-11-18-bf6b958/records.jsonl"
-#let bench = read(bench-path).split("\n").filter(l => l.trim() != "").map(l => json(bytes(l)))
-#let bench-summaries = bench.filter(r => r.record == "summary")
-#let bench-stable = bench-summaries.filter(r => r.stable == true).len()
-#let bench-cvs = bench-summaries.map(r => r.cv)
-// research/36-benchmarks.md §1: an arm is slower when it is slower in at
-// least 20 of the 30 paired rounds; otherwise the comparison is a tie.
-#let loss-rounds = 20
-#let bench-pairs = ("contracts", "files", "tasks", "tcp")
-
-#let bench-row(record, phase, tide-config, rust-config, pair) = {
-  let summary(config) = {
-    let found = bench.filter(r => r.record == "summary" and r.phase == phase and r.config == config and r.pair == pair)
-    assert(found.len() == 1, message: "missing summary " + phase + " " + config + " " + pair)
-    found.first()
-  }
-  let rounds(config) = {
-    let walls = (:)
-    for r in bench.filter(r => r.record == record and r.config == config and r.pair == pair) {
-      walls.insert(str(r.round), r.wall_s)
-    }
-    walls
-  }
-  let t = summary(tide-config)
-  let u = summary(rust-config)
-  let tr = rounds(tide-config)
-  let ur = rounds(rust-config)
-  assert(tr.len() == ur.len() and tr.len() > 0, message: "unpaired rounds for " + pair)
-  let slower = tr.pairs().filter(((k, w)) => w > ur.at(k)).len()
-  let verdict = if slower >= loss-rounds { "loss" } else if tr.len() - slower >= loss-rounds { "win" } else { "tie" }
-  (pair: pair, ratio: t.median_s / u.median_s, slower: slower, rounds: tr.len(), verdict: verdict)
+#let bench = json("/paper/figures/data/bench.json")
+#let fmt2(x) = str(calc.round(x, digits: 2))
+#let budget = json("/paper/figures/data/budget.json")
+#let replay = json("/paper/figures/data/replay.json")
+#let search = json("/paper/figures/data/search.json")
+#let search-round(r) = search.find(x => x.round == r)
+#let redteams = json("/paper/figures/data/redteams.json").teams
+#let thousands(n) = {
+  let s = str(n)
+  s.clusters().enumerate().map(((i, c)) => if i > 0 and calc.rem(s.len() - i, 3) == 0 { "," + c } else { c }).join()
 }
-
-#let bench-panels = (
-  (label: [Run time in release, against Rust built with Tide's profile flags],
-   rows: bench-pairs.map(p => bench-row("run", "run", "tide-release", "rust-release-tide-flags", p))),
-  (label: [Cold debug build, against Rust's debug build],
-   rows: bench-pairs.map(p => bench-row("build", "build", "tide-debug", "rust-debug", p))),
-)
-
-#let ink = luma(25%)
-#let muted = luma(45%)
-#let accent = rgb("#1a4f8a")
-#let loss-ink = rgb("#9a3b1f")
-#let small(body) = text(size: 8pt, body)
-
-// A horizontal axis of `width` from `lo` to `hi` with ticks, drawn at `y`.
-#let axis(width, lo, hi, ticks, y, unit) = {
-  let x(v) = width * (v - lo) / (hi - lo)
-  place(dx: 0pt, dy: y, line(length: width, stroke: 0.5pt + ink))
-  for t in ticks {
-    place(dx: x(t), dy: y, line(angle: 90deg, length: 3pt, stroke: 0.5pt + ink))
-    place(dx: x(t) - 15pt, dy: y + 4pt, box(width: 30pt, align(center, small[#t#unit])))
-  }
+#let count-word(n) = if n == 0 [none] else [#n]
+// Tables 1 and 2 type their counts in prose; these asserts fail the compile when the figures'
+// data no longer give the same numbers. Each tuple: pool, screened, eligible, caught (none: —).
+#for (r, want) in (
+  "fx-zu4f.15": (1, 1, 1, 1), "fx-zu4f.8": (87, 87, none, 0), "fx-zu4f.5": (147, 87, none, 0),
+  "fx-zu4f.6": (160, 32, 0, 0), "fx-zu4f.7": (162, 119, 0, 0), "fx-zu4f.9": (100, 100, 0, 0),
+  "fx-zu4f.10": (24, 5076, 0, 0), "fx-zu4f.11": (7, 42, 0, 0), "fx-zu4f.12": (30, 9, 0, 0), "fx-zu4f.13": (4, 4, none, 1),
+) {
+  let got = ("pool", "screened", "eligible", "caught").map(k => { let v = search-round(r).at(k); if v == none { none } else { v.n } })
+  assert(got == want, message: "Table 2 row " + r + " disagrees with data/search.json: " + repr(got))
 }
-
-// The pipeline diagram: four stages a simulated test run passes through.
-#let stage(title, body) = rect(width: 100%, height: 100%, inset: 5pt, radius: 2pt, stroke: 0.6pt + ink)[
-  #set par(justify: false, leading: 0.45em)
-  #text(size: 9pt, weight: "bold", title) \
-  #small(body)
-]
-#let arrow = align(center + horizon, text(size: 14pt, fill: ink)[→])
-// A figure that the D3 figure stage (S2b) draws: a dashed box that names what it will show and
-// the record it reads. Each caption is already final text.
-#let placeholder(body) = block(width: 100%, inset: 10pt, radius: 2pt, stroke: (paint: muted, thickness: 0.6pt, dash: "dashed"), align(center + horizon, text(size: 8.5pt, fill: muted)[*Figure to come.* #body]))
+// Table 1: routes or attacks held, blocking finds, non-blocking or open, controls (data/redteams.json).
+#for (i, want) in ((42, 2, 2, 2), (27, 5, 11, 0), (12, 1, 3, 0), (15, 0, 2, 0)).enumerate() {
+  let t = redteams.at(i)
+  assert((t.held, t.blocking, t.nonblocking, t.controls) == want, message: "Table 1 row " + t.name + " disagrees with data/redteams.json")
+}
+#let fig(name) = image("figures/svg/" + name + ".svg", width: 100%)
+// Code and tool output, as recorded: one style for every excerpt.
+#let excerpt(name, lang: none) = block(width: 100%, fill: luma(96%), inset: 6pt, radius: 2pt,
+  align(left, text(size: 7.5pt, raw(read("figures/excerpts/" + name), block: true, lang: lang))))
+#let excerpt-label(body) = align(left, text(size: 8pt, body))
 
 #align(center)[#text(size: 17pt, weight: "bold")[Tide: A Capability-Safe, Replayable Subset of Rust for Agent-Written Code]]
 
@@ -155,7 +104,12 @@ Prior evidence shaped how close to Rust Tide stays (summarized in the decision r
 What Rust does not give is a bound on authority. Any Rust function, in any dependency, can open a file, read the clock or connect to the network through the standard library: Rust's authority is _ambient_, reachable by any code without being handed to it. Libraries and lints (extra compiler checks) that keep Rust's std cannot remove that, because the code can always reach `std`. A reviewer of a Rust change must read every body to learn what the change may touch, and a test of concurrent Rust code cannot in general be rerun deterministically from a seed, because its dependencies reach real time, real threads and real randomness. Record-and-replay tools such as rr can record one real run and replay it; rr's chaos mode randomizes schedules, but no seed reproduces a run. Tide's thesis (decision record, "Thesis") is that a language can close both gaps by construction and keep Rust's guarantees: memory safety and freedom from data races (two threads touching the same memory without synchronization, at least one writing) without a garbage collector. @fig-code shows the difference in one signature.
 
 #figure(
-  placeholder[Two functions side by side. Left, plain Rust: `fn load(path: &Path)` opens the file through `std::fs` with nothing in its signature. Right, Tide: `fn load(fs: &Fs, path: &Path)`, the same body reached through the `&Fs` it is handed. Both copied from real files at a named commit, with Tide's admission verdict on the Rust version.],
+  grid(columns: (1fr, 1fr), column-gutter: 10pt, row-gutter: 4pt,
+    excerpt-label[*Plain Rust* (`examples/capabilities/ambient_read.rs`)],
+    excerpt-label[*Tide* (`examples/capabilities/config.rs`)],
+    excerpt("code-rust.rs", lang: "rust"), excerpt("code-tide.rs", lang: "rust"),
+    excerpt-label[Admission: rejected with `TD0501`, the admission driver's error code for a call to an ambient standard-library function (@fig-diagnostic).], excerpt-label[Admission: admitted, no diagnostic.],
+  ),
   kind: image,
   caption: [Authority is an argument. Left: in plain Rust, a function's signature says nothing about the files it may open, because any code can reach the standard library's file system, which is ambient authority. Right: in Tide, the same function must be handed a file capability, `&Fs`, so its parameters bound what it can touch, and admission rejects the version on the left.],
 ) <fig-code>
@@ -167,9 +121,9 @@ What Rust does not give is a bound on authority. Any Rust function, in any depen
 Tide removes what costs agents the most and adds as little as it can. It has no user macros (D6), no `async`/`await` (Rust's syntax for asynchronous functions, D8), and a trait system with a hard power ceiling (D4). D14 specifies a deterministic formatter with no options; it is planned. The project's governance applies an admission filter to substantial language changes: "A feature should be rejected by default if it increases semantic entropy more than it improves safe change." The core reference, #repo("design/reference.md"), is written for agents to load whole and has a budget of 25,000 tokens, the units a language model reads text in (D14).
 
 #figure(
-  placeholder[The core reference's token count against its 25,000-token budget, split by section, read from the committed token count of the reference at the release tag.],
+  fig("budget"),
   kind: image,
-  caption: [The core reference fits in an agent's context: its token count, by section, against the 25,000-token budget that D14 sets. A token is the unit a language model reads text in.],
+  caption: [The core reference fits in an agent's context: its token count, by section, against the #(thousands(budget.budget))-token budget that D14 sets. A token is the unit a language model reads text in. The sections are the reference's own. Its preamble is the text before §0; `!` forms are macro calls such as `println!`; derives and attributes are `#[..]` annotations that generate or configure code; lifetimes say how long a borrowed reference stays valid; traits are shared interfaces, and generics are code written once for many types; a panic is Rust's stop on an unrecoverable error; modules and packages organize code into files and crates. `unsafe` code is code whose memory safety the programmer, not the compiler, must uphold, and trust holes are the places where admitted code may do what admission cannot check (@sec-trust). The toolchain loop is the planned `tide` commands an agent runs on each edit.],
 ) <fig-budget>
 
 == Capabilities bound authority <sec-capabilities>
@@ -193,9 +147,9 @@ Contracts use toolchain attributes, `#[requires(..)]` and `#[ensures(..)]`, plus
 Tide v0 is a dialect, not a separate compiler (D18). Every Tide program is a Rust 2024 crate that a pinned, unmodified rustc nightly (rustc's unstable daily build) compiles against Tide's standard library, which the driver passes as `std`, so the real standard library's paths cannot be named. Tide's checker runs inside rustc as a driver and gates every crate before rustc writes any artifact for it. It owns the subset, authority, the `Pure` trait, contracts, the _TD codes_ (the driver's own error codes, such as `TD0206`, each with a message that says why) and the trust diff, and it enforces an admission allowlist over Rust's lower-level libraries `core` and `alloc` and std's inherent methods. Because the checker is rustc itself, with rustc's own name resolution, no separate argument is needed that Tide and rustc read a program the same way.
 
 #figure(
-  placeholder[A real `TD0501` rejection as `tide-admit` prints it, in rustc's diagnostic layout (code, span, message, help), copied from a recorded run at a named commit.],
+  excerpt("diagnostic.txt"),
   kind: image,
-  caption: [What a rejection looks like: a TD code is rustc-style output from the admission driver, here `TD0501`, a call to an ambient standard-library function that needs a capability, with the span and the capability to pass instead.],
+  caption: [What a rejection looks like: a TD code is rustc-style output from the admission driver, here `TD0501` on @fig-code's Rust version: a call to an ambient standard-library function, which only a capability may reach, with its file, line and column. rustc also reports `E0425` at the call, because Tide's std has no such function.],
 ) <fig-diagnostic>
 
 == A reviewable trust surface <sec-trust>
@@ -203,9 +157,9 @@ Tide v0 is a dialect, not a separate compiler (D18). Every Tide program is a Rus
 The compiler computes each public item's signature and declared authority and lists _trust holes_, the places where admitted code may do what admission cannot check, such as every site an `unsafe` grant admits (D11). The trust diff compares this surface between two revisions. In v0 it shows the declared authority of exported items only: which exported functions, methods and types gained or lost a capability. It does not show exercised authority, effects, or narrowing inside a body. We describe it as a summary of what a change may do. @sec-e3 reports a pilot that found no evidence it helps reviewers catch more.
 
 #figure(
-  placeholder[The trust diff that `tide-admit --tide-diff` prints for the demonstration's patch that hands `hits::serve` a `Net` parameter, copied from the recorded demo output at a named commit.],
+  excerpt("trust-diff.txt"),
   kind: image,
-  caption: [The trust diff summarizes what a change may do: between two revisions, the exported items whose declared authority grew or shrank. Here the demonstration's patch widens `hits::serve`, which gains network authority (`+ metrics: net`).],
+  caption: [The trust diff summarizes what a change may do: between two revisions, the exported items whose declared authority grew or shrank. Here the demonstration's patch widens `hits::serve`, which gains network authority (`+ metrics: net`). The `-` and `+` lines at the top quote the patch's old and new signature of `serve`. Under _declared authority_, `+` marks an item or capability gained and `~` an item whose authority changed. The added associated function, a function defined in a type's `impl` block, is the patch's conversion from an input/output error into the service's error type.],
 ) <fig-trust-diff>
 
 = Implementation <sec-implementation>
@@ -218,18 +172,8 @@ The v0 production code is one Cargo (Rust's build tool) workspace, built with th
 - *The RUN-3 test sandbox.* The type system alone cannot bound what admitted code reaches, because rustc has open soundness bugs that safe code can exploit to forge a capability (D7; @sec-admission). Test and simulation runs that the driver starts therefore run as a child process inside a kernel sandbox, which the design rule RUN-3 specifies: Landlock, which limits the files a process can open, and seccomp, which limits its system calls, on Linux, installed between fork and exec (#repo("design/03-authority-concurrency.md"), RUN-3). The driver prints the level before the child starts: `full`, or `partial, not enforced`, naming what the kernel lacks. A test binary run directly gets no sandbox, and the build itself (rustc and the linker) has none yet, the planned rule RUN-2 (#repo("docs/owner-guide/08-sandbox.md")).
 - *`tide-conformance`* checks a _conformance corpus_: every normative rule in the design chapters carries an ID and is traced to cases, small programs with expected verdicts, that an implementation must pass (D0).
 
-// S2b replaces this Typst drawing with the D3 architecture figure (source, tide-admit and its TD
-// codes, pinned rustc, binary; sim root and seeds leading to replay).
 #figure(
-  block(height: 2.7cm, grid(columns: (1fr, 0.55cm, 1fr, 0.55cm, 1fr, 0.55cm, 1fr), rows: 100%,
-    stage[Admission][`tide-admit` runs inside a pinned rustc and checks the subset, authority and `Pure`. A rejected crate gets no artifact.],
-    arrow,
-    stage[RUN-3 sandbox][The test runs as a child process under Landlock and seccomp. The driver prints the level first: `full`, or `partial, not enforced`.],
-    arrow,
-    stage[Simulator][Under `Root::sim(seed)` the seed decides the schedule, and virtual time advances only when every task is blocked.],
-    arrow,
-    stage[Replay][The manifest records the seed, source hashes, build identity and inputs. Replay refuses a mismatched identity.],
-  )),
+  fig("pipeline"),
   kind: image,
   caption: [The path of a simulated test run started through the driver (`--tide-run-test`): the admitted crate's test runs in the sandboxed child under the simulator, and the run's manifest is what replay checks. A test binary run directly gets no sandbox and records no manifest, and the build itself has no sandbox yet (RUN-2).],
 ) <fig-pipeline>
@@ -240,18 +184,18 @@ We report the evidence in the order chosen for the alpha: replay and admission f
 
 == Replay <sec-replay>
 
-The demonstration (#repo("demo/README.md")) builds a small concurrent service through the admission driver, with a patch that introduces a lost update. Its suite's `#[sim_test(seeds = 16)]` runs the same code on the same input under a seeded scheduler for seeds 0 to 15. On the buggy revision 8 seeds pass and 8 fail (seeds 0, 2, 4, 8, 9, 10, 12 and 14), each failing on the `lost hits` assertion; only the schedule differs between seeds. The demo records seed 0 and replays the recording twice: the recording and both replays have 40 events and identical hashes of the event trace and the output trace. The fixed revision passes all 16 seeds. A further step runs the replay under `rust-gdb`, the Rust wrapper of the GNU debugger, with breakpoints in the service, when gdb is available (demo README, "Run it" and "What the demo does"). `cargo run -p tide-demo` runs it, and the workspace test suite runs it too, with two runs that must fail.
+The demonstration (#repo("demo/README.md")) builds a small concurrent service through the admission driver, with a patch that introduces a lost update. Its suite's `#[sim_test(seeds = 16)]` runs the same code on the same input under a seeded scheduler for seeds 0 to 15. On the buggy revision 8 seeds pass and 8 fail (seeds 0, 2, 4, 8, 9, 10, 12 and 14), each failing on the `lost hits` assertion; only the schedule differs between seeds. The demo records seed 0 and replays the recording twice: the recording and both replays have 40 events and identical hashes of the event trace, the run's whole trace, and the output trace, its `sink` events, which hold what the test printed. The fixed revision passes all 16 seeds. A further step runs the replay under `rust-gdb`, the Rust wrapper of the GNU debugger, with breakpoints in the service, when gdb is available (demo README, "Run it" and "What the demo does"). `cargo run -p tide-demo` runs it, and the workspace test suite runs it too, with two runs that must fail.
 
 #figure(
-  placeholder[Seeds 0 to 15 on the x-axis with a pass or fail mark each, buggy and fixed revisions; beside them, the recorded run of seed 0 and its two replays with their event and output trace hashes. Read from the demo's recorded output at a named commit.],
+  fig("replay"),
   kind: image,
-  caption: [A seed finds the lost update and replay reproduces it. Each seed is one simulated schedule of the same test: on the buggy revision 8 of 16 seeds fail, on the fixed one none. The recorded run of seed 0 and both replays have identical event and output trace hashes.],
+  caption: [A seed finds the lost update and replay reproduces it. Each seed is one simulated schedule of the same test: on the buggy revision #(replay.buggy_failing.len()) of #(replay.seeds) seeds fail, on the fixed one #count-word(replay.fixed_failing.len()). The recorded run of seed #(replay.recorded_seed) and both replays have identical event and output trace hashes.],
 ) <fig-replay>
 
 #figure(
-  placeholder[An excerpt of the replay manifest the demo writes for seed 0 (seed, source hashes, build identity, injected inputs), copied from the recorded file at a named commit.],
+  excerpt("manifest.txt"),
   kind: image,
-  caption: [The replay manifest records a run: the seed, the content hashes of the sources, the build identity and the injected inputs. Replay checks source and build identity before running, uses the recorded seed and choices, and fails if the run's inputs, trace or outcome differ from the recording.],
+  caption: [The replay manifest records a run: the seed, the content hashes of the sources, the build identity and the injected inputs. Replay checks source and build identity before running, uses the recorded seed and choices, and fails if the run's inputs, trace or outcome differ from the recording. The manifest is JSON, a text format of named fields. Each long hexadecimal string is a SHA-256 hash, a 64-digit fingerprint of content, cut here to 16 digits. `roots` lists each simulated root the test created, by its `ordinal`, its creation order, with its seed and the inputs it read (none here). `profile` names the build profile, here the unoptimized debug build; `outcome` is the run's result, here a panic on the failed assertion. `trace_hash` is the hash of the event trace, and `input_hash` is the hash of the whole manifest with that field left empty, so replay notices an edited field.],
 ) <fig-manifest>
 
 The same demo shows the trust diff on a patch that gives the service's public function a `Net` parameter: `hits::serve` is listed as widened, with `+ metrics: net` (@fig-trust-diff). This is the trust diff working as a summary; @sec-e3 reports what a pilot measured about reviewers using it.
@@ -286,9 +230,9 @@ A _red team_ here is an adversarial review: an AI model, given a security claim 
 ) <tab-redteams>
 
 #figure(
-  placeholder[For each red team in the table: routes or attacks tried, found, fixed and left open, as bars, read from a committed data file built from the four records.],
+  fig("redteams"),
   kind: image,
-  caption: [What each red team tried and found, next to @tab-redteams: most attacks held, every blocking find has been fixed, and the routes left open are stated limits.],
+  caption: [What each red team tried and found, next to @tab-redteams; counts span every round of each red team: most attacks held, every blocking find has been fixed, and the routes left open are stated limits.],
 ) <fig-redteams>
 
 *Admission and the sandbox, 2026-11-17.* Claude Opus 5.5 tested the claim that admitted code reaches no authority it was not handed, and that a test child escaping the type system anyway meets the kernel (#repo("reviews/2026-11-17-red-team-opus.md")). It numbered each route and tried it against the driver and the sandbox, with accepted controls for the overlap route and unsandboxed controls for the process-memory and loader probes, so that a denial could be told from a probe that never worked. It tried 48 routes. The blanket form of \#57893 was admitted at the red team's starting revision; the projection form, an impl for an associated-type projection, was found by the Opus review of the fix and was still admitted then. `TD0402` now rejects both. Two routes stay admitted on purpose: one writes only to standard error, which every program holds as a sink, and one is an inert crate attribute. Every other admission route the record lists is rejected, and every RUN-3 route gets the denial RUN-3 specifies. The same red team replaced the allowed glob (a `::*` import of every item in a module) over `std::path` with a list of its items, so an input/output (I/O) method that a later rustc adds is not admitted until the pin review lists it. Unlike the later design red teams, this one also wrote the fixes, which the change's own Codex pass and Opus review then checked.
@@ -342,18 +286,20 @@ The catch above comes from a series of registered searches for external bugs, an
     [`fx-zu4f.9` (research/41)], [100 bugs from Qin et al.'s dataset of Rust concurrency bugs (PLDI 2020, a programming-languages conference)], [100], [0], [0], [Self-attested; criteria and protocol committed before the first request],
     [`fx-zu4f.10` (research/44)], [24 popular crates], [5,076 keyword-match rows; 10 crates' concurrent cores], [0, and 1 row unresolved], [0], [OTS-anchored; examination times self-attested],
     [`fx-zu4f.11` (research/46)], [7 repositories whose commit messages mark agent-written commits], [42 fix candidates; 7 concurrent cores], [0], [0], [OTS-anchored; examination times self-attested],
+    [`fx-zu4f.12` (research/52)], [30 cryptography and blockchain crates], [9 fix candidates; 430 properties the crates state], [0 fix candidates; 47 properties modeled], [0], [OTS-anchored; examination times self-attested],
+    [`fx-zu4f.13` (research/51)], [4 rows of earlier rounds, chosen after they were seen, when `Proc::command`, `Net::get` and `Net::resolve` landed; its catch is the `fx-zu4f.15` catch, counted once], [4 rows], [—], [1, not new], [OTS-anchored; pool chosen after its rows were seen],
   ),
   kind: table,
   caption: [Every registered search round for an external bug, each count from its record. _Screened_ is what the round judged against its criteria. _Self-attested_ means the order of registration and search rests on our own git and tracker timestamps; _OTS-anchored_ means an OpenTimestamps proof shows only that each registered file existed by its attested time, not that no screening happened earlier.],
 ) <tab-search>
 
 #figure(
-  placeholder[One funnel per round in @tab-search (pool, screened, eligible, caught), with the `fx-zu4f.15` catch highlighted, read from a committed data file built from the eight records.],
+  fig("search"),
   kind: image,
-  caption: [The search record as funnels: what each registered round started from, screened, found eligible and caught. The one catch is the re-test of `chrono_anchor`; the other rounds' denominators are what make that catch credible.],
+  caption: [The search record as stages: what each round of @tab-search started from, screened, found eligible and caught. The one catch is a re-test of `chrono_anchor` in a #(search-round("fx-zu4f.15").pool.n)-row pool chosen after `fx-zu4f.8`'s screen had seen the row. Tide's std had a gap, the `fx-zu4f.8` screen exposed it, we fixed it, and we re-tested under a new registration. Every check is consistent with the registration being anchored before the fix landed; independent proof of that order is not established. The re-test ran admission and type-checking only, and no port was executed. `fx-zu4f.8`'s own result stays #(search-round("fx-zu4f.8").caught.n) caught of #(search-round("fx-zu4f.8").pool.n). `fx-zu4f.13`'s #(search-round("fx-zu4f.13").caught.n) is that same catch, counted once. The other rounds' denominators are what make that catch credible; they differ in kind and give no catch rate.],
 ) <fig-search>
 
-In `fx-zu4f.5`, the nearest row was the same `chrono_anchor`: its port was rejected with `TD0602` and `TD0501`, and its capability-passing version could not be written in v0, because `Proc` had no `command` then (#repo("research/37-external-admission-search.md")). `Proc::command` has since landed, and `fx-zu4f.8` was registered as a new test, not a revision of `fx-zu4f.5`, whose result stands as published. In the simulation rounds, every candidate that reached the portability check failed it: their affected paths ran through external crates, the network, subprocesses, signals, `async`, `unsafe` or weak-memory reorderings that Tide v0 does not express or the simulator does not explore (#repo("research/38-external-concurrency-search.md"), #repo("research/39-std-concurrency-search.md"), #repo("research/41-qin-dataset-search.md")). `fx-zu4f.10` keeps one row unresolved (B23.128), whose required evidence is missing (#repo("research/44-fx-zu4f.10-concurrency-round.md")); `fx-zu4f.11` withheld no private candidate (#repo("research/46-fx-zu4f.11-agent-marker-round.md")).
+In `fx-zu4f.5`, the nearest row was the same `chrono_anchor`: its port was rejected with `TD0602` and `TD0501`, and its capability-passing version could not be written in v0, because `Proc` had no `command` then (#repo("research/37-external-admission-search.md")). `Proc::command` has since landed, and `fx-zu4f.8` was registered as a new test, not a revision of `fx-zu4f.5`, whose result stands as published. In the simulation rounds, every candidate that reached the portability check failed it: their affected paths ran through external crates, the network, subprocesses, signals (the operating system's notifications to a process), `async`, `unsafe` or weak-memory reorderings that Tide v0 does not express or the simulator does not explore (#repo("research/38-external-concurrency-search.md"), #repo("research/39-std-concurrency-search.md"), #repo("research/41-qin-dataset-search.md")). `fx-zu4f.10` keeps one row unresolved (B23.128), whose required evidence is missing (#repo("research/44-fx-zu4f.10-concurrency-round.md")); `fx-zu4f.11` withheld no private candidate (#repo("research/46-fx-zu4f.11-agent-marker-round.md")). `fx-zu4f.12` screened cryptography and blockchain crates in two ways: none of its 9 fix candidates was a bug fix in the crate's code, and none of the 47 properties it modeled in Tide met the caught rule; it holds privately one model-only candidate, a failure seen only in its Tide model of a crate, which the caught rule does not count (#repo("research/52-fx-zu4f.12-crypto-crates-round.md")). `fx-zu4f.13` re-screened 4 rows of earlier rounds once `Proc::command`, `Net::get` and `Net::resolve` had landed; its one catch is `chrono_anchor` again, not independent of `fx-zu4f.15` and counted once (#repo("research/51-fx-zu4f.13-landed-capability-rescreen.md")).
 
 The project's commitment from `fx-zu4f.8` on is that a protocol is committed before any candidate is examined; once the repository is public, a registration means a committed protocol pushed before the results.
 
@@ -363,45 +309,8 @@ E3 asks whether reviewers catch more planted authority-widening changes with the
 
 #quote(block: true)[In the E3 pilot, Opus and Sol reviewed 12 planted authority-widening changes repeatedly, 6 times per change in each arm. With the trust diff, 66 of 72 review sessions caught the planted widening; with the plain diff, 67 of 72 (ratio 0.99, 95% interval [0.95, 1.00]). This does not meet D0's 1.5x threshold on the point estimate. The interval does not rule out no benefit.]
 
-// S2b redraws this figure in D3 from the same result.json.
 #figure(
-  {
-    let S = e3.gate.S
-    set par(justify: false)
-    let w = 6.0cm
-    let rowh = 0.75cm
-    let catches = box(width: w, height: 2 * rowh + 1.6cm, {
-      let x(v) = w * v / S
-      for (i, (name, k)) in (([trust diff], e3.gate.K_T), ([plain diff], e3.gate.K_P)).enumerate() {
-        let y = 0.2cm + i * rowh
-        place(dx: -2.0cm, dy: y + 0.1cm, box(width: 1.9cm, align(right, small(name))))
-        place(dx: 0pt, dy: y, rect(width: x(k), height: 0.42cm, fill: if i == 0 { accent } else { muted }, stroke: none))
-        place(dx: x(k) + 3pt, dy: y + 0.1cm, small[#k of #S])
-      }
-      let two-thirds = 2 * S / 3
-      place(dx: x(two-thirds), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: muted, thickness: 0.6pt, dash: "dotted")))
-      axis(w, 0, S, (0, 24, 48, 72), 2 * rowh + 0.2cm, "")
-      place(dx: 0pt, dy: 2 * rowh + 0.75cm, small[Sessions caught, of #S per arm. Dotted: the ceiling 2S/3 = #calc.round(two-thirds), above which no 1.5× gain fits.])
-    })
-    let lo = 0.8
-    let hi = calc.max(e3-threshold + 0.1, e3.interval.b)
-    let ratio = box(width: w, height: 2 * rowh + 1.6cm, {
-      let x(v) = w * (v - lo) / (hi - lo)
-      let y = 0.55cm
-      place(dx: x(1.0), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: muted, thickness: 0.5pt, dash: "dotted")))
-      place(dx: x(e3-threshold), dy: 0pt, line(angle: 90deg, length: 2 * rowh + 0.15cm, stroke: (paint: loss-ink, thickness: 0.8pt, dash: "dashed")))
-      place(dx: x(e3-threshold) - 3.1cm, dy: 0pt, box(width: 3.0cm, align(right, small[D0 threshold, #fmt(e3-threshold, 1)×])))
-      place(dx: x(e3.interval.a), dy: y + 0.18cm, line(length: x(e3.interval.b) - x(e3.interval.a), stroke: 1.2pt + accent))
-      for v in (e3.interval.a, e3.interval.b) {
-        place(dx: x(v), dy: y + 0.08cm, line(angle: 90deg, length: 0.2cm, stroke: 1pt + accent))
-      }
-      place(dx: x(e3.ratio.value) - 3pt, dy: y + 0.18cm - 3pt, circle(radius: 3pt, fill: accent, stroke: none))
-      place(dx: x(1.0) + 4pt, dy: y + 0.36cm, box(width: 3.2cm, small[R = #e3.ratio.text \ 95% interval #e3.interval.text]))
-      axis(w, lo, hi, (0.8, 1.0, 1.2, 1.4, 1.6), 2 * rowh + 0.2cm, "×")
-      place(dx: 0pt, dy: 2 * rowh + 0.75cm, small[Ratio of catches, trust to plain. Gate: #e3.gate.result.])
-    })
-    grid(columns: (2.1cm, w, 1.1cm, w), [], catches, [], ratio)
-  },
+  fig("e3"),
   kind: image,
   caption: [E3, a pre-registered pilot with a negative result, drawn from #repo("trials/e3-pilot/result.json"). Left: catches in each arm. The plain arm is above two thirds of its sessions, where 1.5 times its catches exceeds the #e3.gate.S sessions an arm has, so the gate could not be met. Right: the ratio and its 95% bootstrap interval, against D0's threshold.],
 ) <fig-e3>
@@ -446,39 +355,10 @@ The CV, the coefficient of variation, is a series' standard deviation divided by
 - *Arithmetic-heavy tasks.* 2.29x plain release Rust, of which 1.74x comes from Tide's profile flags alone; the run does not separate which flag costs what.
 - *Simulator.* One seed under the simulator takes 12.8 times the real run in release builds.
 
-// S2b redraws this figure in D3 from the same records.
 #figure(
-  {
-    set par(justify: false)
-    let w = 9.0cm
-    let rowh = 0.55cm
-    block(width: 100%, inset: (y: 3pt), align(left, text(size: 8.5pt, fill: loss-ink)[*Unstable runs.* #bench-stable of #bench-summaries.len() series in the main run met the benchmark tool's stability criterion (CVs #pct3(calc.min(..bench-cvs)) to #pct3(calc.max(..bench-cvs))). These medians are descriptive, not settled measurements.]))
-    for panel in bench-panels {
-      let hi = calc.ceil(calc.max(..panel.rows.map(r => r.ratio)) * 2) / 2
-      let ticks = range(0, int(hi * 2) + 1).map(t => t / 2).filter(t => hi <= 2 or calc.fract(t) == 0)
-      let x(v) = w * v / hi
-      let h = panel.rows.len() * rowh + 0.9cm
-      block(breakable: false, above: 0.6em, {
-        align(left, text(size: 8.5pt, weight: "bold", panel.label))
-        v(-0.2em)
-        box(width: 100%, height: h, {
-          place(dx: 2.0cm + x(1), dy: 0pt, line(angle: 90deg, length: panel.rows.len() * rowh + 0.1cm, stroke: (paint: muted, thickness: 0.5pt, dash: "dotted")))
-          for (i, r) in panel.rows.enumerate() {
-            let y = 0.1cm + i * rowh
-            let c = if r.verdict == "loss" { loss-ink } else { ink }
-            place(dx: 0pt, dy: y, box(width: 1.85cm, align(right, small(raw(r.pair)))))
-            let (a, b) = if r.ratio >= 1 { (x(1), x(r.ratio)) } else { (x(r.ratio), x(1)) }
-            place(dx: 2.0cm + a, dy: y + 0.17cm, line(length: b - a, stroke: 1pt + c))
-            place(dx: 2.0cm + x(r.ratio) - 3pt, dy: y + 0.17cm - 3pt, circle(radius: 3pt, fill: c, stroke: none))
-            place(dx: 2.0cm + w + 0.3cm, dy: y, small(text(fill: c)[#fmt(r.ratio, 2)× #r.verdict (Tide slower in #r.slower of #r.rounds rounds)]))
-          }
-          place(dx: 2.0cm, dy: 0pt, axis(w, 0, hi, ticks, panel.rows.len() * rowh + 0.15cm, "×"))
-        })
-      })
-    }
-  },
+  fig("bench"),
   kind: image,
-  caption: [Tide's time as a multiple of plain Rust's (medians divided), drawn from the main run's records, #repo(bench-path.slice(1)). Above 1× Tide is slower. A row is a loss when Tide was slower in at least #loss-rounds of the paired rounds, otherwise a tie: the counts are made from the records with the note's rule (the note's §1). The release row for `tasks` compares with Rust built with Tide's flags, so it shows the #fmt(bench-panels.at(0).rows.find(r => r.pair == "tasks").ratio, 2)× between the twins, not the #fmt(bench-row("run", "run", "tide-release", "rust-release", "tasks").ratio, 2)× against plain release Rust.],
+  caption: [Tide's time as a multiple of plain Rust's (medians divided), drawn from the main run's records, #repo(bench-path.slice(1)). Above 1× Tide is slower. A row is a loss when Tide was slower in at least #bench.loss_rounds of the paired rounds, otherwise a tie: the counts are made from the records with the note's rule (the note's §1). The release row for `tasks` compares with Rust built with Tide's flags, so it shows the #fmt2(bench.tasks_twin_ratio)× between the twins, not the #fmt2(bench.tasks_plain_ratio)× against plain release Rust.],
 ) <fig-bench>
 
 The note prices Tide's additions and states its verdict plainly: "Every comparison above is a loss for Tide or a tie. None is a win." Its other limits include different linkers for the two arms and a Tide std built in each arm's profile, so the debug comparisons also compare an unoptimized std with Rust's optimized one (the note's §3). A fast edit loop remains a design target (D12), not a measurement.
@@ -498,7 +378,7 @@ The note prices Tide's additions and states its verdict plainly: "Every comparis
 *Verification.* Verus, Prusti, Creusot and Kani verify Rust programs (#repo("research/04-verification.md")). Tide borrows their contract names and spellings (D10) but proves nothing in v0. Bend 2 [16] targets proved, massively parallel pure code; Tide plans to call it for such kernels rather than compete (D16, Later tier). As context, Anthropic and Theorem reported in October 2026 on models carrying out formal verification at a much larger scale than before [11]. That work is independent of Tide; it is one sign that agents can do large amounts of checked work, and Tide is not formally verified.
 
 #figure(
-  placeholder[A comparison grid: Tide, plain Rust, cap-std, Effect, loom or Shuttle, and rr, against authority in signatures, enforced in dependencies, seeded schedule search, and exact replay, each cell from this section's text.],
+  fig("related"),
   kind: image,
   caption: [Where Tide sits: which neighbouring tools bound authority in signatures, enforce it in dependencies, search schedules from a seed, or replay a run exactly, as this section describes them.],
 ) <fig-related>
@@ -517,17 +397,17 @@ The note prices Tide's additions and states its verdict plainly: "Every comparis
 - *The `tide` command is planned.* The driver's flags are its precursors; typed holes and machine-readable fix plans (D14) are not delivered, which the E1 report counts against the Tide arm.
 
 #figure(
-  placeholder[What the v0 simulator models and what it does not, in two columns per area (tasks, files, network, processes, clock, environment, randomness, faults), read from the README's simulator table at the release tag.],
+  fig("sim-model"),
   kind: image,
   caption: [Replay reproduces the model: for each area, what Tide v0's simulator models and what it leaves out, so a replayed run says nothing about the right-hand column.],
 ) <fig-sim-model>
 
 = Roadmap <sec-roadmap>
 
-The decision record's tier table ("Tiers") owns what comes next. Planned for v1: proofs of contracts (`prove` mode), exercised-authority tracking, the evented runtime, direct import of Rust crates behind capability wrappers, production record and replay (D17), and kernel enforcement of authority for deployed binaries (D7). Later: the Bend tandem (D16), automatic parallelization, and signals and pseudo-terminals for child processes. Planned evidence includes a follow-up to E3 on harder cases, E2 (productivity on multi-file tasks), and E4 to E6, D0's remaining gates. The fast edit loop of D12 needs Tide's own incremental front end, which is not built.
+The decision record's tier table ("Tiers") owns what comes next. Planned for v1: proofs of contracts (`prove` mode), exercised-authority tracking, the evented runtime, direct import of Rust crates behind capability wrappers, production record and replay (D17), and kernel enforcement of authority for deployed binaries (D7). Later: the Bend tandem (D16), automatic parallelization, and signals and pseudo-terminals (the emulated terminals that interactive programs run in) for child processes. Planned evidence includes a follow-up to E3 on harder cases, E2 (productivity on multi-file tasks), and E4 to E6, D0's remaining gates. The fast edit loop of D12 needs Tide's own incremental front end, which is not built.
 
 #figure(
-  placeholder[Tide's tiers as three columns (v0 built, v1 planned, Later), each item from the decision record's tier table at the release tag.],
+  fig("tiers"),
   kind: image,
   caption: [What v0 delivers and what the decision record plans for v1 and later.],
 ) <fig-tiers>
@@ -541,7 +421,7 @@ Tide is agent-produced under a written governance (#repo("GOVERNANCE.md")). Its 
 No change lands on `main` without an AI supervisor pass. Review runs in sequence, each reviewer read-only on a frozen candidate: first a Codex pass (`gpt-6.1-sol`, reasoning effort high), whose findings the author fixes or rebuts until the supervisor reports the tree clean, then an Opus review on that tree. When the provider refuses the Codex pass, an Opus stand-in review takes its place and records the refusal. Planning-only changes (filings in the issue tracker) skip the Codex pass, and a protocol-import update that only regenerates `AGENTS.md` and `.agent-protocols.json` from a pinned source commit skips both reviews when its source-backed check passes. The human maintainer remains final merge authority. Each review is recorded in the pull request's discussion or, for a direct commit, as a file under #repo("reviews/"). Work is tracked as issues, called beads, in a committed ledger, and the design is a decision record that owns the language decisions.
 
 #figure(
-  placeholder[The merge rule as a flow: frozen candidate, Codex pass and its re-checks until clean, Opus review and its re-checks, landing; with the two exceptions, drawn from GOVERNANCE.md's Merge Rule at the release tag.],
+  fig("merge"),
   kind: image,
   caption: [How a change lands: a Codex supervisor pass until it reports the candidate clean, then an Opus review on that tree; the reviewer that found each finding re-checks only its fix.],
 ) <fig-merge>
@@ -579,7 +459,7 @@ In-repository reports and design records, pinned to the release tag:
 5. E3 pilot report: #repo("trials/e3-pilot/report.md").
 6. E1 gate report: #repo("trials/e1-checked/gate-report.md").
 7. Benchmarks against plain Rust: #repo("research/36-benchmarks.md").
-8. External catch, re-test of chrono_anchor: #repo("research/49-fx-zu4f.15-chrono-anchor-retest.md"). Search rounds: #repo("research/47-malware-rescreen.md"), #repo("research/37-external-admission-search.md"), #repo("research/38-external-concurrency-search.md"), #repo("research/39-std-concurrency-search.md"), #repo("research/41-qin-dataset-search.md"), #repo("research/44-fx-zu4f.10-concurrency-round.md"), #repo("research/46-fx-zu4f.11-agent-marker-round.md"). Case studies: #repo("examples/case-studies/eon-discovery-race/README.md"), #repo("examples/case-studies/eon-slow-close/README.md") and #repo("examples/case-studies/hyper-ambient-runtime/README.md").
+8. External catch, re-test of chrono_anchor: #repo("research/49-fx-zu4f.15-chrono-anchor-retest.md"). Search rounds: #repo("research/47-malware-rescreen.md"), #repo("research/37-external-admission-search.md"), #repo("research/38-external-concurrency-search.md"), #repo("research/39-std-concurrency-search.md"), #repo("research/41-qin-dataset-search.md"), #repo("research/44-fx-zu4f.10-concurrency-round.md"), #repo("research/46-fx-zu4f.11-agent-marker-round.md"), #repo("research/52-fx-zu4f.12-crypto-crates-round.md"), #repo("research/51-fx-zu4f.13-landed-capability-rescreen.md"). Case studies: #repo("examples/case-studies/eon-discovery-race/README.md"), #repo("examples/case-studies/eon-slow-close/README.md") and #repo("examples/case-studies/hyper-ambient-runtime/README.md").
 9. Adversarial review (weaknesses W1 to W8): #repo("reviews/2026-11-15-achilles-opus.md")\; round-1 agent-usability review: #repo("reviews/round1-agent-usability.md").
 10. Research notes: #repo("research/04-verification.md"), #repo("research/05-llm-code-empirics.md"), #repo("research/07-effects-capabilities.md"), #repo("research/16-deterministic-simulation.md"), #repo("research/28-positioning-and-name.md"), #repo("research/43-solana-account-capabilities.md"), #repo("research/45-bend-hvm-ideas-for-tide.md").
 

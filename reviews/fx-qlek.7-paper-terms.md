@@ -88,7 +88,7 @@ first paragraph, which is the first text after the title.
 | Parallel region; `join`, `par_map`, `par_for` | §2.3 | "D9's parallel regions give schedule-independent successful results without exploring task schedules"; the three are its library functions, whose closures and elements must be `Pure` |
 | Sequential equivalence | §2.3 | "when no branch panics, a region returns what its sequential version returns" |
 | Confluence theorem | §2.3 | "a proof that every schedule gives the same result" |
-| Trust hole | §2.3 | "a place where admitted code may do what admission cannot check, such as `unsafe` code admitted under an explicit grant"; again in §2.6 |
+| Trust hole | Fig. 2 (fig-budget), its §11 label; caption | "trust holes are the places where admitted code may do what admission cannot check (@sec-trust)"; §2.3 adds "such as `unsafe` code admitted under an explicit grant"; again in §2.6 |
 | `unsafe` grant | §2.3 | "`unsafe` code admitted under an explicit grant" |
 | Checked and sampled clauses | §2.4 | each defined in the sentence that introduces it |
 | Property test | §2.4 | "which check a stated property on generated inputs" |
@@ -97,7 +97,7 @@ first paragraph, which is the first text after the title.
 | `core`, `alloc` | §2.5 | "Rust's lower-level libraries" |
 | TD codes | §2.5 | "the driver's own error codes, such as `TD0206`, each with a message that says why" (first in the body; the abstract does not use the term) |
 | Allowlist | §2.5 | "an admission allowlist over ..." (the items admission accepts) |
-| `TD0501` | Fig. 3 caption (fig-diagnostic) | "a call to an ambient standard-library function that needs a capability" |
+| `TD0501` | Fig. 1 (fig-code), the left verdict label | "rejected with `TD0501`, the admission driver's error code for a call to an ambient standard-library function"; Fig. 3 shows the diagnostic. "TD codes" as a term first appears in §2.5 (row above) |
 | Trust surface, declared authority | §2.6 | "each public item's signature and declared authority"; exercised authority contrasted in the same paragraph |
 | Cargo workspace | §3 | "one Cargo (Rust's build tool) workspace" |
 | `rustc_private` driver | §3 | "one that links rustc's internal crates" |
@@ -163,6 +163,50 @@ first paragraph, which is the first text after the title.
 | Beads | §8 | "Work is tracked as issues, called beads" |
 | Frozen candidate | §8 | "each reviewer read-only on a frozen candidate" (the change as reviewed, unchanged during the review) |
 | AI-welcome | §8 | "not because agents wrote it, but because what they wrote is checkable" |
+
+## S2b: the drawn figures' text
+
+Checked at stage S2b (round 1 fixes) on the text each figure draws
+(`paper/figures/svg/*.svg`, `paper/figures/excerpts/*`), in reading order,
+against the text and captions before it. Terms a figure shares with the
+paper's text keep their rows above when the text uses them first. MISSING
+entries: none.
+
+| Term | First use | Definition there |
+| --- | --- | --- |
+| Preamble | Fig. 2 (fig-budget) label; caption | "Its preamble is the text before §0" |
+| `!` forms | Fig. 2 §2 label; caption | "`!` forms are macro calls such as `println!`" |
+| Derives, attributes | Fig. 2 §2 label; caption | "derives and attributes are `#[..]` annotations that generate or configure code" |
+| Lifetimes | Fig. 2 §3 label; caption | "lifetimes say how long a borrowed reference stays valid" |
+| Traits, generics | Fig. 2 §5 label; caption | "traits are shared interfaces, and generics are code written once for many types" |
+| Panic | Fig. 2 §9 label; caption | "a panic is Rust's stop on an unrecoverable error" |
+| Modules, packages | Fig. 2 §12 label; caption | "modules and packages organize code into files and crates" |
+| `unsafe` | Fig. 2 §11 label; caption | "code whose memory safety the programmer, not the compiler, must uphold" |
+| Toolchain loop | Fig. 2 §13 label; caption | "the planned `tide` commands an agent runs on each edit" |
+| `-`/`+` lines, `+`, `~` marks | Fig. 4 (fig-trust-diff) excerpt; caption | "The `-` and `+` lines at the top quote the patch's old and new signature of `serve`. Under declared authority, `+` marks an item or capability gained and `~` an item whose authority changed" |
+| Associated function | Fig. 4 excerpt; caption | "a function defined in a type's `impl` block"; here "the patch's conversion from an input/output error into the service's error type" |
+| Event trace, output trace | §4.1 text (before Fig. 6) | "the event trace, the run's whole trace, and the output trace, its `sink` events, which hold what the test printed" |
+| JSON | Fig. 7 (fig-manifest) excerpt; caption | "a text format of named fields" |
+| SHA-256 | Fig. 7 excerpt (`dependencies` entry); caption | "a SHA-256 hash, a 64-digit fingerprint of content, cut here to 16 digits" |
+| `roots`, `ordinal` | Fig. 7 excerpt; caption | "each simulated root the test created, by its `ordinal`, its creation order, with its seed and the inputs it read" |
+| `profile`, debug build | Fig. 7 excerpt; caption | "names the build profile, here the unoptimized debug build" |
+| `outcome` | Fig. 7 excerpt; caption | "the run's result, here a panic on the failed assertion" |
+| `trace_hash`, `input_hash` | Fig. 7 excerpt; caption | "`trace_hash` is the hash of the event trace, and `input_hash` is the hash of the whole manifest with that field left empty, so replay notices an edited field" |
+| Signals | §4.4.3 text (before Figs. 13 and 14) | "signals (the operating system's notifications to a process)" |
+| Pseudo-terminals | §7 text (before Fig. 14) | "pseudo-terminals (the emulated terminals that interactive programs run in)" |
+| Model-only candidate | §4.4.3 text (fx-zu4f.12) | "a failure seen only in its Tide model of a crate, which the caught rule does not count" |
+| Fix candidates; properties modeled | Table 2, fx-zu4f.12 row; §4.4.3 | fix candidates as in fx-zu4f.11's row; "430 properties the crates state", "47 properties modeled" (ported to Tide and tested); property as in §2.4's property tests |
+| Search stages | Fig. 9 (fig-search) caption | "what each round of @tab-search started from, screened, found eligible and caught"; Pool, Screened, Eligible and Caught as in Table 2 |
+
+The other figures' labels use terms the text defines first: the pipeline
+(Fig. 5: `Pure`, `Root::sim(seed)`, virtual time, RUN-3, Landlock,
+seccomp), the red teams (Fig. 8: blocking, controls), E3 (Fig. 10: the
+ceiling and `S` are defined in the label and caption), the benchmarks (Fig.
+11: CV, paired rounds, tie, loss, Tide's profile flags; parity is "1×" in
+the label), related work (Fig. 12: cap-std, Effect, loom, Shuttle, rr,
+chaos mode), the simulator model (Fig. 13: sinks, `Net::get`,
+`Net::resolve`, UDP, TLS) and the tiers and merge rule (Figs. 14 and 15:
+each item named in §7 and §8 first).
 
 Terms the comment named that the paper does not use: SBF and PDA (the
 Solana paragraph uses only the recorded launch sentence, which needs
