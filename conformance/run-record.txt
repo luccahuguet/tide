@@ -1,6 +1,6 @@
 tide-conformance run record
-commit: 9ee96fafa852a000343b42413c9215aec94a3616
-date: 2026-11-19T12:37:45Z
+commit: d751d4abf3b2cb9fe9a2bb6458b887f6f20fdee3
+date: 2026-11-19T19:56:30Z
 command: cargo run -p tide-conformance
 exit: 0
 inputs: conformance crates Cargo.toml Cargo.lock rust-toolchain.toml
