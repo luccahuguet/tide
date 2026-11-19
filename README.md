@@ -17,8 +17,10 @@ handed, and its tests replay a failing run exactly.
    dated build. Tide keeps Rust's syntax and compiler, with no fork.
 2. **A checker runs first.** `tide-admit`, Tide's admission checker, checks
    each crate before rustc compiles it and admits or rejects it. Every
-   rejection carries a numbered diagnostic, a `TD` code such as `TD0501`,
-   whose message says why.
+   rejection by one of its rules carries a numbered diagnostic, a `TD` code
+   such as `TD0501`, whose message says why. Code that rustc itself
+   rejects, such as a call to a function Tide's std lacks, gets rustc's own
+   errors.
 3. **Authority shows in the signature.** Files, the clock, the environment
    (the variables and arguments a program starts with), the network, other
    programs and randomness are reachable only through capability values a
@@ -41,7 +43,7 @@ handed, and its tests replay a failing run exactly.
    `tide-admit` records a failing seed's run and replays it on the same
    machine with identical event and output traces, the logs of what the run
    did.
-6. **Every change gets a trust diff.** `tide-admit --tide-diff` summarizes
+6. **Any change can get a trust diff.** `tide-admit --tide-diff` summarizes
    what a change may do: the public functions and types whose authority
    widened or narrowed, and the `unsafe` sites, code the Rust compiler
    cannot check, added or removed. Our E3 pilot, a small trial with AI
@@ -426,7 +428,7 @@ result/bin/tide-admit --test --emit=link --crate-name=sorted_insert \
 The example prints `[3, 7, 9, 14, 20]`, and its test, generated from the
 function's contract, passes in the kernel sandbox. On macOS or Windows,
 [docs/docker.md](docs/docker.md)'s dev image runs the same route in a Linux
-container.
+container, a route checked only on a Linux host so far.
 
 [docs/debugging.md](docs/debugging.md) covers replays under a debugger, and
 the [owner's guide](docs/owner-guide/README.md) walks through each feature
@@ -557,8 +559,10 @@ kernel lacks, in which case the run continues under what remains.
 
 ## How Tide is built
 
-Tide is AI-welcome because it is checkable. Its production code and its
-design text are written by AI agents; the owner directs and decides. A
+Tide is AI-welcome because it is checkable. It is AI-led and
+human-steered: AI agents design, specify, write, review and validate its
+production code and its design text, and the owner sets scope, priorities
+and direction and makes the owner calls. A
 change normally lands on `main` only after two reviews of a frozen
 candidate by fresh agents that did not write it, one from each of two model
 families: a pass by GPT Sol through OpenAI's Codex command-line tool
@@ -697,9 +701,9 @@ others.
   change meets, AI-written or not, and the project's roles.
 - [AGENTS.md](AGENTS.md): rules for agents working here, generated from
   pinned protocol profiles plus `.agent-protocols.local.md`.
-- [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced, under
-  human direction and review (so far AI agents also wrote the design text,
-  which the owner directs and decides); every change to
+- [GOVERNANCE.md](GOVERNANCE.md): Tide is AI-led and human-steered (AI
+  agents design, specify, write, review and validate; the owner sets scope
+  and direction); every change to
   `main` except a generated Starcompass import update (no review) or a
   planning-only one (no Codex pass) gets a Codex supervisor pass and,
   once Codex reports it clean, an Opus review; each reviewer re-checks

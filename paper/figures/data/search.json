@@ -44,12 +44,12 @@
     "record": "research/37-external-admission-search.md",
     "catch": false,
     "pool": {
-      "n": 147,
-      "unit": "= 87 advisories + 60 results"
+      "n": 1567,
+      "unit": "= 1,507 advisories + 60 results"
     },
     "screened": {
-      "n": 87,
-      "unit": "advisories"
+      "n": 1567,
+      "unit": "read; 87 advisories qualify"
     },
     "eligible": null,
     "caught": {

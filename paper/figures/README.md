@@ -31,7 +31,7 @@ so it needs a logged-in `claude` CLI) and rebuild.
 | fig-pipeline | `svg/pipeline.svg` | `spec/diagrams.json` (`pipeline`), quotes checked in `paper/tide-v0.typ` |
 | fig-replay | `svg/replay.svg`, `data/replay.json` | steps 1 to 3 of `records/demo-run.txt` |
 | fig-manifest | `excerpts/manifest.txt` | `records/demo-seed0.manifest.json`: a subset of its fields; hashes, the compiler line and the outcome cut, the 36 dependency entries and the 40 trace events elided, each cut marked `…`; a last `"…"` entry in `build` and at the top level names the recorded fields left out |
-| fig-redteams | `svg/redteams.svg`, `data/redteams.json` | counted by the rules in `spec/redteams.json` from the six red-team records it names |
+| fig-redteams | `svg/redteams.svg`, `data/redteams.json` | counted by the rules in `spec/redteams.json` from the eight red-team records it names |
 | fig-search | `svg/search.svg`, `data/search.json` | selectors in `spec/search.json`, one row per round; every count derived from the round's record; on every build a falsifier changes research/47's "Nothing was caught." to "One was caught." in memory and requires fx-zu4f.8's derived catch to become 1 |
 | fig-e3 | `svg/e3.svg`, `data/e3.json` | `trials/e3-pilot/result.json` |
 | fig-bench | `svg/bench.svg`, `data/bench.json` | `research/36-benchmarks/2026-11-18-bf6b958/records.jsonl`, with the note's rule (a loss is Tide slower in at least 20 of the 30 paired rounds) |

@@ -40,6 +40,16 @@
       "blocking_fixed": 0,
       "nonblocking": 2,
       "controls": 0
+    },
+    {
+      "name": "Rand draws design",
+      "when": "1 round, GPT-6.1 Sol",
+      "routes": false,
+      "held": 20,
+      "blocking": 0,
+      "blocking_fixed": 0,
+      "nonblocking": 4,
+      "controls": 0
     }
   ]
 }

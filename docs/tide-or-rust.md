@@ -47,9 +47,10 @@ below.
   (one row is unresolved; [Evidence](../README.md#evidence),
   [research/44](../research/44-fx-zu4f.10-concurrency-round.md)). Replay reproduces the simulator's model of the program, not
   the machine ([Simulator fidelity](../README.md#simulator-fidelity)).
-- **A checker that says why.** Every rejection carries a numbered `TD`
-  code, such as `TD0501` for an ambient call, and a message, which suits an
-  artificial intelligence (AI) agent fixing its own code.
+- **A checker that says why.** Every rejection by an admission rule
+  carries a numbered `TD` code, such as `TD0501` for an ambient call, and a
+  message, which suits an artificial intelligence (AI) agent fixing its own
+  code. Code that rustc itself rejects gets rustc's own errors.
 - **Built for agents to learn.** The core reference, the document that
   teaches the language to a model, fits a budget of 25,000 tokens, the
   units a model reads text in. In the
@@ -59,7 +60,7 @@ below.
   1.5 limit (its information-only interval, 1.29 to 1.64, crosses 1.5).
   That is parity within the trial's margins, on small tasks with
   one model, and Tide sessions used about 9 times Rust's cached input
-  tokens to load the reference
+  tokens (the Tide arm's prompt carried the reference)
   ([E1 gate report](../trials/e1-checked/gate-report.md);
   [owner's guide, chapter 9](owner-guide/09-experiments.md)).
 - **What you learn stays Rust.** Tide keeps Rust's syntax, ownership and
@@ -116,8 +117,8 @@ checker rejects the ambient call
 - **No user macros or build scripts.** Admission rejects them, and
   attributes that load files.
 - **x86_64 Linux only.** On macOS or Windows, [docs/docker.md](docker.md)
-  runs it in a Linux container, a route checked only on a Linux host so far
-  (under emulation on Apple silicon).
+  runs it in a Linux container, a route checked only on a Linux host so
+  far. Apple-silicon Macs run it under emulation.
 - **A slower edit loop.** [research/36](../research/36-benchmarks.md)
   measured four small programs, each written in Tide and in plain Rust, on
   one machine. Its series are marked unstable, so these are descriptive
