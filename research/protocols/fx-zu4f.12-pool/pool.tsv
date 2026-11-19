@@ -1,0 +1,31 @@
+pool_rank	class	also_p	arm_a	repository	stars	crate	crate_path	head_commit	nontest_lines	std_evidence
+1	P	no	yes	unionlabs/union	73712	access-managed	cosmwasm/access-managed	031785bb6dc6b957c624e62bc64c184409c97d7b	284	first #[test] in src/restricted.rs
+2	P	no	yes	unionlabs/union	73712	access-manager	cosmwasm/access-manager	031785bb6dc6b957c624e62bc64c184409c97d7b	1318	first #[test] in src/tests.rs
+3	P	no	yes	unionlabs/union	73712	aptos-types	lib/aptos-types	031785bb6dc6b957c624e62bc64c184409c97d7b	444	first #[test] in src/object.rs
+4	P	no	yes	FuelLabs/fuel-core	56743	fuel-core-storage	crates/storage	8bd82d4d1ff4e6da7a0e9febbe96e6a864d79f1f	4945	first #[test] in src/blueprint/merklized.rs
+5	P	no	yes	FuelLabs/fuel-core	56743	fuel-gas-price-algorithm	crates/fuel-gas-price-algorithm	8bd82d4d1ff4e6da7a0e9febbe96e6a864d79f1f	1276	first #[test] in src/utils.rs
+6	C	yes	yes	linera-io/linera-protocol	32022	linera-witty	linera-witty	672d97bb2fce3127db351069df72f1d225d8f263	4782	linera-witty/src/runtime/test.rs:std::sync::Mutex;linera-witty/src/runtime/test.rs:std::sync::Mutex::new;linera-witty/src/runtime/test.rs:std::sync::atomic::AtomicUsize;linera-witty/src/runtime/test.rs:std::sync::atomic::Ordering;linera-witty/src/runtime/test.rs:std::sync::atomic::Ordering::AcqRel;+3 more
+7	P	no	yes	linera-io/linera-protocol	32022	linera-witty-macros	linera-witty-macros	672d97bb2fce3127db351069df72f1d225d8f263	2344	first #[test] in src/unit_tests/specialization.rs
+8	P	no	yes	zama-ai/fhevm	24727	kms-connector-api	kms-connector/crates/api	3054cadc7969a17eda46ca606fa1d1a110a4743e	306	first #[test] in src/error.rs
+9	P	no	yes	zama-ai/fhevm	24727	oft	protocol-contracts/contracts/solanaOFT/programs/oft	3054cadc7969a17eda46ca606fa1d1a110a4743e	1337	first #[test] in tests/msg_codec.rs
+10	P	no	yes	zama-ai/fhevm	24727	primitives	listener/crates/shared/primitives	3054cadc7969a17eda46ca606fa1d1a110a4743e	277	first #[test] in src/event.rs
+11	P	no	no	diem/diem	16658	accumulator	storage/accumulator	fc4714a8ea273b6efe8b13dbce72ea60aad9a16c	535	first #[test] in src/tests/mod.rs
+12	P	no	no	diem/diem	16658	consensus-types	consensus/consensus-types	fc4714a8ea273b6efe8b13dbce72ea60aad9a16c	2019	first #[test] in src/block_data.rs
+13	P	no	no	diem/diem	16658	diem-crypto	crates/diem-crypto	fc4714a8ea273b6efe8b13dbce72ea60aad9a16c	2443	first #[test] in src/multi_ed25519.rs
+14	C	no	no	QuipNetwork/quip-solver	11591	quip-solver-exec	crates/quip-solver-exec	8ee9f8159c2da424aaeec0345af77c734dd43abf	239	crates/quip-solver-exec/src/lib.rs:std::sync::atomic;crates/quip-solver-exec/src/lib.rs:std::sync::atomic::AtomicU64;crates/quip-solver-exec/src/lib.rs:std::sync::atomic::AtomicU64::new;crates/quip-solver-exec/src/lib.rs:std::sync::atomic::Ordering;crates/quip-solver-exec/src/lib.rs:std::sync::atomic::Ordering::Relaxed;+1 more
+15	P	no	no	foundry-rs/foundry	10779	anvil-core	crates/anvil/core	9b2e485999acad0a92df356f60e068848e7e62a7	1117	first #[test] in src/eth/block.rs
+16	P	no	no	foundry-rs/foundry	10779	anvil-rpc	crates/anvil/rpc	9b2e485999acad0a92df356f60e068848e7e62a7	286	first #[test] in src/request.rs
+17	P	no	no	foundry-rs/foundry	10779	forge-script-sequence	crates/script-sequence	9b2e485999acad0a92df356f60e068848e7e62a7	473	first #[test] in src/reader.rs
+18	P	no	no	datahaven-xyz/datahaven	7866	datahaven-runtime-common	operator/runtime/common	edcb13dbbcd3c29489eaa2480a6f60ee4cb1f3ec	697	first #[test] in src/inflation.rs
+19	P	no	no	datahaven-xyz/datahaven	7866	pallet-datahaven-native-transfer	operator/pallets/datahaven-native-transfer	edcb13dbbcd3c29489eaa2480a6f60ee4cb1f3ec	298	first #[test] in src/tests.rs
+20	P	no	no	datahaven-xyz/datahaven	7866	pallet-evm-precompile-balances-erc20	operator/precompiles/erc20-balances	edcb13dbbcd3c29489eaa2480a6f60ee4cb1f3ec	482	first #[test] in src/tests.rs
+21	P	no	no	MystenLabs/sui	7784	invalid-mutations	external-crates/move/crates/invalid-mutations	6463a0de12c80520f1a6186a1109202ec4b73c7f	906	first #[test] in src/bounds.rs
+22	P	no	no	MystenLabs/sui	7784	move-abstract-interpreter-v2	external-crates/move/historical-versions/v2/crates/move-abstract-interpreter	6463a0de12c80520f1a6186a1109202ec4b73c7f	203	first #[test] in src/unit_tests/control_flow_graph_tests.rs
+23	C	no	no	MystenLabs/sui	7784	move-bytecode-utils	external-crates/move/crates/move-bytecode-utils	6463a0de12c80520f1a6186a1109202ec4b73c7f	879	external-crates/move/crates/move-bytecode-utils/src/module_cache.rs:std::sync::RwLock;external-crates/move/crates/move-bytecode-utils/src/module_cache.rs:std::sync::RwLock::new
+24	C	no	no	rustls/rustls	7761	bogo	bogo	836e411eccaf7331f4c289aabef0de32474de3b8	2471	bogo/src/main.rs:std::sync::Mutex
+25	C	no	no	rustls/rustls	7761	rustls	rustls	836e411eccaf7331f4c289aabef0de32474de3b8	24201	rustls/src/compress.rs:std::sync::Mutex;rustls/src/compress.rs:std::sync::Mutex::new;rustls/src/lock.rs:std::sync::Mutex;rustls/src/lock.rs:std::sync::Mutex::new;rustls/src/ticketer.rs:std::sync::RwLock;+1 more
+26	P	no	no	rustls/rustls	7761	rustls-aws-lc-rs	rustls-aws-lc-rs	836e411eccaf7331f4c289aabef0de32474de3b8	2887	first #[test] in src/hpke/tests.rs
+27	C	no	no	aptos-labs/aptos-core	6439	aptos-abstract-gas-usage	aptos-move/aptos-abstract-gas-usage	4cddc9f17e6a37e055edcd05f6873d1137dd7cfe	174	aptos-move/aptos-abstract-gas-usage/src/algebra.rs:std::sync::Mutex
+28	P	no	no	aptos-labs/aptos-core	6439	aptos-accumulator	storage/accumulator	4cddc9f17e6a37e055edcd05f6873d1137dd7cfe	534	first #[test] in src/tests/mod.rs
+29	P	no	no	aptos-labs/aptos-core	6439	aptos-aggregator	aptos-move/aptos-aggregator	4cddc9f17e6a37e055edcd05f6873d1137dd7cfe	1564	first #[test] in src/aggregator_v1_extension.rs
+30	P	no	no	paradigmxyz/reth	5865	jsonrpsee-types	crates/rpc/jsonrpsee/types	8fa8b31ea2185f30d57f1ff3fec53e03b13ad024	846	first #[test] in src/error.rs
