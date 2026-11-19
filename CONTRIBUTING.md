@@ -6,10 +6,11 @@ while staying valid Rust.
 
 ## Who writes the code
 
-Tide's production code is agent-produced: humans set direction and review,
-and AI agents write the code. So far AI agents have also written the design
-text, which the owner directs and decides. Hand-written
-production code is an exception that a change marks as one
+Tide is AI-led and human-steered. AI agents design, specify, write,
+review and validate its production code and its design text: they make the
+other technical choices, and each landing needs an AI review's approval. The owner steers,
+setting scope, priorities and direction and making the owner calls.
+Hand-written production code is an exception that a change marks as one
 ([GOVERNANCE.md](GOVERNANCE.md), Development Rule).
 
 AI-written contributions are welcome because every change here is checked,

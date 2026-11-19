@@ -223,12 +223,19 @@ const VERDICTS = {
 };
 const ITEM = /^### [A-Z]\d+\.|^\*\*Classification|^- \*\*[^*]*\b[A-Z]\d+\.\s/;
 function deriveRedteams(spec, rd) {
-  const heldRows = ({ record: f, heading }) => {
+  // A held-attacks section is a table (data rows, less the header) or, with `item`, a list
+  // (lines matching it); a section with any other line shape fails the build.
+  const heldRows = ({ record: f, heading, item }) => {
     const ls = rd(f).split("\n"), i = ls.indexOf(heading);
     need(i >= 0, `${f}: no "${heading}"`);
     const rows = [];
-    for (const l of ls.slice(i + 1)) { if (l.startsWith("## ")) break; if (l.startsWith("| ") && !l.startsWith("| ---")) rows.push(l); }
-    return rows.length - 1; // less the header row
+    for (const l of ls.slice(i + 1)) {
+      if (l.startsWith("## ")) break;
+      if (item) { if (new RegExp(item).test(l)) rows.push(l); else need(l === "" || !/^\s*[-*|]/.test(l), `${f}: a held item not read by ${item}: ${l}`); }
+      else if (l.startsWith("| ") && !l.startsWith("| ---")) rows.push(l);
+    }
+    need(rows.length > 0, `${f}: no held attacks under "${heading}"`);
+    return item ? rows.length : rows.length - 1;
   };
   return spec.teams.map((t) => {
     let held = 0, blocking = 0, nonblocking = 0, open = 0, controls = 0;
@@ -285,7 +292,7 @@ function deriveRedteams(spec, rd) {
   kinds.forEach(([, label, fill]) => { b += rect(lx, 2, 9, 9, { fill, stroke: C.muted, sw: 0.5 }) + text(lx + 12, 10, label, { size: 7.5 }); lx += 16 + width(label, 7.5) + 14; });
   teams.forEach((t, i) => {
     const y = 24 + i * 30;
-    b += text(144, y + 8, t.name.replace(/^(Proc::command|Net::get|Net::resolve)/, "`$1`"), { size: 8, anchor: "end", bold: true });
+    b += text(144, y + 8, t.name.replace(/^(Proc::command|Net::get|Net::resolve|Rand)/, "`$1`"), { size: 8, anchor: "end", bold: true });
     b += text(144, y + 18, t.when + (t.controls ? `; plus ${t.controls} controls` : ""), { size: 7, anchor: "end", fill: C.muted });
     let at = 150;
     for (const [k, , fill, ink] of kinds) {

@@ -8,28 +8,29 @@ Primary rule:
 
 > No production Tide code should originate from direct human coding.
 
-Human responsibilities:
+Human responsibilities, steering only:
 
-* defining architecture
+* setting scope, priorities and direction
+* making the owner calls
+
+Agent responsibilities: AI agents design, specify, write, review and validate.
+
+* designing the language and its architecture
 * writing specifications
-* reviewing generated code
-* validating correctness
-* steering project direction
-
-Agent responsibilities:
-
 * implementing compiler components
 * writing tooling
 * generating tests
 * refactoring code
 * applying mechanical fixes
+* reviewing changes
+* validating correctness
 
 Human-written production code is **forbidden by default** and must be explicitly marked if it occurs as an exception.
 
 Philosophy:
 
-> Humans define the system.
-> Agents produce the code.
+> Humans steer.
+> Agents design, specify, write, review and validate.
 
 This rule is project governance, not part of the Tide language specification.
 

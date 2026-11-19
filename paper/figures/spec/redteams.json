@@ -1,5 +1,5 @@
 {
-  "about": "How build.mjs counts each red team from its records. `routes`: the 2026-11-17 route table (rows `| <n> |`), with its stated total. `held`: data rows of the table under the record's held-attacks heading. `finding`: lines whose classification marks a finding blocking or non-blocking. `nonblocking`: lines that are each one non-blocking item. `fixed`: one or more quotes, each in its named record, that state the blocking findings fixed.",
+  "about": "How build.mjs counts each red team from its records. `routes`: the 2026-11-17 route table (rows `| <n> |`), with its stated total. `held`: data rows of the table under the record's held-attacks heading or, with `item`, the list lines there that match it. `finding`: lines whose classification marks a finding blocking or non-blocking. `nonblocking`: lines that are each one non-blocking item. `fixed`: one or more quotes, each in its named record, that state the blocking findings fixed.",
   "teams": [
     { "name": "Admission and the RUN-3 sandbox", "when": "2026-11-17, Claude Opus 5.5",
       "routes": { "record": "reviews/2026-11-17-red-team-opus.md", "total": "^(\\d+) routes tried, counting the accepted controls" },
@@ -20,6 +20,9 @@
       "fixed": { "record": "reviews/fx-ff13-redteam-recheck-codex.md", "quote": "### F1 — Fixed (blocking finding closed)" } },
     { "name": "Net::resolve design", "when": "1 round, GPT-6.1 Sol",
       "held": { "record": "reviews/fx-6d50-redteam-codex.md", "heading": "## Attacks that held" },
-      "finding": [ { "record": "reviews/fx-6d50-redteam-codex.md", "line": "^\\*\\*Classification: (.*)\\*\\*$" } ] }
+      "finding": [ { "record": "reviews/fx-6d50-redteam-codex.md", "line": "^\\*\\*Classification: (.*)\\*\\*$" } ] },
+    { "name": "Rand draws design", "when": "1 round, GPT-6.1 Sol",
+      "held": { "record": "reviews/fx-qlek.20-s1-redteam-codex.md", "heading": "## Held attacks", "item": "^- \\*\\*" },
+      "nonblocking": [ { "record": "reviews/fx-qlek.20-s1-redteam-codex.md", "line": "^### R\\d+ — " } ] }
   ]
 }
