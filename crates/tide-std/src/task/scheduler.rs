@@ -39,6 +39,8 @@ pub(super) enum Operation {
     File(&'static str),
     WorldFile,
     Net(&'static str, usize),
+    /// A process operation or simulated-child action on instance `usize` (03 §9.9).
+    Proc(&'static str, usize),
     Input(&'static str),
     Channel(&'static str, usize),
     Arc(&'static str, usize),
@@ -278,6 +280,7 @@ pub(super) struct Scheduler {
     rng: u64,
     fs_rng: u64,
     net_rng: u64,
+    proc_rng: u64,
     step: usize,
     events: Vec<Record>,
     sink_events: Vec<(&'static str, Vec<u8>, Duration)>,
@@ -307,6 +310,7 @@ impl Scheduler {
             rng: seed ^ 0x7469_6465_7363_6864,     // "tideschd"
             fs_rng: seed ^ 0x7469_6465_6669_6c65,  // "tidefile"
             net_rng: seed ^ 0x7469_6465_6e65_7421, // "tidenet!"
+            proc_rng: seed ^ 0x7469_6465_7072_6f63, // "tideproc"
             step: 0,
             events: Vec::new(),
             sink_events: Vec::new(),
@@ -777,6 +781,17 @@ impl Scheduler {
         index(&mut self.net_rng, bound)
     }
 
+    // The process sub-stream (03 §9.9): model alternatives, delays and short I/O sizes only.
+    pub(super) fn proc_draw(&mut self, bound: u64) -> u64 {
+        index(&mut self.proc_rng, bound)
+    }
+
+    pub(super) fn proc_event(&mut self, task: TaskId, name: &'static str, id: usize, span: Span, detail: &str) {
+        let mut tail = String::from(",\"proc\":");
+        quoted(&mut tail, detail);
+        self.event(task, Pending { operation: Operation::Proc(name, id), span }, "proc", None, Tail::Owned(tail));
+    }
+
     pub(super) fn net_event(
         &mut self,
         task: TaskId,
@@ -934,6 +949,7 @@ impl Operation {
             Self::File(name) => (name, None),
             Self::WorldFile => ("world.file", None),
             Self::Net(name, id) => (name, Some(id)),
+            Self::Proc(name, id) => (name, Some(id)),
             Self::Input(name) => (name, None),
             Self::Channel(name, id) => (name, Some(id)),
             Self::Arc(name, id) => (name, Some(id)),
@@ -952,6 +968,7 @@ impl Operation {
             | Self::Sleep { .. }
             | Self::Input(_)
             | Self::Net(..) => "cap",
+            Self::Proc(..) => "proc",
             Self::File(_) => "io_wait",
             Self::Channel(..) => "chan",
             Self::Arc(..) => "arc",
@@ -980,6 +997,8 @@ impl std::fmt::Display for Operation {
                     "conn"
                 };
                 write!(f, "({resource} {target})")?;
+            } else if matches!(self, Self::Proc(..)) {
+                write!(f, "(proc {target})")?;
             } else {
                 write!(f, "({target})")?;
             }

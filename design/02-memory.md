@@ -880,8 +880,8 @@ These are **not `Pure`**:
   capability argument, because they carry the authority of the capability
   that made them. In std these are `File`, `ReadDir`, `DirEntry`,
   `TcpStream`, `TcpListener`, `UdpSocket`, `Command`, `Child`, its pipe
-  ends `ChildStdin`, `ChildStdout`, and `ChildStderr`, `Signals`, and any
-  other such type a capability or handle method returns, such as the
+  ends `ChildStdin`, `ChildStdout`, and `ChildStderr`, `Signals` (Later),
+  and any other such type a capability or handle method returns, such as the
   iterator `Stdin::lines()` returns; from v1, also the opaque types that
   RUST-2 makes resource handles (03 §0);
 - the test-only simulator handles (03 ROOT-3): the type of `sim.world`,

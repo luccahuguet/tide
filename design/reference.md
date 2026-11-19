@@ -335,25 +335,23 @@ do, in every dependency.
 | Capability (path) | Main methods | Attenuation |
 | --- | --- | --- |
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
-| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`; planned: `get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>`, `bind_udp(addr)`, `resolve(host)` | `only(hosts) -> Net`, `no_bind() -> Net` |
+| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get` (6.7); planned: `bind_udp(addr)`, `resolve(host)` | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
 | `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |
 | `Stdin` (`std::io`) | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal`: inherent, receivers `&self` (below) | — |
-| `Proc` (`std::process`; planned) | `command(prog) -> Command` (a handle: companion 20), `exit(code: i32) -> !` | `only(["git", ..])` |
+| `Proc` (`std::process`) | `command(prog) -> Command` (a handle; the child has ambient authority: companion 20); planned: `exit(code: i32) -> !` | `only(["git", ..])`, exact names; an allowed shell is full authority |
 | `Tasks` (`std::task`) | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now` (7.1), `fault_point(name) -> bool` (planned; `false` outside simulation, companion 17); creating synchronization handles (7.4) | `limit(n) -> Tasks` |
 
-- Their methods take `&self` (provisional; handles' receivers: companion
-  20): `&Rand` or `&Stdin` is enough. For many draws take `let mut
-  rng = rand.rng();` once: a `Pcg64` (planned) is an ordinary `Pure` value with
-  `&mut self` methods (`next_u64`, `gen_range`, `gen_bool`, `shuffle`);
-  `Pcg64::seed_from_u64(n)` needs no capability.
+- Capability methods take `&self` (provisional; handles: companion 20).
+  For many draws, `let mut rng = rand.rng();` returns a planned `Pure`
+  `Pcg64` with `&mut self` methods (`next_u64`, `gen_range`, `gen_bool`,
+  `shuffle`); `Pcg64::seed_from_u64(n)` needs no capability.
 - Capabilities are not `Copy` or `Pure` (6.6). They are `Clone` (same
   authority; provisional) and `Send + Sync`, so scoped children may borrow
   them. Pass them by reference: `fs: &Fs`.
 - Attenuation returns a narrower capability of the same type, so it chains:
-  `root.net.only([..]).no_bind()`. `Net::only` takes `"host:port"` entries
-  in any iterable of strings (provisional).
+  `root.net.only([..]).no_bind()` (any iterable of strings; 6.7).
 - Every capability error type has a cancellation case whose
   `is_cancelled()` is true (7.2).
 
@@ -502,20 +500,23 @@ require `Pure`.
 
 ### 6.7 Network
 
-`Net::get` (planned) performs an HTTP(S) GET and returns the body;
-`NetError`, `Url`, and `UrlError` are in companion 21. `TcpStream` is
-`io::Read + io::Write`, also for `&TcpStream`.
+`get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>`: one
+HTTP/1.1 GET, TLS for `https`, 2xx body; no redirects or proxies.
+`only` checks exact `"host:port"` keys before outbound lookup
+(`get`, `connect`, planned UDP peers/resolve), not data. It leaves bind-name
+resolution (even on failure) and unlisted inbound peers unrestricted.
+`only([])` is not network silence; delegate `only([..]).no_bind()` for
+outbound-only grants. `NetError`, `Url`, `UrlError`: companion 21.
+`TcpStream` is `io::Read + io::Write`, also for `&TcpStream`.
 
 ### 6.8 Simulation
 
-Every capability has a deterministic simulated version (partial: not yet
-`Rand` or `Proc`). `Root::sim(seed)`
-returns a `SimRoot` (`std::sim`) with `Root`'s capability fields, all
-simulated (pass `&sim.fs` and the rest to the code under test), plus
-`sim.world` (setup), `sim.faults` and `sim.node(name)` (faults, crashable
-nodes and HTTP peers: companion 17; planned), and inspection methods. It works in any test, plain or
-property: the test body runs as the simulation's main task, so it can spawn,
-wait, and read virtual time.
+`Root::sim(seed) -> SimRoot` (`std::sim`) supplies deterministic simulated
+capabilities (partial: not yet `Rand`); pass `&sim.fs`, etc.
+to tests. It supplies `sim.world` (setup, HTTP peers), planned `sim.faults`
+and `sim.node(name)` (faults, crashable nodes: companion 17), and
+inspection methods. Any plain or property test runs as its main task:
+it can spawn, wait and read virtual time.
 
 | Item | Effect |
 | --- | --- |
@@ -526,13 +527,12 @@ wait, and read virtual time.
 
 (`Record` is provisional.)
 
-- **Time.** Monotonic time starts at zero, wall time at 2000-01-01. Virtual
-  time advances only when every task is blocked, jumping to the next timer.
-  Computation and `Clock`, `Rand`, `Env`, and `Tasks` calls take none; each
-  file operation takes up to 1 ms (provisional), and a fault-free
-  `Net::get` 2–20 ms plus the reply's `after(d)` (companion 17). Bound
-  `sim.elapsed()` by a deadline your code sets, or with slack. If no task
-  can ever run again, the run fails with a deadlock report.
+- **Time.** Monotonic starts at zero, wall time at 2000-01-01. Virtual time
+  jumps to the next timer only when all tasks block. Computation and
+  `Clock`, `Rand`, `Env`, `Tasks` calls take none; file operations up to
+  1 ms (provisional); `Net::get`: companion 17. Bound `sim.elapsed()` by
+  your deadline or allow slack. If no task can ever run again, the run
+  fails with a deadlock report.
 - **Order.** Capability operations, `spawn`, `join`, channel operations,
   `Shared::with*`, and checkpoints are scheduling points; the seed picks the
   interleaving. Parallel regions (8) run sequentially. Each run writes a
@@ -639,8 +639,6 @@ pub struct Panicked { pub message: String }          // (provisional)
   (`cfg: &'s Config`).
 - The task, not the OS thread, is the isolation unit: values that never
   leave a task need not be `Send` (an `Rc` inside one task is fine).
-
-`Net::get`, used below, is planned (6.1).
 
 ```rust
 fn fetch_both(tasks: &Tasks, net: &Net, clock: &Clock, a: &Url, b: &Url)

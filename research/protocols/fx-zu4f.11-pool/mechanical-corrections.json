@@ -1,0 +1,45 @@
+{
+  "recorded_utc": "2026-11-18T18:48:06.367059+00:00",
+  "corrections": [
+    {
+      "owner": "source acquisition",
+      "problem": "explicit blob fetch negotiated unavailable tree objects",
+      "fix": "use Git v2.43 promisor-fetch negotiationAlgorithm=noop; validated on synthetic partial clone"
+    },
+    {
+      "owner": "scan.non_test",
+      "problem": "test-only parameter removal could consume its containing closing parenthesis and production body",
+      "fix": "preserve containing closing delimiters; regression failed first, then passed; all earlier scans invalidated and refreshed by scanner digest"
+    },
+    {
+      "owner": "date-shallow cloning",
+      "problem": "Git client error processing shallow info: 4 after three same-mechanism retries",
+      "fix": "full commits-only default-branch clone, still tree:0 and no-checkout; count exact same window; this is not a GitHub rate-limit bypass"
+    },
+    {
+      "owner": "pinned source materialization",
+      "problem": "repository source contains an in-tree Rust file symlink; blanket rejection could not scan it",
+      "fix": "resolve pinned Git file-link chains, reject escaping/missing/cyclic targets, materialize targets without executing filters, canonicalize source and inspect linked manifests; synthetic partial-clone and escape rejection checks pass"
+    },
+    {
+      "owner": "expressibility conjunction evaluation",
+      "problem": "whole-repository Rust scans can read >100 MB even when forbidden normal dependencies already disqualify the repository",
+      "fix": "materialize all manifests first; evaluate the identical forbidden-dependency condition first; fetch and scan Rust only when it remains necessary; update diagnostic first-reason order and refresh all earlier scan rows under current scanner digest; keep predicate unchanged"
+    },
+    {
+      "owner": "normal dependency resolution",
+      "problem": "an unresolved inherited alias aborted a repository that independently has resolved forbidden normal dependencies",
+      "fix": "collect unresolved aliases while resolving all manifests; return proven forbidden dependencies if any; otherwise reject unresolved inheritance visibly. Regression covers both cases; no unknown can become a survivor."
+    },
+    {
+      "owner": "manifest input scannability",
+      "problem": "one Cargo.toml cannot be parsed strictly (duplicate value), so its dependencies cannot be verified mechanically",
+      "decision": "Conservative pre-registration narrowing: every Cargo.toml must be UTF-8 and parse strictly under tomllib; otherwise explicit unscannable-manifest exclusion, no repair/omission/build-failure claim. Other own-parser/invariant errors remain visible failures."
+    },
+    {
+      "owner": "metadata observation provenance",
+      "problem": "resuming an unfinished candidate reused its immutable metadata response but labeled its observation with resume time",
+      "fix": "derive observed_utc from the original successful API manifest request-start, and link response URL/SHA-256 directly in every candidate row; rebuild from caches, changing no selection counts, pins, source results or pool."
+    }
+  ]
+}

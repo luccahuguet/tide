@@ -3809,6 +3809,96 @@ fn simulated_files_match_real_files_and_replay() {
     }
 }
 
+/// PROC-1: the same process program runs on real Linux and under the simulator with declared
+/// models, and observes the same values; its seed trace is byte-identical.
+#[test]
+fn simulated_processes_match_real_processes() {
+    let dir = package("simulated-processes", include_str!("../../../conformance/cases/authority/proc.rs"));
+    checked(&mut driver(&dir));
+    let real = checked(Command::new(dir.join("out/demo")).current_dir(&dir).stdin(Stdio::null()));
+    checked(driver(&dir).args(["--crate-type=lib", "--test"]));
+    let test = dir.join("out/demo-test");
+    let simulated = checked(Command::new(&test).args(["--exact", "simulated::equivalent_program", "--nocapture"]));
+    let observation = |out: &Output| String::from_utf8_lossy(&out.stdout).lines().find(|l| l.starts_with("OBS:")).unwrap().to_owned();
+    assert_eq!(observation(&real), observation(&simulated));
+    for name in ["fixed_seed_trace", "an_unregistered_program_is_a_coverage_failure"] {
+        let out = checked(Command::new(&test).args(["--exact", &format!("simulated::{name}"), "--nocapture"]));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed; 0 failed"));
+    }
+}
+
+/// PROC-1, research/40 §7: a seed that uses `Proc` records its model inline in the manifest,
+/// replays byte for byte, and replay refuses a manifest whose model data differ.
+#[test]
+fn a_proc_seed_replays_and_refuses_changed_model_data() {
+    use replay_wire::{Manifest, encoded, read};
+    let dir = package("proc-replay", r#"
+use std::io::Write;
+use std::process::Stdio;
+#[test]
+fn piped() {
+    use std::sim::ProcessModel;
+    let sim = Root::sim(5);
+    sim.world.proc("cat", ProcessModel::new().copy());
+    let mut child = sim.proc.command("cat").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"replayed").unwrap();
+    assert_eq!(child.wait_with_output().unwrap().stdout, b"replayed");
+}
+"#);
+    checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "piped", "--seed", "47"]));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    let path = manifests().pop().unwrap();
+    let recorded: Manifest = read(&path).unwrap();
+    recorded.validate().unwrap();
+    let model = recorded.roots[0].inputs.iter().find(|i| i.kind == "proc").expect("model data recorded inline");
+    assert_eq!(model.key, b"cat");
+    assert!(String::from_utf8_lossy(&model.value).starts_with("proc-lifecycle-v0 schema=1 capacity=65536 "));
+    let before = manifests();
+    let run = checked(driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path));
+    assert!(stderr(&run).contains("replay reproduced"), "{}", stderr(&run));
+    let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+    let replayed: Manifest = read(&added[0]).unwrap();
+    assert_eq!(replayed.roots, recorded.roots);
+    assert_eq!(replayed.trace.as_bytes(), recorded.trace.as_bytes());
+    // The same manifest with other model data, sealed again so only the model differs.
+    let mut changed = recorded.clone();
+    let model = changed.roots[0].inputs.iter_mut().find(|i| i.kind == "proc").unwrap();
+    model.value = String::from_utf8(model.value.clone()).unwrap().replace("Copy", "ReadEof").into_bytes();
+    assert_ne!(changed.roots, recorded.roots);
+    changed.seal();
+    changed.validate().unwrap();
+    std::fs::write(&path, encoded(&changed)).unwrap();
+    let run = driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path).output().unwrap();
+    assert!(!run.status.success() && stderr(&run).contains("replay root or input mismatch"), "{}", stderr(&run));
+}
+
+/// PROC-2: the capability version is admitted against Tide's std, and its trust diff lists the
+/// new `proc` path first, naming the child as ambient (03 §4.3).
+#[test]
+fn proc_command_is_admitted_with_proc_in_the_trust_diff() {
+    let snapshot = |name: &str, source: &str| {
+        let dir = package(name, source);
+        checked(driver(&dir).args(["--crate-type=lib", "--emit=metadata"]));
+        dir.join("out/demo.interface.json")
+    };
+    let base = snapshot("trust-diff-proc-base", "pub fn tidy(s: &str) -> usize { s.len() }\n");
+    let head = snapshot(
+        "trust-diff-proc-head",
+        "pub fn tidy(s: &str) -> usize { s.len() }\n\
+         pub fn run(proc: &std::process::Proc) -> bool {\n    \
+             proc.only([\"git\"]).command(\"git\").arg(\"status\").status().is_ok_and(|s| s.success())\n\
+         }\n",
+    );
+    let out = checked(Command::new(env!("CARGO_BIN_EXE_tide-admit")).arg("--tide-diff").args([&base, &head]));
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "declared authority (no exercised authority, effects, or proof status)\n  \
+         + demo::run (function)\n      \
+         + proc: proc (child is ambient; only names programs, 03 PROC-ONLY)\n"
+    );
+}
+
 #[test]
 fn trait_dispatch_recursion_keeps_rustcs_failure_without_an_uncertain_label() {
     // The parameter dispatch in bounce cannot prove a cycle back to the blanket impl.
@@ -4051,6 +4141,159 @@ fn tcp_builds_and_runs_against_production_std() {
         assert_eq!(hooks.matches("tcp stream unwind").count(), 10, "{hooks}");
         assert_eq!(hooks.matches("tcp rebind unwind").count(), 5, "{hooks}");
     }
+}
+
+/// Companion 15.2 builds through tide-admit and its `#[sim_test]` passes (NET-HTTP-3).
+#[test]
+fn companion_fetcher_builds_and_its_sim_test_passes() {
+    let dir = package("net-fetch", include_str!("../../../conformance/cases/authority/net_fetch.rs"));
+    checked(&mut driver(&dir));
+    checked(driver(&dir).arg("--test"));
+    let out = checked(
+        Command::new("timeout")
+            .arg("120")
+            .arg(dir.join("out/demo-test"))
+            .args(["--exact", "tests::slow_host_times_out"])
+            .stdin(Stdio::null()),
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"), "{}", stderr(&out));
+}
+
+/// HTTP peer identity is part of the driver's replay input tape, including its profile.
+#[test]
+fn an_http_seed_replays_and_refuses_changed_or_missing_peer_identity() {
+    use replay_wire::{Manifest, encoded, read};
+    let dir = package("http-replay", r#"
+#[test]
+fn fetched() {
+    use std::net::Url;
+    use std::sim::Reply;
+    use std::time::Duration;
+    let sim = Root::sim(5);
+    sim.world.http("peer.test:443", |_| Reply::ok("replayed"));
+    let body = sim.net.get(&Url::parse("https://peer.test/").unwrap(), sim.clock.now() + Duration::from_secs(1)).unwrap();
+    assert_eq!(body, b"replayed");
+    println!("HTTP_BODY:{body:?}");
+    drop(sim);
+    println!("HTTP_OUTPUT:{body:?}");
+}
+"#);
+    let original = checked(driver(&dir).args(["--crate-type=lib", "--test", "--tide-run-test", "fetched", "--seed", "47"]));
+    let manifests = || std::fs::read_dir(dir.join("out/target/sim")).unwrap()
+        .map(|e| e.unwrap().path().join("run.manifest.json")).collect::<Vec<_>>();
+    let path = manifests().pop().unwrap();
+    let recorded: Manifest = read(&path).unwrap();
+    recorded.validate().unwrap();
+    let peer = recorded.roots[0].inputs.iter().find(|i| i.kind == "http").expect("HTTP identity recorded inline");
+    assert_eq!(peer.key, b"peer.test:443");
+    assert_eq!(peer.value, b"net-http-v0");
+    assert!(recorded.trace.contains("HTTP_BODY:"), "HTTP sink output is in the trace");
+    let before = manifests();
+    let run = checked(driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path));
+    assert!(stderr(&run).contains("replay reproduced"), "{}", stderr(&run));
+    let added = manifests().into_iter().filter(|p| !before.contains(p)).collect::<Vec<_>>();
+    assert_eq!(added.len(), 1);
+    let replayed: Manifest = read(&added[0]).unwrap();
+    assert_eq!(replayed.roots, recorded.roots);
+    assert_eq!(replayed.trace.as_bytes(), recorded.trace.as_bytes());
+    let output = |out: &Output| String::from_utf8_lossy(&out.stdout).lines()
+        .find_map(|l| l.find("HTTP_OUTPUT:").map(|i| l.as_bytes()[i..].to_vec()))
+        .unwrap_or_else(|| panic!("HTTP output witness: {}", String::from_utf8_lossy(&out.stdout)));
+    assert_eq!(output(&run), output(&original));
+    for change in ["profile", "address", "missing"] {
+        let mut changed = recorded.clone();
+        let inputs = &mut changed.roots[0].inputs;
+        let index = inputs.iter().position(|i| i.kind == "http").unwrap();
+        match change {
+            "profile" => inputs[index].value = b"net-http-broken".to_vec(),
+            "address" => inputs[index].key = b"other.test:443".to_vec(),
+            "missing" => { inputs.remove(index); }
+            _ => unreachable!(),
+        }
+        changed.seal();
+        changed.validate().unwrap();
+        std::fs::write(&path, encoded(&changed)).unwrap();
+        let run = driver(&dir).args(["--crate-type=lib", "--test", "--replay"]).arg(&path).output().unwrap();
+        assert!(!run.status.success() && stderr(&run).contains("replay root or input mismatch"), "{change}: {}", stderr(&run));
+    }
+}
+
+/// NET-HTTP-4: admission admits every public item of Tide's std, re-exports first, so
+/// `tide_std::net` exposes no path to the network beyond `Net`'s methods and their handles. This
+/// lists its public items, `pub use` included, and fails on any addition or removal; the
+/// backend files expose nothing public except `Url`, `UrlError` and `NetError` in `net/http.rs`.
+/// The trait impl headers on `Url` are also fixed, since an impl could expose the wrapped type.
+#[test]
+fn std_net_public_items_are_fixed() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tide-std/src");
+    let public = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(root.join(file))
+            .unwrap()
+            .lines()
+            .map(str::trim_start)
+            .filter(|l| l.starts_with("pub ") && !l.starts_with("pub(") || l.starts_with("pub use"))
+            .map(|l| l.split(['(', '{', '<', ';', '=', ':']).next().unwrap().trim_end().to_owned())
+            .collect()
+    };
+    let net = public("net.rs");
+    assert_eq!(
+        net,
+        [
+            "pub use std",
+            "pub use http",
+            "pub trait ToSocketAddrs",
+            "pub enum Address",
+            "pub trait Sealed",
+            "pub struct Net",
+            "pub fn no_bind",
+            "pub fn only",
+            "pub fn bind",
+            "pub fn connect",
+            "pub fn get",
+            "pub struct TcpListener",
+            "pub struct TcpStream",
+            "pub fn accept",
+            "pub fn local_addr",
+            "pub fn incoming",
+            "pub struct Incoming",
+            "pub fn local_addr",
+            "pub fn peer_addr",
+            "pub fn shutdown",
+        ],
+        "{net:#?}"
+    );
+    let source = std::fs::read_to_string(root.join("net.rs")).unwrap();
+    assert!(source.contains("pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr};"));
+    assert!(source.contains("pub use http::{NetError, Url, UrlError};"));
+    assert!(source.contains("mod address {"), "Address and Sealed stay in a private module");
+    assert_eq!(public("net/host.rs"), ["pub enum Host"], "sealed, unnameable: `mod host` is private");
+    for backend in ["net/real.rs", "net/sim.rs", "net/resolve.rs"] {
+        assert_eq!(public(backend), Vec::<String>::new(), "{backend}");
+    }
+    let http = public("net/http.rs");
+    let types: Vec<_> = http.iter().filter(|l| !l.starts_with("pub fn")).collect();
+    assert_eq!(types, ["pub enum NetError", "pub struct Url", "pub struct UrlError"], "{http:#?}");
+    let fns: Vec<_> = http.iter().filter_map(|l| l.strip_prefix("pub fn ")).collect();
+    assert_eq!(
+        fns,
+        ["is_cancelled", "is_transient", "parse", "scheme", "host_str", "port", "port_or_known_default", "path", "query", "fragment", "as_str"],
+    );
+    let source = std::fs::read_to_string(root.join("net/http.rs")).unwrap();
+    let impls: Vec<_> = source
+        .lines()
+        .map(|line| line.split('{').next().unwrap().trim())
+        .filter(|header| header.starts_with("impl") && header.ends_with(" for Url"))
+        .collect();
+    assert_eq!(
+        impls,
+        [
+            "impl std::fmt::Display for Url",
+            "impl std::fmt::Debug for Url",
+            "impl crate::__codec::Encode for Url",
+            "impl crate::__codec::Decode for Url",
+            "impl std::str::FromStr for Url",
+        ],
+    );
 }
 
 #[test]
@@ -5462,3 +5705,65 @@ fn main() {
     }
 }
 
+
+/// PROC-3: admission admits every public item of Tide's std, re-exports first (`walk.rs`
+/// `admit_def`), so `tide_std::process` must expose no path to a process beyond
+/// `Proc::command`'s `Command`. This lists its public items, `pub use` included, and fails on
+/// any addition or removal; its backend files expose nothing public.
+#[test]
+fn std_process_public_items_are_fixed() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tide-std/src");
+    let public = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(root.join(file))
+            .unwrap()
+            .lines()
+            .map(str::trim_start)
+            .filter(|l| l.starts_with("pub ") && !l.starts_with("pub(") || l.starts_with("pub use"))
+            .map(|l| l.split(['(', '{', '<', ';', '=']).next().unwrap().trim_end().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        public("process.rs"),
+        [
+            "pub use std::process::",
+            "pub struct Proc",
+            "pub fn command",
+            "pub fn only",
+            "pub struct Command",
+            "pub fn arg",
+            "pub fn args",
+            "pub fn env",
+            "pub fn envs",
+            "pub fn env_remove",
+            "pub fn env_clear",
+            "pub fn current_dir",
+            "pub fn stdin",
+            "pub fn stdout",
+            "pub fn stderr",
+            "pub fn spawn",
+            "pub fn output",
+            "pub fn status",
+            "pub struct Stdio",
+            "pub fn piped",
+            "pub fn inherit",
+            "pub fn null",
+            "pub struct Child",
+            "pub stdin: Option",
+            "pub stdout: Option",
+            "pub stderr: Option",
+            "pub fn id",
+            "pub fn wait",
+            "pub fn try_wait",
+            "pub fn kill",
+            "pub fn wait_with_output",
+            "pub struct ChildStdin",
+            "pub struct ChildStdout",
+            "pub struct ChildStderr",
+        ]
+    );
+    let source = std::fs::read_to_string(root.join("process.rs")).unwrap();
+    assert!(source.contains("pub use std::process::{ExitCode, ExitStatus, Output, Termination};"));
+    for backend in ["process/real.rs", "process/sim.rs"] {
+        assert_eq!(public(backend), Vec::<String>::new(), "{backend}");
+    }
+}

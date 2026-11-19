@@ -29,13 +29,14 @@ and which of these grounds Tide plans to cover.
 
 The search follows the frozen criteria in the body of bead fx-zu4f.6 and the
 operational protocol that tide-lead registered before any candidate was
-examined, with one disclosed departure from the protocol's recording rule
-for E4 (Method, "Source for E4"). The protocol is `target/work/protocol.md`,
-SHA-256 `0a02f5be72ea01ca887498fc5d938a35cfc9c25d1de3fa728a89ca5a46576308`,
-recorded on the bead on 2026-11-18 (Method, "Registration"). The builder
-checked the digest again just before the first search. The protocol is
-reproduced verbatim at the end of this record. An Opus builder ran everything
-here, from the worktree base `7863e8f`.
+examined (see "What 'pre-registered' means here"), with one disclosed
+departure from the protocol's recording rule for E4 (Method, "Source for E4").
+The protocol is `target/work/protocol.md`, SHA-256
+`0a02f5be72ea01ca887498fc5d938a35cfc9c25d1de3fa728a89ca5a46576308`, recorded
+on the bead on 2026-11-18 (Method, "Registration"). The builder checked the
+digest again just before the first search. The protocol is reproduced verbatim
+at the end of this record. An Opus builder ran everything here, from the
+worktree base `7863e8f`.
 
 ## Counts
 
@@ -79,6 +80,18 @@ therefore describe this pool, not concurrency bugs in Rust in general.
 2026-11-18. The bead comment recording its digest was created at 13:10:48Z,
 and the first search request started at 13:11:15Z. That comment's text gives
 "13:12Z", a typo that tide-lead corrected on the bead in a later comment.
+
+**What "pre-registered" means here.** The frozen criteria in the bead body
+reached git in ledger commit 7863e8f at 13:04:01Z, before the first search
+request at 13:11:15Z. The bead body requires the operational protocol to be
+committed as well, before any candidate is examined. It was not: tide-lead
+recorded its SHA-256 on the bead (br timestamp 13:10:48Z), and the file stayed
+uncommitted in the work directory. The hash first reached git in ledger commit
+fe99212 at 13:22:08Z, after the searches. The bytes embedded below match that
+hash. This record landed (bd6c51f) before the gap was found; this paragraph is
+a correction. Every timestamp here, git or br, is self-attested. Publishing
+the repository will show only that these commits existed by the publication
+date, not the order before it.
 
 **Searches.** The eight requests were sent once each, back to back, on
 2026-11-18 between 13:11:15Z and 13:11:24Z. Each went through `gh api

@@ -15,6 +15,6 @@ pub fn ambient() {
     let _ = std::net::TcpListener::bind("localhost:1"); //~ E0599 TD0501
     let _ = thread_rng(); //~ E0425 TD0501
     std::thread::sleep(std::time::Duration::ZERO); //~ E0433 TD0501
-    let _ = std::process::Command::new("tool"); //~ E0433 TD0501
+    let _ = std::process::Command::new("tool"); //~ E0599 TD0501
     let _ = std::process::exit; //~ E0425 TD0501
 }

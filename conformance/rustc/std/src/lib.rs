@@ -46,10 +46,9 @@ pub mod math;
 #[path = "../../../../crates/tide-std/src/test/mod.rs"]
 pub mod test;
 
-pub mod process {
-    pub use std::process::{ExitCode, Termination};
-    crate::capability!(Proc);
-}
+// Production owns `Proc`, `Command`, `Child`, the pipe ends, `Stdio` and both backends.
+#[path = "../../../../crates/tide-std/src/process.rs"]
+pub mod process;
 
 #[path = "../../../../crates/tide-std/src/io/mod.rs"]
 pub mod io;
@@ -71,44 +70,13 @@ pub mod fs;
 #[path = "../../../../crates/tide-std/src/time.rs"]
 pub mod time;
 
+// Production owns TCP, `Net::get`, `Url` and `NetError`; simulated HTTP peers are in `sim`.
 pub mod net {
     include!("../../../../crates/tide-std/src/net.rs");
     impl Net {
-        pub fn get(&self, url: &Url, deadline: crate::time::Instant) -> Result<Vec<u8>, NetError> { unimplemented!() }
         /// Simulation only (reference 6.8).
         pub fn drop_all(&self) -> Net { unimplemented!() }
     }
-
-    #[derive(Debug)]
-    pub enum NetError {
-        Timeout,
-        Cancelled,
-        Denied,
-        Refused,
-        Reset,
-        Dns,
-        Status(u16),
-        Io(crate::io::Error),
-    }
-    impl NetError {
-        pub fn is_cancelled(&self) -> bool { unimplemented!() }
-        pub fn is_transient(&self) -> bool { unimplemented!() }
-    }
-    impl std::fmt::Display for NetError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for NetError {}
-
-    pub struct Url(String);
-    impl Url {
-        pub fn parse(s: &str) -> Result<Url, UrlError> { unimplemented!() }
-    }
-    #[derive(Debug)]
-    pub struct UrlError(());
-    impl std::fmt::Display for UrlError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { unimplemented!() }
-    }
-    impl std::error::Error for UrlError {}
 }
 
 pub mod task {
@@ -151,10 +119,6 @@ pub mod sim {
         pub fn run_for(&self, d: Duration) { unimplemented!() }
     }
 
-    impl World {
-        pub fn http(&self, addr: &str, f: impl Fn(&Request) -> Reply + 'static) { unimplemented!() }
-    }
-
     impl Faults {
         pub fn at(&self, t: Duration, fault: Fault) { unimplemented!() }
     }
@@ -188,13 +152,6 @@ pub mod sim {
         pub tasks: Tasks,
     }
 
-    pub struct Request(());
-    pub struct Reply(());
-    impl Reply {
-        pub fn ok(body: impl Into<Vec<u8>>) -> Reply { unimplemented!() }
-        pub fn status(code: u16) -> Reply { unimplemented!() }
-        pub fn hang() -> Reply { unimplemented!() }
-    }
 
 }
 

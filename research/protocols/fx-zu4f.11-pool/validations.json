@@ -1,0 +1,30 @@
+{
+  "recorded_utc": "2026-11-18T20:47:42.363585+00:00",
+  "successful_observation_utc": "2026-11-18T20:44:27Z",
+  "surface": "complete registration tables/API response identities plus selected pinned commit-message exports and all materialized blob identities",
+  "observation": "Python validation in unified-exec session 61964 exited 0; compared every response/body/cache digest, metadata fields and true response times, activity/marker flags, every scan checkpoint digest/result, all threshold counts, sorted first-30 selection, selected commit-message export hashes, selected tree hashes and every materialized file against Git hash-object --stdin --no-filters. No source text displayed.",
+  "results": {
+    "api_responses": 2164,
+    "metadata_rows": 2139,
+    "activity_rows": 2105,
+    "scan_rows": 208,
+    "pool_rows": 8,
+    "selected_blob_files_verified": 949,
+    "synthetic_checks": 4,
+    "clone_ref_rows": 865,
+    "registered_source_directory_rows": 24
+  },
+  "input_sha256": {
+    "snapshot.json": "169bf2d020310db1068f8e5f11a042953e1ed9f5d60230d938f173322477d29f",
+    "queries.jsonl": "bcf00e6d7ef7b32894d9ca64657958b7a42ae1d084c660d2823a03b3305dc4de",
+    "candidates.tsv": "2dc6a566cdeccb9cb8467b28d8ae1851f4bb37ef5280b037bbe32f06f3a01426",
+    "activity-markers.tsv": "0012a607207a9da06ac3c35bdf9c36dfb2be6a14ee65ff14ba29cf1de535f6d5",
+    "scan-output.tsv": "3cb1c509c503ec3331637da04e77ece92642c359167e42282fcf91e7dfb91ae4",
+    "pool.tsv": "1e64f31da1be9f16c44ccf9f9be2b9ef73172ac9db4facb6c2ee2d443250c90b",
+    "b-source-dirs.tsv": "6af2e2ee2bec08fee11ff196fe6e4d14031e0e84a2c99421c013d4357989759e",
+    "selection.json": "ecea728af827484a22605191b9da24e04b44ec4ecb5357879afe06a3ac359b4c",
+    "count-activity-markers.py": "143f555eb84cfb63056c0238692ba8c239ef98059e826b5f677e7a02fcb130f0",
+    "scan.py": "3b1d1334b09afbfc250951f156478e9794f330cd869a51e82bb8df87fb6a1bff",
+    "pool-build.py": "af17d9dcd0d27285d003866a7caea83dd0971fd8181e6b0ef328184075ca3b43"
+  }
+}

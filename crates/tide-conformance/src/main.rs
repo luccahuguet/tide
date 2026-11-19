@@ -700,16 +700,17 @@ fn rules_of(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
-/// The ID in a table row of `rules.md` whose first cell is `PREFIX-N`.
+/// The ID in a table row of `rules.md` whose first cell is `PREFIX-N`; the prefix may have
+/// hyphenated parts (`NET-HTTP-1`).
 fn rule_id(line: &str) -> Option<&str> {
     let rest = line.strip_prefix('|')?.trim_start_matches(' ');
     let (id, after) = rest.split_at(rest.find([' ', '|'])?);
     after.trim_start_matches(' ').strip_prefix('|')?;
-    let (prefix, number) = id.split_once('-')?;
-    let well_formed = prefix.starts_with(|c: char| c.is_ascii_uppercase())
-        && prefix
-            .bytes()
-            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    let (prefix, number) = id.rsplit_once('-')?;
+    let well_formed = prefix.split('-').all(|part| {
+        part.starts_with(|c: char| c.is_ascii_uppercase())
+            && part.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    })
         && !number.is_empty()
         && number.bytes().all(|b| b.is_ascii_digit());
     well_formed.then_some(id)

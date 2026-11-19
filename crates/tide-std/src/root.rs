@@ -274,7 +274,7 @@ pub mod __rt {
             rand: crate::rand::Rand(None),
             env: crate::env::Env::new(None),
             stdin: crate::io::Stdin(None),
-            proc: crate::process::Proc(None),
+            proc: crate::process::Proc::new(None),
             tasks: crate::task::Tasks::real(),
             log: crate::log::LogConfig(()),
         };

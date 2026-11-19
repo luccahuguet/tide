@@ -17,8 +17,11 @@ on foreign functions, and `ThreadBound` (§5); the evented runtime and its lower
 to RUST-6). Later: the Bend boundary and
 `Accel` (§10); automatic parallelization. Not tiered by 01 and left out of v0
 by `reference-companion.md`: `pct` scheduling and `--minimize` (§9).
-The process model in §9.9 is **Later tier**, decided by the coordinator
-on 2026-11-13 (fx-f6xp), not part of the v0 simulation commitment.
+The process model in §9.9 is split (01 D15): its lifecycle subset, with
+the real process profile of §1.1, is **v0**, decided under owner decision
+A1 on 2026-11-18 (fx-ayh2.1, research/40); signals, PTYs, parent-only
+process death and process faults stay **Later**, as the coordinator
+decided on 2026-11-13 (fx-f6xp).
 Draft 3 removed `Frozen` (now `Pure + Sync`), the `lock` keyword (now
 `Shared::with`, §6.5), `par { }` (now `join`, §8), and the moved-out rule (a
 child's panic propagates, §6.2).
@@ -37,9 +40,9 @@ provisional in `reference.md` or its companion are fixed here unless noted.
   with no capability argument, because they carry the authority of the
   capability that made them (`File`, `ReadDir`, `DirEntry`, `TcpStream`,
   `TcpListener`, `UdpSocket`, `Command`, `Child`, its pipe ends
-  `ChildStdin`, `ChildStdout`, and `ChildStderr`, `Signals`, any other
-  such type a capability or handle method returns, and from v1 the opaque
-  types that RUST-2 makes resource handles). Every operation that reads
+  `ChildStdin`, `ChildStdout`, and `ChildStderr`, `Signals` (Later), any
+  other such type a capability or handle method returns, and from v1 the
+  opaque types that RUST-2 makes resource handles). Every operation that reads
   or changes the outside world, or that observes nondeterminism, is a
   method on a capability.
 - **Synchronization handle**: a value through which tasks observe each other's
@@ -92,7 +95,7 @@ shielded. Every capability error type has a cancellation variant whose
 | `Rand` | `next_u64`, `gen_range`, `gen_bool`, `fill_bytes`, `shuffle`, `rng() -> Pcg64` | none | none |
 | `Env` | `args()`, `var(k)`, `vars()`, `current_dir()` | `only(["HOME", ..])`, `args_only()` | none |
 | `Stdin` | `read_line`, `lines`, `read_to_string`, `read_to_end`, `is_terminal` | none | all reads |
-| `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn() -> io::Result<Child>`), `signals(&[Signal]) -> io::Result<Signals>`, `exit(code)` | `only(["git", ..])` | `output`, `status`, `Child::wait` and `wait_with_output`, pipe-end reads and writes, `Signals::recv` |
+| `Proc` | `command(prog) -> Command` (`.output()`, `.status()`, `.spawn() -> io::Result<Child>`), `exit(code)`; Later: `signals(&[Signal]) -> io::Result<Signals>` (§9.9) | `only(["git", ..])` (PROC-ONLY) | `output`, `status`, `Child::wait` and `wait_with_output`, pipe-end reads and writes; Later: `Signals::recv` |
 | `Tasks` | `scope`, `spawn_isolated`, `shield`, `checkpoint`, `yield_now`, `fault_point`; creating synchronization handles (§1.2) | `limit(n)` (live children, §6.1) | `checkpoint`, `yield_now`, `scope` exit and `spawn_isolated` (shielded) |
 | `Accel` (later) | generated Bend kernel calls (§10) | `budget(threads)`, `no_gpu()` | kernel calls |
 
@@ -206,18 +209,97 @@ Notes:
   `shutdown`, and no-op `flush`. Bind, connect, accept, read, write and shutdown
   are checkpoints with `io::ErrorKind::Cancelled`; address accessors and flush
   are not. `incoming` yields cancellation once then ends, like `stdin.lines`.
-  `no_bind` denies bind with `PermissionDenied`. `only` intersects literal
-  case-insensitive host/exact-port grants (IPs compare parsed), without lookup;
-  it limits connect, not bind or accepted peers. IP literals and `localhost`
-  resolve on both backends. Other real names currently use Rust's inline resolver
-  and cannot be abandoned on cancellation; simulation rejects them. This is a
-  partial implementation limit until `Net::resolve` owns resolution. HTTP, UDP,
-  owned I/O, options and timeouts remain planned. The adopted mechanisms and
+  `no_bind` denies bind with `PermissionDenied`, before any resolution.
+  `only` intersects NET-HOST keys (below), without lookup; it limits
+  connect and `get`, not bind or accepted peers. IP literals and
+  `localhost` resolve on both backends. Other real names go through the
+  shared resolver (NET-RESOLVE, research/42 §7), which cancellation
+  abandons; simulation rejects them for TCP. UDP, owned I/O, options and
+  TCP timeouts remain planned. The adopted mechanisms and
   limits are recorded in [research/21](../research/21-channels-tcp.md) §§1.9–1.13
   and §4 items 5–14; the node-tier `":7000"` shorthand is not a TCP address here.
-- **Network errors.** `NetError` has `Timeout`, `Cancelled`, `Denied` (a
-  host outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
-  response), and `Io(io::Error)`. `is_transient()` is true for `Timeout`,
+- **NET-HOST. What `only` grants** (v0, built in `fx-ff13` stage 2;
+  decided 2026-11-18, [research/42](../research/42-net-get-v0.md) §4). An
+  entry is
+  `"host:port"`, IPv6 in brackets, port 1–65535 required; no wildcards,
+  subdomains, ranges or schemes, and an entry that does not parse grants
+  nothing. The host as written, before percent-decoding and IDNA, must be
+  ASCII with no `%`, no empty label (`a..b`; one trailing dot is allowed)
+  and no `xn--` label; otherwise an entry grants nothing, a URL is
+  `UrlError` and an address `InvalidInput`. So `b%C3%BCcher.example`,
+  `%78n--bcher-kva.example` and `%EF%BD%81pi.example.com` are refused,
+  though the URL parser would decode them to an IDN, a hidden `xn--` label
+  and `api.example.com`; percent-encoding stays legal in paths and queries.
+  Entries, `get` URLs and `connect` addresses then reduce to one key by one
+  function: the URL Standard's host parser, so every IPv4 spelling it
+  accepts (`0x7f.1`, `2130706433`) becomes its address; IPv6 compared as
+  addresses, an IPv4-mapped one as its IPv4 address, zone identifiers
+  refused; domains
+  ASCII-lowercased with one trailing dot dropped; then the port. A URL
+  without a port keys as 80 for `http` and 443 for `https`. Matching
+  is key equality, checked before lookup for outbound peer operations
+  (`get`, `connect`, planned peer/resolve operations), so a refused peer
+  is never resolved, dialled or shown to a simulated peer. `only` does not
+  limit `bind` or accepted connections: a binding-capable Net can resolve
+  arbitrary bind names even if binding fails, and communicate with
+  unlisted inbound peers.
+  `only([])` alone is not network silence; delegate `only([..]).no_bind()`
+  for an outbound-only destination grant. `no_bind` refuses bind before
+  resolution. A name grants the name,
+  not its addresses, and an address grants the address: `localhost` does
+  not match `127.0.0.1`. The key's host is resolved, dialled, verified by
+  TLS and sent in `Host` (IPv6 in brackets) and SNI (DNS only; no SNI for
+  an IP host). A name is trusted to its owner: its DNS
+  may point it anywhere, loopback included (rebinding). A name grant
+  permits TCP contact and handshake traffic to any address the name
+  resolves to, on the granted port, under `https` too; a completed `https`
+  `get` has authenticated the name before it sends any HTTP data; and a
+  holder of the same `Net` can `connect` there and send raw bytes. There
+  is no private-address filter: a stated limit. fx-6d50's `resolve(host)`
+  reuses this key, allowed when some entry names the host on any port, and
+  the same private resolver.
+- **HTTP: `Net::get`** (v0; research/42 §§3, 6). One HTTP/1.1
+  GET per call, over TLS for `https` (rustls with ring, compiled-in
+  webpki roots, no fallback or skip), one connection per call, closed on
+  return. Order: cancellation; shape (`http`/`https`, a host, no userinfo,
+  else `Io(InvalidInput)`); `only` (`Denied`); deadline; resolution;
+  connect; TLS; request; response. The request is fixed: `GET`, `Host`,
+  `User-Agent: tide`, `Accept: */*`, `Connection: close`, no body, no other
+  header. Bodyless statuses take precedence over framing (RFC 9112 §6.3):
+  interim 1xx heads are skipped, a `101` is `Io(InvalidData)` (`get` asks
+  for no upgrade), and a `204` or `304` ends at its head whatever its
+  `Content-Length`. A 2xx returns the body after chunked decoding (no content
+  decoding; over 64 MiB is `Io(InvalidData)`, provisional); any other final
+  status, 3xx included, is `Status(code)`: redirects are not followed.
+  Under `https`, a body delimited by connection close ends only at the
+  peer's TLS `close_notify`; a close without it is `Reset`. A framed 2xx
+  body complete before a bare close stays `Ok`. When every connection
+  attempt fails, all-refused gives `Refused`, otherwise `Io` of the first
+  non-refusal error. The deadline bounds the whole call; a cancelled scope
+  wins over a passed deadline at the same wait. `get` reads no proxy variable,
+  `SSL_CERT_FILE` or `.netrc`, keeps no cache, session or connection of its
+  own between calls, and refuses every other scheme. TLS uses `NoKeyLog`
+  and disabled resumption; Tide never constructs `KeyLogFile` and ignores
+  `SSLKEYLOGFILE` (disabling rustls `logging` alone is insufficient).
+  Stated limits: `only` bounds outbound peer destinations, not data: the
+  path and query carry anything to an allowed host, `connect` to the same `host:port` sends any bytes, and an
+  allowed relay or proxy host is full network authority, as an allowed
+  shell is for `Proc`. A URL that redirects fails; private CAs and
+  proxy-only networks are unsupported in v0. Names resolve through the
+  operator's resolver on a bounded helper pool that a cancelled or timed-out
+  call abandons; `bind` and `connect` use the same resolver, so no lookup
+  is unabandonable. The system resolver may
+  share caches across calls and Nets, substitute configured aliases and
+  follow DNS aliases. Cancellation abandons the result, not the resolver's
+  remaining traffic; a name grant authorizes this operator-controlled
+  mechanism.
+- **Network errors.** `NetError` (`#[non_exhaustive]`) has `Timeout`,
+  `Cancelled`, `Denied` (a host outside `only`), `Refused`, `Reset` (also a
+  close before the head or framed body is complete, or a close-delimited
+  HTTPS body without `close_notify`), `Dns`, `Status(u16)` (a
+  non-2xx final response), and `Io(io::Error)` (`InvalidInput` for a URL
+  `get` refuses; `InvalidData` for a TLS handshake/verification failure or
+  a malformed or oversized response). `is_transient()` is true for `Timeout`,
   `Reset`, `Refused`, and `Status` of 408, 429, or 5xx: the failures a
   later identical request can escape. `Cancelled` is not transient,
   because cancellation is level-triggered (TASK-3) and a retry fails the
@@ -277,12 +359,86 @@ Notes:
 - **Randomness.** `rand.rng()` returns a seeded `Pcg64`, an ordinary `Pure`
   value. Authority is spent at seeding; drawing from a `Pcg64` is
   authority-free and inlines. `Pcg64::seed_from_u64(n)` needs no capability.
-- **Processes.** A child process is not capability-checked, so `Proc` is the
-  widest grant in the set and `tide review` lists every new path to it.
-- **Process handles.** `Command`, `Child`, its pipe ends, `Stdio`, `Signal`,
-  and `Signals` live in `std::process`. They are Tide std's own types, like
-  `ReadDir`, so ADMIT-1's ban on I/O methods of re-exported std types does
-  not reach them. A `Command` is a resource handle that carries the
+- **Processes.** A child process is not capability-checked, so `Proc` is
+  ambient authority for the child: the child runs with at least the
+  operating-system authority of the Tide process (more for a setuid
+  program). It is the widest grant in the set, and `tide review` lists
+  every new path to it first (§4.3). Process authority has no end. A
+  child, and anything it starts, keeps running with the process's
+  authority after the call that started it returns, and after the Tide
+  process exits. Lending `&Proc` or a `Command` for one call is not a
+  temporary grant.
+- **PROC-ONLY. Program allowlists** (research/40 §3). `only(programs)`
+  takes bare names (no `/`) and absolute paths; an empty entry, one with
+  NUL, or a relative path with a `/` grants nothing, and `only` on an
+  attenuated `Proc` intersects. `output` and `status` observe cancellation
+  first; `spawn`, not a checkpoint (§9.9), never does. Then, on both
+  backends, `spawn`, `output`, and `status` check, in order: the program,
+  which must equal an entry byte for byte, with no case folding,
+  normalization, or symlink resolution; under an attenuated `Proc`, the
+  command's final explicitly set environment, where a variable whose name
+  starts with `LD_` or `DYLD_`, or that is any name in glibc 2.39's
+  `UNSECURE_ENVVARS` (`sysdeps/generic/unsecvars.h`, 34 names: the `LD_` ones, `GCONV_PATH`, `GETCONF_DIR`, `GLIBC_TUNABLES`, `HOSTALIASES`, `LOCALDOMAIN`, `LOCPATH`, the `MALLOC_*` tunable aliases and `MALLOC_TRACE`, `NIS_PATH`, `NLSPATH`, `RESOLV_HOST_CONF`, `RES_OPTIONS`, `TMPDIR`, `TZDIR`), is
+  refused, as is any name holding `=` (the C library reads the bytes
+  before it as the name, so `GCONV_PATH=/x` would set `GCONV_PATH`); and NUL bytes in the program, arguments, environment, and
+  directory (`InvalidInput`, as Rust does). The refused set is what Tide
+  knows: it is glibc's list at that version, and another C library's
+  variables (musl's `MUSL_LOCPATH`) and names later glibc adds are not
+  refused. The first two checks return `PermissionDenied`; every refusal
+  starts nothing. Only then does lookup or model lookup run. On every
+  `Proc`, std resolves a bare name itself, against the absolute elements
+  of the `PATH` the process started with, taking the first executable
+  regular file; empty and relative elements are skipped and a command's
+  own `PATH` reaches only the child (Rust's Unix `Command` follows both).
+  With no start-time `PATH`, or none with an absolute element, a bare
+  name returns `NotFound`; std has no default search path, unlike glibc's
+  `execvp`.
+  Std then resolves the file lookup found, or an absolute program, to its
+  canonical path in the parent, before `current_dir` applies, and
+  executes that canonical path, with argv[0] the program as spelled in
+  `command` on both backends (models match the arguments after it). So
+  neither the working directory nor the command chooses the program, also
+  through a symlink or a per-process link such as `/proc/self/cwd`, which
+  resolves to the parent's own directory. Whatever is at the canonical
+  path when the child execs runs, so whoever can write a directory on the
+  start-time `PATH`, or replace the file or a link on its path, chooses
+  the program behind a bare-name entry or an absolute one; and a script
+  whose interpreter path is relative resolves it after `current_dir` applies. If canonical
+  resolution fails, `spawn`, `output`, and `status` return its error and
+  start nothing; a deleted file or a memfd reached through
+  `/proc/self/fd/N` has no resolvable path, so it fails where Rust's exec
+  would run it.
+- **What `only` does not bound.** `only` bounds which program image
+  starts, not what it does. The grant is full authority whenever the
+  program can be steered: an allowed shell, interpreter, `env`, `xargs`,
+  or `sudo`; a script, which runs its `#!` interpreter (or `/bin/sh` for a
+  file with no `#!` line) and that interpreter's variables (`BASH_ENV`,
+  `NODE_OPTIONS`, `PYTHONPATH`); a program that runs what its arguments or
+  variables name (`git -c core.sshCommand`, `GIT_SSH_COMMAND`, `find
+  -exec`); and a program that runs what the files it reads name: its
+  configuration and hooks, chosen by `current_dir` or by `HOME` and
+  similar variables, or a working directory's Makefile, `build.rs`, or
+  `.git/config`. An allowed program that reads and prints (`cat`, `git
+  show`, `printenv`) hands the calling code whatever it reads, whatever
+  that code's `Fs`, `Env`, and `Stdin` allow. A setuid program runs with
+  more than the process's own authority. `only(["git"])` is bounded only
+  when the arguments, environment, working directory, and the files git
+  reads are all fixed and trusted.
+- **Child environment and descriptors.** As in Rust, the child inherits the
+  whole environment, which an attenuated `Env` does not filter, and
+  `current_dir` needs no `Fs`; a relative one resolves against the parent's
+  current directory, after bare-name lookup. The child receives only the
+  three descriptors its `Stdio` configures: after setting up its standard
+  descriptors, the real backend marks every other descriptor close-on-exec
+  in the child before exec. If that sweep fails, the child exits before
+  exec and `spawn` returns the error; a child never execs with an unswept
+  table. The sweep needs Linux 5.11 (`CLOSE_RANGE_CLOEXEC`), so on an
+  older kernel the real backend starts no process: `spawn`, `output`, and
+  `status` return the error.
+- **Process handles.** `Command`, `Child`, its pipe ends, `Stdio`, and,
+  in the later tier, `Signal` and `Signals` live in `std::process`. They
+  are Tide std's own types, like `ReadDir`, so ADMIT-1's ban on I/O
+  methods of re-exported std types does not reach them. A `Command` is a resource handle that carries the
   authority of the `Proc` that made it: `output`, `status`, and `spawn`
   start a process with no capability argument, so `fn configure(cmd: &mut
   Command)` is not authority-free. `OpenOptions` differs: it is `Pure` data
@@ -317,10 +473,10 @@ Notes:
   the call has already closed `stdin` and taken `stdout` and `stderr`, so
   those fields are `None` and output read so far is lost. A port that binds
   the child without `mut` gets rustc's E0596 and its fix. Of the methods
-  Rust lacks, `File::sync`, `read_owned`, `write_owned`, and `Signals::recv`
-  take `&self`, and `File::close` takes `self`. `close` is shielded: it
-  always closes the descriptor and returns the close's own result, even in a
-  cancelled scope, because reporting that result is its only purpose beyond
+  Rust lacks, `File::sync`, `read_owned`, `write_owned`, and
+  `Signals::recv` (Later) take `&self`, and `File::close` takes `self`.
+  `close` is shielded: it always closes the descriptor and returns the
+  close's own result, even in a cancelled scope, because reporting that result is its only purpose beyond
   `drop`. Returning a cancellation error instead would lose the result.
   Returning the `File` inside one, as `send` returns its payload, would need
   an error type other than `io::Error` and leave the caller a retry that,
@@ -1191,8 +1347,13 @@ effects
 trust holes                                                      unchanged
 ```
 
-New paths to `proc`, `foreign`, and `accel` are listed first. `--full`
-prints every public item's declared and exercised authority.
+New paths to `proc`, `foreign`, and `accel` are listed first. A `proc`
+line also says that the child is not capability-checked and names the
+reaching `only` list as programs, not a sandbox, for example: `proc (child
+is ambient; only names programs, 03 PROC-ONLY)`. A `net` line's `only`
+list names outbound destinations under NET-HOST (§1.1), not data; without
+`no_bind` the `Net` can still resolve bind names and accept unlisted peers.
+`--full` prints every public item's declared and exercised authority.
 
 ### 4.4 `tide fix --thread`
 
@@ -2029,9 +2190,12 @@ its level; the README's status lists the parts of RUN-3 still missing.
   standard input behaves as a pipe. Without faults, each network packet takes
   1–10 ms, and a `Net::get` to a simulated peer is one round trip, two
   packet delays (2–20 ms), plus the reply's `after(d)`; connection setup and
-  name resolution are inside that round trip. An address with no peer gives
-  `Refused` after one round trip, and a host that no peer or node names
-  gives `Dns` at once.
+  name resolution are inside that round trip. A simulated `get` reaches
+  only `world.http` peers, never TCP listeners. An address with no HTTP
+  peer, IP hosts included, gives `Refused` after one round trip; a domain
+  that no peer or node names gives `Dns` at once. Registering a peer on a
+  simulated TCP listener's address panics at setup; a later bind on a
+  peer's address gives `AddrInUse` (wildcard/loopback aliases included).
 - Implemented TCP loopback (`sim.net`) has one host, `127.0.0.1`; a `0.0.0.0`
   bind listens there too and reports the wildcard address. Port zero draws an
   unused port in 49152–65535 from a separate net sub-stream. Bind/accept take
@@ -2203,24 +2367,58 @@ Not simulated: CPU time and performance; memory exhaustion; stack depth;
 parallel speed-up (parallel regions run sequentially, §8.4);
 hardware faults beyond injected disk errors; foreign code's internals and
 threads; kernel behavior beyond the models; signals; timing side channels;
-real child processes, which need a `sim.world.proc` model. The
+real child processes, which run only as §9.9's declared models. The
 simulated file backend applies each multi-call operation whole after its
 latency; it does not expose partial effects when cancellation interrupts real
 multi-call operations. Modelling those partial effects belongs with faults.
 
-### 9.9 `sim.world.proc` (Later; fx-f6xp)
+### 9.9 `sim.world.proc` (lifecycle v0; the rest Later)
 
 **[repo evidence / decision]** Decided by the coordinator on 2026-11-13
 (fx-f6xp): a bounded process model in **Later**, recorded in 01's tier table
-and D15. It is not implemented; §9.8's current exclusions remain until it
-ships. [Research/30](../research/30-sim-world-proc.md) records evidence,
+and D15. On 2026-11-18, under owner decision A1 (fx-ayh2.1,
+[research/40](../research/40-proc-command-v0.md) §6), its **lifecycle
+subset** moved to v0: setup by exact spelling, with
+`ProcessModel::missing()` for a program that does not exist (`NotFound`);
+models of arguments, environment, cwd and stdio and of spawn, input, timer
+and exit transitions; the lifecycle and per-Child wait rules; `kill` as
+SIGKILL submission to the direct child, whose termination is a ready model
+action, so a status with no code appears only when it runs; piped I/O,
+where a model's write to a closed parent end either ends it with no code
+(the default, SIGPIPE's default action) or, if the model declares it,
+fails with `BrokenPipe` while the model continues, and a v0 model can
+declare no other signal death; whole-node crash ending
+the node's children; the determinism, replay and coverage rules. Under
+the v0 simulator, `piped` and `null` work on all three descriptors and
+`inherit` on stdout and stderr; inherited stdin, `From<File>`, and piping
+one child into another are unsupported modes, a coverage failure. Signals,
+signal death, PTYs, parent-only death, `run_until_exit`, `proc_snapshot`,
+and the fault set stay **Later**. The lifecycle subset is implemented
+(fx-ayh2.1; `crates/tide-std/src/process/sim.rs`), apart from node crash,
+since simulated nodes are not built yet; the rest of §9.9 is not. The v0
+model builder spelling, provisional like the others, is
+`ProcessModel::new()` with command restrictions `args`, `env` and
+`current_dir`, the ordered steps `read(bytes)`, `read_to_end()`, `copy()`,
+`write(bytes)`, `write_err(bytes)`, `close_stdin()`, `close_stdout()`,
+`close_stderr()`, `delay(min, max)`, `choose([models])` and `exit(code)`
+(exit 0 after the last step), and `ignore_sigpipe()`; the simulator runs
+each model on a hidden scheduler task, so its actions, and `kill`'s
+termination, are ready actions the existing scheduler interleaves. [Research/30](../research/30-sim-world-proc.md) records evidence,
 alternatives, the accepted choices and implementation acceptance for
 fx-ayh2. API spellings are provisional.
+In v0 a simulated status with no code therefore comes only from `kill` or
+the default broken-pipe death (a real one from any signal death). Its
+`code()` is `None`, `success()` is `false`, and on both backends `Display`
+prints what Rust's `ExitStatus` prints on Linux (`signal: 9 (SIGKILL)`,
+`signal: 13 (SIGPIPE)`); no v0 method returns the signal number. The
+reason (research/40 §6): signal handling is Later, so v0 keeps only the
+two terminations it cannot leave out, and the same text on both backends
+keeps one tested contract.
 The API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`)
 and subscription rules (one live subscription with `AlreadyExists`, default
 disposition on drop, five-signal set) are Later on both real and simulated
-backends; v0's real `Proc::signals` and `Proc::exit` retain exactly their
-existing v0 specification.
+backends, as `Proc::signals` and `Signals` are (fx-ayh2.1 moved them out of
+v0); v0's `Proc::exit` retains exactly its existing v0 specification.
 
 **[inference] Surface and ownership.** Programs use the same `Proc`,
 `Command`, `Child`, pipe ends, `Signals` and `io::Result` in real and

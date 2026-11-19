@@ -30,9 +30,11 @@
 //! - `arena::{Arena, Id}`: generational graph handles, checked disjoint mutable access,
 //!   stale-handle rejection, and provisional slot-order iteration (reference §3.6).
 //!   Handles have no cross-arena identity check; `Id<T>` is `Pure` for every `T`;
-//! - the capability types `Root` carries: the identities `Rand` and `Proc`;
+//! - the capability types `Root` carries: the identity `Rand`; `Proc` (processes, below);
 //!   `Fs` (real and simulated files, below); and `Tasks` and `Clock`, which also
 //!   name their simulation when they have one;
+//! - `net::Net`: real and simulated TCP and HTTP(S) `get` with `Url`, `UrlError`, and
+//!   `NetError`; `sim.world.http` supplies deterministic HTTP peers (03 §1.1, companion 17/21);
 //! - `std::time` (`time.rs`): `Clock` with `now`, `system_time`, `sleep`, `sleep_until`, and
 //!   `monotonic_only`, whose `system_time()` panics; Rust's `Duration`; and `Instant`,
 //!   `SystemTime`, `SystemTimeError`, and `UNIX_EPOCH` with Rust's arithmetic and no `now()` or
@@ -158,6 +160,12 @@
 //!   default, skip)]`, and `std::json`: `encode`, `decode`, and `json::Error` (bead `fx-08m`;
 //!   `json.rs` states the encoding, `codec.rs` lists the std types with impls). The derives
 //!   take no other serde key, and no key on a tuple field or `skip` on a variant;
+//! - processes (`process.rs`; 03 §1.1 PROC-ONLY, §9.9; research/40): `Proc::command` and `only`,
+//!   `Command`, `Child`, pipe ends, `Stdio`, and Rust's `ExitStatus`/`Output`. Real Linux spawns
+//!   resolve bare names on the start-time `PATH`'s absolute elements, exec the canonical path with
+//!   argv[0] as spelled, and sweep descriptors close-on-exec after stdio setup (Linux 5.11, fail
+//!   closed). Simulation runs `sim.world.proc` models (`sim::ProcessModel`) on hidden scheduler
+//!   tasks; an unregistered program or unsupported mode stops the seed. Node crash is not modeled;
 //! - real and simulated files: `Fs`, `Mode`, `OpenOptions`, `File`, directory listings,
 //!   and type/length metadata (`fs.rs`); directory length is zero on both backends.
 //!   Real `dir` confines paths with Linux `openat2`. Simulated handles use inode identity,
@@ -238,7 +246,7 @@
 //! A panic while dropping an isolated task's panic payload aborts (PANIC-2).
 //!
 //! Not provided yet: other capability operations and attenuation of reference 6.1 (HTTP/UDP,
-//! explicit name resolution, random draws, processes); the `trace` sink;
+//! explicit name resolution, random draws, `Proc::exit`, signals, PTYs); the `trace` sink;
 //! `log::`/`tracing::`-prefixed log macros; `Secret`;
 //! unsized Arc/Weak payloads (`Arc<dyn Trait>`, `Arc<str>`, `Arc<[T]>`);
 //! other `sync` items,
@@ -299,14 +307,10 @@ pub mod float;
 /// Target-independent math (reference §4.3).
 pub mod math;
 
-pub mod process {
-    pub use std::process::{ExitCode, Termination};
-
-    crate::capability!(
-        /// Authority to run processes and exit. It has no operations yet.
-        Proc
-    );
-}
+/// Processes (03 §1.1, §9.9 lifecycle subset; research/40): `Proc::command`, `only`, `Command`,
+/// `Child`, its pipe ends, `Stdio`, and Rust's `ExitStatus` and `Output`, real on Linux and
+/// simulated through `sim.world.proc` models. `Proc::exit` is planned.
+pub mod process;
 
 pub mod par;
 pub mod task;

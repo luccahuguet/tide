@@ -1,0 +1,81 @@
+{
+  "surface": "synthetic fixtures only; no upstream execution or agent-behavior proof",
+  "checks": [
+    {
+      "script": "count-activity-markers.py",
+      "sha256": "143f555eb84cfb63056c0238692ba8c239ef98059e826b5f677e7a02fcb130f0",
+      "command": [
+        "python3",
+        "-B",
+        "target/work/count-activity-markers.py",
+        "--self-test"
+      ],
+      "environment": {
+        "TMPDIR": "/mnt/build/tide-agents/fx-zu4f.11-target/tmp",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-11-18T20:41:58.867358+00:00",
+      "ended_utc": "2026-11-18T20:41:58.955001+00:00",
+      "exit": 0,
+      "stdout": "self-test: passed\n",
+      "stderr": ""
+    },
+    {
+      "script": "scan.py",
+      "sha256": "3b1d1334b09afbfc250951f156478e9794f330cd869a51e82bb8df87fb6a1bff",
+      "command": [
+        "python3",
+        "-B",
+        "target/work/scan.py",
+        "--self-test"
+      ],
+      "environment": {
+        "TMPDIR": "/mnt/build/tide-agents/fx-zu4f.11-target/tmp",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-11-18T20:41:58.955019+00:00",
+      "ended_utc": "2026-11-18T20:41:59.020155+00:00",
+      "exit": 0,
+      "stdout": "self-test: passed\n",
+      "stderr": ""
+    },
+    {
+      "script": "admission-obs.py",
+      "sha256": "f36cef2e4572aea0b9a2602407526f02af2b49a5e54d66f655779ff87c38458a",
+      "command": [
+        "python3",
+        "-B",
+        "target/work/admission-obs.py",
+        "--self-test"
+      ],
+      "environment": {
+        "TMPDIR": "/mnt/build/tide-agents/fx-zu4f.11-target/tmp",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-11-18T20:41:59.020168+00:00",
+      "ended_utc": "2026-11-18T20:41:59.072182+00:00",
+      "exit": 0,
+      "stdout": "self-test: passed\n",
+      "stderr": ""
+    },
+    {
+      "script": "pool-build.py",
+      "sha256": "af17d9dcd0d27285d003866a7caea83dd0971fd8181e6b0ef328184075ca3b43",
+      "command": [
+        "python3",
+        "-B",
+        "target/work/pool-build.py",
+        "--self-test"
+      ],
+      "environment": {
+        "TMPDIR": "/mnt/build/tide-agents/fx-zu4f.11-target/tmp",
+        "PYTHONDONTWRITEBYTECODE": "1"
+      },
+      "started_utc": "2026-11-18T20:41:59.072197+00:00",
+      "ended_utc": "2026-11-18T20:41:59.405691+00:00",
+      "exit": 0,
+      "stdout": "{\"event\": \"repository-slice\", \"stars\": \"1000..1999\", \"total\": 2, \"distinct\": 2}\n{\"event\": \"repository-slice\", \"stars\": \">=2000\", \"total\": 1, \"distinct\": 3}\n{\"event\": \"api-retry\", \"status\": 429, \"wait_seconds\": 300, \"url\": \"https://api.github.com/repos/fixture/refused\"}\n{\"event\": \"api-retry\", \"status\": 429, \"wait_seconds\": 899.8281652927399, \"url\": \"https://api.github.com/repos/fixture/refused\"}\n{\"event\": \"api-retry\", \"status\": 0, \"wait_seconds\": 30, \"url\": \"https://api.github.com/repos/fixture/timeout\"}\n{\"event\": \"api-retry\", \"status\": 0, \"wait_seconds\": 60, \"url\": \"https://api.github.com/repos/fixture/timeout\"}\nself-test: passed\n",
+      "stderr": ""
+    }
+  ]
+}

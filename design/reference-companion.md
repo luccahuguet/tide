@@ -14,7 +14,7 @@ Appendix A hold what the core only points to. It is outside the core's
 mean in the core: a v0 surface not built yet, or built in part. The core's
 blanket labels apply here too: fixes and `tide` commands are planned.
 
-Core count: 24,961 tokens, recounted on 2026-11-17 with
+Core count: 24,968 tokens, recounted on 2026-11-18 with
 `scripts/count-tokens.sh design/reference.md` (CI counting is planned).
 Rerun it after any change to the core and update this line.
 
@@ -55,7 +55,7 @@ Rerun it after any change to the core and update this line.
 | `Err(RecvError)` | `Err(RecvError::Disconnected)`, or `Err(e)` and `e.is_cancelled()`: the bare name is now a binding that also catches `Cancelled` | rustc warning only (`non_snake_case`) |
 | `use std::io::Read;` for `stdin.read_to_string(..)` | drop the import: `Stdin`'s reads are inherent, and `Stdin` and `&Stdin` are still `io::Read` for generic readers (6.1) | `TD0913` safe |
 | A pipeline stage returning `Err` when its channel disconnects | return `Ok`: a disconnect alone is not an echo, so the `Err` could outrank the failure that dropped the peer (7.1, 7.3) | — |
-| An `Rc<Cell<u32>>` counter captured by a `world.http` peer (planned) | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
+| An `Rc<Cell<u32>>` counter captured by a `world.http` peer | `Shared::new(0u32, &sim.tasks)`; peers are `Send` (17) | rustc E0277 |
 | `Mutex<Sender<T>>`, a `Shared` inside a `Shared` | payloads are `Send + Pure`; pass handles separately | `TD0606` |
 | Capturing a capability, `&RefCell`, or `Arc` in `join`/`par_map` | compute first, borrow `Pure + Sync` data | `TD0610`, `TD0611` |
 | `par_map` or `par_for` over `Shared` cells, channel ends, or files | spawn children in a `tasks.limit(n)` scope (7.1) | `TD0612` |
@@ -83,7 +83,7 @@ Rerun it after any change to the core and update this line.
 | `rx.recv_timeout(d)` | `rx.recv_deadline(clock.now() + d)` |
 | `rand::thread_rng().gen_range(0..n)` | `rand.gen_range(0..n)`, or `rand.rng()` once (planned) |
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
-| `Command::new("git")` | `proc.command("git")` (planned) |
+| `Command::new("git")` | `proc.command("git")` |
 | `TcpStream::connect(a)` | `net.connect(a)` |
 | `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` (planned) |
 
@@ -188,8 +188,6 @@ mod tests {
 ```
 
 ### 15.2 Bounded concurrent fetcher with a deadline
-
-Planned: it needs `Net::get` and `sim.world.http`.
 
 ```rust
 // src/main.rs
@@ -431,11 +429,12 @@ The rest of 6.8's simulator: fault injection, network time, setup types,
 crashable nodes, records, and replay. Records, the setup types of `args`,
 `env_var`, `stdin`, and `file`, and the per-packet TCP latency are built,
 and so, in part, is the replay manifest (README Status); everything else
-here, `Net::get` timing and packet faults included, is planned.
+here, packet faults included, is planned; `sim.world.http` peers and
+`Net::get` timing are built (research/42 §9).
 
 | Item | Effect |
 | --- | --- |
-| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"`; `req.url() -> &Url`; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)`, `Reply::hang()` |
+| `sim.world.http(addr: &str, f: impl Fn(&Request) -> Reply + Send + 'static)` | a simulated HTTP peer at `"host:port"` (an `only` entry's form; invalid or duplicate panics), serving `http` and `https` alike; `req.url() -> &Url` removes the fragment; `Reply::ok(body: impl Into<Vec<u8>>)`, `.after(d)`, `Reply::status(503)` (a final status, 200–599; others panic), `Reply::hang()`, `Reply::reset()` (`Reset`), `Reply::tls_error()` (`Io`, `InvalidData`); every reply obeys 21's body limit |
 | `sim.net.drop_all() -> Net` | a `Net` whose every operation times out |
 | `sim.faults.net_drop(p: f64)`, `net_duplicate(p)`, `net_delay(min, max)`, `net_reorder(on)` | per-packet network faults (below) |
 | `sim.faults.partition(&[&a], &[&b])`, `heal()` | cut links between node groups |
@@ -453,8 +452,15 @@ here, `Net::get` timing and packet faults included, is planned.
 - **Network time.** Without faults, each packet takes 1–10 ms, drawn from
   the seed, and a `Net::get` is one round trip (2–20 ms, connection setup
   and name resolution included) plus the reply's `after(d)`. An address
-  with no peer gives `Refused` after one round trip; a host that no peer or
-  node names gives `Dns` at once.
+  with no HTTP peer, IP hosts included, gives `Refused` after one round
+  trip; a domain that no peer or node names gives `Dns` at once. A
+  simulated `get` reaches only `world.http` peers, never TCP listeners.
+  Registering a peer on a simulated listener's address panics at setup;
+  a later bind on a peer's address gives `AddrInUse`, wildcard/loopback
+  aliases included.
+- **HTTP peer panics.** After the callback, `get` checks scope cancellation
+  first (`Cancelled`), then the request deadline (`Timeout`). If neither
+  applies, a peer panic propagates to the requesting task.
 - **Setup types.** `world.args` takes any `IntoIterator` of `AsRef<OsStr>`
   items and `env_var(k, v)` two `AsRef<OsStr>` values, as `Command::args`
   and `Command::env` do; `stdin` and `file` contents take `impl
@@ -574,7 +580,7 @@ exhaust CPU, memory, or output, so set time and memory limits. This covers
 `tide eval`, a built binary, and anything else the branch asks you to
 execute still need your session's sandbox.
 
-## 20. Process handles (planned)
+## 20. Process handles
 
 A `Command`, like a `File`, is a resource handle: it carries the authority
 of the `Proc` that made it, because `output()`, `status()`, and `spawn()`
@@ -591,7 +597,12 @@ let mut input = child.stdin.take().unwrap();   // ChildStdin: write to the child
 input.write_all(b"b\na\n")?;
 drop(input);                                   // close it: sort sees the end
 let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
+let ok = proc.command("make").stdin(Stdio::null()).status()?.success();
 ```
+
+As in Rust, `status` and `spawn` inherit stdin unless you set it, and the
+simulator does not model inherited stdin, so set `Stdio::null()` or
+`piped()` in code you test under simulation (below).
 
 - **Rust's API.** `Command` and `Child` keep Rust's methods and receivers,
   with two exceptions. There is no ambient `Command::new` (`TD0501`), and
@@ -627,28 +638,135 @@ let out = child.wait_with_output()?;           // out.stdout == b"a\nb\n"
   every earlier `println!`, `eprintln!`, `dbg!`, and log record (a log
   record may instead be dropped under overload), so the child's output
   follows them, as in Rust (03 SINK-4).
-- **Signals.** `proc.signals(&[Signal]) -> io::Result<Signals>` subscribes
-  to the listed signals; `Signals::recv` suspends until one arrives.
-- **Paths.** `Command`, `Child`, the pipe ends, `Stdio`, `Signal`, and
-  `Signals` are in `std::process`, and `ReadDir` and `DirEntry` in
-  `std::fs`: Rust's paths, where Rust has the type.
+- **Authority.** A child process is not capability-checked: it runs with
+  everything your process can reach (more, for a setuid program), so
+  `Proc` is ambient authority for the child, and `tide review` lists new
+  paths to `proc` first. Process authority has no end. A child, and
+  anything it starts, keeps running with the process's authority after
+  the call that started it returns, and after the Tide process exits.
+  Lending `&Proc` or a `Command` for one call is not a temporary grant.
+- **`only`** (03 PROC-ONLY). `proc.only(["git", "/usr/bin/tar"])` takes bare
+  names and absolute paths, matched byte for byte against `command`'s
+  program, with no normalization or symlink resolution; `"./tool"` grants
+  nothing. A refused program returns `PermissionDenied` from `spawn`,
+  `output`, or `status` and starts nothing. Std looks a bare name up itself
+  in the `PATH` your process started with (absolute elements only;
+  `NotFound` if it has none), so `.env("PATH", ..)` changes only the
+  child's own `PATH`, unlike Rust. Whoever can write a directory on that
+  `PATH`, or replace the file an entry names, chooses the program.
+  Under `only`, setting an `LD_` or `DYLD_` variable, or a C-library one
+  such as `GCONV_PATH` (the list is in 03 PROC-ONLY), or a name holding
+  `=`, on the command returns `PermissionDenied`. `only` picks the program, not what it does:
+  an allowed shell, interpreter, `env`, `xargs`, or a program that runs
+  what its arguments name (`git -c core.sshCommand=..`, `find -exec`) is
+  full authority. A script, a program steered by the files it reads (git's
+  config and hooks in `current_dir`, a Makefile), or one whose output you
+  read back gives full authority as well (03 PROC-ONLY).
+- **Environment and descriptors.** The child inherits your whole
+  environment, as in Rust, whatever your `Env` allows; use `env_clear` or
+  `env_remove`. `current_dir` needs no `Fs`. The child gets only the three
+  descriptors its `Stdio` sets. The real backend needs Linux 5.11 for
+  that; on an older kernel `spawn`, `output`, and `status` fail and start
+  nothing.
+- **Simulation.** `sim.world.proc("git", model)` declares a model for an
+  exact program spelling (no `PATH` search); `ProcessModel::missing()`
+  makes spawning it return `NotFound`. An unregistered program or an
+  unsupported mode (inherited stdin, `Stdio` from a file or another child's
+  pipe) stops the seed with a coverage report, never starting a host
+  process. Exit codes, per-`Child` waits, `kill`, and piped I/O follow 03
+  §9.9's lifecycle subset; model spellings are provisional. A status with
+  no code (after `kill`, or a model's write to a closed pipe) has
+  `code() == None` and prints as on Linux (`signal: 9 (SIGKILL)`).
+  A model is data built with `ProcessModel::new()`: `args`, `env`, and
+  `current_dir` restrict the command it accepts, and the steps `read`,
+  `read_to_end`, `copy`, `write`, `write_err`, `close_stdin`/`stdout`/
+  `stderr`, `delay(min, max)`, `choose([..])`, and `exit(code)` run in
+  order (exit 0 after the last step); `ignore_sigpipe()` makes a write to a
+  closed pipe fail and continue.
+
+```rust
+#[sim_test]
+fn sorts(sim: SimRoot) {
+    let sort = ProcessModel::new().read("b\na\n").read_to_end().write("a\nb\n");
+    sim.world.proc("sort", sort);
+    let mut child = sim.proc.command("sort")
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"b\na\n").unwrap();  // dropped: closed
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.stdout, b"a\nb\n");
+}
+```
+- **Paths.** `Command`, `Child`, the pipe ends, and `Stdio` are in
+  `std::process`, and `ReadDir` and `DirEntry` in `std::fs`: Rust's paths,
+  where Rust has the type.
 - **Receivers.** Only the capability types of 6.1 take `&self` for every
   method. Handles keep Rust's receivers, except `wait_with_output`; of
-  Tide's own handle methods, `File::sync`, `read_owned`, `write_owned`,
-  and `Signals::recv` take `&self`, and `File::close` takes `self`.
+  Tide's own handle methods, `File::sync`, `read_owned`, and `write_owned`
+  take `&self`, and `File::close` takes `self`.
 
-## 21. Network: HTTP (planned)
+## 21. Network: HTTP
 
 `Net::get(&Url, deadline: Instant) -> Result<Vec<u8>, NetError>` performs
-an HTTP(S) GET and returns the body. `NetError` has
+one HTTP/1.1 GET, over TLS for `https`, and returns a 2xx response's body.
+`NetError` (`#[non_exhaustive]`) has
 `Timeout` (the operation's deadline passed), `Cancelled`, `Denied` (a host
 outside `only`), `Refused`, `Reset`, `Dns`, `Status(u16)` (a non-2xx
 response), and `Io(io::Error)`; `is_cancelled()` and `is_transient()`
 (`Timeout`, `Reset`, `Refused`, and `Status` 408, 429, or 5xx) classify
 them. `NetError` is not `PartialEq`: test it with `matches!`.
 `Url::parse(&str) -> Result<Url, UrlError>`; `Url` has the `url` crate's
-accessors (`host_str`, `port_or_known_default`, `path`, `as_str`) and
-`Display`. Simulated HTTP peers are in 17.
+accessors (`scheme`, `host_str`, `port`, `port_or_known_default`, `path`,
+`query`, `fragment`, `as_str`), no setters, `Display`, `Eq`, `Hash`, `Ord`
+and `Encode`/`Decode` as a JSON string. Simulated HTTP peers are in 17.
+
+- **Wire.** The request is fixed: `GET`, `Host`, `User-Agent: tide`,
+  `Accept: */*`, `Connection: close`; no body, no custom header, no
+  cookies. `Host` uses the key's host (IPv6 in brackets), with the port
+  unless it is the scheme's default; SNI uses the key's DNS host, never
+  an IP host. The fragment is not sent. One connection per call, closed on
+  return; no pool, TLS session reuse or Tide-owned cache. The system
+  resolver may share caches across calls and Nets, substitute configured
+  aliases and follow DNS aliases. Cancellation abandons its result, not
+  its remaining traffic; a name grant authorizes this operator-controlled
+  mechanism.
+- **Refused before the network.** A scheme other than `http` or `https`,
+  or a URL with userinfo (`user:pw@`), is `Io` with `InvalidInput`; a host
+  outside `only` is `Denied`. `Url::parse` refuses non-ASCII input, and
+  in an `http` or `https` host a `%`, an empty label (`a..b`) or an `xn--`
+  label (no internationalized hosts in v0): percent-encode non-ASCII paths
+  and queries.
+- **Not followed or read.** A 3xx is `Status(code)`: fetch the final URL.
+  Proxy variables, `SSL_CERT_FILE` and system trust stores are ignored;
+  TLS trusts Mozilla's roots compiled in (`webpki-roots`), so a private CA
+  fails with `Io`, `InvalidData`, as any TLS handshake/verification or
+  malformed-response failure does. So are a `101` (no upgrade is asked for) and a body over 64 MiB
+  (provisional). Interim 1xx heads are skipped; a `204` or `304` ends at
+  its head (`204` is `Ok` and empty). A close-delimited HTTPS body ends
+  only at TLS `close_notify`; a bare close is `Reset`. A complete framed
+  2xx body remains `Ok` on a bare close. If all connection attempts fail,
+  all-refused gives `Refused`, otherwise `Io` of the first non-refusal error.
+- **TLS guard.** `NoKeyLog`, resumption disabled; Tide never constructs
+  `KeyLogFile` and ignores `SSLKEYLOGFILE`. Disabling rustls `logging`
+  alone does not establish this.
+- **Simulation limit.** A peer models an application response, not TLS
+  certificate validation or wire parsing. Simulated HTTPS success asserts
+  a successful authenticated transport; it does not prove one.
+  `Request::url()` removes the fragment. Every `Reply`, `Reply::ok`
+  included, obeys the 64 MiB body limit: larger is `Io(InvalidData)`.
+- **What `only` bounds.** Outbound peer operations (`get`, `connect`,
+  planned peer/resolve operations) under 03's NET-HOST rule: exact
+  `"host:port"` keys, every IPv4 spelling as its address, names never
+  matching their addresses, checked before their lookup. A URL without a
+  port keys as 80 for `http` and 443 for `https`. It does not
+  limit `bind` or accepted connections: a binding-capable Net can resolve
+  arbitrary bind names even if binding fails, and communicate with
+  unlisted inbound peers.
+  `only([])` alone is not network silence; delegate `only([..]).no_bind()`
+  for an outbound-only destination grant. Not addresses: a name reaches
+  whatever its DNS gives, loopback included, and `https` authenticates the
+  name only once the handshake completes. Not data: a URL's path and query reach the
+  allowed host, and an allowed relay host is full network authority
+  (research/42 §6).
 
 ## Appendix A. Later tiers (not in v0)
 
@@ -682,8 +800,10 @@ From the tier table of 01 (draft 3.7). The chapters specify most of these.
 
 **Later:** the Bend tandem and `Accel` (D16); deferred overflow traps;
 automatic parallelization; `Shape` reflection; Polonius-precision borrows;
-interactive-proof export; snapshot-and-branch simulation; modeled child
-processes, signals and raw PTYs through Proc (D15; 03 §9.9), including the
+interactive-proof export; snapshot-and-branch simulation; the rest of 03
+§9.9 beyond its v0 lifecycle subset: modeled signals, raw PTYs,
+parent-only process death and process faults through Proc (D15), including
+`Proc::signals` and `Signals`, the
 API additions (`Child::signal`, `ExitStatus::signal`, `spawn_pty`/`Pty`) and
 subscription rules (one live subscription with `AlreadyExists`, default
 disposition on drop, five-signal set) on both real and simulated backends.

@@ -1,5 +1,6 @@
 use super::*;
 use std::os::fd::AsFd;
+use std::time::Duration;
 
 pub(super) fn bind(c: &NetContext, addr: SocketAddr) -> io::Result<std::net::TcpListener> {
     c.check()?;
@@ -12,9 +13,13 @@ pub(super) fn connect(
     c: &NetContext,
     addr: SocketAddr,
     span: Span,
+    until: Option<Duration>,
 ) -> io::Result<std::net::TcpStream> {
     use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
     c.check()?;
+    if until.is_some_and(|at| crate::time::monotonic() >= at) {
+        return Err(ErrorKind::TimedOut.into());
+    }
     let socket = socket_with(
         if addr.is_ipv4() {
             AddressFamily::INET
@@ -29,7 +34,7 @@ pub(super) fn connect(
     match rustix::net::connect(&socket, &addr) {
         Ok(()) => {}
         Err(rustix::io::Errno::INPROGRESS) => {
-            c.socket(socket.as_fd(), true, span)?;
+            c.socket(socket.as_fd(), true, span, until)?;
             rustix::net::sockopt::socket_error(&socket)
                 .and_then(|r| r)
                 .map_err(|e| io::from_std(e.into()))?;
@@ -44,13 +49,17 @@ pub(super) fn retry<T>(
     socket: &impl AsFd,
     write: bool,
     span: Span,
+    until: Option<Duration>,
     mut f: impl FnMut() -> std::io::Result<T>,
 ) -> io::Result<T> {
     loop {
         c.check()?;
+        if until.is_some_and(|at| crate::time::monotonic() >= at) {
+            return Err(ErrorKind::TimedOut.into());
+        }
         match f() {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                c.socket(socket.as_fd(), write, span)?
+                c.socket(socket.as_fd(), write, span, until)?
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             result => return result.map_err(io::from_std),
