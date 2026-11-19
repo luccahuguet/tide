@@ -1,0 +1,20 @@
+Model: gpt-6.2-sol (xhigh) · Date: 2026-11-19 · Candidate site 081b00f (nav contrast)
+
+## Verdict
+
+Changes required. High confidence. The five links read as buttons in both themes, and the candidate stays in scope. The dark boundary falls short of the 3:1 contract for intermediate colors at the edges of the header artwork.
+
+## Blocking findings
+
+- **`src/styles/site.css:176` and `:178` · Dark chip contrast has a gap.** The token values and relative-luminance math in `nav_contrast.py` match the CSS. The 0.4 stop is a conservative ceiling for the glow on bare dark sky. The opaque disc covers the peak, and the sky gradient darkens beneath it. The calculation at `nav_contrast.py:38`–`:41` samples the glow and the opaque moon and star colors, skipping the intermediate colors made by antialiasing the artwork. In `shots/after-dark-390.png`, the moon edge at (326, 51) is `#4f6b85`. Against that rendered header color, the dark fill is 2.73:1, the default stroke is 2.75:1 and the hover stroke is 2.90:1. The moon contour crosses the chip’s top edge in that shot. The responsive SVG geometry also places a star at the right edge of Hard questions around 407 px. An area-coverage estimate for the adjacent pixel (353, 68) gives 2.80:1 default and 2.95:1 hover under the report’s better-of-fill-or-stroke calculation. The 407 px estimate comes from the SVG and CSS geometry. The focus outline paints over the stroke, so focus needs its own boundary calculation too.
+
+  **Minimum fix.** Use the existing `--page-top` fill for dark nav chips. It gives 9.10:1 with the default stroke, 9.59:1 with the hover stroke and 10.49:1 with the focus outline. For an intermediate background, the two contrast ratios multiply to the stroke-to-fill ratio. At 9:1 or higher, at least one reaches 3:1. This bounds the mixed artwork colors with a nav-only CSS change and preserves the existing chip geometry. Update the contrast proof and the dark e2e threshold in `tests/site-smoke.spec.ts:145`–`:147` to match the 9:1 guarantee.
+
+## Non-blocking
+
+- **Scope and visual.** `081b00f` is a clean worktree and a direct child of `494f87c`. Only the two nav CSS rules, their comment and the nav smoke test changed. HTML, text, data, pin and link sources are identical. The rendered text dumps compare byte-for-byte (121,894 bytes, SHA-256 `a1a3197c0b86695202d8a9c91a8ea723bdc0d89606ee1431101469b59d91ce64`). The five outlined chips are distinct at 390 and 1280 px in both themes. Before/after pixel differences are confined to their rectangles in all four header pairs. The inset shadow has no layout effect, and the supplied phone overflow test passed at 320, 360 and 390 px. Reduced-motion CSS is unchanged. Forced colors suppresses the added shadow, leaving the existing forced-color rendering.
+- **Labels and focus.** Label contrast is at least 6.31:1 in light and 7.91:1 in dark across the requested states, including hover with focus. The focus outline is clearly visible in all four state captures and measures 5.77:1 against the light fill and 8.65:1 against the dark fill. In light mode even a conservative per-channel lower bound for the header colors gives at least 5.48:1 against all three strokes, including focus.
+- **E2E.** Applying the new assertion to the live CSS would fail on `box-shadow: none`. The parser returns `NaN`, which fails the greater-than-or-equal comparison. This is reasoned from the code. The test exercises both themes. Parsing the first opaque `rgb(...)` works for Chromium and these single inset shadows. It could accept a qualifying color from an unrelated shadow in a future edit because it does not check the inset geometry. The current assertion checks default stroke against fill at 1440 px. The width sweep checks opacity, and hover, focus and adjacent artwork fall outside the new assertion.
+- **Logged checks.** All nine steps in `site-checks.log` exit 0. Playwright reports 40 passed and the two expected project-specific skips, desktop for the phone overflow sweep and mobile for the desktop nav sweep. Verification used source, the supplied images and log, and local calculations. No browser suite was rerun.
+
+DONE
