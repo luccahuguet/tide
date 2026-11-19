@@ -483,6 +483,9 @@ the corpus also need the `stable` toolchain and `/usr/bin/python3` with MPFR
 
 ## Reading Guide
 
+[docs/tide-or-rust.md](docs/tide-or-rust.md): what Tide gives and costs, who
+should use plain Rust instead, and who Tide is for.
+
 ### Design
 
 - [design/00-first-principles.md](design/00-first-principles.md): the problem
