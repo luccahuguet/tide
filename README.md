@@ -64,7 +64,7 @@ handed, and its tests replay a failing run exactly.
    bugs, compiler bugs that let safe code break Rust's guarantees, and the
    others stay open.
 9. **Evidence, negatives included.** Our pilot and our searches for real bugs
-   recorded their methods in advance and published every count; how far
+   recorded their methods in advance and published every count. How far
    that order is proven varies by round, and a possible security defect is
    held privately and appears publicly only as a count. Our screen of all 87
    malicious-crate advisories in RustSec, Rust's public database of security
@@ -77,13 +77,13 @@ handed, and its tests replay a failing run exactly.
    first-time catch and not a rate. It counts one catch: our port (a rewrite
    in Tide) of that crate is rejected by admission, as it was in the screen,
    and a version handed the authority it uses is now admitted. Admission
-   does not judge intent; it makes the authority visible. Every check is
+   does not judge intent. It makes the authority visible. Every check is
    consistent with the re-test's registration being anchored, by an
    OpenTimestamps proof (a timestamp in a public blockchain), before the fix
    landed, and independent proof of that order is not established. The
-   re-test ran admission and type-checking only; no port was executed. For
+   re-test ran admission and type-checking only. No port was executed. For
    the pilot and four of the searches, the order of method and results
-   rests on our own records (self-attested); the other searches' method
+   rests on our own records (self-attested). The other searches' method
    files carry OpenTimestamps proofs, which show only that each file existed
    by its attestation time, and when those searches examined their
    candidates rests on our records. The [status page](https://tidelang.com/status/)
