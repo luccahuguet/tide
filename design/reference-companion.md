@@ -85,6 +85,7 @@ Rerun it after any change to the core and update this line.
 | `std::io::stdin()` | a `stdin: &Stdin` parameter (`root.stdin`) |
 | `Command::new("git")` | `proc.command("git")` |
 | `TcpStream::connect(a)` | `net.connect(a)` |
+| `(host, 0).to_socket_addrs()`, `lookup_host(h)` | `net.resolve(h, deadline)` (planned, 21); to reach the host, `connect` or `get` by name, since a name grant does not grant its addresses |
 | `std::process::exit(1)` | return `ExitCode::FAILURE` from `main`, or `proc.exit(1)` (planned) |
 
 ### 14.3 Porting async Rust (7)
@@ -458,6 +459,22 @@ here, packet faults included, is planned; `sim.world.http` peers and
   Registering a peer on a simulated listener's address panics at setup;
   a later bind on a peer's address gives `AddrInUse`, wildcard/loopback
   aliases included.
+- **Name resolution** (planned; research/48 §6). A simulated
+  `Net::resolve` takes no time and no draw. Apart from `localhost`
+  (which returns `127.0.0.1` with or without a peer), a domain that some
+  `world.http` peer names, on any port, resolves to one address,
+  `198.18.0.n`. Ordinals start at 1 and count distinct domain peer host
+  keys after NET-HOST canonicalization in setup order. `localhost` and
+  IP-address peers take no ordinal. Resolving a granted name reveals
+  its ordinal, and so the number of earlier distinct peer names,
+  including names outside that Net's grants (`localhost` and IP peers
+  excepted). Other domains return `Dns`. Simulated `get` and `resolve`
+  success for a name proves neither DNS encodability nor real resolver
+  acceptance. Real resolver failures are `Dns`. To `get` by synthetic
+  address, register an HTTP peer at that address. Without an
+  address registration, `get` by address returns `Refused`.
+  Simulated TCP stays loopback-only and cannot exercise resolution
+  followed by `connect` to a synthetic address.
 - **HTTP peer panics.** After the callback, `get` checks scope cancellation
   first (`Cancelled`), then the request deadline (`Timeout`). If neither
   applies, a peer panic propagates to the requesting task.
@@ -753,8 +770,27 @@ and `Encode`/`Decode` as a JSON string. Simulated HTTP peers are in 17.
   a successful authenticated transport; it does not prove one.
   `Request::url()` removes the fragment. Every `Reply`, `Reply::ok`
   included, obeys the 64 MiB body limit: larger is `Io(InvalidData)`.
+- **Name resolution** (planned; research/48).
+  `Net::resolve(host: &str, deadline: Instant) -> Result<Vec<IpAddr>,
+  NetError>` returns a nonempty list on `Ok`. A real non-literal lookup
+  preserves the resolver's order and duplicates. Given the same resolver
+  answer, it returns the list `connect`'s lookup uses with ports removed.
+  An unbracketed `::ffff:a.b.c.d` literal resolves to its canonical IPv4
+  address. TCP `connect((host, port))` preserves the IPv6 address for that
+  spelling. In simulation, names other than `localhost` get one
+  deterministic synthetic address if a `world.http` peer names them, or
+  `Dns` otherwise (§17). `host` is keyed as `connect((host, port))` keys
+  it: a port, URL, empty label, `%`, `xn--` or `*` is `Io(InvalidInput)`.
+  Under `only` it is allowed when an entry names the host on any port,
+  else `Denied` before any lookup. A passed deadline is `Timeout`,
+  literals included. After that check, an IP host or `localhost` returns
+  its canonical address without lookup. A lookup failure is `Dns`.
+  A name grant does not grant the addresses it returns. Connect by
+  name. The answer binds no later `connect` or
+  `get`, which look the name up again. No reverse lookups or other record
+  types.
 - **What `only` bounds.** Outbound peer operations (`get`, `connect`,
-  planned peer/resolve operations) under 03's NET-HOST rule: exact
+  planned peer operations) under 03's NET-HOST rule: exact
   `"host:port"` keys, every IPv4 spelling as its address, names never
   matching their addresses, checked before their lookup. A URL without a
   port keys as 80 for `http` and 443 for `https`. It does not

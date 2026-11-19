@@ -335,7 +335,7 @@ do, in every dependency.
 | Capability (path) | Main methods | Attenuation |
 | --- | --- | --- |
 | `Fs` (`std::fs`) | 6.3 | `dir(path, Mode) -> io::Result<Fs>`, `read_only() -> Fs` |
-| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get` (6.7); planned: `bind_udp(addr)`, `resolve(host)` | `only(hosts) -> Net`, `no_bind() -> Net` |
+| `Net` (`std::net`) | `connect(addr) -> io::Result<TcpStream>`, `bind(addr) -> io::Result<TcpListener>`, `get` (6.7); planned: `bind_udp(addr)`, `resolve(host, deadline)` (companion 21) | `only(hosts) -> Net`, `no_bind() -> Net` |
 | `Clock` (`std::time`) | `now() -> Instant`, `system_time() -> SystemTime`, `sleep(d)`, `sleep_until(t)`, both `-> Result<(), Cancelled>` | `monotonic_only() -> Clock` |
 | `Rand` (`std::rand`) | planned: `next_u64()`, `gen_range(a..b)`, `gen_bool(p)`, `fill_bytes(&mut [u8])`, `shuffle(&mut [T])`, `rng() -> Pcg64` | — |
 | `Env` (`std::env`) | `args()` (program name first), `var(k)`, `vars()`, `current_dir()`, as `std::env`'s | `only(["HOME", ..])`, `args_only()` |

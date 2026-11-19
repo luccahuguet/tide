@@ -88,7 +88,7 @@ shielded. Every capability error type has a cancellation variant whose
 | --- | --- | --- | --- |
 | `Fs` | `read`, `read_to_string`, `write`, `write_synced`, `open`, `create`, `open_with(p, &OpenOptions)`, `sync_dir`, `create_dir_all`, `read_dir`, `metadata`, `exists`, `rename`, `remove_file`, `remove_dir`, `remove_dir_all` | `dir(path, Mode::Read \| Mode::ReadWrite)`, `read_only()` | all |
 | `File` | `read`, `read_owned`, `write`, `write_owned`, `seek`, `sync`, `set_len`, `close` | none | all; `close` shielded |
-| `Net` | `connect(addr)`, `bind(addr)`, `bind_udp(addr)`, `resolve(host)`, `get(&Url, deadline)` | `only(["host:port", ..])`, `no_bind()` | all |
+| `Net` | `connect(addr)`, `bind(addr)`, `bind_udp(addr)`, `resolve(host, deadline)`, `get(&Url, deadline)` | `only(["host:port", ..])`, `no_bind()` | all |
 | `ReadDir`, `DirEntry` | iteration, `path`, `file_name`, `metadata`, `file_type` | none | iteration, `metadata`, `file_type` |
 | `TcpStream`, `TcpListener`, `UdpSocket` | `read`, `write`, `read_owned`, `write_owned`, `accept`, `send_to`, `recv_from`, `shutdown` | none | all |
 | `Clock` | `now() -> Instant`, `system_time()`, `sleep(d)`, `sleep_until(t)` | `monotonic_only()` | `sleep`, `sleep_until` |
@@ -255,9 +255,31 @@ Notes:
   resolves to, on the granted port, under `https` too; a completed `https`
   `get` has authenticated the name before it sends any HTTP data; and a
   holder of the same `Net` can `connect` there and send raw bytes. There
-  is no private-address filter: a stated limit. fx-6d50's `resolve(host)`
-  reuses this key, allowed when some entry names the host on any port, and
-  the same private resolver.
+  is no private-address filter: a stated limit.
+- **Name resolution: `Net::resolve`** (decided, planned until built;
+  research/48, bead `fx-6d50`). `resolve(host: &str, deadline: Instant)
+  -> Result<Vec<IpAddr>, NetError>` returns a nonempty list on `Ok`. A
+  real non-literal lookup preserves the resolver's order and duplicates.
+  Given the same resolver answer, it returns the list `connect`'s lookup
+  uses with ports removed. An unbracketed `::ffff:a.b.c.d` literal
+  resolves to its canonical IPv4 address. TCP `connect((host, port))`
+  preserves the IPv6 address for that spelling. In simulation, names
+  other than `localhost` get one deterministic synthetic address if
+  a `world.http` peer names them, or `Dns` otherwise (§9.3).
+  Order: cancellation; shape (`host` keyed as `connect((host, port))`
+  keys it, else `Io(InvalidInput)`, so a port, URL, empty label, `%`,
+  `xn--` or `*` is refused); `only`, allowed when some entry's host
+  equals the key's host on any port, else `Denied`, before any lookup;
+  deadline (`Timeout`); an IP host or `localhost` returns its key's
+  address with no lookup; otherwise a lookup (on the real backend, the
+  shared private resolver, with `Dns` for resolver failures or empty
+  answers). A name grant does not grant its addresses, and an address
+  grant permits only the address. `no_bind` does not affect `resolve`.
+  On an attenuated `Net`, `resolve` sends no lookup `connect` could not;
+  it adds the full address list of a granted host as data, without
+  contacting it. Its answer binds no later `connect` or `get`, which
+  look the name up again (rebinding).
+  No reverse lookups, record types or resolver options.
 - **HTTP: `Net::get`** (v0; research/42 §§3, 6). One HTTP/1.1
   GET per call, over TLS for `https` (rustls with ring, compiled-in
   webpki roots, no fallback or skip), one connection per call, closed on
@@ -1351,7 +1373,8 @@ New paths to `proc`, `foreign`, and `accel` are listed first. A `proc`
 line also says that the child is not capability-checked and names the
 reaching `only` list as programs, not a sandbox, for example: `proc (child
 is ambient; only names programs, 03 PROC-ONLY)`. A `net` line's `only`
-list names outbound destinations under NET-HOST (§1.1), not data; without
+list names outbound destinations under NET-HOST (§1.1), not data, and its
+hosts are the names `resolve` may look up; without
 `no_bind` the `Net` can still resolve bind names and accept unlisted peers.
 `--full` prints every public item's declared and exercised authority.
 
@@ -2196,6 +2219,18 @@ its level; the README's status lists the parts of RUN-3 still missing.
   that no peer or node names gives `Dns` at once. Registering a peer on a
   simulated TCP listener's address panics at setup; a later bind on a
   peer's address gives `AddrInUse` (wildcard/loopback aliases included).
+  A simulated `Net::resolve` (planned; research/48 §6) takes no time and
+  no draw. Of the domains other than `localhost`, those named by a
+  `world.http` peer resolve to `198.18.0.n`, with ordinals starting at 1
+  and counting distinct domain peer host keys after NET-HOST
+  canonicalization in setup order. `localhost` and IP-address peers take
+  no ordinal. The ordinal reveals how many names came earlier, including
+  names outside the `Net`'s grants (research/48 §6). Unregistered domains
+  return `Dns` except `localhost`, which returns `127.0.0.1` with or
+  without a peer.
+  To `get` by synthetic address, register an HTTP peer at that address.
+  Simulated TCP stays loopback-only. One `net.resolve` trace event
+  records the checked host and the result.
 - Implemented TCP loopback (`sim.net`) has one host, `127.0.0.1`; a `0.0.0.0`
   bind listens there too and reports the wildcard address. Port zero draws an
   unused port in 49152–65535 from a separate net sub-stream. Bind/accept take

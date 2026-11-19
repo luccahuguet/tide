@@ -510,14 +510,18 @@ scanning.
   TLS for `https` through rustls with compiled-in roots, a fixed request
   and no redirect, proxy or session state, real and simulated
   (`sim.world.http`). `net.only(["host:port"])` grants exact destinations
-  for outbound peer operations (`get`, `connect`, planned peer/resolve
+  for outbound peer operations (`get`, `connect`, planned peer
   operations), checked before their lookup (03 NET-HOST). It does not
   limit `bind` or accepted connections: bind can resolve arbitrary names
   even if it fails, and unlisted inbound peers can exchange data.
   `only([])` alone is not network silence; delegate `only([..]).no_bind()`
   for an outbound-only destination grant. It bounds destinations, not
   data: path and query reach the allowed host; an allowed relay host is
-  full network authority.
+  full network authority. `net.resolve(host, deadline)` (admitted
+  2026-11-19 under A1 (2026-11-18), bead `fx-6d50`, research/48; planned
+  until built) uses the shared resolver. An `only` entry on any port
+  permits resolution of its host. A name grant does not grant its
+  addresses. See 03 §1.1.
 - Capabilities are ordinary parameters passed by reference. Attenuation is a
   method returning a narrower capability: `root.fs.dir("/var/lib/app",
   Mode::ReadWrite)`, `root.net.only(["db:5432"])`.
