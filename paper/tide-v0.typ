@@ -28,7 +28,7 @@
 // ---- Repository links ------------------------------------------------------
 // The one place the repository URL and the release tag are set.
 #let tide-repository = sys.inputs.at("tide-repository", default: "https://github.com/luccahuguet/tide")
-#let tide-tag = sys.inputs.at("tide-tag", default: "v0-alpha")
+#let tide-tag = sys.inputs.at("tide-tag", default: "v0-alpha.1")
 // #repo("path") links a repository file at the tag; a path ending in `/` is a directory.
 // The link text is the path, or the optional second argument.
 #let repo(path, ..text) = {
