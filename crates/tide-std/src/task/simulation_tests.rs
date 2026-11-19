@@ -534,7 +534,7 @@ fn baton_serializes_cells_and_joins_nested_dropped_and_forgotten_tasks() {
                 .scope::<_, TaskError, _>(|scope| {
                     let a = scope.spawn(|| {
                         assert_alone(inside);
-                        tasks.scope(|nested| {
+                        tasks.scope::<_, TaskError, _>(|nested| {
                             let grandchild = nested.spawn(|| {
                                 assert_alone(inside);
                                 Ok(11)
@@ -1338,13 +1338,10 @@ fn polling_while_a_timer_waits_fails_the_seed_with_the_stall_report() {
         let panic = catch_unwind(AssertUnwindSafe(|| {
             let _: Result<(), TaskError> = tasks.scope(|scope| {
                 let deadline = clock.now() + SECOND;
-                scope.spawn(move || {
-                    let slept = clock.sleep_until(deadline);
-                    slept.map_err(|_| TaskError::Cancelled)
-                });
+                scope.spawn(move || Ok(clock.sleep_until(deadline)?));
                 // Polling keeps this task runnable, so the deadline never comes.
                 while clock.now() < deadline {
-                    tasks.yield_now().map_err(|_| TaskError::Cancelled)?;
+                    tasks.yield_now()?;
                 }
                 Ok(())
             });

@@ -1866,9 +1866,16 @@ impl Time {
 }
 
 /// Cancellation returned by a checkpoint: `Tasks::checkpoint`, `Tasks::yield_now`,
-/// `Clock::sleep` and `Clock::sleep_until`.
+/// `Clock::sleep` and `Clock::sleep_until`. `?` converts it into `TaskError::Cancelled` and
+/// into an `io::Error` of kind `Cancelled`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cancelled;
+impl Cancelled {
+    /// Always true: every capability error type answers `is_cancelled()` (reference 6.1).
+    pub fn is_cancelled(&self) -> bool {
+        true
+    }
+}
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("operation cancelled")
@@ -1878,6 +1885,12 @@ impl std::error::Error for Cancelled {}
 impl From<Cancelled> for crate::io::Error {
     fn from(_: Cancelled) -> Self {
         crate::io::ErrorKind::Cancelled.into()
+    }
+}
+// The cancellation a checkpoint observed, returned as the task's error (03 §6.1).
+impl From<Cancelled> for TaskError {
+    fn from(_: Cancelled) -> Self {
+        TaskError::Cancelled
     }
 }
 
@@ -2127,8 +2140,9 @@ mod tests {
                 let error: crate::io::Error = tasks.checkpoint().unwrap_err().into();
                 assert!(error.is_cancelled());
                 assert_eq!(error.kind(), crate::io::ErrorKind::Cancelled);
+                assert!(tasks.checkpoint().unwrap_err().is_cancelled());
                 assert_eq!(
-                    tasks.yield_now().map_err(|_| TaskError::Cancelled),
+                    tasks.yield_now().map_err(TaskError::from),
                     Err(TaskError::Cancelled)
                 );
             }

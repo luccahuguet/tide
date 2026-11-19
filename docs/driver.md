@@ -239,8 +239,9 @@ and the thread task runtime (`Tasks::scope`, `Scope::spawn`,
 `Task::join`, `Scope::cancel`), with scoped borrows, automatic joins, TASK-2
 failure precedence and cancellation echoes, and level-triggered
 `Tasks::checkpoint` / `Tasks::yield_now`. Checkpoints return `task::Cancelled`,
-convertible to `io::Error` with `ErrorKind::Cancelled`; map explicitly to
-`TaskError::Cancelled` when needed.
+which `?` converts into `TaskError::Cancelled` and into `io::Error` with
+`ErrorKind::Cancelled`; into a user error enum, map through `TaskError` first:
+`.map_err(TaskError::from)?`.
 Unlimited spawn and joins are not checkpoints; in-memory I/O does not suspend
 and ignores cancellation. `tasks.limit(n)` shares a FIFO concurrency bound
 across its scopes and clones; nested limits take all their slots together.
