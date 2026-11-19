@@ -1,0 +1,95 @@
+{
+  "user_agent": "tide-research-snapshot/1.0 (public registry metadata research)",
+  "requests": [
+    {
+      "url": "https://crates.io/api/v1/crates?page=1&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:08.021571+00:00",
+      "ended_utc": "2026-11-18T16:32:09.189973+00:00",
+      "status": 200,
+      "sha256": "516fe860462601993844fd16df8e1b2a3773279b7ddfdefbead4d165c8b9a29d",
+      "bytes": 94658,
+      "path": "snapshot/page-01.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=2&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:09.190308+00:00",
+      "ended_utc": "2026-11-18T16:32:10.103230+00:00",
+      "status": 200,
+      "sha256": "3e5a1ffc9cda8f141784cce103c5959bfea84800708e23050f04b200d5c7988e",
+      "bytes": 94878,
+      "path": "snapshot/page-02.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=3&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:10.290400+00:00",
+      "ended_utc": "2026-11-18T16:32:11.305541+00:00",
+      "status": 200,
+      "sha256": "d587e1f22d6c7f00b9365e7c079b3b3b8b7c88b437b6e859cc2ab561d0022acf",
+      "bytes": 96470,
+      "path": "snapshot/page-03.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=4&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:11.390509+00:00",
+      "ended_utc": "2026-11-18T16:32:12.282430+00:00",
+      "status": 200,
+      "sha256": "2e3c3920c4533a7363779464d44c9a0b81952398c6d3b5b9f6904cf0ee350d4e",
+      "bytes": 96361,
+      "path": "snapshot/page-04.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=5&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:12.490606+00:00",
+      "ended_utc": "2026-11-18T16:32:13.532537+00:00",
+      "status": 200,
+      "sha256": "f0b1babd7496d6d84b3dcb27afceb5191dec37f076978cc727adfac2378db4e5",
+      "bytes": 98108,
+      "path": "snapshot/page-05.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=6&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:13.590697+00:00",
+      "ended_utc": "2026-11-18T16:32:14.502167+00:00",
+      "status": 200,
+      "sha256": "efb167c97cdcdc276c8835b3b97550a86ea521364982f3126679cded57360f14",
+      "bytes": 95426,
+      "path": "snapshot/page-06.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=7&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:14.690786+00:00",
+      "ended_utc": "2026-11-18T16:32:15.624742+00:00",
+      "status": 200,
+      "sha256": "76454366185834a3794684e645349475decd32b3b1a99e4057e00a88c49a8622",
+      "bytes": 95174,
+      "path": "snapshot/page-07.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=8&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:15.790896+00:00",
+      "ended_utc": "2026-11-18T16:32:16.736571+00:00",
+      "status": 200,
+      "sha256": "f91c9f49aee4336f1ad032723cf8a7176fe5fd27dd0558b83adad085ff3fc0ff",
+      "bytes": 96144,
+      "path": "snapshot/page-08.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=9&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:16.891067+00:00",
+      "ended_utc": "2026-11-18T16:32:17.811977+00:00",
+      "status": 200,
+      "sha256": "3d45bb5d7589938aa662e7ccdcd8b51ee87749373a9dc04d83c6995ee11790b1",
+      "bytes": 95727,
+      "path": "snapshot/page-09.json"
+    },
+    {
+      "url": "https://crates.io/api/v1/crates?page=10&per_page=100&sort=downloads",
+      "started_utc": "2026-11-18T16:32:17.991163+00:00",
+      "ended_utc": "2026-11-18T16:32:18.626595+00:00",
+      "status": 200,
+      "sha256": "88b24c49f13d34de741a8fdc602d0bff9e9950eeda8cb101ab060db09f4c4f69",
+      "bytes": 96022,
+      "path": "snapshot/page-10.json"
+    }
+  ]
+}
