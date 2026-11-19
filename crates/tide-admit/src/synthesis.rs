@@ -214,7 +214,9 @@ pub fn plan(tcx: TyCtxt<'_>, test_library: Option<CrateNum>) -> Insertions {
     edits
 }
 
-fn child(tcx: TyCtxt<'_>, module: DefId, name: Symbol, kind: DefKind) -> Option<DefId> {
+/// The child of `module` named `name` whose kind is `kind`: a name can stand for items of
+/// different kinds (a `fn task` beside a `mod task`).
+pub(crate) fn child(tcx: TyCtxt<'_>, module: DefId, name: Symbol, kind: DefKind) -> Option<DefId> {
     tcx.module_children(module)
         .iter()
         .find_map(|child| match child.res {

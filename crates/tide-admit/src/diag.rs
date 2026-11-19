@@ -3,7 +3,7 @@
 //! renderer and `--error-format` apply to it.
 
 mod labels;
-pub use labels::{OwnedClosure, RustcLabels};
+pub use labels::{OwnedClosure, RustcLabels, TideScope};
 
 use rustc_data_structures::fx::FxHashSet;
 use rustc_middle::ty::TyCtxt;

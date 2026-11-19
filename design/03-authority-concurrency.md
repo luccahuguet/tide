@@ -1524,7 +1524,8 @@ error is your own enum, write `clock.sleep(d).map_err(TaskError::from)?`, and
 cancellation arrives through its `#[from] TaskError` variant. Since `?` can
 reach `TaskError` from two types, a `?` whose error type nothing else fixes,
 such as `tasks.scope(..)?`, needs that type named:
-`tasks.scope::<_, TaskError, _>(..)?`.
+`tasks.scope::<_, TaskError, _>(..)?`. tide-admit adds that turbofish as help to
+rustc's E0283 when the error names the scope's type, as it does for a closure body.
 
 Children may borrow anything that outlives the `scope` call. A scope passed
 down (`fn serve<'s>(bg: Scope<'s, '_, E>, cfg: &'s Config)`) takes children

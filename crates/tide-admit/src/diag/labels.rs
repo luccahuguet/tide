@@ -1,4 +1,4 @@
-//! Extra Tide names for rustc-owned verdicts; labels never decide acceptance.
+//! Extra Tide names for rustc-owned verdicts, and one hint; labels never decide acceptance.
 use std::sync::{Arc, Mutex};
 
 use rustc_errors::annotate_snippet_emitter_writer::AnnotateSnippetEmitter;
@@ -148,10 +148,50 @@ const RULES: &[Rule] = &[
     },
 ];
 
+// A scope whose error type nothing fixes is ambiguous (design/03 §6.1): rustc's E0283 names
+// the closure parameter's type, Tide std's `Scope` with its error unknown, and suggests
+// annotating the parameter; this hint names the turbofish instead. It is help, not a verdict,
+// so it carries no TD code.
+const SCOPE_HINT: &str = "the scope's error type can't be inferred here; name it, for example `tasks.scope::<_, TaskError, _>(..)` (design/03 §6.1)";
+
+/// Tide std's `Tasks::scope` and its `Scope` type, for the scope hint.
+pub struct TideScope {
+    /// `Scope` as rustc prints it in a message (`tide_std::task::Scope`).
+    pub ty: String,
+    /// `Tasks::scope`'s definition span, which rustc's "required by a bound" note points into.
+    pub method: Span,
+}
+
 #[derive(Default)]
 struct Sites {
     self_borrows: Vec<SelfBorrow>,
     owned: Vec<OwnedClosure>,
+    scope: Option<TideScope>,
+}
+
+impl Sites {
+    /// Whether `diag` is rustc's E0283 for an unannotated call of Tide std's `Tasks::scope`: the
+    /// ambiguous value's type is printed as Tide std's `Scope`, and a note points into the
+    /// definition of `Tasks::scope`, whose bound is the ambiguous obligation. The printed path
+    /// alone could be a local `mod tide_std`; the span is the method's own, decoded from Tide
+    /// std's metadata, which no local item shares.
+    fn scope_ambiguity(&self, diag: &DiagInner, rustc_code: Option<u32>) -> bool {
+        let Some(scope) = &self.scope else {
+            return false;
+        };
+        let named = format!("`{}<", scope.ty);
+        rustc_code == Some(283)
+            && diag.messages.iter().any(|(message, _)| {
+                format_diag_message(message, &diag.args).contains(&named)
+            })
+            && diag.children.iter().any(|child| {
+                child
+                    .span
+                    .primary_spans()
+                    .iter()
+                    .any(|&span| scope.method.contains(span))
+            })
+    }
 }
 
 #[derive(Clone, Default)]
@@ -170,6 +210,11 @@ impl RustcLabels {
         self.0.lock().unwrap().owned.push(site);
     }
 
+    /// Records Tide std's `Tasks::scope`, before anything is type-checked.
+    pub fn tide_scope(&self, scope: TideScope) {
+        self.0.lock().unwrap().scope = Some(scope);
+    }
+
     pub fn install(&self, psess: &mut ParseSess) {
         // The operator interface fixes rustc's output to --error-format=short.
         let inner = AnnotateSnippetEmitter::new(stderr_destination(ColorConfig::Never))
@@ -178,6 +223,7 @@ impl RustcLabels {
         psess.dcx().set_emitter(Box::new(Labels {
             inner: Box::new(inner),
             sites: self.clone(),
+            hinted: Vec::new(),
         }));
     }
 }
@@ -185,15 +231,22 @@ impl RustcLabels {
 struct Labels {
     inner: Box<DynEmitter>,
     sites: RustcLabels,
+    /// Where the scope hint was given, so one site gets it once: a guard; unreachable on the
+    /// pinned toolchain, where only the first of a site's E0283s (the scope's own bound) has
+    /// a note inside `Tasks::scope`.
+    hinted: Vec<Span>,
 }
 
 impl Emitter for Labels {
     fn emit_diagnostic(&mut self, diag: DiagInner) {
         let mut labels = Vec::new();
+        let mut hint = false;
         if matches!(diag.level(), Level::Error | Level::Fatal) && diag.span.primary_span().is_some()
         {
             let rustc_code = diag.code.map(|code| code.as_u32());
             let sites = self.sites.0.lock().unwrap();
+            hint = sites.scope_ambiguity(&diag, rustc_code)
+                && !self.hinted.contains(&diag.span.primary_span().unwrap());
             for rule in RULES {
                 let wording = rustc_code.is_none()
                     && rule.wording.is_some_and(|prefix| {
@@ -231,6 +284,13 @@ impl Emitter for Labels {
             // Forward directly: rustc already counted the rejecting error, and a label
             // must neither re-enter the diagnostic context nor label itself.
             self.inner.emit_diagnostic(label);
+        }
+        if hint {
+            let span = span.unwrap();
+            self.hinted.push(span);
+            let mut help = DiagInner::new(Level::Help, SCOPE_HINT);
+            help.span = span.into();
+            self.inner.emit_diagnostic(help);
         }
     }
 

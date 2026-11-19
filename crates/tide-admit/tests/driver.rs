@@ -578,9 +578,23 @@ fn an_imported_main_is_unmarked() {
     assert!(td_lines(&stderr).contains(&unmarked), "{stderr}");
 }
 
+/// fx-qlek.19: a root item named `task` that is not a module, beside `mod task`, does not send
+/// the scope hint's lookup of `Tasks::scope` into a non-module, which would crash the driver.
+#[test]
+fn a_root_fn_named_task_does_not_crash_the_scope_lookup() {
+    let std = tide_std_with("root-fn-task", "pub fn task() {}\n");
+    let (code, stderr) = admit("root-fn-task", "pub fn f() {}\n", &["--tide-std", std.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+}
+
 /// A minimal Tide std, built with the pinned rustc: Rust's std with `Pure`, which rustc meets
 /// for every type and the driver decides, and a `Clock`, which is never `Pure`.
 fn tide_std(name: &str) -> PathBuf {
+    tide_std_with(name, "")
+}
+
+/// `tide_std` with `items` first at its root.
+fn tide_std_with(name: &str, items: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(name)
         .join("tide-std");
@@ -588,7 +602,8 @@ fn tide_std(name: &str) -> PathBuf {
     let source = dir.join("lib.rs");
     std::fs::write(
         &source,
-        "\
+        items.to_owned()
+            + "\
 pub use std::*;
 pub mod prelude {
     pub mod rust_2024 {

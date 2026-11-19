@@ -37,7 +37,7 @@ use rustc_middle::ty::{
 };
 use rustc_span::fatal_error::catch_fatal_errors;
 use rustc_span::hygiene::LocalExpnId;
-use rustc_span::{ExpnId, ExpnKind, MacroKind, Span, kw, sym};
+use rustc_span::{ExpnId, ExpnKind, MacroKind, Span, Symbol, kw, sym};
 use rustc_trait_selection::traits::{
     ImplSource, Obligation, ObligationCause, SelectionContext, normalize_param_env_or_error,
 };
@@ -89,6 +89,13 @@ pub fn check_crate(
     unused_imports: &[Span],
 ) -> Holes {
     let crates = Crates::new(tcx);
+    // Before the walk's first `typeck`, which reports the E0283 the scope hint follows.
+    if let Some(method) = tide_scope_method(tcx, &crates) {
+        labels.tide_scope(crate::diag::TideScope {
+            ty: format!("{}::task::Scope", tcx.crate_name(method.krate)),
+            method: tcx.def_span(method),
+        });
+    }
     let mut walk = Walk::new(tcx, &crates, grants, test_library);
     walk.test_suite = test_suite;
     walk.labels = labels.clone();
@@ -113,6 +120,20 @@ pub fn check_crate(
     };
     walk.diags.emit(tcx);
     holes
+}
+
+/// Tide std's `Tasks::scope`, found from the injected std's root and confirmed by its key.
+fn tide_scope_method(tcx: TyCtxt<'_>, crates: &Crates) -> Option<DefId> {
+    use crate::synthesis::child;
+    let root = crates.tide_std()?.as_def_id();
+    let task = child(tcx, root, Symbol::intern("task"), DefKind::Mod)?;
+    let tasks = child(tcx, task, Symbol::intern("Tasks"), DefKind::Struct)?;
+    tcx.inherent_impls(tasks)
+        .iter()
+        .flat_map(|&imp| tcx.associated_items(imp).in_definition_order())
+        .filter(|item| item.is_fn())
+        .map(|item| item.def_id)
+        .find(|&def| crates.key(tcx, def) == "tide_std::task::Tasks::scope")
 }
 
 /// How an admitted use is admitted: freely, or by the `unsafe` grant, under this key.

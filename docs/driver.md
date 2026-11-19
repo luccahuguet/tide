@@ -25,7 +25,11 @@ lifetime parameters on traits (`TD0201`), unresolved output elision, including
 function types and `Fn` sugar (`TD0202`, LIFE-4), and lossy numeric casts (`TD0301`). It labels rustc's borrow errors for closures in
 owned positions when the evidence is certain (`TD0203`) and struct literals that
 move an owner into one field and borrow it in another (`TD0210`). Wrong-input elision keeps rustc's
-region error. It rejects coercing a function item to a `fn` pointer when the item implies an
+region error. When rustc's E0283 for an unannotated `tasks.scope(..)`, with or
+without `?`, names Tide std's `Scope` with its error type unknown, as it does for a closure
+body, and points to a bound of Tide std's `Tasks::scope` (design/03 §6.1), it adds a `help:`
+line right after it, at the same place: the scope's error type can't be inferred there, so
+name it, for example `tasks.scope::<_, TaskError, _>(..)`. Other E0283s get none. It rejects coercing a function item to a `fn` pointer when the item implies an
 outlives bound that does not hold trivially (`TD0206`, CLOSURE-3), whatever the instantiation,
 which closes the `fn`-pointer route of rust-lang/rust#25860. Generic functions over references,
 trait methods with a reference receiver such as `Clone::clone`, `&self` methods of types with a

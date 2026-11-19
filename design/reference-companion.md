@@ -46,7 +46,7 @@ Rerun it after any change to the core and update this line.
 | `dbg!` left in code; `println!` in a library | remove, or `debug!`; return data or log | `TD0507`, `TD0508` |
 | `async fn`, `.await`, `#[tokio::main]` | plain `fn` taking capabilities | `TD0601` safe |
 | `thread::spawn`, `tokio::spawn` | `tasks.scope(\|s\| s.spawn(..))` | `TD0602` |
-| `tasks.scope(\|s\| { .. })?;` when no `Err` in the scope names its error type, `TaskError` included | name the scope's error: `tasks.scope::<_, TaskError, _>(\|s\| { .. })?`, or `MyError` | rustc E0283 |
+| `tasks.scope(\|s\| { .. })?;` when no `Err` in the scope names its error type, `TaskError` included | name the scope's error: `tasks.scope::<_, TaskError, _>(\|s\| { .. })?`, or `MyError` | rustc E0283, with tide-admit's help naming the turbofish |
 | I/O or a nested `with` inside a `Shared::with` closure; `write!(f, ..)` inside one in `Display::fmt` | do it before or after: `let n = self.cell.with(\|c\| c.hits).map_err(\|_\| fmt::Error)?; write!(f, "{n}")` | `TD0603` |
 | `Arc<Mutex<T>>` + `.lock().unwrap()` | `Shared<T>` + `.with(\|x\| ..)?` | `TD0604` |
 | `Shared::new(v)`, `Arc::new(v)`, `channel()` without a `Tasks` | `Shared::new(v, tasks)`, `Arc::new(v, tasks)`, `channel(tasks)`; `tide fix --thread Tasks` | `TD0505` |

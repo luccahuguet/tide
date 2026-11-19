@@ -5791,3 +5791,61 @@ fn std_process_public_items_are_fixed() {
         assert_eq!(public(backend), Vec::<String>::new(), "{backend}");
     }
 }
+
+/// fx-qlek.19: an unannotated `tasks.scope(..)`, with or without `?`, keeps rustc's E0283 and
+/// gets one hint right after it, naming the turbofish, which compiles; other E0283s get none,
+/// including one for a local type printed as `tide_std::task::Scope`.
+#[test]
+fn scope_ambiguity_gets_the_turbofish_hint() {
+    const HINT: &str = "help: the scope's error type can't be inferred here; name it, for example `tasks.scope::<_, TaskError, _>(..)` (design/03 §6.1)";
+    let check = |name: &str, source: &str| {
+        let dir = package(&format!("scope-hint-{name}"), source);
+        driver(&dir)
+            .args(["--crate-type=lib", "--emit=metadata"])
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    for (name, body) in [
+        ("try", "tasks.scope{}(|s| { s.spawn(|| Ok(())); Ok(()) })?;\n    Ok(())"),
+        ("no-try", "let _ = tasks.scope{}(|s| { s.spawn(|| Ok(())); Ok(()) });\n    Ok(())"),
+    ] {
+        let source = |turbofish: &str| {
+            format!(
+                "use std::task::{{TaskError, Tasks}};\npub fn f(tasks: &Tasks) -> Result<(), TaskError> {{\n    {}\n}}\n",
+                body.replace("{}", turbofish)
+            )
+        };
+        let out = check(name, &source(""));
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{name}: {err}");
+        let lines: Vec<_> = err.lines().collect();
+        let hints: Vec<_> = (0..lines.len()).filter(|&i| lines[i].contains(HINT)).collect();
+        assert_eq!(hints.len(), 1, "{name}: {err}");
+        // At the closure parameter `s`, as rustc's E0283.
+        let column = source("").lines().nth(2).unwrap().find("|s|").unwrap() + 2;
+        let at = lines[hints[0]].split(": help: ").next().unwrap();
+        assert!(at.ends_with(&format!("demo.rs:3:{column}")), "{name}: {err}");
+        assert!(
+            hints[0] > 0 && lines[hints[0] - 1].starts_with(&format!("{at}: error[E0283]: ")),
+            "{name}: {err}"
+        );
+        checked(
+            driver(&package(&format!("scope-hint-{name}-annotated"), &source("::<_, TaskError, _>")))
+                .args(["--crate-type=lib", "--emit=metadata"]),
+        );
+    }
+    for (name, source) in [
+        ("sum", "pub fn f(v: &[u32]) { let _ = v.iter().sum(); }\n"),
+        (
+            "local-tide-std",
+            "pub mod tide_std {\n    pub mod task {\n        pub struct Scope<E>(pub E);\n    }\n}\npub fn make<E: Default>() -> tide_std::task::Scope<E> {\n    tide_std::task::Scope(E::default())\n}\npub fn f() { let _s = make(); }\n",
+        ),
+    ] {
+        let out = check(name, source);
+        let err = stderr(&out);
+        assert_eq!(out.status.code(), Some(1), "{name}: {err}");
+        assert!(err.contains("error[E0283]"), "{name}: {err}");
+        assert!(!err.contains("help:"), "{name}: {err}");
+    }
+}
