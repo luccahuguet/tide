@@ -1,17 +1,26 @@
 # Account authority as capabilities for Rust smart contracts
 
-fx-qlek.17 · Step-1 research draft · 2026-11-18 · Author: Codex
+fx-qlek.17 · Research record · 2026-11-19 UTC · Author: Codex
 
-**Status: awaiting coordinator timestamp and go. No case has a
-verdict.** This record proposes a rule for a possible Solana research
-profile. Tide v0 implements none of it. The task authorizes research,
-not a language decision or an alpha feature. The coordinator will arrange
-Codex and Opus review before landing; Opus decides the sketch's choices.
+**Five registered cases were examined in a paper comparison. Two pairs
+support the proposed rule, conditional on declaring as policy the account
+relationship each later fix added. Three pairs are incomplete, including
+Cashio, for which only the buggy-side rejection could be assessed.** In C02
+(Wormhole), the trusted operation library owns the exact-address requirement,
+which the Solana SDK's `*_checked` loaders already enforce.
+
+The proposed rule requires exact account identities and relationships at
+sensitive operations, in addition to signer, owner and program-derived
+address (PDA) checks. Correct policy recipes remain trusted input. Tide v0
+implements none of this Solana profile, and **no result is a Tide v0 catch**.
+Integration with SBF (Solana's bytecode format) and practical benefit remain
+unproved. §2.4 records the alpha disposition. §4 preserves the frozen
+protocol and all case outcomes.
 
 ## 1. Prior art
 
 The sources below support the stated mechanisms, not a claim that a
-framework or analyzer prevents every exploit. Read date for all external
+framework or analyzer prevents every exploit. Read date for §1–§3 external
 sources: **2026-11-18 UTC**. The [source manifest](protocols/fx-qlek.17-cases/sources.json)
 gives exact retrieval times, URLs, versions/revisions where available and
 SHA-256s of saved HTTP bodies. A live documentation page with no release
@@ -214,6 +223,14 @@ before a sensitive operation. The admitted application gets those values
 as arguments. A policy recipe, reviewed as trusted input, specifies the
 expected program, layout, seeds and authority relationships.
 
+D7 governs host authority that Tide passes to functions as values such as
+`Fs`, `Net` and `Clock`.
+R1's hypothetical `Signer`, `Owned<T>` and `Pda<S>` would carry
+runtime-validated facts about caller-supplied accounts for one invocation.
+The two designs share the discipline of passing authority as parameters.
+[D7](../design/01-design.md#d7-authority-capabilities-as-values-no-ambient-authority),
+[reference §6.1](../design/reference.md#61-the-rule-and-the-capability-set).
+
 Illustrative signatures, not compilable Tide v0 or a claimed new library:
 
 ```text
@@ -239,9 +256,10 @@ must check that policy against authenticated state and an independent
 trust root. Equality between caller-chosen accounts is insufficient.
 
 The invocation boundary owns provenance and lifetime. The operational
-library owns exclusive writes, checked CPI targets and invalidation of
-proofs after mutations/CPI. The policy recipe owns which principal and
-relationships the operation requires. Admission owns confinement:
+library owns exclusive writes, checked cross-program invocation (CPI)
+targets and invalidation of proofs after mutations or CPI. The policy
+recipe owns which principal and relationships the operation requires.
+Admission owns confinement:
 application code cannot forge values, obtain raw handles, deserialize
 unchecked state or invoke an unvalidated target by another route. A
 constructor bug remains inside the trusted computing base; putting it
@@ -298,11 +316,10 @@ requirement. Tide's E3 pilot found no review benefit for its current trust
 diff; no benefit is established for this proposed extension.
 [Current evidence and limitations](../README.md#e3-does-the-trust-diff-help-reviewers-pre-registered-pilot-negative).
 
-### 2.4 Choices for Opus
+### 2.4 Choices and disposition
 
-These are options and the author's recommendations, not owner-approved
-language decisions. R1 freezes one candidate for evaluation; adoption
-can still be rejected after the research.
+The options and recommendations below describe the author's proposal. R1
+freezes one candidate for evaluation. The disposition follows the list.
 
 1. **Checked values or check-recognition lints.** Options: recognize
    handwritten predicates; require checked values at sensitive operations;
@@ -345,9 +362,14 @@ can still be rejected after the research.
    a later bounded spike. Host-only checking can miss target-specific code
    and cannot attest the delivered SBF binary. §3 records the obstacles.
 9. **Current disposition.** Options: implement before alpha; research
-   further; decline after this pass. Recommend completing the registered
-   paper comparison first and leaving the alpha unchanged. Prior art is
-   substantial and no compatibility or coverage result exists yet.
+   further; decline after this pass. Recommend leaving the alpha unchanged
+   after this registered paper comparison. Prior art is substantial; §4
+   supplies conditional shape results, not compatibility, implemented
+   enforcement or practical benefit.
+
+**Disposition.** Tide-lead adopted choice 9 in the 2026-11-19 Opus review
+round, leaving the alpha unchanged after this paper comparison. Choices
+1–8 remain the author's recommendations for a later pass and were not adopted.
 
 ### 2.5 Limits
 
@@ -394,8 +416,9 @@ The local pin is `nightly-2026-08-09`, with `rustc-dev` and `rust-src`;
 the pin's comment identifies rustc commit `771916f90`. The driver uses
 `rustc_private`, owns compiler arguments and inspects resolved/typed
 code and runnable instances. Its documented interface accepts one Rust
-entry and `lib|bin`, rejects raw rustc flags and user proc macros, and
-supports linked outputs on x86_64 Linux. It also rejects `#![no_std]`.
+entry and `lib|bin`, rejects raw rustc flags, and supports linked outputs
+on x86_64 Linux. It rejects user macro definitions (`TD0101`), derives and
+bang forms outside the closed sets (`TD0102`, `TD0103`), and `#![no_std]`.
 [Toolchain pin](../rust-toolchain.toml),
 [driver architecture](../crates/tide-admit/src/main.rs),
 [current interface](../docs/driver.md).
@@ -451,11 +474,11 @@ logging and compute costs to investigate before any implementation claim.
 
 **Recommendation:** treat SBF integration as unproven and maintenance-heavy
 until a bounded, separately authorized target-specific spike checks one
-handler and one generated validator with the exact SBF compiler. Step 1
-adds no spike or dependency. The registered case comparison is a paper
-model and can finish without proving compiler integration.
+handler and one generated validator with the exact SBF compiler. This
+research adds no spike or dependency. The registered case comparison is
+a paper model and does not prove compiler integration.
 
-## 4. Registered evidence: pending go
+## 4. Registered evidence and results
 
 The [protocol](protocols/fx-qlek.17-protocol.md),
 [fixed case list](protocols/fx-qlek.17-cases/cases.tsv),
@@ -488,15 +511,443 @@ raw HTTP bodies versus saved web-tool extractions; the latter are not
 original-HTML byte attestations. [Selection evidence](protocols/fx-qlek.17-cases/selection.tsv),
 [snapshot identities](protocols/fx-qlek.17-cases/sources.json).
 
-No case code/fix comparison, verdict, case model or catch count exists yet.
-Case verdicts and the full evidence table belong to the post-go
-continuation; this is not the completed bead.
+### 4.1 Registration, proof and reading chronology
+
+The normative rule and selection procedure are the [protocol at
+384d775](https://github.com/luccahuguet/tide/blob/384d7758cb7a0431bc69c3d6ee04ab2c6e744045/research/protocols/fx-qlek.17-protocol.md),
+including Amendment A1, SHA-256
+`110a06ce0d2f68a191196123f305cd3201fe4b33e441a25668f6c05b2e9a2f1b`.
+The local [protocol](protocols/fx-qlek.17-protocol.md) and its five-case
+list/ledgers/manifest remain byte-identical to that registration.
+The [assessment manifest](protocols/fx-qlek.17-assessment-sources.json)
+records post-go sources, exact code revisions, retrieval/read chronology,
+errors and local artifact hashes separately from the frozen manifest.
+
+| Event | Identity / UTC |
+| --- | --- |
+| Initial one-catalog registration, superseded before stamping | `ef356f9f5c757cc4846c80b2583b767c37700f0a` |
+| A1 union frame registered, zero cases assessed | `384d7758cb7a0431bc69c3d6ee04ab2c6e744045`, 2026-11-18 |
+| Six completed proofs committed by coordinator | `e245199610ec72b023554a0b17238240910f8985` |
+| Coordinator reports Bitcoin anchoring | block 976490, complete before go |
+| Explicit coordinator go | 2026-11-18T23:48:32Z |
+| Builder checks six original subject hashes and proof-header digests | 2026-11-18T23:49:40.912834Z |
+| First assessment begins / last first assessment recorded | 2026-11-18T23:50:17.469397Z / 2026-11-19T00:06:48.723622Z |
+
+Proofs are adjacent `.ots` files for the six registration subjects:
+the research draft, protocol, cases.tsv, entries.tsv, selection.tsv and
+sources.json. Their full hashes are in the assessment manifest. Bitcoin
+verification is **reported by tide-lead**, not independently verified by
+this builder: no live-chain request was made. The local check establishes
+subject identity and header-digest agreement, not a full OTS verification.
+The research draft's proof attests its bytes **at 384d775**, not this
+completed article; recover that subject with `git show 384d775:research/43-solana-account-capabilities.md`.
+No existing proof was replaced to attest post-go results.
+
+Pre-go reading included incident narratives, search summaries and repair
+descriptions needed for selection. No fix diff was opened or verdict
+assigned then, as self-attested in A1. This was retrospective, not blind.
+Timestamps can attest bytes existed; they cannot attest the author's
+reading or private reasoning. Post-go cases were assessed in frozen order
+C01–C05; each start was logged before reading for its assessment.
+
+### 4.2 Results and denominators
+
+These are paper judgments under **proposed R1**, conditional on correctly
+implemented trusted constructors and correctly declared operation policy.
+No Tide compiler, SBF program or exploit was run. The comparison does not
+show that admission could discover the right recipe from legacy code.
+Putting a missing check inside the trusted adapter, choosing the wrong
+recipe or permitting a bypass would defeat the credited guarantee.
+
+| Frozen case | Buggy verdict | Fixed verdict | Pair and reason |
+| --- | --- | --- | --- |
+| C01 Solend, 2021-08-19 | rejects buggy shape | admits fixed shape | Conditional support: reserve-to-market relationship missing; signer, native owners and PDA already checked. Enabled handler pair. |
+| C02 Wormhole, 2022-02-02 | rejects buggy shape | admits fixed shape | Conditional support: byte-only instruction decoder cannot authenticate sysvar identity; fixed SDK calls check its exact key. Enabled path pair. |
+| C03 Cashio, 2022-03-23 | rejects buggy shape | not assessable | One-sided rejection for the missing bank-to-output-mint relationship. The compiled fixed action bodies need an R1.6 CPI/reload lifecycle this pass did not model. |
+| C04 Crema, 2022-07-02 | not assessable | not assessable | No identified public historical Claim implementation and matched repair; exact predicate and Rust identity unverified. |
+| C05 SolSea, incident date unknown | not assessable | not assessable | Disclosure lacks SolSea Rust handler/fix. The separate SPL Token repair cannot substitute. |
+
+Source identities, mapped checks and derivations for every row follow
+below. Total frozen **5**, examined **5**, pair-assessable **2**, incomplete
+**3**, paired support **2**, assessable negatives **0**. Both supporting
+pairs have enabled source paths. The buggy side has 3 rejections, 0
+admissions and 2 not assessable. The fixed side has 2 admissions, 0
+rejections and 3 not assessable. Unknowns count as neither success nor
+negative. No case was backfilled, dropped or selected by its verdict.
+
+The assessed pairs cover **instance relationships/substitution** (Solend)
+and **exact sysvar identity/substitution** (Wormhole). Cashio adds a
+one-sided observation about instance relationships. These results do not
+establish a standalone missing-signer, generic native-owner, PDA-bump or
+type-discriminator catch. SolSea supplies a signer-role narrative but no
+assessable code pair; Crema supplies an owner/spoofing narrative but no
+assessable code pair. Genuine type/owner wrappers already occur in the
+assessed source. No catch rate, prevalence, prevented loss or superiority
+over Anchor/Move/analyzers can be inferred from this small labeled frame.
+
+### 4.3 Case derivations
+
+#### C01. Solend, 2021-08-19: relationship proof, not missing signer/owner
+
+Assessment began 2026-11-18T23:50:17.469397Z, after go. Rooter and Nope's
+dated incident report says the attacker used a newly created market to
+subvert authorization; its source code figure highlights an added
+reserve-to-market comparison. Short symptom quote: “make accounts with
+borrows liquidatable”. The report describes a thwarted theft attempt and
+refunded liquidations, not funds stolen by the attacker. This corrects
+the selection catalog's loose loss/owner framing without changing the
+frozen case. [C01 report][c01-report].
+
+The matching Rust fix is `132d74cf171dac66f896c4009ad6836f8c0b3799`, first
+parent `871935cafc590bf1985bebfbc7e6399b153a5b40`, in
+`token-lending/program/src/processor.rs`. The commit changes only four
+inserted lines in `process_update_reserve_config`; both report figure and
+patch reject a market key unequal to the market stored in the reserve.
+This is a source-pair identification, not an attestation of deployed bytes.
+[C01 fix][c01-fix], [buggy handler][c01-bug], [fixed handler][c01-fixed].
+
+| Source map | Preserved computation and proposed R1 value |
+| --- | --- |
+| Bug/fix `processor.rs` 124–126, 1977–1987 | Dispatch and four runtime accounts; retain config validation and error returns. |
+| Bug 1989–1997; fix 1989–1997 | Reserve decoding and program-owner check supply `Owned<Reserve>`; decode before owner check does not release a capability early. |
+| Bug 1999–2015; fix 2003–2019 | Decode/owner-check market, match its stored owner to the supplied key, require that signer: `Owned<Market>` plus signer bound to that market. |
+| Bug 2017–2028; fix 2021–2032 | Verify PDA using market key, its stored bump and program id; preserve the specified bump rather than adding canonicality. |
+| Fix 1998–2001 only | The added equality supplies `ReserveBelongsToMarket(reserve, market)`. The buggy side has no corresponding check or proof. |
+| Bug 2029–2031; fix 2033–2035 | Replace config and pack the same reserve; consume the write permit. No intervening CPI or subsequent use of a stale proof in this handler. |
+
+The intended policy, common to both sides, permits a market's authenticated
+authority to change that market's reserve. The root is the runtime program
+id and authenticated reserve's recorded market, not whichever market the
+caller supplies. A proposed update operation requires the relationship
+proof together with the existing ownership/signer/PDA proofs. R1.5 blocks
+that operation on the buggy path: correct proofs for an attacker's *other*
+market cannot establish the missing relationship. The fixed path supplies
+it. Model delta: one validated relationship, corresponding to the sole
+source insertion; no extra principal or repair is introduced.
+
+**Buggy: rejects buggy shape. Fixed: admits fixed shape. Pair: support for
+the proposed rule on this handler path.** This is conditional on correct
+trusted constructors and the declared reserve-specific policy. Moving the
+omission inside a trusted constructor or declaring the wrong policy would
+not be a rejection credited to R1. A generic raw-account ban is not the
+reason for this verdict.
+
+Mapping limits: source `Pack` types use checked layouts and initialized
+version fields, not Anchor discriminators; they remain those native
+layouts. State helpers at the fixed commit are unchanged by the one-file
+fix. [Reserve layout][c01-reserve], [market layout][c01-market].
+The model preserves validation helpers as ordinary computation and
+does not prove interest math, reserve creation, global lifecycle rules,
+or the trusted API's enforcement. No model was compiled or executed.
+An Anchor `has_one`/equivalent explicit relationship constraint can express
+the same check; R1 does not invent that protection.
+
+[c01-report]: https://docs.google.com/document/d/1-WoQwT1QrPEX-r4N-fDamRQ50LM8DsdsOyq1iTabS3Q/edit
+[c01-fix]: https://github.com/solendprotocol/solana-program-library/commit/132d74cf171dac66f896c4009ad6836f8c0b3799
+[c01-bug]: https://github.com/solendprotocol/solana-program-library/blob/871935cafc590bf1985bebfbc7e6399b153a5b40/token-lending/program/src/processor.rs#L1977
+[c01-fixed]: https://github.com/solendprotocol/solana-program-library/blob/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/processor.rs#L1977
+[c01-reserve]: https://github.com/solendprotocol/solana-program-library/blob/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/state/reserve.rs
+[c01-market]: https://github.com/solendprotocol/solana-program-library/blob/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/state/lending_market.rs
+
+#### C02. Wormhole, 2022-02-02: authenticate the instruction source
+
+Assessment began 2026-11-18T23:55:07.066552Z. The registered Halborn report
+describes a forged Instructions sysvar and the resulting signature bypass;
+short symptom quote: “bypass signature verification”. The relevant
+principal is the runtime's instruction-history account, not an ordinary
+transaction signer. [C02 report][c02-report].
+
+The resolved public change is `7edbbd3677ee6ca681be8722a607bc576a3912c8`,
+first parent `79ab522f802ccc5ba34278d3c648fa62e06f4f1c`. It replaces both
+current-index and instruction-at-index byte loaders with checked account
+loaders in `solana/bridge/program/src/api/verify_signature.rs`. A mistyped
+full SHA initially returned 422; resolving the documented `7edbbd3`
+prefix identified this exact commit. The failed lookup is retained.
+[C02 fix][c02-fix], [buggy source][c02-bug], [fixed source][c02-fixed].
+
+| Source map | Preserved computation and proposed R1 value |
+| --- | --- |
+| Both handler versions 22–35 | Preserve payer, guardian set and signature-set roles. `instruction_acc` is plain `Info`, which Solitaire aliases to `AccountInfo`; its declaration is not an identity proof. |
+| Both 73–90 | Preserve guardian PDA derivation and signer-index collection. |
+| Bug 92–105 / fix 92–105 | Both reads must use a value bound to the Instructions sysvar identity, `Address<InstructionsId>` (R1.4). The old byte slice API cannot supply it; each new loader validates the account key. |
+| Both 107–171, 198–215 | Keep secp program-id, index/message/address comparisons and signature bookkeeping unchanged; do not replace them with a generic `Signer`. |
+| Both 173–196 | Preserve existing/new signature-set branches and the fixed-target System-program creation CPI. Account creation is an explicit trusted runtime operation, not a raw arbitrary CPI escape. |
+| Solitaire `peel.rs`, Data/Signer/Mut/Info implementations | Preserve its signer, owner, initialized-state and mutability checks. `Info` checks mutability, not sysvar identity. Data persistence checks the current owner/writability before serializing after creation; no pre-creation ownership proof is reused as if unchanged. |
+
+The version map is source-backed: old `solana-program = 1.7.0` loaders accept
+bytes without a key; v1.9.4's checked loaders call `check_id` and return
+`UnsupportedSysvar` on a mismatch. This is an exact-address check, not
+merely a generic program-owner check. [SDK v1.7.0][c02-sdk-old],
+[SDK v1.9.4][c02-sdk-new], [Solitaire checks][c02-peel],
+[account types][c02-accounts].
+
+**Buggy: rejects buggy shape. Fixed: admits fixed shape. Pair: support for
+R1.4 on this account-validation path.** The exact Instructions sysvar
+address is part of the trusted instruction-history operation. Without its
+address proof the buggy path cannot use that operation. The fixed calls
+provide the fact, with their existing error behavior. If a trusted
+constructor issued the proof from the old unchecked byte decoder, that
+constructor defect would be outside the credited rejection; it is not
+assumed away as an implemented Tide check.
+
+Limits: this is a paper source map, not execution of either version or an
+on-chain incident reproduction. The matched commit also changes dependency
+locks, Borsh, compiler features and other programs/build files; those
+outside-path hunks are not modeled as additional repairs. Parsing,
+cryptography, guardian-policy correctness and global signature-set
+lifecycle remain unproved. The account operations are mapped to proposed
+trusted primitives, not claimed available in Tide v0. Solitaire already
+supplies typed checks for other accounts. No claim that Tide invented the
+fix or would enforce deployment of a published patch follows.
+
+[c02-report]: https://www.halborn.com/blog/post/explained-the-wormhole-hack-february-2022
+[c02-fix]: https://github.com/wormhole-foundation/wormhole/commit/7edbbd3677ee6ca681be8722a607bc576a3912c8
+[c02-bug]: https://github.com/wormhole-foundation/wormhole/blob/79ab522f802ccc5ba34278d3c648fa62e06f4f1c/solana/bridge/program/src/api/verify_signature.rs#L22
+[c02-fixed]: https://github.com/wormhole-foundation/wormhole/blob/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/bridge/program/src/api/verify_signature.rs#L22
+[c02-sdk-old]: https://github.com/solana-labs/solana/blob/v1.7.0/sdk/program/src/sysvar/instructions.rs
+[c02-sdk-new]: https://github.com/solana-labs/solana/blob/v1.9.4/sdk/program/src/sysvar/instructions.rs#L39
+[c02-peel]: https://github.com/wormhole-foundation/wormhole/blob/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/processors/peel.rs
+[c02-accounts]: https://github.com/wormhole-foundation/wormhole/blob/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/types/accounts.rs
+
+#### C03. Cashio, 2022-03-23: the bank-to-mint link and a disabled fix
+
+Assessment began 2026-11-19T00:00:05.625059Z. The registered Halborn report
+describes worthless collateral used to mint real CASH. Sec3's nominated
+report provides code and a correction: its initial claim that the patch
+was insufficient was withdrawn after examining bankman's creation
+invariant. Short symptom quote: “mint 2,000,000,000 CASH tokens for almost
+free”. The old Soteria URL returned 404; the same named article's current
+X-Ray URL was recovered from the saved Sec3 page's link.
+[C03 reports][c03-report], [corrected Sec3 analysis][c03-sec3].
+
+The linked patch is `7df658184c2610139fa2c0058363c66b28add4c4`, first
+parent `a51c3c59d544a5763b64abb4a8d82c49b0abd6d0`. In
+`programs/brrr/src/actions/mod.rs` it adds bank.crate_mint equality with
+the supplied crate_mint. **It also inserts unconditional failure into
+both print_cash and burn_cash.** Those failures remain in the fixed
+model. No hypothetical re-enabled function substitutes for the public
+patch. [C03 fix][c03-fix], [fixed entrypoints][c03-fixed-lib].
+Its lockfile resolves Anchor 0.22.1 and Vipers 2.0.1; that version's
+`invariant!` expands to an error return
+when false, without a debug-only guard. [Lockfile][c03-lock],
+[Vipers macro][c03-vipers].
+
+| Source map | Preserved computation and proposed R1 value |
+| --- | --- |
+| Bug lib.rs 71–119 / fix 73–121 | Keep Anchor account containers and program identities: bank, collateral, crate, Arrow, swap, mint and token accounts are already typed. Ordinary owner/type checks alone do not reject the attacker's valid but wrong instances. |
+| Bug actions/mod.rs 10–22 / fix 10–23 | Preserve all existing key relationships and Saber validation. Only fix line 13 adds `BankForOutputMint(bank, crate_mint)`; the buggy side has no such proof. |
+| Both actions/print_cash.rs 74–82 | Preserve depositor signer/owner and mint relationships, plus exact issue-authority key. |
+| Both actions/print_cash.rs 14–68 | Keep calculations, collateral cap, transfer CPI, issue CPI and event. Do not replace financial calculations with a capability-safety claim. |
+| Bankman lib.rs 28–71, 162–171 ([source][c03-bankman]) | Preserve the authenticated Bank state: creation records crate_token and crate_mint and derives bank from crate_token. The corrected report explains the further crate-token PDA invariant; no extra bank.crate_token comparison is inserted. |
+| Fix lib.rs 38–41, 49–52 | Run validation and retain the unconditional disable before either action. The source's operational mint path does not execute in this fixed candidate. |
+
+Under R1.5 the operation policy binds collateral authorization to the
+same bank/output mint that the issue operation uses. The root is
+authenticated bank state and the selected output crate/mint, not a
+chain of mutually caller-chosen equal values. Missing this relationship
+prevents constructing the proposed issue permit on the buggy path.
+The patch supplies the equality. A trusted constructor that accepted the
+wrong relationship, or a recipe author who deliberately omitted it,
+would remain outside the credited guarantee.
+
+**Buggy: rejects buggy shape. Fixed: not assessable. Pair: not assessable.**
+The missing bank-to-output-mint relationship supports a one-sided buggy
+rejection. The fixed code adds the relationship, but assessing the compiled
+action bodies requires the CPI/reload lifecycle under R1.6.
+
+Evidence limits and disagreements: the inspected validator already
+compares collateral.mint with arrow.mint, so Halborn's simplified
+missing-arrow-mint account is not adopted as the code-level cause.
+Sec3's corrected explanation, rather than its struck-through criticism,
+is recorded. [Validator pair][c03-bug-validator], [fixed validator][c03-fixed-validator].
+
+The mapped CPI targets are typed `Program<Token>` and
+`Program<CrateToken>`; Anchor 0.22.1's program wrapper checks the program
+id and executable flag, while `Account<T>` checks owner and checked
+decoding. The source binds issue authority to its published constant and
+uses static `print`/255 signing seeds. These remain the source's identity
+choices, not a newly inferred principal. Saber validation checks the
+Arrow/pool mint and swap/reserve links; conversion reads those validated
+accounts and the clock. [Pinned Anchor Account][c03-anchor-account],
+[Program][c03-anchor-program], [addresses][c03-addresses],
+[Saber adapter][c03-saber].
+
+The runtime disable leaves both action bodies compiled and subject to
+static admission. In `print_cash`, the transfer CPI may change checked
+collateral account data, and the action reads from the pre-CPI copy after
+both CPIs. R1.6 requires invalidation and reload before reusing dependent
+proofs. This pass did not model that lifecycle in the fixed actions.
+Existing Anchor wrappers and explicit constraints can perform these same
+checks. The bank curator remains trusted; selecting worthless collateral
+as an authorized curator is not prevented by the mint relationship.
+The model adds no protection for price conversion, economics or SDK
+implementation errors. Other patch hunks change Nix/build configuration;
+they are disclosed outside this mapped path. No historical build, CPI
+execution, deployed-byte identification or proof of a re-enabled fixed
+workflow was performed.
+
+[c03-report]: https://www.halborn.com/blog/post/explained-the-cashio-hack-march-2022
+[c03-sec3]: https://sec3.dev/blog/cashioapp-attack-whats-the-vulnerability-and-how-x-ray-detects-it
+[c03-fix]: https://github.com/cashioapp/cashio/commit/7df658184c2610139fa2c0058363c66b28add4c4
+[c03-bug-validator]: https://github.com/cashioapp/cashio/blob/a51c3c59d544a5763b64abb4a8d82c49b0abd6d0/programs/brrr/src/actions/mod.rs#L10
+[c03-fixed-validator]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/actions/mod.rs#L10
+[c03-fixed-lib]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/lib.rs#L38
+[c03-bankman]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/programs/bankman/src/lib.rs#L28
+
+[c03-lock]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/Cargo.lock
+[c03-vipers]: https://docs.rs/crate/vipers/2.0.1/source/src/assert.rs
+[c03-anchor-account]: https://github.com/coral-xyz/anchor/blob/v0.22.1/lang/src/accounts/account.rs
+[c03-anchor-program]: https://github.com/coral-xyz/anchor/blob/v0.22.1/lang/src/accounts/program.rs
+[c03-addresses]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/addresses.rs
+[c03-saber]: https://github.com/cashioapp/cashio/blob/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/saber.rs
+
+#### C04. Crema, 2022-07-02: no identified public source pair
+
+Assessment began 2026-11-19T00:03:38.018408Z. Halborn describes forged tick
+data used to obtain fees; short symptom quote: “draining nearly $8
+million”. Its wording says an owner check was circumvented, whereas the
+selection catalog describes a missing owner check. Neither supplies the
+actual Claim validation code. [C04 registered report][c04-report].
+
+The other registered report, Rekt, distinguishes an earlier audited/fixed
+swap-method issue from the claim-method issue exploited here. That earlier
+audit repair cannot substitute for this incident's fix. CertiK's July 3
+analysis states “the exploited project's source code is private” and
+does not establish the exact defective function with code.
+[Rekt][c04-rekt], [CertiK][c04-certik].
+
+Resolution attempts: read both registered report narratives and links,
+the contemporary CertiK analysis, a public same-incident code search, and
+the connected GitHub repository search scoped to CremaFinance. The latter
+returned six public repository entries; none identified a historical
+buggy/fixed Claim implementation. This bounded search does not prove that
+no public copy exists. No live transaction, bytecode download, later SDK
+reconstruction or unrelated audit patch was substituted.
+
+| Missing source-map item | Consequence |
+| --- | --- |
+| Historical Rust handler, exact input checks and matched repair | Cannot determine whether the absent fact was runtime ownership, exact instance/PDA binding, decoding, or another predicate; cannot map either side under R1.3–R1.6. |
+
+**Buggy: not assessable. Fixed: not assessable. Pair: not assessable.**
+Missing code is not a model rejection, an admitted bug, or evidence for a
+working fix. A hypothetical `Owned<Tick>` example would illustrate R1
+only; it would not faithfully assess Crema. The Rust implementation's
+historical identity and repair also remain unverified. The frozen case
+stays in the denominator, with no replacement.
+
+[c04-report]: https://www.halborn.com/blog/post/explained-the-crema-finance-hack-july-2022
+[c04-rekt]: https://rekt.news/crema-finance-rekt
+[c04-certik]: https://www.certik.com/blog/crema-finance-exploit
+
+#### C05. SolSea: signer report without the SolSea source pair
+
+Assessment began 2026-11-19T00:05:44.140761Z. The registered SolShield/
+OShield disclosure, published 2022-03-17, describes unauthorized delisting
+combined with a separate SPL Token lifecycle defect. It says the SolSea
+“program source code was not available to us”. Its transaction sketches
+and SPL Token v3.2/v3.3 discussion are not SolSea's Rust handler or repair.
+The incident date remains unknown. [C05 disclosure][c05-report].
+
+The source says a fee-payer signature was required, but the intended
+listing owner's signature was not. That distinction matters: possession
+of *some* `Signer` cannot establish authorization. An R1.2 role-bound
+value would need an authenticated listing-owner relationship, not just
+the existing fee-payer fact. This is a requirement suggested by the
+narrative, not a source-faithful admission verdict.
+
+A same-incident public code/fix search resolved back to this disclosure
+and current user documentation, not a matched historical source pair.
+The statement that the SolSea issues were fixed supplies no diff or
+code-level fixed checks. We do not import the public SPL Token repair
+as SolSea's fix, replace the old program with a newer marketplace, or
+invent a missing signer comparison to construct a positive model.
+
+| Missing source-map item | Consequence |
+| --- | --- |
+| Historical Delist/Init Rust implementation and matched SolSea repair | Cannot preserve the handler's checks, signer roles, accounts, CPI/lifecycle and actual fixed branch under R1.2/R1.5/R1.6. |
+
+**Buggy: not assessable. Fixed: not assessable. Pair: not assessable.**
+The account-validation narrative is not enough to establish either side;
+the historical Rust identity remains unverified. This is a coordinated
+disclosure, not a confirmed theft count. The source snapshot is the
+registered web-tool extraction, with its disclosed original-HTML
+limitation; no stronger provenance is claimed after go.
+
+[c05-report]: https://medium.com/@oshield/schrodingers-nft-an-incinerator-spl-token-program-and-the-royal-flush-attack-58e4ce4e63dc
+
+### 4.4 What the comparison supports
+
+The paper exercise supports one narrow design observation: independent
+signer, owner and PDA values are insufficient without the correct
+instance relationships and exact identity obligations at the operations
+that use them. It does not establish an automatic way to choose those
+obligations. Solend and Cashio already have important valid wrappers/checks;
+their omitted relationships remain policy input. Wormhole's checked SDK
+already provides the decisive address validation. The hypothesized gain
+is compulsory use and confinement throughout admitted application code,
+plus a reviewable upgrade recipe, not invention of these checks.
+
+The disposition in §2.4 leaves compiler compatibility, lifecycle and alias
+confinement, migration cost, recipe quality and upgrade-review benefit as
+open questions. A bounded SBF/adapter experiment would require separate
+authorization and a case for its cost against Anchor plus existing analysis.
+
+R1 cannot establish business correctness, arithmetic safety, oracle truth,
+economic solvency, correct collateral selection by a trusted curator,
+safe use of stolen keys or benevolent upgrades. Its own trusted library,
+runtime and policy remain review obligations. No case result changes
+those limits or demonstrates a Tide v0 catch.
+
+### 4.5 Deviations, access limits and verification surface
+
+No post-go change to the rule, case list or selection was made; A1 is the
+only amendment and predates stamping/go. The initial registration's
+multi-query search pacing limitation and Medium extraction provenance
+remain disclosed in the protocol/registered manifest. Controlled fetches
+used serial pacing and five-minute backoff after 403/429 during registration.
+Post-go requests used serial page/tool calls; no new 403/429 or provider
+safety refusal occurred. Connector-internal HTTP pacing is unobservable;
+no claim is made about internal requests beyond the controlled calls.
+
+The assessment manifest retains the failed Wormhole SHA lookup (422),
+the obsolete Cashio article URL (404), and an Anchor connector error
+followed by a successful exact-URL HTTP fetch. None is treated as code
+evidence. The initial post-go C01 discovery search output was not saved.
+The matched primary report, code and commit-list request were saved and
+support the comparison. The corrected Cashio article is an additional
+post-go snapshot, not a replacement of a registered body. The record retains
+the article's published correction and Cashio's disabled patch. Consolidation
+corrected C01's PDA/write line locators by one line; its earlier scratch
+note is retained, and no predicate, verdict or conclusion changed.
+
+The 2026-11-19 Opus review found that the initial Cashio assessment had
+treated the runtime disable as sufficient for static admission. The review
+disposition applies the registered R1.6 to the compiled action bodies and
+corrects the fixed verdict to `not assessable`. The buggy rejection stands
+as a one-sided result. R1 and the registered case list are unchanged.
+
+Verification checked the frozen subjects/proofs against Git, the five
+ordered start/result records after go, manifest artifact hashes/sizes,
+commit/first-parent identities, the Solend four-line patch, both Cashio
+disables, local references and whitespace. These checks establish record
+consistency, not semantic enforcement, cryptographic correctness, deployed
+byte identity or independent reviewer agreement. No compilation, spike,
+live-chain interaction or upstream code execution occurred. The coordinator
+owns the review re-check and landing.
+
+Saved pages/code remain gitignored under `target/work/sources/`; only
+manifests and original analysis are committed. Preserve those snapshots
+through review and archive them with the evidence bundle: a manifest
+without its bodies cannot guarantee future retrieval of the same bytes.
 
 ## Source versions and read date
 
-All entries below were read on 2026-11-18 UTC. An unversioned page has
-no inferred release: its exact body hash in the manifest is the snapshot
-identity. Source tags and commits identify the inspected code versions.
+The §1–§3 entries below were read on 2026-11-18 UTC. Case sources in §4
+were read on 2026-11-18/19 UTC in the logged order; their retrieval times,
+exact revisions and hashes are in the separate assessment manifest.
+An unversioned page has no inferred release: its exact body hash in the
+manifest is the snapshot identity. Source tags and commits identify the
+inspected code versions.
 
 | Reference | Version or commit |
 | --- | --- |

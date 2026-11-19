@@ -1,0 +1,1328 @@
+{
+  "schema": 1,
+  "bead": "fx-qlek.17",
+  "stage": "post-go paper assessment; proposed rule only",
+  "created_at": "2026-11-19T00:15:17.053280+00:00",
+  "registration": {
+    "checked_at": "2026-11-18T23:49:40.912834+00:00",
+    "registration_commit": "384d7758cb7a0431bc69c3d6ee04ab2c6e744045",
+    "proof_commit": "e245199610ec72b023554a0b17238240910f8985",
+    "go_utc": "2026-11-18T23:48:32Z",
+    "verification": "Six registered file bodies match Git/marker and their subject digests occur in proof headers; Bitcoin anchoring/verification is relayed by coordinator, not independently queried on a live chain.",
+    "coordinator_reported_bitcoin_block": 976490,
+    "files": [
+      {
+        "file": "research/43-solana-account-capabilities.md",
+        "subject_sha256": "dacbfcbde0b6b0695b4e6a7e5c6d9100770c0305208bb9f0aec6e6262fdd850c",
+        "proof": "research/43-solana-account-capabilities.md.ots",
+        "proof_sha256": "a74fd3a5ebbdb03acf523e20fa70186ee77e23c3982241ef5a4a93f372c35e63",
+        "subject_digest_offset": 33
+      },
+      {
+        "file": "research/protocols/fx-qlek.17-protocol.md",
+        "subject_sha256": "110a06ce0d2f68a191196123f305cd3201fe4b33e441a25668f6c05b2e9a2f1b",
+        "proof": "research/protocols/fx-qlek.17-protocol.md.ots",
+        "proof_sha256": "5554f317368af1f289b72266b4cf218ea3b4b604549f6434b7d66991f812bfff",
+        "subject_digest_offset": 33
+      },
+      {
+        "file": "research/protocols/fx-qlek.17-cases/cases.tsv",
+        "subject_sha256": "4d1063028db3215690ee9c0a91ffbba14d36286a5395c247e3a59e7cd85a65eb",
+        "proof": "research/protocols/fx-qlek.17-cases/cases.tsv.ots",
+        "proof_sha256": "1d3343aed9f5b8eb3a061935ba2c2434d258a792e6cc1c323fa8ecf1196437f1",
+        "subject_digest_offset": 33
+      },
+      {
+        "file": "research/protocols/fx-qlek.17-cases/selection.tsv",
+        "subject_sha256": "e9028795534c6ded1d01a7ac588a516838fe643d05b886cb9d2e3ac705663bf3",
+        "proof": "research/protocols/fx-qlek.17-cases/selection.tsv.ots",
+        "proof_sha256": "7aecc67f6b838c3cb59abd98eb8774285ab080d14e3ab74fb1013f2a7fd98480",
+        "subject_digest_offset": 33
+      },
+      {
+        "file": "research/protocols/fx-qlek.17-cases/entries.tsv",
+        "subject_sha256": "751436d296202daa6017c53c8c8edb1a4df2fa03c97968d0194adb36c30a4cb4",
+        "proof": "research/protocols/fx-qlek.17-cases/entries.tsv.ots",
+        "proof_sha256": "b8a2261ad245eaca49a5ea5b8b90c7655a4bc1faff2d9a0c6a5700be563c0b29",
+        "subject_digest_offset": 33
+      },
+      {
+        "file": "research/protocols/fx-qlek.17-cases/sources.json",
+        "subject_sha256": "994880e7a58931cc9025bc09e3e854ae58e867aa1bbc0793df0c93d460a2c1d7",
+        "proof": "research/protocols/fx-qlek.17-cases/sources.json.ots",
+        "proof_sha256": "b566533bbb578b15578da624eda626067101ed732c39f5626e4b4c9c8833fde0",
+        "subject_digest_offset": 33
+      }
+    ]
+  },
+  "source_semantics": {
+    "direct_HTTP": "SHA-256 covers original saved response bytes; retrieval time is request start UTC.",
+    "GitHub_connector": "Hash covers saved tool envelope JSON; exact decoded UTF-8 content is retained inside it. Separate display bodies normalize final newline only. Not a raw HTTP byte attestation.",
+    "web_search": "Hash covers saved search/extraction envelope, discovery only; not original page HTML.",
+    "read_dates": "Prior-art sources read 2026-11-18 UTC; case sources read in case order 2026-11-18/19 UTC after the logged start. Additional pinned helper/macro inspection after first verdicts did not change outcomes.",
+    "network": "Controlled calls serial and at least one second apart; direct-fetch redirect/backoff log retained. No post-go 403/429. Tool-internal request pacing unobservable. No live-chain requests or upstream execution.",
+    "retention": "Bodies stay gitignored in target/work/sources. Retain through review and archive; hashes alone do not guarantee later availability."
+  },
+  "registered_sources_used_semantics": "The records below are copied from the frozen manifest, including their pre-go role descriptions. Assessment read order and current use are recorded in assessment_chronology and research/43; title-only/selection-only describes registration exposure, not post-go use.",
+  "registered_sources_used": [
+    {
+      "id": "report-wormhole",
+      "url": "https://www.halborn.com/blog/post/explained-the-wormhole-hack-february-2022",
+      "retrieved_at": "2026-11-18T21:18:48.436662+00:00",
+      "status": 200,
+      "path": "target/work/sources/report-wormhole.html",
+      "bytes": 179438,
+      "sha256": "dd27cbaa76e226409f90425d129b7ae6188ef1d8a855730708890946aa78f42b",
+      "version": "unversioned documentation/source snapshot (identity is SHA-256)",
+      "role": "public case report, saved before go; title only inspected"
+    },
+    {
+      "id": "report-cashio",
+      "url": "https://www.halborn.com/blog/post/explained-the-cashio-hack-march-2022",
+      "retrieved_at": "2026-11-18T21:18:49.536811+00:00",
+      "status": 200,
+      "path": "target/work/sources/report-cashio.html",
+      "bytes": 177977,
+      "sha256": "7318c9936a7c81abf82f4f2806537dc6918e3f03781cc17deae7d67ebacb2466",
+      "version": "unversioned documentation/source snapshot (identity is SHA-256)",
+      "role": "public case report, saved before go; title only inspected"
+    },
+    {
+      "id": "report-crema",
+      "url": "https://www.halborn.com/blog/post/explained-the-crema-finance-hack-july-2022",
+      "retrieved_at": "2026-11-18T21:18:51.382615+00:00",
+      "status": 200,
+      "path": "target/work/sources/report-crema.html",
+      "bytes": 181281,
+      "sha256": "5acd864a01b7f68203032cfaf2167ea9650d83e355c92ab96528b5dee97300a6",
+      "version": "unversioned documentation/source snapshot (identity is SHA-256)",
+      "role": "public case report, saved before go; title only inspected"
+    },
+    {
+      "id": "report-solend-redirect",
+      "url": "https://doc-14-2c-docstext.googleusercontent.com/export/dr04igesal9pftlk9arelf1tq8/5th4rtocb88nee4qa2hk54old4/1795036730000/116661487464783476045/*/1-WoQwT1QrPEX-r4N-fDamRQ50LM8DsdsOyq1iTabS3Q?format=txt",
+      "retrieved_at": "2026-11-18T21:18:54.063454+00:00",
+      "status": 200,
+      "path": "target/work/sources/report-solend-redirect.txt",
+      "bytes": 5960,
+      "sha256": "32543b32d9c70583438571c90ff032c853d8888c018caff121ed364a92094406",
+      "version": "unversioned documentation/source snapshot (identity is SHA-256)",
+      "role": "public case report, saved before go; title only inspected"
+    },
+    {
+      "id": "frame-nft-web",
+      "url": "https://medium.com/@solens_io/schrodingers-nft-an-incinerator-spl-token-program-and-the-royal-flush-attack-58e4ce4e63dc",
+      "retrieved_at": "2026-11-18 21:41:11 UTC",
+      "status": "tool result saved",
+      "path": "target/work/sources/frame-nft-web.json",
+      "bytes": 16261,
+      "sha256": "42941666c5a6eb29b6fcec95810e64ba5d44df11dba4bcf1121f689d524105d9",
+      "version": "web-tool extracted snapshot, not original HTML",
+      "transport": "web tool; result identifies a rewritten summary for Medium opens",
+      "role": "selection-only report narrative; quotes verbatim within saved tool extraction; no original-HTML byte attestation"
+    }
+  ],
+  "revision_pairs": [
+    {
+      "case": "C01",
+      "name": "Solend",
+      "fixed_commit": "132d74cf171dac66f896c4009ad6836f8c0b3799",
+      "buggy_first_parent": "871935cafc590bf1985bebfbc7e6399b153a5b40",
+      "fix_url": "https://github.com/solendprotocol/solana-program-library/commit/132d74cf171dac66f896c4009ad6836f8c0b3799",
+      "changed_paths": [
+        "token-lending/program/src/processor.rs"
+      ],
+      "fixed_path_enabled": true,
+      "obligation": "R1.5 authenticated instance relationship"
+    },
+    {
+      "case": "C02",
+      "name": "Wormhole",
+      "fixed_commit": "7edbbd3677ee6ca681be8722a607bc576a3912c8",
+      "buggy_first_parent": "79ab522f802ccc5ba34278d3c648fa62e06f4f1c",
+      "fix_url": "https://github.com/wormhole-foundation/wormhole/commit/7edbbd3677ee6ca681be8722a607bc576a3912c8",
+      "changed_paths": [
+        "Dockerfile.client",
+        "sdk/rust/sdk/Cargo.toml",
+        "solana/Dockerfile",
+        "solana/Dockerfile.wasm",
+        "solana/bridge/Cargo.lock",
+        "solana/bridge/client/Cargo.toml",
+        "solana/bridge/client/src/main.rs",
+        "solana/bridge/cpi_poster/Cargo.toml",
+        "solana/bridge/cpi_poster/src/lib.rs",
+        "solana/bridge/program/Cargo.toml",
+        "solana/bridge/program/src/api/verify_signature.rs",
+        "solana/bridge/program/src/lib.rs",
+        "solana/bridge/program_stub/Cargo.toml",
+        "solana/bridge/program_stub/src/lib.rs",
+        "solana/migration/Cargo.lock",
+        "solana/migration/Cargo.toml",
+        "solana/migration/src/lib.rs",
+        "solana/modules/nft_bridge/Cargo.lock",
+        "solana/modules/nft_bridge/program/Cargo.toml",
+        "solana/modules/nft_bridge/program/src/lib.rs",
+        "solana/modules/token_bridge/Cargo.lock",
+        "solana/modules/token_bridge/client/Cargo.toml",
+        "solana/modules/token_bridge/client/src/main.rs",
+        "solana/modules/token_bridge/program/Cargo.toml",
+        "solana/modules/token_bridge/program/src/lib.rs",
+        "solana/modules/token_bridge/token-metadata/Cargo.toml",
+        "solana/pyth2wormhole/Cargo.lock",
+        "solana/pyth2wormhole/client/Cargo.toml",
+        "solana/pyth2wormhole/program/Cargo.toml",
+        "solana/pyth2wormhole/program/src/lib.rs",
+        "solana/solitaire/client/Cargo.toml",
+        "solana/solitaire/client/src/lib.rs",
+        "solana/solitaire/program/Cargo.toml",
+        "solana/solitaire/program/src/lib.rs",
+        "solana/solitaire/rocksalt/Cargo.toml"
+      ],
+      "fixed_path_enabled": true,
+      "obligation": "R1.4 exact Instructions sysvar identity"
+    },
+    {
+      "case": "C03",
+      "name": "Cashio",
+      "fixed_commit": "7df658184c2610139fa2c0058363c66b28add4c4",
+      "buggy_first_parent": "a51c3c59d544a5763b64abb4a8d82c49b0abd6d0",
+      "fix_url": "https://github.com/cashioapp/cashio/commit/7df658184c2610139fa2c0058363c66b28add4c4",
+      "changed_paths": [
+        "ci.nix",
+        "flake.nix",
+        "programs/brrr/src/actions/mod.rs",
+        "programs/brrr/src/lib.rs",
+        "shell.nix"
+      ],
+      "fixed_path_enabled": false,
+      "obligation": "R1.5 authenticated instance relationship"
+    }
+  ],
+  "assessment_chronology": [
+    {
+      "case": "C01",
+      "event": "assessment_start",
+      "utc": "2026-11-18T23:50:17.469397+00:00",
+      "initial_source": "report-solend-redirect",
+      "source_sha256": "32543b32d9c70583438571c90ff032c853d8888c018caff121ed364a92094406",
+      "go_utc": "2026-11-18T23:48:32Z"
+    },
+    {
+      "case": "C01",
+      "event": "paper_assessment_recorded",
+      "utc": "2026-11-18T23:55:07.066508+00:00",
+      "notes": "target/work/C01-assessment.md",
+      "buggy": "rejects buggy shape",
+      "fixed": "admits fixed shape",
+      "pair": "support",
+      "scope": "source handler path under R1.5; no compiler execution"
+    },
+    {
+      "case": "C02",
+      "event": "assessment_start",
+      "utc": "2026-11-18T23:55:07.066552+00:00",
+      "initial_source": "report-wormhole",
+      "source_sha256": "dd27cbaa76e226409f90425d129b7ae6188ef1d8a855730708890946aa78f42b"
+    },
+    {
+      "case": "C02",
+      "event": "paper_assessment_recorded",
+      "utc": "2026-11-19T00:00:05.625017+00:00",
+      "notes": "target/work/C02-assessment.md",
+      "buggy": "rejects buggy shape",
+      "fixed": "admits fixed shape",
+      "pair": "support",
+      "scope": "account-validation path under R1.4; no compiler execution"
+    },
+    {
+      "case": "C03",
+      "event": "assessment_start",
+      "utc": "2026-11-19T00:00:05.625059+00:00",
+      "initial_source": "report-cashio",
+      "source_sha256": "7318c9936a7c81abf82f4f2806537dc6918e3f03781cc17deae7d67ebacb2466"
+    },
+    {
+      "case": "C03",
+      "event": "paper_assessment_recorded",
+      "utc": "2026-11-19T00:03:38.018363+00:00",
+      "notes": "target/work/C03-assessment.md",
+      "buggy": "rejects buggy shape",
+      "fixed": "not assessable",
+      "pair": "not assessable",
+      "scope": "R1.5 supports the buggy rejection. The compiled fixed actions need an R1.6 CPI/reload lifecycle this pass did not model. The runtime disable is retained; no compiler execution.",
+      "review_correction": {
+        "date": "2026-11-19",
+        "finding": "Opus B1",
+        "initial_fixed": "admits fixed shape",
+        "initial_pair": "support (fixed entrypoints disabled)"
+      }
+    },
+    {
+      "case": "C04",
+      "event": "assessment_start",
+      "utc": "2026-11-19T00:03:38.018408+00:00",
+      "initial_source": "report-crema",
+      "source_sha256": "5acd864a01b7f68203032cfaf2167ea9650d83e355c92ab96528b5dee97300a6"
+    },
+    {
+      "case": "C04",
+      "event": "paper_assessment_recorded",
+      "utc": "2026-11-19T00:05:44.140718+00:00",
+      "notes": "target/work/C04-assessment.md",
+      "buggy": "not assessable",
+      "fixed": "not assessable",
+      "pair": "not assessable",
+      "reason": "No identified public historical Claim source pair; precise validation predicate and Rust identity unverified"
+    },
+    {
+      "case": "C05",
+      "event": "assessment_start",
+      "utc": "2026-11-19T00:05:44.140761+00:00",
+      "initial_source": "frame-nft-web",
+      "source_sha256": "42941666c5a6eb29b6fcec95810e64ba5d44df11dba4bcf1121f689d524105d9"
+    },
+    {
+      "case": "C05",
+      "event": "paper_assessment_recorded",
+      "utc": "2026-11-19T00:06:48.723622+00:00",
+      "notes": "target/work/C05-assessment.md",
+      "buggy": "not assessable",
+      "fixed": "not assessable",
+      "pair": "not assessable",
+      "reason": "No identified public SolSea Rust handler/fix; SPL Token lifecycle code is a different program"
+    }
+  ],
+  "results": {
+    "frozen": 5,
+    "examined": 5,
+    "pair_assessable": 2,
+    "incomplete": 3,
+    "paired_support": 2,
+    "support_enabled_paths": 2,
+    "support_disabled_fixed_entrypoints": 0,
+    "assessable_negatives": 0,
+    "buggy_counts": {
+      "rejects buggy shape": 3,
+      "admits buggy shape": 0,
+      "not assessable": 2
+    },
+    "fixed_counts": {
+      "admits fixed shape": 2,
+      "rejects fixed shape": 0,
+      "not assessable": 3
+    },
+    "qualification": "Paper support is conditional on declaring the relationship each later fix added and implementing the trusted operations correctly. This is not Tide v0 enforcement. Cashio supports only a buggy rejection; the compiled fixed actions need an unmodeled R1.6 lifecycle despite the runtime disable. Crema and SolSea historical Rust source/fix unverified."
+  },
+  "additional_source_requests": [
+    {
+      "id": "assess-C01-report-html",
+      "case": "C01",
+      "url": "https://docs.google.com/document/d/1-WoQwT1QrPEX-r4N-fDamRQ50LM8DsdsOyq1iTabS3Q/export?format=html",
+      "retrieved_at": "2026-11-18T23:50:36.814310+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C01-report-html.html",
+        "bytes": 440993,
+        "sha256": "91e2224ccca32a99b15f1ea0e200b82ac525811fcff6fdb562593895d27537de"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C01-report-html.meta.json",
+        "bytes": 8025,
+        "sha256": "30211d5504b1e0fee1516dac09de6b684c16b2e97b8ced827c4019a94e6c0ece"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "unversioned page snapshot; SHA-256 identifies retrieved body"
+    },
+    {
+      "id": "assess-C01-commits",
+      "case": "C01",
+      "url": "https://api.github.com/repos/solendprotocol/solana-program-library/commits?path=token-lending/program/src/processor.rs&since=2021-08-19T00%3A00%3A00Z&until=2021-08-21T00%3A00%3A00Z&per_page=100",
+      "retrieved_at": "2026-11-18T23:52:22+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-commits.json",
+        "bytes": 4615,
+        "sha256": "3c296438c8e2150d7f94aaa4e3035522d6bd40f58e5cd58edc143c963c359e91"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "5c2c267b2399f1858dbaf662ae6c6b14f94a6eb12db2781ae69cfd3d3d929110"
+    },
+    {
+      "id": "assess-C01-fix",
+      "case": "C01",
+      "url": "https://api.github.com/repos/solendprotocol/solana-program-library/commits/132d74cf171dac66f896c4009ad6836f8c0b3799",
+      "retrieved_at": "2026-11-18T23:52:46+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-fix.tool.json",
+        "bytes": 6990,
+        "sha256": "7783c1fc01b84828ba8ec497570f3240f060ad2c70887cc1bdf0eb97fa07ac0e"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "1fb9aa0ebe55e272211b8aae4b9c75d1c4f60ee33872d60268427974594f76f2",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-fix.json",
+          "bytes": 2786,
+          "sha256": "a1631f2e86a1216cd8c8c8541ce1ea09c62b7d45a3664d1e5930a8cb00cc2d9e"
+        }
+      ]
+    },
+    {
+      "id": "assess-C01-bug",
+      "case": "C01",
+      "url": "https://raw.githubusercontent.com/solendprotocol/solana-program-library/871935cafc590bf1985bebfbc7e6399b153a5b40/token-lending/program/src/processor.rs",
+      "retrieved_at": "2026-11-18T23:52:48+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-bug.tool.json",
+        "bytes": 205730,
+        "sha256": "a52627c24b53df4d5f5b2bf7ff5f46974ee91023eb60e61d0f48375de0fb5ffb"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "f6c908a61dacbcd7132aeb5cfdc07a81dacaff209c0aa6a4d7e259ebcde500f5",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-bug.rs",
+          "bytes": 99462,
+          "sha256": "f6c908a61dacbcd7132aeb5cfdc07a81dacaff209c0aa6a4d7e259ebcde500f5"
+        }
+      ]
+    },
+    {
+      "id": "assess-C01-fixed",
+      "case": "C01",
+      "url": "https://raw.githubusercontent.com/solendprotocol/solana-program-library/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/processor.rs",
+      "retrieved_at": "2026-11-18T23:52:50+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-fixed.tool.json",
+        "bytes": 206164,
+        "sha256": "6b177a68b92aa1b01cc8e828b95ebc840e406f9ca99814a278686f270d391bf9"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "4d78f4bf019e8312fe035bcbe40dd1391c6aeecfc84483da2d56ddcf7e638704",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-fixed.rs",
+          "bytes": 99673,
+          "sha256": "4d78f4bf019e8312fe035bcbe40dd1391c6aeecfc84483da2d56ddcf7e638704"
+        }
+      ]
+    },
+    {
+      "id": "assess-C01-reserve",
+      "case": "C01",
+      "url": "https://raw.githubusercontent.com/solendprotocol/solana-program-library/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/state/reserve.rs",
+      "retrieved_at": "2026-11-18T23:53:51+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-reserve.tool.json",
+        "bytes": 105426,
+        "sha256": "e76629649b036e60ae7b84d69fd3359fc66de118c6954ba8514ab3508572a6bf"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "083a580dbcce07dfcabae52d2b27cb731da595b4dc706b74d3465c84e9ca9cf9",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-reserve.txt",
+          "bytes": 50788,
+          "sha256": "083a580dbcce07dfcabae52d2b27cb731da595b4dc706b74d3465c84e9ca9cf9"
+        }
+      ]
+    },
+    {
+      "id": "assess-C01-market",
+      "case": "C01",
+      "url": "https://raw.githubusercontent.com/solendprotocol/solana-program-library/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/src/state/lending_market.rs",
+      "retrieved_at": "2026-11-18T23:53:53+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-market.tool.json",
+        "bytes": 11955,
+        "sha256": "9c4e79f49028d026d0772c8d3fe7ed4457d4308594b4e3e66836989ff58e501d"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "1f66eea4ab0bebf984e836db57f4f81e8de0f22f620fe9eaffa6c7d4d002e2aa",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-market.txt",
+          "bytes": 5154,
+          "sha256": "1f66eea4ab0bebf984e836db57f4f81e8de0f22f620fe9eaffa6c7d4d002e2aa"
+        }
+      ]
+    },
+    {
+      "id": "assess-C01-cargo",
+      "case": "C01",
+      "url": "https://raw.githubusercontent.com/solendprotocol/solana-program-library/132d74cf171dac66f896c4009ad6836f8c0b3799/token-lending/program/Cargo.toml",
+      "retrieved_at": "2026-11-18T23:53:55+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C01-cargo.tool.json",
+        "bytes": 3190,
+        "sha256": "2561391a4134a8765277fcaf8aeb706eee43a0604ae71ab6192a9cbd3f24c764"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "c2b5b6f6ad55277d95583f9dc04a340075e6bc8dba802aa0587b20788fcbc4b0",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C01-cargo.txt",
+          "bytes": 935,
+          "sha256": "c2b5b6f6ad55277d95583f9dc04a340075e6bc8dba802aa0587b20788fcbc4b0"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-fix",
+      "case": "C02",
+      "url": "https://api.github.com/repos/wormhole-foundation/wormhole/commits/7edbbd3677ee6ca681be8722a607bc576a391349",
+      "retrieved_at": "2026-11-18T23:55:27+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool error",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-fix.tool.json",
+        "bytes": 1070,
+        "sha256": "0d7d45b5e94206581f5b47a0d8bd13c385425174e303a061be793ecab6c4b485"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "error": {
+        "error": "GitHub API error 422: {\"message\":\"No commit found for SHA: 7edbbd3677ee6ca681be8722a607bc576a391349\",\"documentation_url\":\"https://docs.github.com/rest/commits/commits#get-a-commit\",\"status\":\"422\"}",
+        "error_code": "INVALID_ARGUMENT",
+        "error_data": {
+          "message": "No commit found for SHA: 7edbbd3677ee6ca681be8722a607bc576a391349",
+          "documentation_url": "https://docs.github.com/rest/commits/commits#get-a-commit",
+          "status": "422"
+        }
+      }
+    },
+    {
+      "id": "assess-C02-search",
+      "case": "C02",
+      "retrieved_at": "2026-11-18T23:55:42+00:00",
+      "transport": "web search tool",
+      "query": "wormhole load_instruction_at_checked fix github 7edbbd 2022",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-search.json",
+        "bytes": 25291,
+        "sha256": "bde9dd8e97f3253cab7d34103480e35207e467cde2fc160aae0b846a5c6a1b58"
+      },
+      "role": "discovery only; not a substitute for historical source pair"
+    },
+    {
+      "id": "assess-C02-fix-resolved",
+      "case": "C02",
+      "url": "https://api.github.com/repos/wormhole-foundation/wormhole/commits/7edbbd3",
+      "retrieved_at": "2026-11-18T23:55:55+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-fix-resolved.tool.json",
+        "bytes": 90181,
+        "sha256": "a6449553d8e84b32375800aba1b243dcd9b947ac1c29854ce4c4cbb897db4d82"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "40834b4b1cace0aa10830560a6971912b1251e2e7020c20f4bf386feb7db8efa",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-fix-resolved.json",
+          "bytes": 41644,
+          "sha256": "8b8b9ac7127616023f2ac8630a5b5dfbb8d750a928eba003aed440b3da871c11"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-bug",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/79ab522f802ccc5ba34278d3c648fa62e06f4f1c/solana/bridge/program/src/api/verify_signature.rs",
+      "retrieved_at": "2026-11-18T23:56:24+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-bug.tool.json",
+        "bytes": 15321,
+        "sha256": "8aabf95b75805e741e7c796f8a79b97a7dce283c7dcf8cd802c8f3e7b6d99c5d"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "6cca4e6f58151fc3160ab30303de7fc48b0a022f6af78c3e9774d613dd91d316",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-bug.rs",
+          "bytes": 6853,
+          "sha256": "6cca4e6f58151fc3160ab30303de7fc48b0a022f6af78c3e9774d613dd91d316"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-fixed",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/bridge/program/src/api/verify_signature.rs",
+      "retrieved_at": "2026-11-18T23:56:26+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-fixed.tool.json",
+        "bytes": 15263,
+        "sha256": "0132a47198f3df2eab54bb74fa20bd1c649ac1ab9348fe3898fc9846a108e0a5"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "40313745fd3e17a924b4287e5eb3399594176a9e1cf504a3fdc49abea67d0239",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-fixed.rs",
+          "bytes": 6824,
+          "sha256": "40313745fd3e17a924b4287e5eb3399594176a9e1cf504a3fdc49abea67d0239"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-sdk-old",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/solana-labs/solana/v1.7.0/sdk/program/src/sysvar/instructions.rs",
+      "retrieved_at": "2026-11-18T23:56:28+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-sdk-old.tool.json",
+        "bytes": 3881,
+        "sha256": "526258fd19fcb59a376d3717a838ba1966b39c8fab6766621d4b05f54f27e24f"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "5fb2c83f324465d00de37a38400423817b80c51fa5139d5fae1a8ed6b8fe7b2e",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-sdk-old.rs",
+          "bytes": 1425,
+          "sha256": "5fb2c83f324465d00de37a38400423817b80c51fa5139d5fae1a8ed6b8fe7b2e"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-sdk-new",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/solana-labs/solana/v1.9.4/sdk/program/src/sysvar/instructions.rs",
+      "retrieved_at": "2026-11-18T23:56:31+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-sdk-new.tool.json",
+        "bytes": 23493,
+        "sha256": "193c71734b4d52482a048b98ca3bb879bd982be24661753a54a5520dfd8b8af8"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "0d80109fc6e1f60462f1f0b6b9bc62de870037163e419c8113fe32b25ccc20e6",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-sdk-new.rs",
+          "bytes": 10930,
+          "sha256": "0d80109fc6e1f60462f1f0b6b9bc62de870037163e419c8113fe32b25ccc20e6"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-solitaire",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/lib.rs",
+      "retrieved_at": "2026-11-18T23:57:21+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-solitaire.tool.json",
+        "bytes": 7160,
+        "sha256": "b7252008fb04a0512cc14077569787f2274513a6615a525a2f628d548326feee"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "a48b9b5ab622b3a69ea1900baf1b91a4db5526d784e1261e07edef236d9ee670",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-solitaire.rs",
+          "bytes": 2906,
+          "sha256": "a48b9b5ab622b3a69ea1900baf1b91a4db5526d784e1261e07edef236d9ee670"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-types-index",
+      "case": "C02",
+      "url": "https://api.github.com/repos/wormhole-foundation/wormhole/contents/solana/solitaire/program/src/types?ref=7edbbd3677ee6ca681be8722a607bc576a3912c8",
+      "retrieved_at": "2026-11-18T23:57:33+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-types-index.tool.json",
+        "bytes": 8627,
+        "sha256": "8fa673e113698347257a26bb7b39fa3caa6634f2da43b5beae3df2923f4f2a90"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "13d2bd774191af9c4cc970cec7ba7d0b44c870bc09f8a3944bd3f00e4724bde8"
+    },
+    {
+      "id": "assess-C02-accounts",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/types/accounts.rs",
+      "retrieved_at": "2026-11-18T23:57:48+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-accounts.tool.json",
+        "bytes": 8581,
+        "sha256": "d52b2a0885b044a621a2bf6210912657de4f9085df9c9d6a88659bf0b9d6a61b"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "636991819da7d63814bef53e79935a68e075f0e28ecd56496ea66faad8131276",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-accounts.rs",
+          "bytes": 3592,
+          "sha256": "636991819da7d63814bef53e79935a68e075f0e28ecd56496ea66faad8131276"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-layers",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/types/layers.rs",
+      "retrieved_at": "2026-11-18T23:57:50+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-layers.tool.json",
+        "bytes": 6519,
+        "sha256": "e36793e9f48cecb044964538b2ed2264fd499b9640bc65087749732863357760"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "1eb1461703f82c4e19d904e4050795c3b259201d3c421ba6c73087ab69c3acf5",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-layers.rs",
+          "bytes": 2589,
+          "sha256": "1eb1461703f82c4e19d904e4050795c3b259201d3c421ba6c73087ab69c3acf5"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-context",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/types/context.rs",
+      "retrieved_at": "2026-11-18T23:57:52+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-context.tool.json",
+        "bytes": 4526,
+        "sha256": "7d1bcf5293c48a2468aefe08029f5d4916076c433e6c3947e300fa00ef731c6a"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "14418d4b10142514b861c02afb977d8afd14d819fd944edf9f7bb04d5dab0a2a",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-context.rs",
+          "bytes": 1640,
+          "sha256": "14418d4b10142514b861c02afb977d8afd14d819fd944edf9f7bb04d5dab0a2a"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-peel",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/processors/peel.rs",
+      "retrieved_at": "2026-11-18T23:58:52+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-peel.tool.json",
+        "bytes": 16963,
+        "sha256": "62968a97e82dce7a0e205dc19e2bb6898c46020c1403638ad3c9b2755c8ff8e3"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "16bec5ece4fc04775207fe1e802206d87b5d6d5e11d394c8622ce6b9b51299b6",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-peel.rs",
+          "bytes": 7652,
+          "sha256": "16bec5ece4fc04775207fe1e802206d87b5d6d5e11d394c8622ce6b9b51299b6"
+        }
+      ]
+    },
+    {
+      "id": "assess-C02-persist",
+      "case": "C02",
+      "url": "https://raw.githubusercontent.com/wormhole-foundation/wormhole/7edbbd3677ee6ca681be8722a607bc576a3912c8/solana/solitaire/program/src/processors/persist.rs",
+      "retrieved_at": "2026-11-18T23:58:54+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C02-persist.tool.json",
+        "bytes": 1412,
+        "sha256": "75a8925b2e137686511dc938b2b86f9a0c2018fc52c2de2c10bb562efd9dea35"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "6d1c2db81ac7294ed244459a448c1968b704a7d554cdd82c8d2056adef377236",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C02-persist.rs",
+          "bytes": 124,
+          "sha256": "6d1c2db81ac7294ed244459a448c1968b704a7d554cdd82c8d2056adef377236"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-sec3",
+      "case": "C03",
+      "url": "https://sec3.dev/blog/cashioapp-attack-whats-the-vulnerability-and-how-soteria-detects-it",
+      "retrieved_at": "2026-11-19T00:00:28.833531+00:00",
+      "transport": "direct HTTP",
+      "status": 404,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-sec3.html",
+        "bytes": 14986,
+        "sha256": "8c3d213b53dd30869f4f1110bec151b9af7899f340eb78731c525b934706e253"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-sec3.meta.json",
+        "bytes": 1758,
+        "sha256": "566834c718abda471286cee77295102754f2538317f1553a1045652e7c618c2b"
+      },
+      "role": "failed retrieval, not code evidence",
+      "version": "unversioned page snapshot; SHA-256 identifies retrieved body"
+    },
+    {
+      "id": "assess-C03-search",
+      "case": "C03",
+      "retrieved_at": "2026-11-19T00:00:50+00:00",
+      "transport": "web search tool",
+      "query": "site:github.com/cashioapp cashio brrr March 2022 fix print_cash",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-search.json",
+        "bytes": 29717,
+        "sha256": "bfea54c54bb98cd5fdef78cabbe4155a83e04adbc25d276e116a01cd35e2b36d"
+      },
+      "role": "discovery only; not a substitute for historical source pair"
+    },
+    {
+      "id": "assess-C03-sec3-current",
+      "case": "C03",
+      "url": "https://sec3.dev/blog/cashioapp-attack-whats-the-vulnerability-and-how-x-ray-detects-it",
+      "retrieved_at": "2026-11-19T00:00:58.391309+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-sec3-current.html",
+        "bytes": 102197,
+        "sha256": "8b65459792a0b2f97d1eb7b1930038097d50a0299a407e7b206855993c22ed18"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-sec3-current.meta.json",
+        "bytes": 1922,
+        "sha256": "8183de423e46fcafdbdba14245676d27591e9502c3ed6044f2894cad7b4eb5cd"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "unversioned page snapshot; SHA-256 identifies retrieved body"
+    },
+    {
+      "id": "assess-C03-fix",
+      "case": "C03",
+      "url": "https://api.github.com/repos/cashioapp/cashio/commits/7df658184c2610139fa2c0058363c66b28add4c4",
+      "retrieved_at": "2026-11-19T00:01:32+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-fix.tool.json",
+        "bytes": 20688,
+        "sha256": "fe23148333408672560c90a887e7dd9e0bcde18bc9ae3fd1ebe97a52c1eac7f3"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "297fea980b4f1f9ec61c79f92f7ded054e0a63f646974215adeee09f34b57843",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-fix.json",
+          "bytes": 9301,
+          "sha256": "e98070ea4e8dc07b75f4e4ffa4f16677a960164bdd0e463c817339f8c55b564a"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-bug-validator",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/a51c3c59d544a5763b64abb4a8d82c49b0abd6d0/programs/brrr/src/actions/mod.rs",
+      "retrieved_at": "2026-11-19T00:02:10+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-bug-validator.tool.json",
+        "bytes": 2554,
+        "sha256": "091bf481c4cca61e42c69010038285344a72c45dc39ada6dc53ad55b43c6d18b"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "a4af9162d5bbe427a08111a228328653294a0d9a7c1af69ab8143e92d51d276b",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-bug-validator.rs",
+          "bytes": 743,
+          "sha256": "a4af9162d5bbe427a08111a228328653294a0d9a7c1af69ab8143e92d51d276b"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-fixed-validator",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/actions/mod.rs",
+      "retrieved_at": "2026-11-19T00:02:12+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-fixed-validator.tool.json",
+        "bytes": 2684,
+        "sha256": "4434a26c25ecd458479167a48e58b83fee75d838e466a41120e7326e85f5d94f"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "8e269e42ce4d1a3766a8d3cd68662268f0d609ff74976fd7404045d3f0f9d957",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-fixed-validator.rs",
+          "bytes": 807,
+          "sha256": "8e269e42ce4d1a3766a8d3cd68662268f0d609ff74976fd7404045d3f0f9d957"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-bug-lib",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/a51c3c59d544a5763b64abb4a8d82c49b0abd6d0/programs/brrr/src/lib.rs",
+      "retrieved_at": "2026-11-19T00:02:14+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-bug-lib.tool.json",
+        "bytes": 10982,
+        "sha256": "cda61a9fe53550aa3c4441d8fcdad157c63520b8a7753d32f20256c235d4aa7c"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "1e711d5e5d3f51ac5d787ef2b66fac4e2d3479385b67dca1b816eee6e8862444",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-bug-lib.rs",
+          "bytes": 4829,
+          "sha256": "1e711d5e5d3f51ac5d787ef2b66fac4e2d3479385b67dca1b816eee6e8862444"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-fixed-lib",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/lib.rs",
+      "retrieved_at": "2026-11-19T00:02:16+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-fixed-lib.tool.json",
+        "bytes": 11230,
+        "sha256": "616840e65d0384a08c94e03f7c2f7c38607777eff3026d790e12d20fc0cc1298"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "d0aaab3923df22e906a4f887025ec013a5603e6bccd1999bbd35ff4371c27f64",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-fixed-lib.rs",
+          "bytes": 4947,
+          "sha256": "d0aaab3923df22e906a4f887025ec013a5603e6bccd1999bbd35ff4371c27f64"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-print",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/actions/print_cash.rs",
+      "retrieved_at": "2026-11-19T00:02:18+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-print.tool.json",
+        "bytes": 7479,
+        "sha256": "f7a4ce9861d28e71cb532c71f2a011d7d54a3aa3bef5d87a44929ce1b2ed9988"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "556fea83064f3448c4631af558f4770287dba843269c7601acca676d5918aaf7",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-print.rs",
+          "bytes": 3121,
+          "sha256": "556fea83064f3448c4631af558f4770287dba843269c7601acca676d5918aaf7"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-bankman",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/bankman/src/lib.rs",
+      "retrieved_at": "2026-11-19T00:02:20+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-bankman.tool.json",
+        "bytes": 18964,
+        "sha256": "32d8a2e4448c9d663b6023addb66a09c32a1a5d9dba67ee542524206c081b81c"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "de525666d3acb52da49268c8292ca239df29bbe4b260f4976f7d222a1c9570f8",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-bankman.rs",
+          "bytes": 8662,
+          "sha256": "de525666d3acb52da49268c8292ca239df29bbe4b260f4976f7d222a1c9570f8"
+        }
+      ]
+    },
+    {
+      "id": "assess-C04-search",
+      "case": "C04",
+      "retrieved_at": "2026-11-19T00:03:56+00:00",
+      "transport": "web search tool",
+      "query": "Crema Finance July 2022 tick account fix source code github",
+      "artifact": {
+        "path": "target/work/sources/assess-C04-search.json",
+        "bytes": 34010,
+        "sha256": "8278cd73edfa63710fecd4e0f953bab44e2ee8bbab0fd46b073a6fd85164f37a"
+      },
+      "role": "discovery only; not a substitute for historical source pair"
+    },
+    {
+      "id": "assess-C04-certik",
+      "case": "C04",
+      "url": "https://www.certik.com/blog/crema-finance-exploit",
+      "retrieved_at": "2026-11-19T00:04:18.730344+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C04-certik.html",
+        "bytes": 107886,
+        "sha256": "44a5a45ea81803db86cb21ded49be71279969a78350cb61855ed3c7fd7f23615"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C04-certik.meta.json",
+        "bytes": 3237,
+        "sha256": "f5b12c40995a54ae0b3209ae4bff5fca443ed8e859ea3ce7e5b71505d9fb26b3"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "unversioned page snapshot; SHA-256 identifies retrieved body"
+    },
+    {
+      "id": "assess-C04-rekt",
+      "case": "C04",
+      "url": "https://rekt.news/crema-finance-rekt",
+      "retrieved_at": "2026-11-19T00:04:27.318968+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C04-rekt.html",
+        "bytes": 33684,
+        "sha256": "1a0bbd058e242b6fa3ffa09007e1b876b1dc17a854af4802c2b2ab9322f78879"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C04-rekt.meta.json",
+        "bytes": 1000,
+        "sha256": "966cad22d840378705123f04f54c5f5310faf0c8f1b3164d0fff14c2495cbf0d"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "unversioned page snapshot; SHA-256 identifies retrieved body"
+    },
+    {
+      "id": "assess-C04-repositories",
+      "case": "C04",
+      "tool": "github_search_repositories",
+      "query": {
+        "org": "CremaFinance",
+        "query": "",
+        "per_page": 100
+      },
+      "retrieved_at": "2026-11-19T00:04:59+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C04-repositories.tool.json",
+        "bytes": 9295,
+        "sha256": "fa5b244c4313fcff69cbedc924c460b5e6c8bb183ecfaefe18090fc9c008948d"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only"
+    },
+    {
+      "id": "assess-C05-search",
+      "case": "C05",
+      "retrieved_at": "2026-11-19T00:06:15+00:00",
+      "transport": "web search tool",
+      "query": "SolSea Delist missing signer Royal Flush 2022 source code fix github",
+      "artifact": {
+        "path": "target/work/sources/assess-C05-search.json",
+        "bytes": 33583,
+        "sha256": "41898e412efba777ae2985c468e90df064d14d432fad7d9b69a7b38926e88465"
+      },
+      "role": "discovery only; not a substitute for historical source pair"
+    },
+    {
+      "id": "assess-C03-brrr-cargo",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/Cargo.toml",
+      "retrieved_at": "2026-11-19T00:07:55+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-brrr-cargo.tool.json",
+        "bytes": 2908,
+        "sha256": "e1d4a853379d91bd27366663dcf2f82e63e28fcad95f3b1fb85a0f13b750d279"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "a1dd04a2f435f31060741f56f9617f8ec357f6eabcba669247df9c7e071cd097",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-brrr-cargo.txt",
+          "bytes": 860,
+          "sha256": "a1dd04a2f435f31060741f56f9617f8ec357f6eabcba669247df9c7e071cd097"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-lock",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/Cargo.lock",
+      "retrieved_at": "2026-11-19T00:07:57+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-lock.tool.json",
+        "bytes": 88316,
+        "sha256": "b731bd492669c08a5fa7175cc6131f6312d6c2d0ab2fc9df484d8757fc214c5d"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "546dd5d2caa151464cc4ad87bcca451f0105bce62a2129df184f7e4b5c4a1fcd",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-lock.txt",
+          "bytes": 39970,
+          "sha256": "546dd5d2caa151464cc4ad87bcca451f0105bce62a2129df184f7e4b5c4a1fcd"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-vipers",
+      "case": "C03",
+      "url": "https://docs.rs/crate/vipers/2.0.1/source/src/lib.rs",
+      "retrieved_at": "2026-11-19T00:11:11.477530+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-vipers.html",
+        "bytes": 35393,
+        "sha256": "5e41355d3ea2509a5cddd6251c5e98b49a5746214bbe68f3aab2ea568df1e174"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-vipers.meta.json",
+        "bytes": 1142,
+        "sha256": "784d399f4cb2248d815147bbc4446e797fba11348a36453d68acf2d7dc21c909"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "vipers 2.0.1, resolved by Cashio Cargo.lock"
+    },
+    {
+      "id": "assess-C03-vipers-assert",
+      "case": "C03",
+      "url": "https://docs.rs/crate/vipers/2.0.1/source/src/assert.rs",
+      "retrieved_at": "2026-11-19T00:11:28.454199+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-vipers-assert.html",
+        "bytes": 308302,
+        "sha256": "7d4e0d1f1d5e493ed6dd53b43255b633735ac8781de0d56671c5826e39aba595"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-vipers-assert.meta.json",
+        "bytes": 1164,
+        "sha256": "97165e76f653234cb1caac057996aedde6e8fccbf93979043e3b8673b43e4e5f"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "vipers 2.0.1, resolved by Cashio Cargo.lock"
+    },
+    {
+      "id": "assess-C03-addresses",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/addresses.rs",
+      "retrieved_at": "2026-11-19T00:12:00+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool success",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-addresses.tool.json",
+        "bytes": 4278,
+        "sha256": "5721b8b5e61ae42dadef3ab2830559a088f352f5d1ba660b918bc0e95ed40ede"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "decoded_content_sha256": "1b9c86213a5940b7aa3491f7a2ad4c4741a5b8e98c5f4d54566e40acbbe94d78",
+      "display_artifacts": [
+        {
+          "path": "target/work/sources/assess-C03-addresses.rs",
+          "bytes": 1566,
+          "sha256": "1b9c86213a5940b7aa3491f7a2ad4c4741a5b8e98c5f4d54566e40acbbe94d78"
+        }
+      ]
+    },
+    {
+      "id": "assess-C03-anchor-account",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/coral-xyz/anchor/v0.22.1/lang/src/accounts/account.rs",
+      "retrieved_at": "2026-11-19T00:12:02+00:00",
+      "transport": "GitHub connected tool",
+      "status": "tool error",
+      "artifact": {
+        "path": "target/work/sources/assess-C03-anchor-account.tool.json",
+        "bytes": 495,
+        "sha256": "361963dd8455b2e5fe4071b3b967834ee9c36111cb09fb1dd9a0757268f95279"
+      },
+      "role": "historical code, dependency implementation or revision discovery; errors are access evidence only",
+      "error": {
+        "error": "AttributeError: 'str' object has no attribute 'get'",
+        "error_code": "UNKNOWN"
+      }
+    },
+    {
+      "id": "assess-C03-anchor-account-http",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/coral-xyz/anchor/v0.22.1/lang/src/accounts/account.rs",
+      "retrieved_at": "2026-11-19T00:12:14.112471+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-anchor-account-http.txt",
+        "bytes": 13891,
+        "sha256": "75c041537c125412d350e5b66cf58b04765ab37de36a3dcc418dfdca1250666c"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-anchor-account-http.meta.json",
+        "bytes": 1504,
+        "sha256": "181d1a7af90e5c0deb1ea003a7e28a1d6e24934e41d495b853c890c97111a47c"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "Anchor v0.22.1, resolved by Cashio Cargo.lock"
+    },
+    {
+      "id": "assess-C03-anchor-program-http",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/coral-xyz/anchor/v0.22.1/lang/src/accounts/program.rs",
+      "retrieved_at": "2026-11-19T00:12:20.551788+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-anchor-program-http.txt",
+        "bytes": 6183,
+        "sha256": "0deb71c55141ce7acf3a14ab17b65f70a7e6b329da15af1e42ba10520aab975d"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-anchor-program-http.meta.json",
+        "bytes": 1503,
+        "sha256": "32d9131116b321d70788e8f981fd9005c3a2c164392e844f78d6122af0dd5587"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "Anchor v0.22.1, resolved by Cashio Cargo.lock"
+    },
+    {
+      "id": "assess-C03-saber",
+      "case": "C03",
+      "url": "https://raw.githubusercontent.com/cashioapp/cashio/7df658184c2610139fa2c0058363c66b28add4c4/programs/brrr/src/saber.rs",
+      "retrieved_at": "2026-11-19T00:12:32.728313+00:00",
+      "transport": "direct HTTP",
+      "status": 200,
+      "artifact": {
+        "path": "target/work/sources/assess-C03-saber.txt",
+        "bytes": 1446,
+        "sha256": "7c305c9eefa15817622a356b892b2920c60ae1da60b00eafd99a3d157eb0d620"
+      },
+      "metadata_artifact": {
+        "path": "target/work/sources/assess-C03-saber.meta.json",
+        "bytes": 1507,
+        "sha256": "703bd3fe21f7b20e08aec6f32d0101228fd0d42386433fd0fceeb73aa15829b2"
+      },
+      "role": "public report or pinned dependency/helper source",
+      "version": "Cashio 7df658184c2610139fa2c0058363c66b28add4c4"
+    }
+  ],
+  "derived_report_images": [
+    {
+      "index": 0,
+      "path": "target/work/sources/C01-inline-image-0.png",
+      "sha256": "062ee9182793e192eea5b79aa625e7c9dc210b698bc353f8785b1bf3f2fbb04b",
+      "bytes": 76942,
+      "dimensions": [
+        549,
+        780
+      ],
+      "case": "C01",
+      "derived_from": "assess-C01-report-html",
+      "derivation": "base64 data-URI image bytes extracted from saved report HTML; not a separate web request",
+      "role": "report illustration; image 3 is code figure matched to Solend fix"
+    },
+    {
+      "index": 1,
+      "path": "target/work/sources/C01-inline-image-1.png",
+      "sha256": "d95b01fbe8425b03dc39a4ce66aec12b9883fa7f698e8f601ab924dc5c538af1",
+      "bytes": 104578,
+      "dimensions": [
+        1130,
+        649
+      ],
+      "case": "C01",
+      "derived_from": "assess-C01-report-html",
+      "derivation": "base64 data-URI image bytes extracted from saved report HTML; not a separate web request",
+      "role": "report illustration; image 3 is code figure matched to Solend fix"
+    },
+    {
+      "index": 2,
+      "path": "target/work/sources/C01-inline-image-2.png",
+      "sha256": "fc3227b6ece44ddfeda82ee32c3718b949a7d44cc94f520f9303ebd2b511e665",
+      "bytes": 40248,
+      "dimensions": [
+        949,
+        436
+      ],
+      "case": "C01",
+      "derived_from": "assess-C01-report-html",
+      "derivation": "base64 data-URI image bytes extracted from saved report HTML; not a separate web request",
+      "role": "report illustration; image 3 is code figure matched to Solend fix"
+    },
+    {
+      "index": 3,
+      "path": "target/work/sources/C01-inline-image-3.png",
+      "sha256": "f76571503394d74025c4b8247831d469286be212c902ba5cd149d2e794700a18",
+      "bytes": 75370,
+      "dimensions": [
+        764,
+        457
+      ],
+      "case": "C01",
+      "derived_from": "assess-C01-report-html",
+      "derivation": "base64 data-URI image bytes extracted from saved report HTML; not a separate web request",
+      "role": "report illustration; image 3 is code figure matched to Solend fix"
+    },
+    {
+      "index": 4,
+      "path": "target/work/sources/C01-inline-image-4.png",
+      "sha256": "7c94633c4067ded82f5ffb8787b2f85c6b7062c08f9191a7245a3db8547ce6c1",
+      "bytes": 10340,
+      "dimensions": [
+        538,
+        202
+      ],
+      "case": "C01",
+      "derived_from": "assess-C01-report-html",
+      "derivation": "base64 data-URI image bytes extracted from saved report HTML; not a separate web request",
+      "role": "report illustration; image 3 is code figure matched to Solend fix"
+    }
+  ],
+  "known_discovery_log_gap": "The initial post-go C01 single-query web search was not separately saved. It was discovery only; the matched primary report/code and commit-list request are saved. No source-pair conclusion relies on the missing search output.",
+  "deviations": "No post-go protocol, selection or rule change. A1 predates stamping/go. Opus B1 corrected the initial Cashio fixed verdict by applying the registered R1.6. Failed lookups preserved; no error body is positive evidence. Pre-go narrative exposure and initial search pacing limitation remain as registered."
+}
