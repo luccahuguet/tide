@@ -299,10 +299,11 @@ the superseded first design and its early Rust scaffold.
 
 ### Agent roles
 
-Codex (`gpt-6.1-sol`) does the bulk work: it implements beads in
+Codex (`gpt-6.2-sol`) does the bulk work: it implements beads in
 `.worktrees/<id>`, fixes or rebuts review findings as the usual author, and
 drafts research with sources, recording each design choice it meets as
-options plus a recommendation.
+options plus a recommendation. Supervisor passes and high-effort reviews run
+on `gpt-6.1-sol`, and xhigh reviews on `gpt-6.2-sol`.
 Opus decides those choices, reviews once Codex's supervisor pass reports
 the tree clean, and approves landing. The coordinating Claude session stays
 thin: it briefs agents, decides, runs reviews, and lands. The owner may
@@ -370,9 +371,9 @@ These rules add to AP-COORDINATOR-001 and AP-PLAN-001 (decision `fx-hbs`,
 
 - Agents: besides the coordinator, at most four working agents run at once.
   Implementers, reviewers, and research agents all count. When the coordinator
-  runs in Eon, it launches them as interactive Opus or Codex (`gpt-6.1-sol`)
-  CLIs in panes of its tab. Subagents and background review passes count
-  toward the four.
+  runs in Eon, it launches them as interactive Opus or Codex CLIs, on the
+  models Agent roles names, in panes of its tab. Subagents and background
+  review passes count toward the four.
 - Beads: a free place goes to the in-flight bead nearest landing before a
   new bead starts.
 - Sessions: `scripts/autorun.sh` stays serial and does not run while a
