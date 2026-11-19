@@ -1,7 +1,7 @@
 # Answers to the ten hardest questions
 
 One page for funding calls, grant forms, and critics. Each answer is what
-`main` supports on 2026-11-17; the chapter in brackets has the detail and the
+`main` supports on 2026-11-19; the chapter in brackets has the detail and the
 commands. Say "planned" whenever the answer says planned.
 
 **1. "What is Tide, in one sentence?"**
@@ -59,42 +59,60 @@ It finds widening wherever it hides (a field three files away) and states it
 in a line a merge gate can act on. v0's diff shows declared authority and
 `unsafe` holes only; it can't see new use of authority already held, less
 attenuation, or data printed out. Exercised authority is v1. Whether it
-helps reviewers is E3's question. [7, 9]
+helps reviewers was E3's question, and the pilot found no evidence that it
+does (question 7), so we present it only as a summary of what a change may
+do. [7, 9]
 
 **7. "E1 shows parity with Rust, not a benefit. Why switch?"**
 Right: E1 is the cost line. Models write Tide about as reliably as Rust (first
 check 56/60 vs 59/60, final 58/60 each, 1.46× the iterations against a 1.5×
-limit), on small tasks with one model. The benefit test is E3: do reviewers
-catch planted authority widening at least 1.5 times as often with the trust
-diff? Its protocol was frozen on 2026-11-17, before any plant existed: 12
-planted changes and 12 clean twins, 288 fresh Opus and Sol review sessions
-(repeated reviews of those changes, which are the units), catches confirmed
-by two agreeing judges. The bar is a point estimate, and the report must say
-when its interval doesn't rule out no benefit. Half its plants use mechanisms the v0 diff
-isn't expected to show, by design, and the result is published either way.
-E3 has no data yet: the plants are being written, then the reviews run. [9]
+limit), on small tasks with one model. E3 tested a benefit of the trust
+diff, under a protocol frozen before any plant existed, and it was negative.
+As published: "In the E3 pilot, Opus and Sol reviewed 12 planted
+authority-widening changes repeatedly, 6 times per change in each arm. With
+the trust diff, 66 of 72 review sessions caught the planted widening; with
+the plain diff, 67 of 72 (ratio 0.99, 95% interval [0.95, 1.00]). This does
+not meet D0's 1.5x threshold on the point estimate. The interval does not
+rule out no benefit." Plain review already caught almost every plant, so the
+bar couldn't be met; changes too large to read in full were not tested. The
+reasons to switch are replay and admission: a seeded test finds a race and
+replays it exactly, and admission rejects ambient authority. On real
+malicious code: Tide's std had a gap, our screen of all 87 malicious-crate
+advisories (0 caught) exposed it, we fixed it, and re-tested under a new
+registration; the faithful chrono_anchor port is rejected, as it was in
+the screen, and its capability-passing version is now admitted. Every check is consistent with that
+registration being anchored before the fix landed, and independent proof of
+that order is not established. The re-test ran admission and type-checking
+only; no port was executed. Not a first-time catch and not a rate; the fix
+also reversed an earlier, deliberate removal of the same conversion
+(chapter 9 and research/49 give that history). [9]
 
 **8. "Your world is tiny: one crate, no dependencies, no TLS, no HTTP. Real
 programs live outside it."**
-True today, and the strongest critique. The answer is graded claims:
+Mostly true today, and the strongest critique. The std now has one HTTP
+GET with TLS, name lookup and starting processes, but the driver still
+admits one crate with no dependencies, and there is no UDP and no Unix
+sockets. The answer is graded claims:
 authority and replay you can read for the Tide-written part, with every hole
 listed. Imported Rust crates (v1, not built) become listed trust holes, unmodeled
 runs are marked not replayable, and the kernel sandbox, whatever the
 language, bounds them in driver-started test runs and, from v1, in deployed
-programs. The effect surface (TLS, processes, Unix sockets) is the next
-priority question. [10]
+programs. The rest of the effect surface (UDP, Unix sockets, more of HTTP)
+is the next priority question. [10]
 
 **9. "You depend on a pinned nightly's compiler internals. That's fragile."**
 It's a real, chosen cost. The driver links seventeen of rustc's internal
 libraries on one pinned nightly, and the pin hasn't moved yet. In exchange,
 Tide reuses rustc's type checker, borrow checker and code generator instead
-of building its own. 389 conformance cases check that stable rustc and the driver
-give the expected verdicts. There's no CI yet: an agent runs them, usually
-when a code change lands. A few cases await rules not built yet. A rehearsal pin bump is the recommended next check. [2]
+of building its own. 392 conformance cases check that stable rustc and the
+driver give the expected verdicts; in the latest recorded run, 389 pass and
+3 await rules not built yet (`conformance/run-record.txt`). There's no CI
+yet: an agent runs them, usually when a code change lands. A rehearsal pin bump is the recommended next check. [2]
 
 **10. "What actually runs today?"**
-`tide-admit` (the checker), Tide's std with files, TCP, clock, environment,
-stdin and structured tasks, the simulator and replay for tests, the trust
-artifact and its diff, the test sandbox, and a demo that shows all of it in
-one command. Not yet: the `tide` command, packages, HTTP, processes,
-randomness, fault injection, the fast incremental checker, proofs. [10]
+`tide-admit` (the checker), Tide's std with files, TCP, one HTTP GET, name
+lookup, starting processes, clock, environment, stdin and structured tasks,
+the simulator and replay for tests, the trust artifact and its diff, the
+test sandbox, and a demo that shows all of it in one command. Not yet: the
+`tide` command, packages, UDP, randomness, fault injection, the fast
+incremental checker, proofs. [10]

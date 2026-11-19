@@ -18,12 +18,12 @@ to do one kind of thing.
 | Capability | What it lets you do |
 | --- | --- |
 | `Fs` | files and directories |
-| `Net` | network connections |
+| `Net` | network: TCP connections, one HTTP GET, and name lookup |
 | `Clock` | read the time, sleep |
 | `Rand` | randomness (planned: today it exists but has no methods) |
 | `Env` | program arguments and environment variables |
 | `Stdin` | read standard input |
-| `Proc` | start other programs (planned: no methods yet) |
+| `Proc` | start other programs (`command`; no `exit` yet) |
 | `Tasks` | start concurrent tasks (chapter 4) |
 
 A function that wants to read a file must be handed an `Fs`. So its signature
@@ -47,6 +47,32 @@ it the only source:
 `main` can also **attenuate** a capability, which means hand out a narrower
 version of it: `root.fs.dir("/etc/app", Mode::Read)` is an `Fs` that can only
 read inside `/etc/app`; `root.net.only(["db:5432"])` can only reach one host.
+
+### Copying data, duplicating authority, sharing a borrow
+
+Three things look alike in code and mean different things for authority
+([`research/45`](../../research/45-bend-hvm-ideas-for-tide.md) §1):
+
+- **Copying data.** An integer is `Copy`, and `clone()` on a `String` or a
+  `Vec<u8>` makes an independent value. These example values hold no
+  capabilities, so no authority moves. (A collection that holds
+  capabilities is different: cloning a `Vec<Fs>` clones its handles.)
+- **Duplicating authority.** A capability is not `Copy`, so it is never
+  copied silently. It is `Clone` (provisionally): `fs.clone()` makes a
+  second handle with the *same* authority, never more. Only attenuation
+  makes a capability narrower, and nothing makes one wider.
+- **Sharing a borrow.** The usual way to pass authority is `&Fs`: the callee
+  may use it as often as it likes and pass it on while the borrow lasts.
+  Because a capability is `Clone`, the callee may also clone it and keep the
+  clone, so a borrow doesn't limit how long the authority is held.
+
+So the question to ask of a capability is **who may hold it**, not how many
+times it is used. Making capabilities impossible to clone would not make
+authority single-use, because a borrow already permits repeated use and
+passing on. What the signature tells you is which kind of authority a
+function can reach. The actual bounds depend on the capability value the
+caller passes: `&Fs` looks the same whether it is the whole file system or
+one read-only directory.
 
 ```text
                  main(root: Root)        <- the only source of authority

@@ -158,8 +158,8 @@ cat conformance/cases/authority/cap_ambient.rs
 
 The conformance runner (`cargo run -p tide-conformance`) runs every case
 through stable rustc (with the stub std) and through the driver, and fails if
-either verdict differs from the marks. 389 such cases
-(on `main` today) are the checker's specification in executable form. To see the cases for one
+either verdict differs from the marks. 392 such cases on `main` today,
+389 passing and 3 awaiting rules not built yet, are the checker's specification in executable form. To see the cases for one
 rule: `bash -c 'grep -rl "rules: CAP-1" conformance/cases'`.
 
 ## The hardest question

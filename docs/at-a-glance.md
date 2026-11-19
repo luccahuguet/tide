@@ -58,10 +58,25 @@ handed, and its tests replay a failing run exactly.
    others stay open.
 9. **Evidence, negatives included.** Our pilot and our searches for real bugs
    fixed their methods before looking at results, and published whatever
-   they found. For the pilot and four of the searches, that order rests on
-   our own records (self-attested). The other searches' method files carry
-   an OpenTimestamps proof, a timestamp anchored in a public blockchain,
-   which shows only that each file existed by its attestation time. When
-   those searches examined their candidates still rests on our records. The
+   they found. Our screen of all 87 malicious-crate advisories in RustSec,
+   Rust's public database of security advisories (a malicious crate is a
+   package published to attack its users), caught none of them. Tide's std
+   had a gap, the screen exposed it, we fixed it, and re-tested under a new
+   registration: a method recorded in advance, before the re-test ran
+   ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)). That
+   separate re-test, chosen after the screen had seen its one row, found a
+   catch. Our port (a rewrite in Tide) of that crate is rejected by
+   admission, as it already was in the screen, and a version handed the
+   authority it uses is now admitted. The registration carries an
+   OpenTimestamps proof, a timestamp anchored in a public blockchain, which
+   shows that a file existed by a given time. Every check is consistent
+   with the registration being anchored before the fix landed, and
+   independent proof of that order is not established. The re-test ran
+   admission and type-checking only; no port was executed. For the pilot
+   and four of the searches, the claim that methods were fixed before
+   results were examined rests on our own records (self-attested). The
+   other searches' method files carry an OpenTimestamps proof too, which
+   shows only that each file existed by its attestation time; when those
+   searches examined their candidates still rests on our records. The
    [status page](https://tidelang.com/status/) lists every round with its
    counts and its qualifier.

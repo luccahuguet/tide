@@ -143,9 +143,11 @@ loop.
   (how a real disk or TCP stack fails), memory exhaustion, or signals. The
   simulator finds **scheduling bugs in Tide-written logic**.
 - **Models built today:** tasks, channels, `Shared`, files, TCP on the local
-  address, the clock, the environment, and stdin. **Planned:** simulated HTTP
-  and randomness, processes, fault injection (dropped packets, disk errors,
-  crashes and restarts), and `tide sim` for whole programs. Today the
+  address, HTTP peers declared in `world.http` (with `Net::resolve` giving
+  their names synthetic addresses), child processes declared as
+  `sim.world.proc` models, the clock, the environment, and stdin.
+  **Planned:** simulated randomness, fault injection (dropped packets, disk
+  errors, crashes and restarts), and `tide sim` for whole programs. Today the
   simulator runs tests, not whole programs.
 - **Default strategy is random.** Other strategies that hunt for rare
   interleavings more cleverly (such as PCT) are planned.

@@ -6,7 +6,10 @@ chapter takes about 20 minutes. It explains one idea in plain English, gives
 you commands to run, tells you what to look for in their output, and ends with
 the hardest question a skeptic would ask and the honest answer.
 
-The guide describes `main` as it is on 2026-11-17. When something is planned
+The guide describes `main` as it is on 2026-11-17, except that its
+statements on E3, `Proc`, `Net`, the simulator's models, the conformance
+count, the outputs re-run in chapter 10, and the chrono_anchor re-test were
+brought up to date on 2026-11-19. When something is planned
 rather than built, the guide says so. Work still in review is named with its
 bead and marked "in review"; a hidden `TODO(tide-lead, <bead>)` comment in the
 chapter's source tells the coordinator what to update when it lands.

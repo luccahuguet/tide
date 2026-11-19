@@ -1,4 +1,4 @@
-# NN: fx-zu4f.15, chrono_anchor re-tested after the std conversion fix
+# 49: fx-zu4f.15, chrono_anchor re-tested after the std conversion fix
 
 Bead fx-zu4f.15. The registered protocol is
 `research/protocols/fx-zu4f.15-protocol.md`, reproduced verbatim in
