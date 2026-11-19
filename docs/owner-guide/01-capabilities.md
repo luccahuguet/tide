@@ -208,8 +208,9 @@ Tide's rule applies to every line the checker admits, within the limits
 below.
 
 **Against a malicious author, be precise.** What Tide claims today is **no
-accidental ambient authority**: admitted code can't call the world's
-operations (other than printing) without being handed a capability. That
+accidental ambient authority**: admitted safe code outside the `unsafe`
+grant can't call the world's operations (other than printing) without
+being handed a capability. That
 rests on rustc being sound (chapter 3). A deliberately malicious
 author could try to break the compiler itself, through rustc's own soundness
 bugs (chapter 3), or ask for the `unsafe` grant (chapter 2). The answers

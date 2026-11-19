@@ -5,7 +5,8 @@ One page for funding calls, grant forms, and critics. Each answer is what
 commands. Say "planned" whenever the answer says planned.
 
 **1. "What is Tide, in one sentence?"**
-A capability-safe, replayable subset of Rust: a checker in front of the
+A capability-safe, replayable subset of Rust (capability-safe up to rustc's
+soundness bugs, question 3): a checker in front of the
 standard Rust compiler that admits only code whose authority you can read in
 its signatures, whose concurrency bugs replay from a seed, and whose changes
 come with a diff of what the code may now do. Every Tide program is a valid
@@ -16,14 +17,19 @@ No. A lint forbids listed calls; Tide's std doesn't have the ambient calls at
 all, and from Rust's lower layers the checker admits only an allowlist.
 cap-std is opt-in, and every other line of a Rust program can still call
 `std::fs`. The precise claim is **no accidental ambient authority** for the
-code the checker admits. [1]
+safe code the checker admits, outside the `unsafe` grant. [1]
 
 **3. "rustc has soundness bugs. Can't malicious code forge a capability?"**
 Through a compiler bug, in principle yes, and we say so. We probed it:
-rust#25860 got through (fx-6xi2), and `TD0206` now closes that route. A red
-team of over 40 routes (fx-qlek.5) found two forms of one more route,
-rust#57893, both now closed by `TD0402`; every other escape route it lists
-was rejected. Other soundness bugs may remain. Test runs the driver starts
+rust#25860, open upstream since 2015, got through (fx-6xi2), and `TD0206`
+now closes that route. An AI red team (Claude Opus, fx-qlek.5) tried 48
+routes, controls included, and found that admission let through two forms
+of one more known route, rust#57893 (open upstream since 2019, both forms
+already on record there), both now closed by `TD0402`. Every other route it
+lists was rejected or denied, apart from two left admitted on purpose: route
+22, where `Termination::report` writes an `Err` to standard error, a sink
+every program holds, and route 24, a `cdylib` crate-type attribute that is
+admitted but inert. Other soundness bugs may remain. Test runs the driver starts
 (`--tide-run-test`, `--replay`) are inside a Linux kernel sandbox that
 doesn't depend on the compiler; a test binary run directly gets none.
 Deployed programs get kernel enforcement in v1. [3, 8]
@@ -104,8 +110,8 @@ is the next priority question. [10]
 It's a real, chosen cost. The driver links seventeen of rustc's internal
 libraries on one pinned nightly, and the pin hasn't moved yet. In exchange,
 Tide reuses rustc's type checker, borrow checker and code generator instead
-of building its own. 392 conformance cases check that stable rustc and the
-driver give the expected verdicts; in the latest recorded run, 389 pass and
+of building its own. 393 conformance cases check that stable rustc and the
+driver give the expected verdicts; in the latest recorded run, 390 pass and
 3 await rules not built yet (`conformance/run-record.txt`). There's no CI
 yet: an agent runs them, usually when a code change lands. A rehearsal pin bump is the recommended next check. [2]
 

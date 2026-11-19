@@ -19,7 +19,7 @@
     "rows": [
       { "tool": "Tide", "cells": [
         ["yes", "so a function's signature bounds what it may do"],
-        ["yes, by design; v0 admits one crate", "by design in dependencies too (v0 admits a single crate)", "unshaded"],
+        ["planned; v0 admits one crate", "by design in dependencies too (v0 admits a single crate)", "unshaded"],
         ["yes", "Tide fixes the schedule from a seed and searches seeds"],
         ["yes, of the simulator's model", "Replay reproduces the model, not the program"] ] },
       { "tool": "Plain Rust", "cells": [

@@ -20,7 +20,8 @@ below.
   them, printing aside, so a function's parameters bound what it can do: a
   parser that takes only `&str` cannot open a socket
   ([at a glance](at-a-glance.md), item 3). The precise claim is no
-  *accidental* ambient authority for admitted code
+  *accidental* ambient authority for admitted safe code outside the
+  `unsafe` grant
   ([owner's guide, answers](owner-guide/answers.md), item 2).
 - **Authority you can narrow.** `fs.dir(path, mode)` confines a file
   capability to one directory, and `only([...])` limits a network
@@ -80,14 +81,15 @@ below.
   gap, the screen exposed it, we fixed it, and re-tested under a new
   registration, a method recorded in advance
   ([research/49](../research/49-fx-zu4f.15-chrono-anchor-retest.md)). That
-  separate re-test was chosen after the screen had seen its one row, and
-  its outcome was close to predictable. Every check is consistent with the
+  re-test's pool, one crate the screen had already seen, was chosen
+  afterwards, so its outcome was close to predictable. Every check is consistent with the
   registration being anchored, by an OpenTimestamps proof in a public
   blockchain, before the fix landed, and independent proof of that order
   is not established. It was admission and type-checking only, with no
-  port executed, and it is not a first-time catch or a rate. The README's
+  port executed, and it is not a first-time catch or a rate. The fix also
+  reversed an earlier, deliberate removal of the same conversion. The README's
   [Evidence](../README.md#evidence) gives the full account.
-- **A trust diff, described honestly.** `tide-admit --tide-diff`
+- **A trust diff, as a summary only.** `tide-admit --tide-diff`
   summarizes what a change may do: the exported items whose declared
   authority widened or narrowed, and the `unsafe` sites added or removed.
   The E3 pilot, a small trial in which AI models reviewed planted changes
@@ -95,6 +97,13 @@ below.
   ([E3 report](../trials/e3-pilot/report.md)). It could not have shown a
   benefit: plain review of its small changes already caught almost every
   planted one. We present the trust diff only as a summary.
+
+Next to Rust tools: cap-std is opt-in, so the rest of a program can still
+call `std::fs`; cackle checks which kinds of API each dependency package
+uses, where Tide checks each function's signature; and library simulators
+such as turmoil work only while all the code uses their APIs, where Tide's
+checker rejects the ambient call
+([owner's guide, answers](owner-guide/answers.md), items 2 and 4).
 
 ## What it costs
 
@@ -133,6 +142,10 @@ below.
   draws are there), no `Proc::exit`, no signals, no FFI (calls into C), no
   fault injection in the simulator, and no `tide` command: `tide-admit` is
   the whole toolchain ([Not in this alpha](../README.md#not-in-this-alpha)).
+- **A pinned nightly.** The driver links seventeen of rustc's internal
+  libraries (`rustc_private`) on one pinned nightly, and the pin has never
+  been bumped; a rehearsal pin bump is the recommended next check
+  ([owner's guide, answers](owner-guide/answers.md), item 9).
 - **A boundary that rests on rustc.** Admission closes three known routes
   through rustc's soundness bugs, compiler bugs that let safe code break
   Rust's guarantees; the others stay open, and code under an `unsafe`

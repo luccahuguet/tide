@@ -33,11 +33,11 @@ The commands below turn on flakes for that command alone with
 ## 2. Get the repository
 
 ```sh
-git clone <repository-url> tide
+git clone https://github.com/luccahuguet/tide tide
 cd tide
 ```
 
-<!-- The owner fills in <repository-url> at release. -->
+This URL works once the repository is public.
 
 ## 3. Build the driver
 

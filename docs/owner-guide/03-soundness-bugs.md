@@ -45,9 +45,10 @@ function relied on. A few lines of safe code then turn any borrow into a
 
 ### The second hole: rust#57893, closed by TD0402
 
-**fx-qlek.5** (landed 2026-11-17) was a red team: an agent tried over 40
-escape routes against admission and the sandbox. It found two forms of one
-more admitted route, rust#57893. Through it, a blanket implementation of a
+**fx-qlek.5** landed 2026-11-17. An AI red team (Claude Opus) tried 48
+routes, controls included, against admission and the sandbox, and found that
+admission let through two forms of one more known route, rust#57893 (open
+upstream since 2019, both forms already on record there). Through it, a blanket implementation of a
 trait (Rust's interfaces) can disagree with the built-in one for trait
 objects (`dyn` values), and that gives safe code a general transmute, aimed
 in the probe at `&Fs`. You don't need the mechanism; what matters is that
@@ -174,8 +175,8 @@ harmless code, and the help line tells the writer how to get around it.
 > 'capability safety' just marketing?"
 
 **Be exact about the claim.** Tide claims **no accidental ambient authority**:
-code can't call the world's operations (other than printing) without being
-handed a capability. That
+admitted safe code outside the `unsafe` grant can't call the world's
+operations (other than printing) without being handed a capability. That
 claim, like every type-based guarantee, rests on the compiler being sound,
 whoever wrote the code and whatever they intended. The README says it plainly:
 safety against a malicious dependency rests on rustc's soundness, which has

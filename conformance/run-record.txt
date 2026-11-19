@@ -1,6 +1,6 @@
 tide-conformance run record
-commit: a4ab41c975442fe360363677d038aca71d9d4c10
-date: 2026-11-19T05:13:49Z
+commit: 9ee96fafa852a000343b42413c9215aec94a3616
+date: 2026-11-19T12:37:45Z
 command: cargo run -p tide-conformance
 exit: 0
 inputs: conformance crates Cargo.toml Cargo.lock rust-toolchain.toml
@@ -114,6 +114,7 @@ PASS  authority/pure_routes.rs
 PASS  authority/pure_std_types.rs
 PASS  authority/pure_supertrait_impl.rs
 PASS  authority/pure_unbounded.rs
+PASS  authority/rand.rs
 PASS  authority/resolve.rs
 PASS  authority/root_borrowed.rs
 PASS  authority/root_captured.rs
@@ -397,4 +398,4 @@ PASS  tasks/task_cancellation.rs
 PASS  tasks/task_controls.rs
 PASS  tasks/task_lifecycle.rs
 PASS  tasks/unresolved_trait_reject.rs
-392 cases: 389 PASS, 3 AWAITS CHECKER, 0 FAIL
+393 cases: 390 PASS, 3 AWAITS CHECKER, 0 FAIL

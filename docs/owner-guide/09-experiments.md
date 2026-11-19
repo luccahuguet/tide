@@ -189,7 +189,7 @@ records only; for later rounds, an OpenTimestamps proof shows each method
 file existed by a given time, but when the round looked still rests on our
 records), and most found nothing; the
 [status page](https://tidelang.com/status/) lists every round with its
-counts and its qualifier. One re-test found a catch, recorded in
+counts and its qualifier. One re-test counts one catch, recorded in
 [`research/49-fx-zu4f.15-chrono-anchor-retest.md`](../../research/49-fx-zu4f.15-chrono-anchor-retest.md).
 
 - **The screen.** A screen registered in advance (tracker issue
@@ -208,8 +208,8 @@ counts and its qualifier. One re-test found a catch, recorded in
   task's error, and that was deliberate: an earlier review (fx-nkv.3) had
   removed the conversion because it breaks type inference for an
   unannotated `tasks.scope(..)?` (rustc's `E0283`). The owner's decision
-  of 2026-11-19 reversed that removal, at a cost: 17 scope sites now name
-  their error type.
+  of 2026-11-19 reversed that removal so that the documented idiom compiles
+  in a task body, at a cost: 17 scope sites now name their error type.
 - **The catch.** Tide's std had a gap, the fx-zu4f.8 screen exposed it, we
   fixed it (the std fix, issue fx-qlek.18), and re-tested under a new
   registration (the re-test, issue fx-zu4f.15). At the fixed revision, with the same port files byte for

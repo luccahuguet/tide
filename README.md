@@ -1,6 +1,7 @@
 # Tide
 
-**A capability-safe, replayable subset of Rust.**
+**A capability-safe, replayable subset of Rust.** Capability-safe the way
+Rust is memory-safe: up to the compiler's soundness bugs (item 8 below).
 
 <!-- at-a-glance: docs/at-a-glance.md, copied verbatim; the site's generator checks the copy -->
 ## Tide at a glance
@@ -19,12 +20,13 @@ handed, and its tests replay a failing run exactly.
    rejection carries a numbered diagnostic, a `TD` code such as `TD0501`,
    whose message says why.
 3. **Authority shows in the signature.** Files, the clock, the environment
-   (the variables and arguments a program starts with), the network and
-   other programs are reachable only through capability values a function
-   is handed: `&Fs`, `&Clock`, `&Env`, `&Net` and `&Proc`. Tide's standard
+   (the variables and arguments a program starts with), the network, other
+   programs and randomness are reachable only through capability values a
+   function is handed: `&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc` and `&Rand`. Tide's standard
    library, the library every program builds on, has no free function, one
    called without such a value, that reaches them, printing aside, so a
-   function's parameters bound what it can do.
+   function's parameters bound what it can do, up to rustc's soundness
+   bugs (item 8).
 4. **Authority can be narrowed.** `fs.dir(path, mode)` confines a file
    capability to one directory, and `only([...])` keeps a network capability
    to listed hosts (named machines), a process capability to listed programs
@@ -49,7 +51,7 @@ handed, and its tests replay a failing run exactly.
    language to an AI model, fits a budget of
    [25,000 tokens](/design/01-design.md#d14-toolchain-contract-for-agents),
    the units a model reads text in.
-8. **Honest limits.** This first release, an alpha (an early test version),
+8. **Known limits.** This first release, an alpha (an early test version),
    runs on Linux on 64-bit x86 processors (x86_64). Async code, functions
    that pause and resume later, is left out by design. Threads are parts of
    a program that run at the same time. Safe code, everything outside
@@ -62,33 +64,49 @@ handed, and its tests replay a failing run exactly.
    bugs, compiler bugs that let safe code break Rust's guarantees, and the
    others stay open.
 9. **Evidence, negatives included.** Our pilot and our searches for real bugs
-   fixed their methods before looking at results, and published whatever
-   they found. Our screen of all 87 malicious-crate advisories in RustSec,
-   Rust's public database of security advisories (a malicious crate is a
-   package published to attack its users), caught none of them. Tide's std
-   had a gap, the screen exposed it, we fixed it, and re-tested under a new
-   registration: a method recorded in advance, before the re-test ran
-   ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)). That
-   separate re-test, chosen after the screen had seen its one row, found a
-   catch. Our port (a rewrite in Tide) of that crate is rejected by
-   admission, as it already was in the screen, and a version handed the
-   authority it uses is now admitted. The registration carries an
-   OpenTimestamps proof, a timestamp anchored in a public blockchain, which
-   shows that a file existed by a given time. Every check is consistent
-   with the registration being anchored before the fix landed, and
-   independent proof of that order is not established. The re-test ran
-   admission and type-checking only; no port was executed. For the pilot
-   and four of the searches, the claim that methods were fixed before
-   results were examined rests on our own records (self-attested). The
-   other searches' method files carry an OpenTimestamps proof too, which
-   shows only that each file existed by its attestation time; when those
-   searches examined their candidates still rests on our records. The
-   [status page](https://tidelang.com/status/) lists every round with its
-   counts and its qualifier.
+   recorded their methods in advance and published every count; how far
+   that order is proven varies by round, and a possible security defect is
+   held privately and appears publicly only as a count. Our screen of all 87
+   malicious-crate advisories in RustSec, Rust's public database of security
+   advisories (a malicious crate is a package published to attack its
+   users), caught none of them. Tide's std had a gap, the screen exposed it,
+   we fixed it, and re-tested under a new registration, a method recorded in
+   advance ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)).
+   That re-test's pool, one crate the screen had already seen, was chosen
+   afterwards, so its outcome was close to predictable: it is not a
+   first-time catch and not a rate. It counts one catch: our port (a rewrite
+   in Tide) of that crate is rejected by admission, as it was in the screen,
+   and a version handed the authority it uses is now admitted. Admission
+   does not judge intent; it makes the authority visible. Every check is
+   consistent with the re-test's registration being anchored, by an
+   OpenTimestamps proof (a timestamp in a public blockchain), before the fix
+   landed, and independent proof of that order is not established. The
+   re-test ran admission and type-checking only; no port was executed. For
+   the pilot and four of the searches, the order of method and results
+   rests on our own records (self-attested); the other searches' method
+   files carry OpenTimestamps proofs, which show only that each file existed
+   by its attestation time, and when those searches examined their
+   candidates rests on our records. The [status page](https://tidelang.com/status/)
+   lists every round with its counts and its qualifier.
 <!-- /at-a-glance -->
 
-**Tide v0 alpha, x86_64 Linux only.** Tide is a checked subset of valid Rust
-2024 for software that AI agents write and humans have to trust. A Tide
+In code, from [examples/capabilities/](examples/capabilities/README.md): the
+Rust habit is rejected, and the Tide version takes the file capability it
+uses.
+
+```rust
+// Rejected: error: TD0501: `std::fs::read_to_string` is not admitted
+pub fn load(path: &str) -> Result<Config, ConfigError> {
+    parse(&std::fs::read_to_string(path)?)
+}
+
+// Admitted: the file capability is a parameter
+pub fn load(fs: &Fs, path: &str) -> Result<Config, ConfigError> {
+    parse(&fs.read_to_string(path)?)
+}
+```
+
+**Tide v0 alpha, x86_64 Linux only.** A Tide
 program is an ordinary Rust crate that a pinned, unmodified nightly rustc
 compiles against Tide's std, after Tide's admission driver, `tide-admit`, has
 checked it. Tide complements Rust: it keeps Rust's syntax, ownership and
@@ -121,14 +139,18 @@ The alpha leads with replay and admission:
   [rust-lang/rust#25860](https://github.com/rust-lang/rust/issues/25860)
   (`TD0206`) and two forms of the trait-object route of
   [rust-lang/rust#57893](https://github.com/rust-lang/rust/issues/57893), an
-  impl for a type parameter and one for a projection (`TD0402`). A red team
-  of admission and the test sandbox
-  ([reviews/2026-11-17-red-team-opus.md](reviews/2026-11-17-red-team-opus.md))
+  impl for a type parameter and one for a projection (`TD0402`). Both issues
+  were public upstream long before Tide (#25860 since 2015, #57893 since
+  2019, both forms on record there); neither is a Tide discovery. A red team of
+  admission and the test sandbox, run by Claude Opus (an AI red team, not a
+  human audit;
+  [reviews/2026-11-17-red-team-opus.md](reviews/2026-11-17-red-team-opus.md)),
   tried the escape routes its record numbers 1 to 45, plus 6b, the
-  projection form of route 6: the two #57893 forms were admitted and are
-  rejected after its fixes, and every other route is rejected or denied,
-  except two left admitted on purpose ([Known holes](#known-holes)). rustc's
-  other open soundness bugs stay open.
+  projection form of route 6 (48 with its two controls): the two #57893
+  forms were admitted and are rejected after its fixes, and every other
+  route is rejected or denied, except two left admitted on purpose
+  ([Known holes](#known-holes)). rustc's other open soundness bugs stay
+  open.
 
 Each crate admitted against Tide's std also gets a trust artifact, and
 `tide-admit --tide-diff` summarizes what a change may do: the exported items
@@ -138,7 +160,14 @@ pilot below tested it as a review aid and gives no evidence that it helps.
 
 ## Evidence
 
-### A malicious crate rejected, then admitted with its authority declared
+No experiment yet shows that Tide makes reviewers or models better. What v0
+offers is a property and a mechanism. The property: no accidental ambient
+authority in admitted safe code, apart from printing, outside the `unsafe`
+grant (`--tide-grant=unsafe`) and up to rustc's soundness bugs. The
+mechanism: seeded replay. The sections below are the tests we ran,
+negatives included.
+
+### A malicious crate: rejected as written, admitted only with its authority declared
 
 [research/49](research/49-fx-zu4f.15-chrono-anchor-retest.md) records a
 catch on a separate re-test, not in the screen it re-tests. Our
@@ -159,7 +188,9 @@ Tide. The rule has two legs:
   receives the authority it uses as parameters is admitted with no
   diagnostic, and its trust artifact declares task authority (`bg`, the
   task scope it is handed), clock and process authority. This leg is what
-  changed.
+  changed. It is the success leg because admission does not block the
+  behaviour; it makes it visible: a time crate that starts processes has to
+  take a `&Proc` to do so.
 
 How it came about: Tide's std had a gap, the fx-zu4f.8 screen exposed it, we
 fixed it, and re-tested under a new registration. In the screen, the second
@@ -170,7 +201,8 @@ same port files, byte for byte. The fix reverses an earlier removal of the
 same conversion: a review (issue fx-nkv.3) had removed it on purpose,
 because it breaks type inference for an unannotated `tasks.scope(..)?`
 (rustc's `E0283`). The owner's decision of 2026-11-19 reversed that
-removal, and 17 scope sites now name their error type. Every check is
+removal so that the documented idiom compiles in a task body; the cost is
+that 17 scope sites now name their error type. Every check is
 consistent with the re-test's registration being anchored, by an
 OpenTimestamps proof in a Bitcoin block, before the fix landed, and
 independent proof of that order is not established (research/49 §3).
@@ -186,11 +218,17 @@ What it does not show:
   declared. The port was written from a public quote of code already known
   to be malicious.
 
-The other external search rounds (issues fx-zu4f.5 to .7 and .9 to .11)
-caught nothing. Each is a documented negative, except that fx-zu4f.10 keeps
+Admission also rejects package build scripts (`TD0915`) and user macros
+(`TD0101`) outright, and several of the advisories place their payload in
+a build script ([research/47](research/47-malware-rescreen.md)).
+
+The other external search rounds, issues fx-zu4f.5 to .7 and .9 to .12,
+caught nothing; each is a documented negative, except that fx-zu4f.10 keeps
 one unresolved row whose required evidence, an upstream pull-request thread,
 was unavailable (B23.128,
-[research/44](research/44-fx-zu4f.10-concurrency-round.md)). The
+[research/44](research/44-fx-zu4f.10-concurrency-round.md)). fx-zu4f.13, a
+re-screen of four earlier rows once processes and HTTP landed, counts this
+same catch once. The
 [status page](https://tidelang.com/status/) lists every round with its
 counts and its qualifier.
 
@@ -213,6 +251,9 @@ paragraphs, as published:
 > (see Pairs); its upper end of 1.00 reflects that ceiling, not evidence
 > about a benefit on harder changes.
 
+In plain terms: no benefit was seen, and with plain review this strong, the
+setup could not have shown one.
+
 The reviewers were models only (`claude-opus-5-5` and `gpt-6.1-sol`), on
 small single-file changes. The pilot did not test changes too large to read
 in full or human reviewers.
@@ -221,16 +262,21 @@ in full or human reviewers.
 
 The E1 gate ([trials/e1-checked/gate-report.md](trials/e1-checked/gate-report.md))
 gave one writer model, `claude-opus-5-5`, the same 30 tasks twice in Tide
-and twice in Rust, 60 trials per language. It shows parity within the
-protocol's margins, not a benefit: in the report's words, "Tide stayed within
-the protocol's margins rather than beating Rust".
+and twice in Rust, 60 trials per language. Tide's reference, which the
+writer learns from, was itself written by AI agents, Claude among them.
+The gate shows parity within the protocol's margins, not a benefit: in the
+report's words, "Tide stayed within the protocol's margins rather than
+beating Rust".
 
 - **First check.** Tide passed its first check in 56 of 60 trials and Rust in
-  59 of 60, a ratio of 0.949153 against a floor of 0.8.
+  59 of 60, a ratio of 0.95 against a floor of 0.8.
 - **Final pass.** Both passed 58 of 60, a ratio of 1.
 - **Iterations.** Passing Tide trials took 86 check or test runs and passing
-  Rust trials 59 (58 trials each), a ratio of 1.457627 against a limit of
-  1.5; the information-only 95% interval, 1.285714 to 1.637931, crosses 1.5.
+  Rust trials 59 (58 trials each), a ratio of 1.46 against a limit of
+  1.5; the information-only 95% interval, 1.29 to 1.64, crosses 1.5.
+- **Token cost.** Tide sessions read about 9 times Rust's cached input
+  tokens (5,156,350 against 569,596, an informational observation in the
+  report).
 
 ### Benchmarks against plain Rust
 
@@ -366,7 +412,7 @@ create `/nix`. These are its commands, which
 ```sh
 sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --no-daemon
 . ~/.nix-profile/etc/profile.d/nix.sh
-git clone <repository-url> tide
+git clone https://github.com/luccahuguet/tide tide
 cd tide
 nix --extra-experimental-features 'nix-command flakes' build .#tidelang-admit
 result/bin/tide-admit --crate-type=bin --emit=link --crate-name=sorted_insert \
@@ -376,8 +422,6 @@ result/bin/tide-admit --test --emit=link --crate-name=sorted_insert \
   --out-dir target/quickstart-tests examples/contracts/sorted_insert.rs \
   --tide-run-test __tide_contract_tests::insert_sorted_3
 ```
-
-<!-- The owner fills in <repository-url> at release, as in docs/install.md. -->
 
 The example prints `[3, 7, 9, 14, 20]`, and its test, generated from the
 function's contract, passes in the kernel sandbox. On macOS or Windows,
@@ -401,9 +445,10 @@ Tide v0 alpha, x86_64 Linux only. The alpha includes:
   and test harnesses, writes the trust artifact, compares two artifacts
   (`--tide-diff`), and runs one test in the sandbox (`--tide-run-test`) or
   replays a recording (`--replay`).
-- **Tide's std**: capabilities (`Fs`, `Net` for TCP, one HTTP/1.1 `get` and `resolve`, `Clock`, environment,
-  stdin, output and log sinks), structured tasks with cancellation and
-  deadlines, `Shared`, channels, `join`/`par_map`/`par_for`, executable
+- **Tide's std**: capabilities (`Fs`, `Net` for TCP, one HTTP/1.1 `get` and
+  `resolve`, `Clock`, `Proc` for child processes (`command`, `only`),
+  `Rand` draws, environment, stdin, output and log sinks), structured tasks
+  with cancellation and deadlines, `Shared`, channels, `join`/`par_map`/`par_for`, executable
   contracts, property tests, `#[sim_test]` and the simulator, JSON encoding,
   and deterministic float math.
 - **Runnable evidence**: the demo, the examples, the case studies, four
@@ -512,10 +557,12 @@ kernel lacks, in which case the run continues under what remains.
 
 ## How Tide is built
 
-Tide is AI-welcome because it is checkable. Its production code is written
-by AI agents, and a change lands on `main` only after two reviews of a
-frozen candidate by fresh agents that did not write it, one from each of two
-model families: a Codex pass, then an Opus review, with the author fixing or
+Tide is AI-welcome because it is checkable. Its production code and its
+design text are written by AI agents; the owner directs and decides. A
+change normally lands on `main` only after two reviews of a frozen
+candidate by fresh agents that did not write it, one from each of two model
+families: a pass by GPT Sol through OpenAI's Codex command-line tool
+(the Codex pass), then a Claude Opus review, with the author fixing or
 rebutting each finding
 ([GOVERNANCE.md](GOVERNANCE.md) states the exceptions). The checks run from
 the repository:
@@ -618,7 +665,9 @@ others.
 
 ## v0 Core and Later Tiers
 
-- **v0 core**: Rust surface and ownership, with lifetimes checked as origins; traits with a power
+- **v0 core**, the design's first tier, which the v0 alpha implements in
+  part (the largest parts not built are listed at the end of this item):
+  Rust surface and ownership, with lifetimes checked as origins; traits with a power
   ceiling; `Result` and `?`; built-in `!` forms and derives; capabilities and
   `Root`; the `Pure` marker trait; structured tasks on blocking and thread
   runtimes; channels, `Shared::with`, `join`, `par_map`, and `par_for`;
@@ -648,8 +697,9 @@ others.
   change meets, AI-written or not, and the project's roles.
 - [AGENTS.md](AGENTS.md): rules for agents working here, generated from
   pinned protocol profiles plus `.agent-protocols.local.md`.
-- [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced; humans
-  set architecture, write specifications, and review; every change to
+- [GOVERNANCE.md](GOVERNANCE.md): production code is agent-produced, under
+  human direction and review (so far AI agents also wrote the design text,
+  which the owner directs and decides); every change to
   `main` except a generated Starcompass import update (no review) or a
   planning-only one (no Codex pass) gets a Codex supervisor pass and,
   once Codex reports it clean, an Opus review; each reviewer re-checks

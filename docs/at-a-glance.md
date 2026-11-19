@@ -14,12 +14,13 @@ handed, and its tests replay a failing run exactly.
    rejection carries a numbered diagnostic, a `TD` code such as `TD0501`,
    whose message says why.
 3. **Authority shows in the signature.** Files, the clock, the environment
-   (the variables and arguments a program starts with), the network and
-   other programs are reachable only through capability values a function
-   is handed: `&Fs`, `&Clock`, `&Env`, `&Net` and `&Proc`. Tide's standard
+   (the variables and arguments a program starts with), the network, other
+   programs and randomness are reachable only through capability values a
+   function is handed: `&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc` and `&Rand`. Tide's standard
    library, the library every program builds on, has no free function, one
    called without such a value, that reaches them, printing aside, so a
-   function's parameters bound what it can do.
+   function's parameters bound what it can do, up to rustc's soundness
+   bugs (item 8).
 4. **Authority can be narrowed.** `fs.dir(path, mode)` confines a file
    capability to one directory, and `only([...])` keeps a network capability
    to listed hosts (named machines), a process capability to listed programs
@@ -44,7 +45,7 @@ handed, and its tests replay a failing run exactly.
    language to an AI model, fits a budget of
    [25,000 tokens](/design/01-design.md#d14-toolchain-contract-for-agents),
    the units a model reads text in.
-8. **Honest limits.** This first release, an alpha (an early test version),
+8. **Known limits.** This first release, an alpha (an early test version),
    runs on Linux on 64-bit x86 processors (x86_64). Async code, functions
    that pause and resume later, is left out by design. Threads are parts of
    a program that run at the same time. Safe code, everything outside
@@ -57,26 +58,27 @@ handed, and its tests replay a failing run exactly.
    bugs, compiler bugs that let safe code break Rust's guarantees, and the
    others stay open.
 9. **Evidence, negatives included.** Our pilot and our searches for real bugs
-   fixed their methods before looking at results, and published whatever
-   they found. Our screen of all 87 malicious-crate advisories in RustSec,
-   Rust's public database of security advisories (a malicious crate is a
-   package published to attack its users), caught none of them. Tide's std
-   had a gap, the screen exposed it, we fixed it, and re-tested under a new
-   registration: a method recorded in advance, before the re-test ran
-   ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)). That
-   separate re-test, chosen after the screen had seen its one row, found a
-   catch. Our port (a rewrite in Tide) of that crate is rejected by
-   admission, as it already was in the screen, and a version handed the
-   authority it uses is now admitted. The registration carries an
-   OpenTimestamps proof, a timestamp anchored in a public blockchain, which
-   shows that a file existed by a given time. Every check is consistent
-   with the registration being anchored before the fix landed, and
-   independent proof of that order is not established. The re-test ran
-   admission and type-checking only; no port was executed. For the pilot
-   and four of the searches, the claim that methods were fixed before
-   results were examined rests on our own records (self-attested). The
-   other searches' method files carry an OpenTimestamps proof too, which
-   shows only that each file existed by its attestation time; when those
-   searches examined their candidates still rests on our records. The
-   [status page](https://tidelang.com/status/) lists every round with its
-   counts and its qualifier.
+   recorded their methods in advance and published every count; how far
+   that order is proven varies by round, and a possible security defect is
+   held privately and appears publicly only as a count. Our screen of all 87
+   malicious-crate advisories in RustSec, Rust's public database of security
+   advisories (a malicious crate is a package published to attack its
+   users), caught none of them. Tide's std had a gap, the screen exposed it,
+   we fixed it, and re-tested under a new registration, a method recorded in
+   advance ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)).
+   That re-test's pool, one crate the screen had already seen, was chosen
+   afterwards, so its outcome was close to predictable: it is not a
+   first-time catch and not a rate. It counts one catch: our port (a rewrite
+   in Tide) of that crate is rejected by admission, as it was in the screen,
+   and a version handed the authority it uses is now admitted. Admission
+   does not judge intent; it makes the authority visible. Every check is
+   consistent with the re-test's registration being anchored, by an
+   OpenTimestamps proof (a timestamp in a public blockchain), before the fix
+   landed, and independent proof of that order is not established. The
+   re-test ran admission and type-checking only; no port was executed. For
+   the pilot and four of the searches, the order of method and results
+   rests on our own records (self-attested); the other searches' method
+   files carry OpenTimestamps proofs, which show only that each file existed
+   by its attestation time, and when those searches examined their
+   candidates rests on our records. The [status page](https://tidelang.com/status/)
+   lists every round with its counts and its qualifier.

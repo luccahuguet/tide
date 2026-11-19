@@ -28,7 +28,7 @@ Three words to keep straight:
 | Replay | `--tide-run-test` with `--seed`, and `--replay` with the identity check; tests, same machine | 6 |
 | Trust diff | `<crate>.interface.json` and `--tide-diff`: declared authority and `unsafe` holes | 7 |
 | Sandbox | RUN-3 for the driver's test runs, with the level reported | 8 |
-| Evidence | the demo (`cargo run -p tide-demo`), E1 passed, E3 published (negative), the red team (fx-qlek.5), the chrono_anchor re-test (research/49), 392 conformance cases | 2, 9 |
+| Evidence | the demo (`cargo run -p tide-demo`), E1 passed, E3 published (negative), the red team (fx-qlek.5), the chrono_anchor re-test (research/49), 393 conformance cases | 2, 9 |
 
 ### Planned for v0, not built
 
