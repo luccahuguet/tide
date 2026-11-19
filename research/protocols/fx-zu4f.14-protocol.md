@@ -66,6 +66,68 @@ upstream execution took place, and no network request was made. The R1
 author read the Codex report, the registration's committed files and
 classify.py's outputs.
 
+## Amendment R2 (2026-11-19, re-registration before any run)
+
+This file supersedes R1 at commit
+`6ae022a940eaf53d2f7e743045bf38ada421b69e` (proofs `95d074a`, kept in
+history) as well as the registration. The Codex finder re-check of R1
+(`gpt-6.1-sol`, high, 2026-11-19, request_changes) found R1's network fix
+resolved and its eligibility fix **not resolved**: R1's step 2 admitted a
+function by its name plus an enclosing header or file path, so an empty
+body, a trait or extern declaration or an accessor (such as
+`encapsulation_key`) passed, and `dep-use` admitted a bare import. A name
+or an import is not evidence that a crate implements a listed algorithm or
+a post-quantum protocol step.
+
+**New evidence standard (tide-lead's decision, applied as §3 step 3).** A
+package is admitted only among R1's step-2 survivors, and only when its
+production source holds, inside a function definition with a code body
+(not empty, not a declaration, not an accessor), either a published
+constant of a listed algorithm (`impl`: ML-KEM q 3329, ML-DSA q 8380417,
+FN-DSA q 12289, SLH-DSA signature lengths, HQC and Classic McEliece code
+lengths, each cited in §3) as a literal or a named constant with that
+value, or a call to an operation of a dedicated post-quantum implementation
+crate through its path or a name imported from it (`delegate`). File and
+line of the constant or call and of the enclosing fn are recorded in
+`pq_code_evidence`. Steps 1 and 2 are unchanged and stay as pre-filters.
+The self-test now rejects empty bodies, declarations, accessors, bare
+imports, type mentions, literals inside strings and calls into a
+general-purpose library, and accepts one fixture per evidence kind (a
+literal, a named constant, a hex literal; a path call, an aliased call, a
+bare imported call, a turbofish call). §3 ("What step 3 cannot see") states
+plainly what the standard misses: implementations reached only through
+macros, `include!`, generated code, constant expressions, other crates of
+the repository, method calls on values, trait-qualified calls, re-exports,
+glob imports, general-purpose libraries or differently named operations;
+and a listed value can occur in unrelated code.
+
+Also applied (non-blocking from the re-check): the isolation probe tests
+`/proc/net/ipv6_route` by content (`! grep -q .`), not by procfs size (§7).
+
+classify.py (SHA-256
+`4f450078da10bb98fef6a97385c8fbbd13f7266c79cc46f10ac5576138cadd4f`) and the
+rule text of §3's step 3 and §7's probe were fixed at
+2026-11-19T20:46:36Z, before the regeneration at 20:46:40Z to 20:47:47Z;
+after it only result counts, table-column descriptions, §2's drop-reason
+names and repository counts, §8's units and this amendment were written
+(self-attested). Regenerated from the recorded inputs: `classes.tsv`,
+`repositories.tsv`, `pool.tsv`; nothing was dropped or added by hand.
+`classify.py --check-narrowing` passed against R1's `classes.tsv` and
+against the registration's (0 changed fields, 0 widened rows).
+
+Counts, registration -> R1 -> R2: repositories kept by the gate 16 -> 9 ->
+6; packages past the gate's last step 38 -> 14 -> 6 (R2: 1 `impl`, 5
+`delegate`); class C 3 -> 0 -> 0; class P 9 -> 3 -> 2; pool 12 -> 3 -> 2,
+both class P, both by `delegate` evidence. Arm A takes both; arm B has no
+target. The gate is not loosened to refill the pool.
+
+Between R1 and R2 nothing else happened: no repository content beyond the
+registered mechanical scans (classify.py over the pinned sparse checkouts)
+was examined, no history, issue, PR, documentation, source or policy was
+read, no admission-observation run, model, property, build or upstream
+execution took place, and no network request was made. The R2 author read
+the Codex re-check, R1's committed files and classify.py's outputs.
+
 WORK = `/mnt/build/eon-agents/worktrees/tide-fx-zu4f.14/target/work`.
 TARGET = `/mnt/build/tide-agents/fx-zu4f.14-target`.
 PRIVATE = `~/.cache/eon-agents/tide-lead/fx-zu4f.14-private/`.
@@ -350,22 +412,24 @@ blobless clone from the same GitHub repository, the same read-only source,
 never a mirror.
 
 The bead's last repository condition, "implements a listed algorithm or
-protocol", is decided mechanically at package level by §3's two-step PQ
-gate: a repository stays only when at least one of its packages passes both
-steps, else it is dropped with `no-Cargo-package`,
-`no-pq-evidence-in-any-package` (no package passes step 1) or
+protocol", is decided mechanically at package level by §3's three-step PQ
+gate: a repository stays only when at least one of its packages passes all
+three steps, else it is dropped with `no-Cargo-package`,
+`no-pq-evidence-in-any-package` (no package passes step 1),
 `no-pq-implementation-evidence-in-any-package` (some pass step 1, none step
-2) in `repositories.tsv`.
+2) or `no-pq-code-evidence-in-any-package` (some pass step 2, none step 3)
+in `repositories.tsv`.
 
 Confirmation: 912 requests, 17:00:43Z to 17:31:06Z (no name was
 owner-affiliated or a letter-case duplicate, so every name got a GET).
 Result: **26** kept; 886 dropped (first reasons: 722 under 1,000 stars, 105
 not found, 57 language not Rust, 2 duplicates of an earlier canonical id).
 Clones: 2026-11-19T17:31:20Z to 17:32:48Z, **26** pinned. After the PQ gate
-(§3, R1): **9** repositories kept; 17 dropped (1 `no-Cargo-package`, 9
+(§3, R2): **6** repositories kept; 20 dropped (1 `no-Cargo-package`, 9
 `no-pq-evidence-in-any-package`, 7
-`no-pq-implementation-evidence-in-any-package`). The registration's
-one-step gate kept 16.
+`no-pq-implementation-evidence-in-any-package`, 3
+`no-pq-code-evidence-in-any-package`). The registration's one-step gate
+kept 16, R1's two steps 9.
 
 ## 3. Crate-level classes (classify.py)
 
@@ -387,13 +451,15 @@ No macro expansion, cfg_attr path rewrites, `include!`, feature or platform
 selection, or cross-module name resolution; lexical names can be false
 positives. No manual override, post-output exclusion or substitution.
 
-**PQ gate (narrowing), two steps, both required (amendment R1).** It
+**PQ gate (narrowing), three steps, all required (amendments R1, R2).** It
 applies the bead's repository condition, "implementing a NIST post-quantum
 algorithm or a post-quantum protocol", to each package, before the classes,
 so that the pool holds post-quantum code and not a large repository's
 unrelated packages. A package is classified only when it passes step 1 AND
-step 2; step 2 is evaluated only for packages that pass step 1, so the R1
-gate can only remove packages that the registration's gate admitted.
+step 2 AND step 3; each step is evaluated only for packages that pass the
+one before, so R1 can only remove packages that the registration's gate
+admitted, and R2 only packages that R1 admitted. Steps 1 and 2 are
+pre-filters; step 3 is the implementation evidence.
 
 *Step 1, discovery token (the registration's gate, unchanged).* One of
 these tokens: `mlkem`, `kyber`, `mldsa`, `dilithium`, `slhdsa`, `sphincs`,
@@ -462,16 +528,95 @@ crate whose post-quantum code is reached only through macros, `include!`,
 trait methods with other names (for example a key exchange's `start` and
 `complete`), or a general-purpose library is excluded, and the record
 states this limit; a wrapper whose operation fn delegates to another
-library passes. No row is changed by hand, no excluded row is backfilled,
-and a pool that shrinks below 10 gives arm A all that remains.
+library passes at step 2. Step 2 records names only: it is a pre-filter,
+and step 3 decides.
 
-**Narrowing check (R1).** `classify.py --check-narrowing` compares the
-regenerated `classes.tsv` with the registration's (e1c04a4) row by row: the
-same package rows; the same stars, pinned commit, binary flag, file counts
-and step-1 evidence on every row; every row that passes step 2 passed the
-registration's gate with the same class, reasons, line and test counts and
-class evidence; every row that fails step 1 is unchanged; and no row that
-fails step 2 has a class. It fails unless all hold.
+*Step 3, code evidence (R2).* A name, a header, a path or an import is not
+evidence that a package implements anything. Step 3 admits a package only
+when its reached non-test production source (comments and literals masked,
+test-only items removed, the package's library and binary targets only, so
+no example, bench or test file) holds one of two kinds of code evidence
+inside a **function definition with a code body** (`classify.py`
+`fn_bodies`, `pq_code_evidence`). A `fn` ending in `;` (a trait or extern
+declaration) has no body and never counts; an empty body never counts; an
+**accessor** never counts: a body that only returns or borrows one field,
+path, constant or literal (optionally with `return`, `&`, `&mut`, a unary
+minus, or one `.clone()`, `.as_ref()`, `.as_slice()`, `.as_bytes()`,
+`.to_owned()` or `.into()`). Evidence counts only in the innermost function
+body that encloses it.
+
+- **Kind 1, `impl` (own implementation).** The innermost code body holds a
+  published constant that defines a listed algorithm's arithmetic or
+  parameter set, as an integer literal in any base, with `_` separators and
+  type suffixes allowed, or as a reference to a `const` or `static` of the
+  package whose initializer is exactly such a literal (a name that any
+  reached file also binds to another initializer is ignored). The constants
+  (`PQ_CONSTANTS`), fixed now:
+  - ML-KEM / Kyber: q = 3329 (FIPS 203, §8 "Parameter Sets");
+  - ML-DSA / Dilithium: q = 8380417 (FIPS 204, §4 "Parameter Sets");
+  - FN-DSA / Falcon: q = 12289 (Falcon specification v1.2, parameter sets;
+    FN-DSA keeps this modulus);
+  - SLH-DSA / SPHINCS+: the signature lengths in bytes of the six parameter
+    families, 7856, 17088, 16224, 35664, 29792, 49856 (FIPS 205, §11
+    "Parameter Sets", Table 2). SLH-DSA has no modulus; these sizes follow
+    only from its parameter sets;
+  - HQC: the code lengths n = 17669, 35851, 57637 (HQC specification,
+    parameter-set table for HQC-128/192/256);
+  - Classic McEliece: the code lengths n = 3488, 6688, 6960 (Classic
+    McEliece cryptosystem specification, selected parameter sets
+    mceliece348864, mceliece6688128, mceliece6960119; n = 4608 and 8192 are
+    left out as too common in unrelated code).
+  The FIPS sections are cited from the published standards; the Falcon, HQC
+  and McEliece documents are cited by title and table because this step had
+  no network to re-check their section numbers. Recorded as
+  `impl:CONSTFILE:LINE:VALUE[:NAME]:fn FN@FNFILE:LINE` (the constant's
+  file:line, its value, the constant's name when referenced by name, and the
+  enclosing fn's name and file:line).
+- **Kind 2, `delegate` (delegation).** The innermost code body holds a
+  **call expression** `a::b::op(` (a turbofish allowed) whose first segment
+  is the Rust name of a normal or target dependency that is a dedicated
+  post-quantum implementation crate (step 2's definition: a strict name in
+  its package name, or `PQ_DEDICATED`), or a name that the same file
+  imports from such a crate by `use` (a glob import gives no name); or a
+  bare call `op(` of such an imported name (never a `fn op(` definition).
+  The called last segment must be an operation: `op_name` (key generation,
+  keypair, encapsulation, decapsulation, sign, verify) or `generate`. A
+  `use` item, a type mention, a method call on a value (`x.encapsulate()`)
+  and a declaration are not calls on a crate path. Recorded as
+  `delegate:FILE:LINE:PACKAGE:PATH@fn FN`.
+
+All files are searched for kind 1 (path order, then position) before any
+for kind 2. A package that passes step 2 and fails step 3 gets
+`no-pq-code-evidence` as its first reason for both classes; a repository
+whose packages all stop there is dropped with
+`no-pq-code-evidence-in-any-package`. Step 3 is the evidence column
+`pq_code_evidence` of `classes.tsv` and `pool.tsv`.
+
+**What step 3 cannot see (disclosed, narrowing).** It is lexical. It
+misses an implementation whose constants come from an expression (for
+example `(1 << 23) - (1 << 13) + 1`), from a macro, `include!`, generated
+code, a build script, a feature-gated or platform-gated file outside the
+reached module walk, or another crate in the repository; constants held only
+in an array or table without a listed value; an implementation of SLH-DSA,
+HQC or McEliece written for parameter sets whose listed values never occur
+in a function body; delegation through method calls on values, trait
+methods (`<T as Kem>::encapsulate`), re-exports from the crate's own
+modules, glob imports, or general-purpose libraries; and operation names
+other than the listed ones. A listed value can also occur in unrelated code
+(for example 12289 in another lattice scheme, or a buffer size equal to a
+listed length); such a row is admitted, and the record says the evidence is
+lexical. No row is changed by hand, no excluded row is backfilled, and a
+pool that shrinks below 10 (or to none) gives arm A all that remains.
+
+**Narrowing check (R1, R2).** `classify.py --check-narrowing OLD` compares
+the regenerated `classes.tsv` with an earlier registration's row by row; R2
+runs it against R1's (6ae022a) and the registration's (e1c04a4): the same
+package rows; the same stars, pinned commit, binary flag, file counts and
+evidence of every gate step the earlier table has, on every row; every row
+that passes step 3 passed the earlier table's last step with the same
+class, reasons, line and test counts and class evidence; every row that
+failed the earlier gate is unchanged; and no row that fails step 3 has a
+class. It fails unless all hold.
 
 **Class C (std concurrency)** and **class P (deterministic logic)**: exactly
 P12 §3's rules and first-failure orders (C: positive std concurrency use in
@@ -490,26 +635,28 @@ P:<reason>` (one reason when they are the same).
 pinned commit, crate, crate path, class, both reasons, binary flag,
 superset and reached file counts, non-test lines, `#[test]` count, step-1
 evidence (`pq_evidence`), step-2 evidence with file and line
-(`pq_impl_evidence`, the committed per-crate evidence table) and the class
+(`pq_impl_evidence`), step-3 code evidence with file and line
+(`pq_code_evidence`, the committed per-crate evidence table) and the class
 evidence. `repositories.tsv` has one row per pinned repository with its
-package count, packages passing step 1 (`pq_packages`) and step 2
-(`pq_impl_packages`), class C or P packages, and the outcome.
+package count, packages passing step 1 (`pq_packages`), step 2
+(`pq_impl_packages`) and step 3 (`pq_code_packages`), class C or P
+packages, and the outcome.
 
-Scan (R1): 2026-11-19T20:33:04Z to 20:34:07Z, after `--self-test` passed,
-with classify.py and this section's rule text frozen at 20:33:01Z (Amendment
-R1). Result: 26 repositories; 25 hold packages; **751** package rows plus 1
+Scan (R2): 2026-11-19T20:46:40Z to 20:47:47Z, after `--self-test` passed,
+with classify.py and this section's rule text frozen at 20:46:36Z (Amendment
+R2). Result: 26 repositories; 25 hold packages; **751** package rows plus 1
 `no-Cargo-package` placeholder row (752 rows in `classes.tsv`); **38** pass
-step 1 (in 16 repositories); **14** pass step 2 (in 9 repositories): 12
-`own-op`, 2 `dep-use`; **0** class C; **3** class P; **749** rows excluded. First reasons of the
-excluded: 700 no-pq-evidence; 24 no-pq-implementation-evidence; 7
-no-production-source; 5 forbidden-source | forbidden-normal-dependency; 4
-not-a-workspace-member; 2 no-std-concurrency-use |
-nontest-lines-outside-200-5000; 2 unscannable; 1 no-std-concurrency-use |
-no-own-#[test]; 1 no-std-concurrency-use | forbidden-normal-dependency; 1
-no-std-concurrency-use | unsafe-block-or-fn; 1 no-std-concurrency-use | std
-path; 1 no-Cargo-package (the placeholder). Narrowing check: passed (752
-rows; step 1 38, step 2 14; class C or P 12 at registration, 3 now; 0
-changed fields, 0 widened rows).
+step 1 (in 16 repositories); **14** pass step 2 (in 9 repositories); **6**
+pass step 3 (in 6 repositories): 1 `impl`, 5 `delegate`; **0** class C;
+**2** class P; **750** rows excluded. First reasons of the excluded: 700
+no-pq-evidence; 24 no-pq-implementation-evidence; 8 no-pq-code-evidence; 7
+no-production-source; 4 not-a-workspace-member; 3 forbidden-source |
+forbidden-normal-dependency; 2 unscannable; 1 no-std-concurrency-use | std
+path; 1 no-Cargo-package (the placeholder). Narrowing checks: both passed,
+0 changed fields and 0 widened rows on 752 rows; against R1 (6ae022a) the
+last gate step goes 14 -> 6 and class C or P 3 -> 2; against the
+registration (e1c04a4) 38 -> 6 and 12 -> 2. R1's scan (20:33:04Z to
+20:34:07Z) had 14 packages past its last step, 0 class C and 3 class P.
 
 ## 4. Pool
 
@@ -518,19 +665,20 @@ repository full name (case-insensitive), then crate name, then crate path. At
 most 3 per repository, the first 3 in that order. The pool is the first 30,
 or all kept crates when fewer than 30 are kept: `pool.tsv` with pool rank,
 class, also_p, arm-A flag (ranks 1 to 10), repository, stars, crate, crate
-path, pinned commit, non-test lines, step-1 and step-2 PQ evidence and class
-evidence. The pool
+path, pinned commit, non-test lines, step-1, step-2 and step-3 PQ evidence
+and class evidence. The pool
 is immutable after registration: no substitution when a crate has no useful
 history, no portable core, no KAT or no property, and no backfill from
 excluded rows.
 
-Result (R1): 3 kept crates in 3 repositories, fewer than 30, so the **pool
-is all 3** (the cap of 3 per repository dropped none): **0 class C** and **3
-class P**. The pool is below 10, so **arm A takes all 3** (ranks 1 to 3);
-the gate is not loosened to refill it, and no excluded row is backfilled.
-**Arm B has no target** (no class C pool crate; §6). The registration's pool
-of 12 (3 class C, 9 class P, from 8 repositories) is superseded; its other
-9 crates fail step 2.
+Result (R2): 2 kept crates in 2 repositories, fewer than 30, so the **pool
+is all 2** (the cap of 3 per repository dropped none): **0 class C** and **2
+class P**, both admitted by `delegate` evidence. The pool is below 10, so
+**arm A takes both** (ranks 1 and 2); the gate is not loosened to refill
+it, and no excluded row is backfilled. **Arm B has no target** (no class C
+pool crate; §6). Superseded pools: the registration's 12 (3 class C, 9
+class P, from 8 repositories), whose other crates fail step 2 or step 3;
+R1's 3 (3 class P), whose first crate fails step 3.
 
 ## 5. Admission observations (descriptive, never a catch)
 
@@ -739,8 +887,9 @@ Two stages, kept apart (R1):
    the crate, the test) runs only inside a fresh network namespace made by
    `unshare -rn`, in the same `sh` that first proves the namespace has no
    route: the only interface in `/proc/net/dev` is `lo`, `/proc/net/route`
-   holds no route (its header line only) and `/proc/net/ipv6_route` is
-   empty. Only when all three hold does that shell `exec` cargo, offline and
+   holds no route (its header line only) and `/proc/net/ipv6_route` holds
+   no line (tested by reading its content, not its procfs size; R2). Only
+   when all three hold does that shell `exec` cargo, offline and
    locked; the probe's output is recorded with the run.
 
 ```
@@ -755,7 +904,7 @@ bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4 \
     cat /proc/net/dev /proc/net/route /proc/net/ipv6_route
     test "$(tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d " ")" = lo || exit 97
     test "$(wc -l < /proc/net/route)" -le 1 || exit 97
-    test ! -s /proc/net/ipv6_route || exit 97
+    ! grep -q . /proc/net/ipv6_route || exit 97
     exec cargo test --offline --locked --manifest-path <worktree>/Cargo.toml \
       -p <crate> --test tide_repro -- --exact <test name> --test-threads=4' </dev/null
 ```
@@ -791,7 +940,7 @@ committed TSVs, cited), every arm-B candidate (commit, first parent, first
 failing E criterion, reason, sources read, E2 quote if passed, later
 criteria not assessed), and counts with their units kept apart:
 repositories, package rows (751 packages and the placeholder kept apart),
-step-1 and step-2 PQ-gated, class C and P, pool; per arm
+step-1, step-2 and step-3 PQ-gated, class C and P, pool; per arm
 targeted, screened, unresolved, unportable, modeled, rows and tests by kind
 (generated-input, KAT check, fixed-input), caught; for arm B matched
 commits, candidate rows per crate, unique commits, duplicates and E1-E5

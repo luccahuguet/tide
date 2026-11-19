@@ -2,12 +2,13 @@
 """fx-zu4f.14 crate-level classifier: PQ-evidence gate, then classes C and P; Python >=3.11 stdlib.
 
 fx-zu4f.12's scan.py (classes C and P, unchanged) with one registered
-narrowing in front, in two steps (amendment R1): a package is classified
-only when it shows a lexical post-quantum discovery token (`pq_evidence`,
-the registration's gate, unchanged) AND recorded evidence that the package
-itself implements a listed algorithm or uses a dedicated post-quantum
-implementation crate in its own code (`pq_impl_evidence`, see PQ_STRICT and
-pq_impl_evidence). Lexical and mechanical only: it reads Cargo.toml and .rs
+narrowing in front, in three steps: a package is classified only when it
+shows a lexical post-quantum discovery token (`pq_evidence`, the
+registration's gate, unchanged) AND strict-name evidence (`pq_impl_evidence`,
+amendment R1, unchanged) AND code evidence that it implements a listed
+algorithm or calls a dedicated post-quantum crate's operation
+(`pq_code_evidence`, amendment R2, see PQ_CONSTANTS and pq_code_evidence).
+Lexical and mechanical only: it reads Cargo.toml and .rs
 files of pinned sparse checkouts and never builds, runs or installs
 anything. The masking, test-item removal, use-tree and module-walk helpers
 are fx-zu4f.12's (from fx-zu4f.11 and fx-zu4f.10).
@@ -16,7 +17,7 @@ are fx-zu4f.12's (from fx-zu4f.11 and fx-zu4f.10).
   python3 -I classify.py --clones TARGET/clones --out WORK   # reads candidates.tsv,
       clone-refs.tsv; writes classes.tsv, repositories.tsv and pool.tsv
   python3 -I classify.py --check-narrowing OLD_classes.tsv --out WORK
-      # every package R1 admits was admitted with the same classes before
+      # every package admitted now was admitted with the same classes before
 """
 import argparse
 import csv
@@ -60,6 +61,20 @@ PQ_STRICT = re.compile(r'ml[-_]?kem|ml[-_]?dsa|slh[-_]?dsa|fn[-_]?dsa|sphincs|mc
 PQ_DEDICATED = {'oqs', 'oqs-sys', 'pqcrypto', 'pqcrypto-kyber', 'pqcrypto-dilithium', 'pqcrypto-falcon',
                 'pqcrypto-hqc', 'pqc_kyber', 'pqc_dilithium', 'crystals-dilithium', 'fips203', 'fips204',
                 'fips205'}
+# Code-evidence step (amendment R2, a further narrowing). Published constants
+# that define a listed algorithm's arithmetic or parameter set (protocol §3):
+PQ_CONSTANTS = {
+    3329: 'ML-KEM/Kyber q',                      # FIPS 203, §8 parameter sets
+    8380417: 'ML-DSA/Dilithium q',               # FIPS 204, §4 parameter sets
+    12289: 'FN-DSA/Falcon q',                    # Falcon specification v1.2, parameter sets
+    7856: 'SLH-DSA-128s signature bytes', 17088: 'SLH-DSA-128f signature bytes',
+    16224: 'SLH-DSA-192s signature bytes', 35664: 'SLH-DSA-192f signature bytes',
+    29792: 'SLH-DSA-256s signature bytes', 49856: 'SLH-DSA-256f signature bytes',  # FIPS 205, §11 Table 2
+    17669: 'HQC-128 n', 35851: 'HQC-192 n', 57637: 'HQC-256 n',                  # HQC specification, parameter sets
+    3488: 'mceliece348864 n', 6688: 'mceliece6688128 n', 6960: 'mceliece6960119 n',  # Classic McEliece, parameter sets
+}
+INT_CORE = r'(0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|[0-9][0-9_]*)(?:_?(?:[iu](?:8|16|32|64|128|size)))?'
+INT_LITERAL = r'(?<!\w)(?<!\w\.)' + INT_CORE + r'(?![\w.])'
 
 
 def rows(path):
@@ -737,12 +752,125 @@ def pq_impl_evidence(reached, rust_names):
     return None
 
 
+def int_value(literal):
+    digits = literal.replace('_', '')
+    base = {'0x': 16, '0o': 8, '0b': 2}.get(digits[:2].lower(), 10)
+    return int(digits[2:] if base != 10 else digits, base)
+
+
+ACCESSOR = re.compile(r'(?:return\s+)?(?:&\s*(?:mut\s+)?)?-?\s*(?:[A-Za-z_0-9]\w*(?:\s*(?:\.|::)\s*\w+)*)'
+                      r'(?:\s*\.\s*(?:clone|as_ref|as_slice|as_bytes|to_owned|into)\s*\(\s*\))?\s*;?')
+
+
+def fn_bodies(text):
+    """[(name, fn offset, body open, body end, kind)] for fn DEFINITIONS in masked text.
+
+    A declaration (a trait or extern fn ending in `;`) has no body and is not
+    listed. kind is `empty` (blank body), `accessor` (the body only returns or
+    borrows one field, path, constant or literal, optionally cloned or converted)
+    or `code`."""
+    out = []
+    for m in re.finditer(r'\bfn\s+([A-Za-z_]\w*)', text, re.ASCII):
+        depth, i = 0, m.end()
+        while i < len(text):
+            c = text[i]
+            if c in '([':
+                depth += 1
+            elif c in ')]':
+                depth -= 1
+            elif depth == 0 and c in '{;':
+                break
+            i += 1
+        if i >= len(text) or text[i] == ';':
+            continue
+        try:
+            end = balanced_end(text, i)
+        except ValueError:
+            continue
+        inner = text[i+1:end-1].strip()
+        kind = 'empty' if not inner else 'accessor' if ACCESSOR.fullmatch(inner) else 'code'
+        out.append((m[1], m.start(), i, end, kind))
+    return out
+
+
+def innermost(bodies, pos):
+    inside = [b for b in bodies if b[2] < pos < b[3]]
+    return min(inside, key=lambda b: b[3] - b[2]) if inside else None
+
+
+def pq_code_evidence(reached, rust_names):
+    """First code evidence for a package, or None (amendment R2).
+
+    `reached` is [(path from the repository root, masked non-test text)] in path
+    order. Two kinds, all `impl` evidence before any `delegate` evidence:
+    impl      a PQ_CONSTANTS value, as an integer literal or as a reference to a
+              `const`/`static` of the package whose initializer is that literal,
+              inside the body of a fn DEFINITION whose innermost body is code
+              (not empty, not an accessor); recorded as
+              impl:CONSTFILE:LINE:VALUE[:NAME]:fn NAME@FNFILE:LINE.
+              A const name also bound to any other initializer is ignored.
+    delegate  inside such a body, a CALL `a::b::op(` (turbofish allowed) whose
+              first segment is a dedicated PQ crate's Rust name (see
+              pq_impl_evidence) or a name imported from it by `use` in that
+              file, or a bare call `op(` of such an imported name, whose last
+              segment is an operation (op_name, or `generate`); recorded as
+              delegate:FILE:LINE:PACKAGE:PATH@fn NAME.
+    Empty bodies, declarations, accessors, `use` items and type mentions never count."""
+    def line(text, pos):
+        return text.count('\n', 0, pos) + 1
+
+    lit_re = re.compile(INT_LITERAL)
+    named, other = {}, set()
+    for rel, text in reached:
+        for m in re.finditer(r'\b(?:const|static)\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:[^=;]*=\s*([^;]*);', text):
+            lit = re.fullmatch(INT_CORE, m[2].strip())
+            if lit and int_value(lit[1]) in PQ_CONSTANTS:
+                named.setdefault(m[1], (rel, line(text, m.start()), int_value(lit[1]), m.start(1)))
+            else:
+                other.add(m[1])
+    named = {k: v for k, v in named.items() if k not in other}  # a name also bound to another value is ambiguous
+    name_re = re.compile(r'\b(' + '|'.join(sorted(map(re.escape, named))) + r')\b') if named else None
+    for rel, text in reached:
+        bodies = fn_bodies(text)
+        hits = [(m.start(), f'{rel}:{line(text, m.start())}:{int_value(m[1])}') for m in lit_re.finditer(text)
+                if int_value(m[1]) in PQ_CONSTANTS]
+        if name_re:
+            hits += [(m.start(), '{}:{}:{}:{}'.format(*named[m[1]][:3], m[1])) for m in name_re.finditer(text)
+                     if (rel, m.start()) != (named[m[1]][0], named[m[1]][3])]
+        for pos, where in sorted(hits):
+            body = innermost(bodies, pos)
+            if body and body[4] == 'code':
+                return f'impl:{where}:fn {body[0]}@{rel}:{line(text, body[1])}'
+    dedicated = {r: p for r, p in rust_names.items() if p in PQ_DEDICATED or pq_name(p)}
+    if not dedicated:
+        return None
+    for rel, text in reached:
+        roots = dict(dedicated)
+        for path, alias in use_paths(text):
+            first = path.split('::')[0]
+            if first in dedicated and alias != '*':
+                roots[alias] = dedicated[first]
+        bodies = fn_bodies(text)
+        plain = re.sub(r'::\s*<[^<>(){};]*>', lambda m: ' ' * len(m[0]), text)
+        for m in re.finditer(r'(?<![\w:.])(?:::\s*)?([A-Za-z_]\w*)((?:\s*::\s*[A-Za-z_]\w*)*)\s*\(', plain):
+            last = re.split(r'\s*::\s*', m[2].strip())[-1] if m[2].strip() else m[1]
+            if m[1] not in roots or not (op_name(last) or last == 'generate'):
+                continue
+            if not m[2].strip() and (m[1] in dedicated or re.search(r'\bfn\s*$', plain[:m.start()])):
+                continue  # a bare call needs an imported alias; `fn name(` is a definition
+            body = innermost(bodies, m.start())
+            if body and body[4] == 'code':
+                path = re.sub(r'\s+', '', m[1] + m[2])
+                return f'delegate:{rel}:{line(text, m.start())}:{roots[m[1]]}:{path}@fn {body[0]}'
+    return None
+
+
 def classify(root, manifest_path, manifest, manifests, nested, members):
     """Return the scan row fields for one package."""
     pkg_dir = manifest_path.parent
     row = dict(crate='-', crate_path=pkg_dir.relative_to(root).as_posix() or '.', has_bin='-',
                source_files=0, reached_files=0, nontest_lines=0, test_attrs=0, std_evidence='-',
-               pq_evidence='-', pq_impl_evidence='-')
+               pq_evidence='-', pq_impl_evidence='-', pq_code_evidence='-')
     if isinstance(manifest, Unscannable):
         reason = f'unscannable-manifest:{manifest}'
         return dict(row, c_reason=reason, p_reason=reason)
@@ -770,6 +898,10 @@ def classify(root, manifest_path, manifest, manifests, nested, members):
           files[p][0]) for p in sorted(reached) if p in files], rust_names) or '-'
     if row['pq_impl_evidence'] == '-':
         return dict(row, c_reason='no-pq-implementation-evidence', p_reason='no-pq-implementation-evidence')
+    row['pq_code_evidence'] = pq_code_evidence([(rel[p], files[p][0]) for p in sorted(reached) if p in files],
+                                               rust_names) or '-'
+    if row['pq_code_evidence'] == '-':
+        return dict(row, c_reason='no-pq-code-evidence', p_reason='no-pq-code-evidence')
     row['nontest_lines'] = sum(nontest_lines(read(p), files[p][2]) for p in files if p in reached)
     row['test_attrs'], test_file = own_test_attributes(root, pkg_dir, nested)
 
@@ -831,7 +963,7 @@ def scan_repository(root):
         rows.append(classify(root, p, manifests[p], manifests, nested, members))
     if not rows:
         rows.append(dict(crate='-', crate_path='-', has_bin='-', source_files=0, reached_files=0, nontest_lines=0,
-                         test_attrs=0, std_evidence='-', pq_evidence='-', pq_impl_evidence='-',
+                         test_attrs=0, std_evidence='-', pq_evidence='-', pq_impl_evidence='-', pq_code_evidence='-',
                          c_reason='no-Cargo-package',
                          p_reason='no-Cargo-package'))
     return rows
@@ -839,7 +971,7 @@ def scan_repository(root):
 
 FIELDS = ['repository', 'stars', 'head_commit', 'crate', 'crate_path', 'class', 'first_reason',
           'c_reason', 'p_reason', 'has_bin', 'source_files', 'reached_files', 'nontest_lines',
-          'test_attrs', 'pq_evidence', 'pq_impl_evidence', 'std_evidence']
+          'test_attrs', 'pq_evidence', 'pq_impl_evidence', 'pq_code_evidence', 'std_evidence']
 
 
 def rank_key(row):
@@ -872,17 +1004,19 @@ def run(clones, out):
         mine = [r for r in output if r['repository'] == ref['repository']]
         pq = sum(r['pq_evidence'] != '-' for r in mine)
         impl = sum(r['pq_impl_evidence'] != '-' for r in mine)
+        code = sum(r['pq_code_evidence'] != '-' for r in mine)
         kept = sum(r['class'] != '-' for r in mine)
         packages = sum(r['crate_path'] != '-' for r in mine)
         reason = ('no-Cargo-package' if not packages else 'no-pq-evidence-in-any-package' if not pq else
-                  'no-pq-implementation-evidence-in-any-package' if not impl else '-')
+                  'no-pq-implementation-evidence-in-any-package' if not impl else
+                  'no-pq-code-evidence-in-any-package' if not code else '-')
         repos.append(dict(repository=ref['repository'], stars=candidates[ref['repository']]['stars'],
                           head_commit=ref['head_commit'], packages=packages, pq_packages=pq,
-                          pq_impl_packages=impl, class_c_or_p=kept,
+                          pq_impl_packages=impl, pq_code_packages=code, class_c_or_p=kept,
                           outcome='dropped' if reason != '-' else 'kept', drop_reason=reason))
     repos.sort(key=lambda r: (-int(r['stars']), r['repository'].lower()))
     table(out / 'repositories.tsv', ['repository', 'stars', 'head_commit', 'packages', 'pq_packages',
-                                     'pq_impl_packages', 'class_c_or_p', 'outcome', 'drop_reason'], repos)
+                                     'pq_impl_packages', 'pq_code_packages', 'class_c_or_p', 'outcome', 'drop_reason'], repos)
     pool, per_repo = [], {}
     for r in output:
         if r['class'] == '-' or per_repo.get(r['repository'], 0) >= 3:
@@ -890,45 +1024,52 @@ def run(clones, out):
         per_repo[r['repository']] = per_repo.get(r['repository'], 0) + 1
         pool.append(dict(pool_rank=len(pool) + 1, arm_a='yes' if len(pool) < 10 else 'no',
                          **{k: r[k] for k in ('class', 'repository', 'stars', 'crate', 'crate_path', 'head_commit',
-                                              'nontest_lines', 'pq_evidence', 'pq_impl_evidence', 'std_evidence')},
+                                              'nontest_lines', 'pq_evidence', 'pq_impl_evidence', 'pq_code_evidence',
+                                              'std_evidence')},
                          also_p='yes' if r['class'] == 'C' and r['p_reason'] == '-' else 'no'))
         if len(pool) == 30:
             break
     table(out / 'pool.tsv', ['pool_rank', 'class', 'also_p', 'arm_a', 'repository', 'stars', 'crate',
-                             'crate_path', 'head_commit', 'nontest_lines', 'pq_evidence', 'pq_impl_evidence',
+                             'crate_path', 'head_commit', 'nontest_lines', 'pq_evidence', 'pq_impl_evidence', 'pq_code_evidence',
                              'std_evidence'], pool)
     print(f'{len(output)} package rows; {sum(r["pq_evidence"] != "-" for r in output)} with PQ evidence; '
-          f'{sum(r["pq_impl_evidence"] != "-" for r in output)} with implementation evidence in '
+          f'{sum(r["pq_impl_evidence"] != "-" for r in output)} with step-2 evidence; '
+          f'{sum(r["pq_code_evidence"] != "-" for r in output)} with code evidence in '
           f'{sum(r["outcome"] == "kept" for r in repos)} repositories; {sum(r["class"]=="C" for r in output)} C; '
           f'{sum(r["class"]=="P" for r in output)} P; pool {len(pool)}')
 
 
 def check_narrowing(old_path, out):
-    """Check that OUT/classes.tsv narrows OLD_classes.tsv (the registration's): the
-    same package rows, the same discovery evidence, and every admitted row
-    (implementation evidence) was admitted before with the same class and reasons."""
+    """Check that OUT/classes.tsv narrows OLD_classes.tsv (an earlier registration's,
+    e1c04a4 or R1): the same package rows, the same evidence of every gate step the
+    old table has, every row passing the new last step passed the old last step
+    with the same class and reasons, rows failing the old gate are unchanged, and
+    no row failing the new gate has a class."""
     def key(r):
         return (r['repository'], r['crate_path'], r['crate'])
-    old = {key(r): r for r in rows(old_path)}
-    new = {key(r): r for r in rows(out / 'classes.tsv')}
-    assert len(old) == len(rows(old_path)) and len(new) == len(rows(out / 'classes.tsv')), 'duplicate keys'
+    old_rows, new_rows = rows(old_path), rows(out / 'classes.tsv')
+    old, new = {key(r): r for r in old_rows}, {key(r): r for r in new_rows}
+    assert len(old) == len(old_rows) and len(new) == len(new_rows), 'duplicate keys'
     assert set(old) == set(new), sorted(set(old) ^ set(new))
-    same = ('stars', 'head_commit', 'has_bin', 'source_files', 'reached_files', 'pq_evidence')
+    gates = [g for g in ('pq_evidence', 'pq_impl_evidence', 'pq_code_evidence') if g in old_rows[0]]
+    old_gate, new_gate = gates[-1], 'pq_code_evidence'
+    same = ('stars', 'head_commit', 'has_bin', 'source_files', 'reached_files', *gates)
     widened, changed = [], []
     for k, n in new.items():
         o = old[k]
         changed += [(k, f) for f in same if n[f] != o[f]]
-        if n['pq_impl_evidence'] != '-':
-            if o['pq_evidence'] == '-' or any(n[f] != o[f] for f in ('class', 'c_reason', 'p_reason',
-                                                                    'first_reason', 'nontest_lines',
-                                                                    'test_attrs', 'std_evidence')):
+        if n[new_gate] != '-':
+            if o[old_gate] == '-' or any(n[f] != o[f] for f in ('class', 'c_reason', 'p_reason',
+                                                               'first_reason', 'nontest_lines',
+                                                               'test_attrs', 'std_evidence')):
                 widened.append(k)
-        elif n['class'] != '-' or (o['pq_evidence'] == '-' and n != {**o, 'pq_impl_evidence': '-'}):
+        elif n['class'] != '-' or (o[old_gate] == '-' and any(n[f] != o[f] for f in o)):
             widened.append(k)
     old_admitted = sum(r['class'] != '-' for r in old.values())
     new_admitted = sum(r['class'] != '-' for r in new.values())
-    print(f'narrowing check: {len(new)} rows; old PQ gate {sum(r["pq_evidence"] != "-" for r in old.values())}, '
-          f'new gate {sum(r["pq_impl_evidence"] != "-" for r in new.values())}; class C or P {old_admitted} -> '
+    print(f'narrowing check vs {old_path.name}: {len(new)} rows; old gate ({old_gate}) '
+          f'{sum(r[old_gate] != "-" for r in old.values())}, new gate ({new_gate}) '
+          f'{sum(r[new_gate] != "-" for r in new.values())}; class C or P {old_admitted} -> '
           f'{new_admitted}; changed fields {len(changed)}; widened {len(widened)}')
     if changed or widened:
         raise SystemExit(f'NOT a narrowing: changed {changed[:5]} widened {widened[:5]}')
@@ -956,7 +1097,7 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
     assert not re.search(UNSAFE_BLOCK_OR_FN, mask_rust('unsafe impl Send for X {} // unsafe { }'))
     assert nontest_lines('fn a() {}\n// c\n\nconst S: &str = "x\n\ny";\n#[cfg(test)]\nmod t {\n fn b() {}\n}\n',
                          non_test('fn a() {}\n// c\n\nconst S: &str = "x\n\ny";\n#[cfg(test)]\nmod t {\n fn b() {}\n}\n')[2]) == 3
-    body = '\n'.join(f'pub fn mlkem_sign_f{i}(x: u64) -> u64 {{ x.wrapping_add({i}) }}' for i in range(250))
+    body = '\n'.join(f'pub fn mlkem_sign_f{i}(x: u64) -> u64 {{ x.wrapping_add({i}) % 3329 }}' for i in range(250))
     plain = body.replace('mlkem_', '')
     assert pq_token('SPHINCS+') == 'sphincs' and pq_token('McEliece') == 'mceliece'
     assert pq_token('X25519MLKEM768') == 'mlkem' and pq_token('post-quantum') == 'postquantum'
@@ -983,6 +1124,40 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
                 {'ml_kem': 'ml-kem'}) == 'dep-use:a/src/lib.rs:2:ml-kem'
     assert impl([('a/src/lib.rs', 'src/lib.rs', 'use crate::ml_kem::X;\nuse aws_lc_rs::kem::ML_KEM_768;')],
                 {'ml_kem': 'ml-kem', 'aws_lc_rs': 'aws-lc-rs', 'q': 'oqs'}) is None
+    # R2 code evidence: step 2's name-only positives above, empty bodies, declarations,
+    # accessors, bare imports, type mentions and literals in strings are rejected.
+    def code(src, deps=None):
+        return pq_code_evidence([('a/src/lib.rs', non_test(src)[0])], deps or {})
+    assert int_value('0x3001') == 12289 and int_value('8_380_417') == 8380417 and int_value('0b11') == 3
+    pq = {'ml_kem': 'ml-kem', 'libcrux_ml_kem': 'libcrux-ml-kem', 'oqs': 'oqs', 'aws_lc_rs': 'aws-lc-rs'}
+    for src in ['pub struct MlKem768;\nimpl Kem for MlKem768 {\n    fn encapsulate(&self) {}\n}\nconst Q: u16 = 3329;',
+                'fn keygen() {}',
+                'trait Kem { fn encapsulate(&self, c: [u8; 3329]) -> u16; }',
+                'extern "C" { fn kyber768_keypair(pk: *mut u8, n: [u8; 3329]) -> i32; }',
+                'const Q: u16 = 3329;\nimpl MlKem768 {\n    fn encapsulation_key(&self) -> &Ek { &self.ek }\n'
+                '    fn q() -> u16 { 3329 }\n    fn r() -> u16 { Q }\n    fn s(&self) -> u16 { Self::Q }\n}',
+                'const Q: u16 = 3329;\nmod m { const Q: u16 = 7; }\nfn f(a: u16) -> u16 { a % Q }',
+                'fn f() -> usize { let s = "3329"; s.len() } // 3329',
+                'use ml_kem::MlKem768;\nuse ml_kem::kem::encapsulate as enc;\nfn f(k: ml_kem::Ek) { let x = k; drop(x); }',
+                'fn f() { let k = aws_lc_rs::kem::encapsulate(1); drop(k) }',
+                'use libcrux_ml_kem::mlkem768::encapsulate;\nfn encapsulate(x: u8) -> u8 { x + 1 }',
+                'fn f() { let n = ml_kem::MlKem768::size(); drop(n) }']:
+        assert code(src, pq) is None, src
+    assert code('fn reduce(a: i32) -> i16 {\n    let t = a % 3329;\n    t as i16\n}') == \
+        'impl:a/src/lib.rs:2:3329:fn reduce@a/src/lib.rs:1'
+    assert code('const Q: i32 = 8_380_417;\nfn mont(a: i64) -> i32 {\n    (a % Q as i64) as i32\n}') == \
+        'impl:a/src/lib.rs:1:8380417:Q:fn mont@a/src/lib.rs:2'
+    assert code('fn m(a: u32) -> u32 { a % 0x3001u32 }') == 'impl:a/src/lib.rs:1:12289:fn m@a/src/lib.rs:1'
+    assert code('fn kx(r: [u8; 64]) -> usize {\n    let kp = libcrux_ml_kem::mlkem768::generate_key_pair(r);\n'
+                '    kp.len()\n}', pq) == \
+        'delegate:a/src/lib.rs:2:libcrux-ml-kem:libcrux_ml_kem::mlkem768::generate_key_pair@fn kx'
+    assert code('use oqs::kem::Kem as K;\nfn f() -> u8 {\n    let k = K::keypair();\n    k.0\n}', pq) == \
+        'delegate:a/src/lib.rs:3:oqs:K::keypair@fn f'
+    assert code('use libcrux_ml_kem::mlkem768::encapsulate;\nfn f(p: &[u8]) -> u8 {\n'
+                '    let c = encapsulate(p, [0; 32]);\n    c.0\n}', pq) == \
+        'delegate:a/src/lib.rs:3:libcrux-ml-kem:encapsulate@fn f'
+    assert code('fn g(r: R) -> u8 { let k = ml_kem::MlKem768::generate::<R>(r); k.0 }', pq) == \
+        'delegate:a/src/lib.rs:1:ml-kem:ml_kem::MlKem768::generate@fn g'
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp).resolve()
         def put(path, content):
@@ -992,7 +1167,7 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         put('crates/conc/Cargo.toml', '[package]\nname="conc"\nversion="0.1.0"\n')
         put('crates/conc/src/lib.rs', 'mod inner;\n#[cfg(test)] mod tests;\n')
         put('crates/conc/src/inner.rs', 'use std::sync::Mutex;\npub static KYBER_M: Mutex<u8> = Mutex::new(0);\n'
-            'pub fn kyber768_keygen() {}\n')
+            'pub fn kyber768_keygen(x: u16) -> u16 { x % 3329 }\n')
         put('crates/conc/src/tests.rs', 'async fn ignored() { x.await }')
         put('crates/conc/tests/it.rs', 'async fn integration() {} #[test] fn t() {}')
         put('crates/logic/Cargo.toml', '[package]\nname="logic"\nversion="0.1.0"\n')
@@ -1000,7 +1175,7 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         put('crates/asyncy/Cargo.toml', '[package]\nname="asyncy"\nversion="0.1.0"\n[target.\'cfg(unix)\'.dependencies]\nrt={workspace=true}\n')
         put('crates/asyncy/src/main.rs', body)
         put('crates/small/Cargo.toml', '[package]\nname="small"\nversion="0.1.0"\n')
-        put('crates/small/src/lib.rs', 'pub fn kyber512_sign() {}\n#[test] fn t() {}\n')
+        put('crates/small/src/lib.rs', 'pub fn kyber512_sign(x: u16) -> u16 { x % 3329 }\n#[test] fn t() {}\n')
         put('crates/plain/Cargo.toml', '[package]\nname="plain"\nversion="0.1.0"\n')
         put('crates/plain/src/lib.rs', '// ML-KEM is only named in a comment\nconst S: &str = "kyber";\n'
             + plain + '\n#[test] fn t() {}\n')
@@ -1030,9 +1205,15 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         put('tools/used/src/lib.rs', 'pub fn f() {}')
         put('extra/auto/Cargo.toml', '[package]\nname="auto"\nversion="0.1.0"\n')
         put('extra/auto/src/lib.rs', body + '\n#[test] fn t() {}\n')
-        got = {r['crate']: r for r in scan_repository(root)}
+        put('crates/nocode/Cargo.toml', '[package]\nname="nocode"\nversion="0.1.0"\n[dependencies]\n'
+            'ml-kem="0.2"\n')
+        put('crates/nocode/src/lib.rs', 'use ml_kem::MlKem768;\npub struct Ek(u8);\nconst Q: u16 = 3329;\n'
+            'impl MlKem768 {\n    pub fn encapsulation_key(&self) -> &Ek { &self.ek }\n    fn encapsulate(&self) {}\n'
+            '    fn q() -> u16 { Q }\n}\npub trait Kem { fn decapsulate(&self, c: [u8; 3329]) -> u16; }\n'
+            + plain.replace('% 3329', '') + '\n#[test] fn t() {}\n')
+        got ={r['crate']: r for r in scan_repository(root)}
         assert set(got) == {'conc', 'logic', 'asyncy', 'small', 'uns', 'notest', 'outer', 'inner', '-', 'excl',
-                            'orphan', 'used', 'auto', 'plain', 'pqdesc', 'pqdep'}, set(got)
+                            'orphan', 'used', 'auto', 'plain', 'pqdesc', 'pqdep', 'nocode'}, set(got)
         assert got['plain']['c_reason'] == got['plain']['p_reason'] == 'no-pq-evidence', got['plain']
         assert got['pqdesc']['p_reason'] == 'no-pq-implementation-evidence', got['pqdesc']
         assert got['pqdesc']['pq_evidence'] == 'manifest:mceliece', got['pqdesc']
@@ -1041,6 +1222,12 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         assert got['logic']['pq_evidence'] == 'identifier:crates/logic/src/lib.rs:mlkem_sign_f0', got['logic']
         assert got['logic']['pq_impl_evidence'] == 'own-op:crates/logic/src/lib.rs:1:mlkem_sign_f0:mlkem_sign_f0'
         assert got['conc']['pq_impl_evidence'] == 'own-op:crates/conc/src/inner.rs:3:kyber768_keygen:kyber768_keygen'
+        assert got['logic']['pq_code_evidence'] == 'impl:crates/logic/src/lib.rs:1:3329:fn mlkem_sign_f0@' \
+            'crates/logic/src/lib.rs:1', got['logic']
+        assert got['pqdep']['pq_code_evidence'] == 'impl:crates/pqdep/src/lib.rs:2:3329:fn sign_f0@' \
+            'crates/pqdep/src/lib.rs:2', got['pqdep']
+        assert got['nocode']['p_reason'] == got['nocode']['c_reason'] == 'no-pq-code-evidence', got['nocode']
+        assert got['nocode']['pq_impl_evidence'].startswith('own-op:'), got['nocode']
         assert got['used']['p_reason'] == 'no-pq-evidence', got['used']
         assert got['orphan']['p_reason'] == 'not-a-workspace-member', got['orphan']
         assert got['excl']['p_reason'] == '-' and got['auto']['p_reason'] == '-', (got['excl'], got['auto'])

@@ -1,27 +1,27 @@
-repository	stars	head_commit	packages	pq_packages	pq_impl_packages	class_c_or_p	outcome	drop_reason
-rust-unofficial/awesome-rust	60651	a18ae59cc17c86950953ecb16bff28910b9537d9	1	0	0	0	dropped	no-pq-evidence-in-any-package
-zama-ai/fhevm	24723	a90b5dfc56155f334c4ceb0e0cbec14ee195d60c	43	0	0	0	dropped	no-pq-evidence-in-any-package
-huggingface/candle	21354	cfcbd7186d13271843ce7eb41d25659bd0835850	25	1	0	0	dropped	no-pq-implementation-evidence-in-any-package
-stalwartlabs/stalwart	16059	3adead91f3c87e7415b58c9ed8e6ec05a5dda521	38	5	1	0	kept	-
-QuipNetwork/hashsigs-rs	11202	6f4cccaf0d00334bd1aa8320be92b716a18a9d6b	10	3	3	0	kept	-
-mullvad/mullvadvpn-app	7793	addfc487b145cf00f1c188bdbc93ee2f5a98dd62	54	4	1	0	kept	-
-rustls/rustls	7762	836e411eccaf7331f4c289aabef0de32474de3b8	14	4	0	0	dropped	no-pq-implementation-evidence-in-any-package
-libp2p/rust-libp2p	5649	9eb8691cd760418305baab4d87c8f4e23573222f	53	0	0	0	dropped	no-pq-evidence-in-any-package
-ruvnet/RuVector	4712	979c31acc57b970c1a7e0771ed527c1703c137e8	283	5	2	1	kept	-
-Mesh-LLM/mesh-llm	4172	b61f80d0953e61d2f390917afdd2b1b069316e1d	84	1	0	0	dropped	no-pq-implementation-evidence-in-any-package
-sozu-proxy/sozu	3762	c6098095d3a2c1738a90cfbc17865f718d648276	6	1	0	0	dropped	no-pq-implementation-evidence-in-any-package
-google/OpenSK	3493	7b369f097dfa55b84ff9f37d2b176c6ec13c308d	6	0	0	0	dropped	no-pq-evidence-in-any-package
-physicsdolphin/nv-uefi-unlocker	2716	02d72fd5b890208249dbe88166fb527eddb835b4	5	3	0	0	dropped	no-pq-implementation-evidence-in-any-package
-Helvesec/rmux	2698	1f4571e74f36be0c033c6294d1616c7d3a6fbda1	15	2	2	1	kept	-
-rust-bitcoin/rust-bitcoin	2697	9584f04a46eed703122ba3dbcd30a1b386131e9b	19	0	0	0	dropped	no-pq-evidence-in-any-package
-Eugeny/russh	1947	56a999871aa134072e4f2a7395fe2de313870e21	5	1	0	0	dropped	no-pq-implementation-evidence-in-any-package
-rvben/rumdl	1682	2796d2853c8ec149d318208f51db6a21b2a0ae61	2	0	0	0	dropped	no-pq-evidence-in-any-package
-m4b/goblin	1572	cc6beec889d74680d8f77626f508cb9d949dfc23	3	0	0	0	dropped	no-pq-evidence-in-any-package
-hudikhq/hoodik	1559	4dcfe21135d08b041e41cde116f7ed2a4855e9fd	17	1	1	1	kept	-
-rosenpass/rosenpass	1451	ed07bfab94eba14544dc22f1a6d15caf33733629	3	3	2	0	kept	-
-mikeroyal/Linux-Guide	1386	e828e796d474294df59ba0799346294b9e9b36f6	0	0	0	0	dropped	no-Cargo-package
-DNSCrypt/encrypted-dns-server	1331	2f2cc489ff8893c167b2eab7274292a699341d9c	1	0	0	0	dropped	no-pq-evidence-in-any-package
-cfal/shoes	1316	7680938b96a245a21d9e481ad009205b956e4436	1	1	1	0	kept	-
-plabayo/rama	1273	d23d5780e1426ab2cb52265ffe4965b787fe8f55	55	2	0	0	dropped	no-pq-implementation-evidence-in-any-package
-rpgp/rpgp	1098	52750e6f5ca849485c368e0a4acf9a189e9a558f	2	1	1	0	kept	-
-pingooio/pingoo	1045	3205a661f51de24caff6e4a2c708ab8e56cbb182	6	0	0	0	dropped	no-pq-evidence-in-any-package
+repository	stars	head_commit	packages	pq_packages	pq_impl_packages	pq_code_packages	class_c_or_p	outcome	drop_reason
+rust-unofficial/awesome-rust	60651	a18ae59cc17c86950953ecb16bff28910b9537d9	1	0	0	0	0	dropped	no-pq-evidence-in-any-package
+zama-ai/fhevm	24723	a90b5dfc56155f334c4ceb0e0cbec14ee195d60c	43	0	0	0	0	dropped	no-pq-evidence-in-any-package
+huggingface/candle	21354	cfcbd7186d13271843ce7eb41d25659bd0835850	25	1	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+stalwartlabs/stalwart	16059	3adead91f3c87e7415b58c9ed8e6ec05a5dda521	38	5	1	0	0	dropped	no-pq-code-evidence-in-any-package
+QuipNetwork/hashsigs-rs	11202	6f4cccaf0d00334bd1aa8320be92b716a18a9d6b	10	3	3	0	0	dropped	no-pq-code-evidence-in-any-package
+mullvad/mullvadvpn-app	7793	addfc487b145cf00f1c188bdbc93ee2f5a98dd62	54	4	1	1	0	kept	-
+rustls/rustls	7762	836e411eccaf7331f4c289aabef0de32474de3b8	14	4	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+libp2p/rust-libp2p	5649	9eb8691cd760418305baab4d87c8f4e23573222f	53	0	0	0	0	dropped	no-pq-evidence-in-any-package
+ruvnet/RuVector	4712	979c31acc57b970c1a7e0771ed527c1703c137e8	283	5	2	1	0	kept	-
+Mesh-LLM/mesh-llm	4172	b61f80d0953e61d2f390917afdd2b1b069316e1d	84	1	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+sozu-proxy/sozu	3762	c6098095d3a2c1738a90cfbc17865f718d648276	6	1	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+google/OpenSK	3493	7b369f097dfa55b84ff9f37d2b176c6ec13c308d	6	0	0	0	0	dropped	no-pq-evidence-in-any-package
+physicsdolphin/nv-uefi-unlocker	2716	02d72fd5b890208249dbe88166fb527eddb835b4	5	3	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+Helvesec/rmux	2698	1f4571e74f36be0c033c6294d1616c7d3a6fbda1	15	2	2	1	1	kept	-
+rust-bitcoin/rust-bitcoin	2697	9584f04a46eed703122ba3dbcd30a1b386131e9b	19	0	0	0	0	dropped	no-pq-evidence-in-any-package
+Eugeny/russh	1947	56a999871aa134072e4f2a7395fe2de313870e21	5	1	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+rvben/rumdl	1682	2796d2853c8ec149d318208f51db6a21b2a0ae61	2	0	0	0	0	dropped	no-pq-evidence-in-any-package
+m4b/goblin	1572	cc6beec889d74680d8f77626f508cb9d949dfc23	3	0	0	0	0	dropped	no-pq-evidence-in-any-package
+hudikhq/hoodik	1559	4dcfe21135d08b041e41cde116f7ed2a4855e9fd	17	1	1	1	1	kept	-
+rosenpass/rosenpass	1451	ed07bfab94eba14544dc22f1a6d15caf33733629	3	3	2	1	0	kept	-
+mikeroyal/Linux-Guide	1386	e828e796d474294df59ba0799346294b9e9b36f6	0	0	0	0	0	dropped	no-Cargo-package
+DNSCrypt/encrypted-dns-server	1331	2f2cc489ff8893c167b2eab7274292a699341d9c	1	0	0	0	0	dropped	no-pq-evidence-in-any-package
+cfal/shoes	1316	7680938b96a245a21d9e481ad009205b956e4436	1	1	1	0	0	dropped	no-pq-code-evidence-in-any-package
+plabayo/rama	1273	d23d5780e1426ab2cb52265ffe4965b787fe8f55	55	2	0	0	0	dropped	no-pq-implementation-evidence-in-any-package
+rpgp/rpgp	1098	52750e6f5ca849485c368e0a4acf9a189e9a558f	2	1	1	1	0	kept	-
+pingooio/pingoo	1045	3205a661f51de24caff6e4a2c708ab8e56cbb182	6	0	0	0	0	dropped	no-pq-evidence-in-any-package
