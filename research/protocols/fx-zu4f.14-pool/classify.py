@@ -2,15 +2,21 @@
 """fx-zu4f.14 crate-level classifier: PQ-evidence gate, then classes C and P; Python >=3.11 stdlib.
 
 fx-zu4f.12's scan.py (classes C and P, unchanged) with one registered
-narrowing in front: a package is classified only when it shows lexical
-post-quantum evidence (PQ gate, `pq_evidence`). Lexical and mechanical only:
-it reads Cargo.toml and .rs files of pinned sparse checkouts and never builds,
-runs or installs anything. The masking, test-item removal, use-tree and
-module-walk helpers are fx-zu4f.12's (from fx-zu4f.11 and fx-zu4f.10).
+narrowing in front, in two steps (amendment R1): a package is classified
+only when it shows a lexical post-quantum discovery token (`pq_evidence`,
+the registration's gate, unchanged) AND recorded evidence that the package
+itself implements a listed algorithm or uses a dedicated post-quantum
+implementation crate in its own code (`pq_impl_evidence`, see PQ_STRICT and
+pq_impl_evidence). Lexical and mechanical only: it reads Cargo.toml and .rs
+files of pinned sparse checkouts and never builds, runs or installs
+anything. The masking, test-item removal, use-tree and module-walk helpers
+are fx-zu4f.12's (from fx-zu4f.11 and fx-zu4f.10).
 
   python3 -I classify.py --self-test
   python3 -I classify.py --clones TARGET/clones --out WORK   # reads candidates.tsv,
       clone-refs.tsv; writes classes.tsv, repositories.tsv and pool.tsv
+  python3 -I classify.py --check-narrowing OLD_classes.tsv --out WORK
+      # every package R1 admits was admitted with the same classes before
 """
 import argparse
 import csv
@@ -41,6 +47,19 @@ UNSAFE_BLOCK_OR_FN = r'\bunsafe\s*\{|\bunsafe\s+(?:extern\s*)?fn\b|\bunsafe\s+ex
 PQ_TOKENS = ('mlkem', 'kyber', 'mldsa', 'dilithium', 'slhdsa', 'sphincs', 'fndsa', 'falcon', 'hqc',
              'mceliece', 'postquantum', 'rosenpass')
 PQ_DEPENDENCIES = {'oqs', 'oqs-sys', 'pqcrypto'}  # PQ implementation crates whose names hold no token
+# Implementation-evidence gate (amendment R1, a further narrowing). Strict
+# names: a listed algorithm by its standard name, or an ambiguous family name
+# only with its parameter set (kyber512, dilithium3, falcon512, hqc128), so
+# that `falcon`, `hqc`, `kyber` or `dilithium` alone never suffice; protocol
+# names and `postquantum` are discovery tokens only. Matched case-insensitively
+# with `-`/`_` allowed inside a name, starting at a word start (see pq_name).
+PQ_STRICT = re.compile(r'ml[-_]?kem|ml[-_]?dsa|slh[-_]?dsa|fn[-_]?dsa|sphincs|mc[-_]?eliece'
+                       r'|kyber[-_]?(?:512|768|1024)|dilithium[-_]?[235]'
+                       r'|falcon[-_]?(?:padded[-_]?)?(?:512|1024)|hqc[-_]?(?:128|192|256)')
+# Dedicated PQ implementation crates whose package names hold no strict name.
+PQ_DEDICATED = {'oqs', 'oqs-sys', 'pqcrypto', 'pqcrypto-kyber', 'pqcrypto-dilithium', 'pqcrypto-falcon',
+                'pqcrypto-hqc', 'pqc_kyber', 'pqc_dilithium', 'crystals-dilithium', 'fips203', 'fips204',
+                'fips205'}
 
 
 def rows(path):
@@ -425,11 +444,11 @@ def workspace_root(root, manifest_path, manifest, manifests):
 
 
 def normal_dependencies(root, manifest_path, manifest, manifests):
-    """(forbidden, all) normal and target dependency package names, resolving `workspace = true`."""
+    """(forbidden, all, {Rust name: package}) normal and target dependencies, resolving `workspace = true`."""
     tables = [manifest.get('dependencies', {})]
     tables += [t.get('dependencies', {}) for t in manifest.get('target', {}).values() if isinstance(t, dict)]
     ws = None
-    forbidden, names = set(), set()
+    forbidden, names, rust_names = set(), set(), {}
     for deps in tables:
         resolved = {}
         for name, spec in deps.items():
@@ -446,7 +465,9 @@ def normal_dependencies(root, manifest_path, manifest, manifests):
         forbidden.update(forbidden_dependencies(resolved))
         names.update(spec.get('package', alias) if isinstance(spec, dict) else alias
                      for alias, spec in resolved.items())
-    return sorted(forbidden), sorted(names)
+        rust_names.update((alias.replace('-', '_'), spec.get('package', alias) if isinstance(spec, dict) else alias)
+                          for alias, spec in resolved.items())
+    return sorted(forbidden), sorted(names), rust_names
 
 
 def entries(pkg_dir, manifest):
@@ -643,12 +664,85 @@ def pq_evidence(manifest, dep_names, reached_texts):
     return None
 
 
+def pq_name(text):
+    """First strict PQ name (PQ_STRICT) in text that starts a word, normalized (`-`/`_` dropped), or None.
+
+    A match starts a word when it opens the text, follows a non-letter, or is an
+    uppercase letter after a lowercase one (camel case): `X25519MLKEM768`,
+    `HybridMlKem` and `ml-kem-768` count; `XmlDsa`, `HTMLDSA` and `falcon_h1` do not."""
+    text = text.encode('ascii', 'replace').decode()
+    low = text.lower()
+    for m in PQ_STRICT.finditer(low):
+        i = m.start()
+        if i == 0 or not low[i-1].isalpha() or (text[i].isupper() and text[i-1].islower()):
+            return re.sub(r'[-_]', '', m[0])
+    return None
+
+
+def op_name(name):
+    """True when a fn name names a key generation, (de)capsulation, signing or verification operation."""
+    words = [w.lower() for w in re.findall(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+', name)]
+    joined = ''.join(words)
+    return (any(t in joined for t in ('keygen', 'keypair', 'encap', 'decap')) or bool({'sign', 'verify'} & set(words))
+            or bool({'key', 'keys'} & set(words)) and bool({'gen', 'generate'} & set(words)))
+
+
+def pq_impl_evidence(reached, rust_names):
+    """First implementation evidence for a package, or None (amendment R1).
+
+    `reached` is [(path from the repository root, path from the package
+    directory, masked non-test text)] for the reached files in path order;
+    `rust_names` maps each normal or target dependency's Rust name to its
+    package. Two kinds, the first found in this order:
+    own-op   a `fn` whose name is an operation (op_name) and whose context holds
+             a strict PQ name (pq_name): the fn name, the header of an enclosing
+             `impl`, `trait` or inline `mod` block, or a component of the file's
+             path in the package; recorded as own-op:FILE:LINE:CONTEXT:FN.
+    dep-use  a path (`use` or inline) whose first segment is the Rust name of a
+             dependency whose package is a dedicated PQ implementation crate
+             (pq_name holds for its name, or it is in PQ_DEDICATED); recorded
+             as dep-use:FILE:LINE:PACKAGE.
+    A discovery token alone (a name, description, keyword, dependency entry or
+    identifier) never suffices."""
+    def line(text, pos):
+        return text.count('\n', 0, pos) + 1
+
+    for rel, rel_pkg, text in reached:
+        parts = pathlib.PurePosixPath(rel_pkg).with_suffix('').parts
+        path_name = next((pq_name(c) for c in parts if pq_name(c)), None)
+        blocks = []
+        for m in re.finditer(r'\b(?:impl|trait|mod)\b[^{;]*\{', text):
+            try:
+                blocks.append((m.end() - 1, balanced_end(text, m.end() - 1), text[m.start():m.end() - 1]))
+            except ValueError:
+                continue
+        for m in re.finditer(r'\bfn\s+([A-Za-z_]\w*)', text, re.ASCII):
+            if not op_name(m[1]):
+                continue
+            context = pq_name(m[1]) and m[1]
+            for start, end, header in blocks:
+                if not context and start < m.start() < end and pq_name(header):
+                    context = ' '.join(header.split())[:100]
+            context = context or (path_name and rel_pkg)
+            if context:
+                return f'own-op:{rel}:{line(text, m.start())}:{context}:{m[1]}'
+    dedicated = {r: p for r, p in rust_names.items() if p in PQ_DEDICATED or pq_name(p)}
+    if dedicated:
+        names = '|'.join(re.escape(r) for r in sorted(dedicated))
+        pattern = re.compile(rf'(?<![\w:])(?:::\s*)?({names})\s*::|\buse\s+(?:::\s*)?({names})\b|'
+                             rf'\bextern\s+crate\s+({names})\b')
+        for rel, _, text in reached:
+            if m := pattern.search(text):
+                return f'dep-use:{rel}:{line(text, m.start())}:{dedicated[m[1] or m[2] or m[3]]}'
+    return None
+
+
 def classify(root, manifest_path, manifest, manifests, nested, members):
     """Return the scan row fields for one package."""
     pkg_dir = manifest_path.parent
     row = dict(crate='-', crate_path=pkg_dir.relative_to(root).as_posix() or '.', has_bin='-',
                source_files=0, reached_files=0, nontest_lines=0, test_attrs=0, std_evidence='-',
-               pq_evidence='-')
+               pq_evidence='-', pq_impl_evidence='-')
     if isinstance(manifest, Unscannable):
         reason = f'unscannable-manifest:{manifest}'
         return dict(row, c_reason=reason, p_reason=reason)
@@ -656,7 +750,7 @@ def classify(root, manifest_path, manifest, manifests, nested, members):
     if manifest_path.parent.resolve() not in members:
         return dict(row, c_reason='not-a-workspace-member', p_reason='not-a-workspace-member')
     try:
-        deps, dep_names = normal_dependencies(root, manifest_path, manifest, manifests)
+        deps, dep_names, rust_names = normal_dependencies(root, manifest_path, manifest, manifests)
         entry_files, has_bin = entries(pkg_dir, manifest)
         row['has_bin'] = 'yes' if has_bin else 'no'
         if not entry_files:
@@ -671,6 +765,11 @@ def classify(root, manifest_path, manifest, manifests, nested, members):
                                      [(rel[p], files[p][0]) for p in sorted(reached) if p in files]) or '-'
     if row['pq_evidence'] == '-':
         return dict(row, c_reason='no-pq-evidence', p_reason='no-pq-evidence')
+    row['pq_impl_evidence'] = pq_impl_evidence(
+        [(rel[p], p.relative_to(pkg_dir.resolve()).as_posix() if p.is_relative_to(pkg_dir.resolve()) else rel[p],
+          files[p][0]) for p in sorted(reached) if p in files], rust_names) or '-'
+    if row['pq_impl_evidence'] == '-':
+        return dict(row, c_reason='no-pq-implementation-evidence', p_reason='no-pq-implementation-evidence')
     row['nontest_lines'] = sum(nontest_lines(read(p), files[p][2]) for p in files if p in reached)
     row['test_attrs'], test_file = own_test_attributes(root, pkg_dir, nested)
 
@@ -732,14 +831,15 @@ def scan_repository(root):
         rows.append(classify(root, p, manifests[p], manifests, nested, members))
     if not rows:
         rows.append(dict(crate='-', crate_path='-', has_bin='-', source_files=0, reached_files=0, nontest_lines=0,
-                         test_attrs=0, std_evidence='-', pq_evidence='-', c_reason='no-Cargo-package',
+                         test_attrs=0, std_evidence='-', pq_evidence='-', pq_impl_evidence='-',
+                         c_reason='no-Cargo-package',
                          p_reason='no-Cargo-package'))
     return rows
 
 
 FIELDS = ['repository', 'stars', 'head_commit', 'crate', 'crate_path', 'class', 'first_reason',
           'c_reason', 'p_reason', 'has_bin', 'source_files', 'reached_files', 'nontest_lines',
-          'test_attrs', 'pq_evidence', 'std_evidence']
+          'test_attrs', 'pq_evidence', 'pq_impl_evidence', 'std_evidence']
 
 
 def rank_key(row):
@@ -771,15 +871,18 @@ def run(clones, out):
     for ref in rows(out / 'clone-refs.tsv'):
         mine = [r for r in output if r['repository'] == ref['repository']]
         pq = sum(r['pq_evidence'] != '-' for r in mine)
+        impl = sum(r['pq_impl_evidence'] != '-' for r in mine)
         kept = sum(r['class'] != '-' for r in mine)
         packages = sum(r['crate_path'] != '-' for r in mine)
-        reason = ('no-Cargo-package' if not packages else 'no-pq-evidence-in-any-package' if not pq else '-')
+        reason = ('no-Cargo-package' if not packages else 'no-pq-evidence-in-any-package' if not pq else
+                  'no-pq-implementation-evidence-in-any-package' if not impl else '-')
         repos.append(dict(repository=ref['repository'], stars=candidates[ref['repository']]['stars'],
-                          head_commit=ref['head_commit'], packages=packages, pq_packages=pq, class_c_or_p=kept,
+                          head_commit=ref['head_commit'], packages=packages, pq_packages=pq,
+                          pq_impl_packages=impl, class_c_or_p=kept,
                           outcome='dropped' if reason != '-' else 'kept', drop_reason=reason))
     repos.sort(key=lambda r: (-int(r['stars']), r['repository'].lower()))
     table(out / 'repositories.tsv', ['repository', 'stars', 'head_commit', 'packages', 'pq_packages',
-                                     'class_c_or_p', 'outcome', 'drop_reason'], repos)
+                                     'pq_impl_packages', 'class_c_or_p', 'outcome', 'drop_reason'], repos)
     pool, per_repo = [], {}
     for r in output:
         if r['class'] == '-' or per_repo.get(r['repository'], 0) >= 3:
@@ -787,15 +890,49 @@ def run(clones, out):
         per_repo[r['repository']] = per_repo.get(r['repository'], 0) + 1
         pool.append(dict(pool_rank=len(pool) + 1, arm_a='yes' if len(pool) < 10 else 'no',
                          **{k: r[k] for k in ('class', 'repository', 'stars', 'crate', 'crate_path', 'head_commit',
-                                              'nontest_lines', 'pq_evidence', 'std_evidence')},
+                                              'nontest_lines', 'pq_evidence', 'pq_impl_evidence', 'std_evidence')},
                          also_p='yes' if r['class'] == 'C' and r['p_reason'] == '-' else 'no'))
         if len(pool) == 30:
             break
     table(out / 'pool.tsv', ['pool_rank', 'class', 'also_p', 'arm_a', 'repository', 'stars', 'crate',
-                             'crate_path', 'head_commit', 'nontest_lines', 'pq_evidence', 'std_evidence'], pool)
-    print(f'{len(output)} package rows; {sum(r["pq_evidence"] != "-" for r in output)} with PQ evidence in '
+                             'crate_path', 'head_commit', 'nontest_lines', 'pq_evidence', 'pq_impl_evidence',
+                             'std_evidence'], pool)
+    print(f'{len(output)} package rows; {sum(r["pq_evidence"] != "-" for r in output)} with PQ evidence; '
+          f'{sum(r["pq_impl_evidence"] != "-" for r in output)} with implementation evidence in '
           f'{sum(r["outcome"] == "kept" for r in repos)} repositories; {sum(r["class"]=="C" for r in output)} C; '
           f'{sum(r["class"]=="P" for r in output)} P; pool {len(pool)}')
+
+
+def check_narrowing(old_path, out):
+    """Check that OUT/classes.tsv narrows OLD_classes.tsv (the registration's): the
+    same package rows, the same discovery evidence, and every admitted row
+    (implementation evidence) was admitted before with the same class and reasons."""
+    def key(r):
+        return (r['repository'], r['crate_path'], r['crate'])
+    old = {key(r): r for r in rows(old_path)}
+    new = {key(r): r for r in rows(out / 'classes.tsv')}
+    assert len(old) == len(rows(old_path)) and len(new) == len(rows(out / 'classes.tsv')), 'duplicate keys'
+    assert set(old) == set(new), sorted(set(old) ^ set(new))
+    same = ('stars', 'head_commit', 'has_bin', 'source_files', 'reached_files', 'pq_evidence')
+    widened, changed = [], []
+    for k, n in new.items():
+        o = old[k]
+        changed += [(k, f) for f in same if n[f] != o[f]]
+        if n['pq_impl_evidence'] != '-':
+            if o['pq_evidence'] == '-' or any(n[f] != o[f] for f in ('class', 'c_reason', 'p_reason',
+                                                                    'first_reason', 'nontest_lines',
+                                                                    'test_attrs', 'std_evidence')):
+                widened.append(k)
+        elif n['class'] != '-' or (o['pq_evidence'] == '-' and n != {**o, 'pq_impl_evidence': '-'}):
+            widened.append(k)
+    old_admitted = sum(r['class'] != '-' for r in old.values())
+    new_admitted = sum(r['class'] != '-' for r in new.values())
+    print(f'narrowing check: {len(new)} rows; old PQ gate {sum(r["pq_evidence"] != "-" for r in old.values())}, '
+          f'new gate {sum(r["pq_impl_evidence"] != "-" for r in new.values())}; class C or P {old_admitted} -> '
+          f'{new_admitted}; changed fields {len(changed)}; widened {len(widened)}')
+    if changed or widened:
+        raise SystemExit(f'NOT a narrowing: changed {changed[:5]} widened {widened[:5]}')
+    print('narrowing check: passed')
 
 
 def self_test():
@@ -819,11 +956,33 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
     assert not re.search(UNSAFE_BLOCK_OR_FN, mask_rust('unsafe impl Send for X {} // unsafe { }'))
     assert nontest_lines('fn a() {}\n// c\n\nconst S: &str = "x\n\ny";\n#[cfg(test)]\nmod t {\n fn b() {}\n}\n',
                          non_test('fn a() {}\n// c\n\nconst S: &str = "x\n\ny";\n#[cfg(test)]\nmod t {\n fn b() {}\n}\n')[2]) == 3
-    body = '\n'.join(f'pub fn mlkem_f{i}(x: u64) -> u64 {{ x.wrapping_add({i}) }}' for i in range(250))
+    body = '\n'.join(f'pub fn mlkem_sign_f{i}(x: u64) -> u64 {{ x.wrapping_add({i}) }}' for i in range(250))
     plain = body.replace('mlkem_', '')
     assert pq_token('SPHINCS+') == 'sphincs' and pq_token('McEliece') == 'mceliece'
     assert pq_token('X25519MLKEM768') == 'mlkem' and pq_token('post-quantum') == 'postquantum'
     assert pq_token('signal') is None and pq_token('Classic') is None
+    for name, want in [('X25519MLKEM768', 'mlkem'), ('HybridMlKem', 'mlkem'), ('ml-kem-768', 'mlkem'),
+                       ('pqcrypto-mlkem', 'mlkem'), ('Falcon512', 'falcon512'), ('fn_dsa', 'fndsa'),
+                       ('dilithium3', 'dilithium3'), ('hqc_128', 'hqc128'), ('SPHINCS+', 'sphincs'),
+                       ('ClassicMcEliece', 'mceliece'), ('falcon_h1_capability', None), ('falcon_dma_valid', None),
+                       ('Falcon', None), ('hqc', None), ('Kyber', None), ('KyberSwap', None), ('Dilithium', None),
+                       ('XmlDsa', None), ('HTMLDSA', None), ('rosenpass', None), ('post-quantum', None),
+                       ('frodo640', None), ('saber', None)]:
+        assert pq_name(name) == want, (name, pq_name(name))
+    assert all(op_name(n) for n in ('keygen', 'KeyGen', 'generate_keypair', 'generate_key', 'encapsulate', 'decaps',
+                                    'sign', 'verify_signature', 'mlkem_sign_f0'))
+    assert not any(op_name(n) for n in ('signal', 'assign', 'signature', 'capability', 'complete', 'key_size'))
+    impl = pq_impl_evidence
+    assert impl([('a/src/lib.rs', 'src/lib.rs', 'pub struct MlKem768;\nimpl Kem for MlKem768 {\n'
+                  '    fn encapsulate(&self) {}\n}\n')], {}) == 'own-op:a/src/lib.rs:3:impl Kem for MlKem768:encapsulate'
+    assert impl([('a/src/ml_kem/ops.rs', 'src/ml_kem/ops.rs', 'fn keygen() {}')], {}) == \
+        'own-op:a/src/ml_kem/ops.rs:1:src/ml_kem/ops.rs:keygen'
+    assert impl([('a/src/lib.rs', 'src/lib.rs', 'const ML_DSA_65_PUBLIC_KEY_SIZE: usize = 1952;\n'
+                  'fn falcon_h1_capability() {}\nimpl Falcon { fn sign() {} }\nfn sign() {}')], {}) is None
+    assert impl([('a/src/lib.rs', 'src/lib.rs', 'fn f() {\n    ::ml_kem::MlKem768::new();\n}')],
+                {'ml_kem': 'ml-kem'}) == 'dep-use:a/src/lib.rs:2:ml-kem'
+    assert impl([('a/src/lib.rs', 'src/lib.rs', 'use crate::ml_kem::X;\nuse aws_lc_rs::kem::ML_KEM_768;')],
+                {'ml_kem': 'ml-kem', 'aws_lc_rs': 'aws-lc-rs', 'q': 'oqs'}) is None
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp).resolve()
         def put(path, content):
@@ -832,7 +991,8 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         put('Cargo.toml', '[workspace]\nmembers=["crates/*"]\n[workspace.dependencies]\nrt={package="tokio",version="1"}\n')
         put('crates/conc/Cargo.toml', '[package]\nname="conc"\nversion="0.1.0"\n')
         put('crates/conc/src/lib.rs', 'mod inner;\n#[cfg(test)] mod tests;\n')
-        put('crates/conc/src/inner.rs', 'use std::sync::Mutex;\npub static KYBER_M: Mutex<u8> = Mutex::new(0);\n')
+        put('crates/conc/src/inner.rs', 'use std::sync::Mutex;\npub static KYBER_M: Mutex<u8> = Mutex::new(0);\n'
+            'pub fn kyber768_keygen() {}\n')
         put('crates/conc/src/tests.rs', 'async fn ignored() { x.await }')
         put('crates/conc/tests/it.rs', 'async fn integration() {} #[test] fn t() {}')
         put('crates/logic/Cargo.toml', '[package]\nname="logic"\nversion="0.1.0"\n')
@@ -840,7 +1000,7 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         put('crates/asyncy/Cargo.toml', '[package]\nname="asyncy"\nversion="0.1.0"\n[target.\'cfg(unix)\'.dependencies]\nrt={workspace=true}\n')
         put('crates/asyncy/src/main.rs', body)
         put('crates/small/Cargo.toml', '[package]\nname="small"\nversion="0.1.0"\n')
-        put('crates/small/src/lib.rs', 'pub fn kyber() {}\n#[test] fn t() {}\n')
+        put('crates/small/src/lib.rs', 'pub fn kyber512_sign() {}\n#[test] fn t() {}\n')
         put('crates/plain/Cargo.toml', '[package]\nname="plain"\nversion="0.1.0"\n')
         put('crates/plain/src/lib.rs', '// ML-KEM is only named in a comment\nconst S: &str = "kyber";\n'
             + plain + '\n#[test] fn t() {}\n')
@@ -848,7 +1008,7 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
             'description="Classic McEliece KEM"\n')
         put('crates/pqdesc/src/lib.rs', plain + '\n#[test] fn t() {}\n')
         put('crates/pqdep/Cargo.toml', '[package]\nname="pqdep"\nversion="0.1.0"\n[dependencies]\nq={package="oqs",version="0.9"}\n')
-        put('crates/pqdep/src/lib.rs', plain + '\n#[test] fn t() {}\n')
+        put('crates/pqdep/src/lib.rs', 'use q::kem::Kem;\n' + plain + '\n#[test] fn t() {}\n')
         put('crates/unsafe/Cargo.toml', '[package]\nname="uns"\nversion="0.1.0"\n')
         put('crates/unsafe/src/lib.rs', body + '\nfn g() { unsafe { h() } }\n#[test] fn t() {}\n')
         put('crates/notest/Cargo.toml', '[package]\nname="notest"\nversion="0.1.0"\n')
@@ -874,9 +1034,13 @@ use std::{sync::{Mutex as M, atomic::AtomicUsize}, thread::{self, spawn as go}};
         assert set(got) == {'conc', 'logic', 'asyncy', 'small', 'uns', 'notest', 'outer', 'inner', '-', 'excl',
                             'orphan', 'used', 'auto', 'plain', 'pqdesc', 'pqdep'}, set(got)
         assert got['plain']['c_reason'] == got['plain']['p_reason'] == 'no-pq-evidence', got['plain']
-        assert got['pqdesc']['p_reason'] == '-' and got['pqdesc']['pq_evidence'] == 'manifest:mceliece'
+        assert got['pqdesc']['p_reason'] == 'no-pq-implementation-evidence', got['pqdesc']
+        assert got['pqdesc']['pq_evidence'] == 'manifest:mceliece', got['pqdesc']
         assert got['pqdep']['p_reason'] == '-' and got['pqdep']['pq_evidence'] == 'dependency:oqs', got['pqdep']
-        assert got['logic']['pq_evidence'] == 'identifier:crates/logic/src/lib.rs:mlkem_f0', got['logic']
+        assert got['pqdep']['pq_impl_evidence'] == 'dep-use:crates/pqdep/src/lib.rs:1:oqs', got['pqdep']
+        assert got['logic']['pq_evidence'] == 'identifier:crates/logic/src/lib.rs:mlkem_sign_f0', got['logic']
+        assert got['logic']['pq_impl_evidence'] == 'own-op:crates/logic/src/lib.rs:1:mlkem_sign_f0:mlkem_sign_f0'
+        assert got['conc']['pq_impl_evidence'] == 'own-op:crates/conc/src/inner.rs:3:kyber768_keygen:kyber768_keygen'
         assert got['used']['p_reason'] == 'no-pq-evidence', got['used']
         assert got['orphan']['p_reason'] == 'not-a-workspace-member', got['orphan']
         assert got['excl']['p_reason'] == '-' and got['auto']['p_reason'] == '-', (got['excl'], got['auto'])
@@ -903,9 +1067,14 @@ if __name__ == '__main__':
     ap.add_argument('--self-test', action='store_true')
     ap.add_argument('--clones', type=pathlib.Path)
     ap.add_argument('--out', type=pathlib.Path)
+    ap.add_argument('--check-narrowing', type=pathlib.Path, metavar='OLD_classes.tsv')
     a = ap.parse_args()
     if a.self_test:
         self_test()
+    elif a.check_narrowing:
+        if not a.out:
+            ap.error('--out is required')
+        check_narrowing(a.check_narrowing, a.out.resolve())
     else:
         if not (a.clones and a.out):
             ap.error('--clones and --out are required')

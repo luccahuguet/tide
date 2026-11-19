@@ -9,6 +9,63 @@ widens the repositories, the classes, the pool or a caught rule. Where this
 file and the bead disagree, the bead prevails and the record discloses the
 disagreement.
 
+## Amendment R1 (2026-11-19, re-registration before any run)
+
+This file supersedes the registration at commit
+`e1c04a4a212a68ff2d25ed1b0453a8ffe3208790` (proofs `edd3804`, `bef9bcb`,
+kept in history). The Codex supervisor pass on that registration
+(`gpt-6.1-sol`, high, 2026-11-19, request_changes) found two blocking
+issues; both changed registered rules, so the round re-registers:
+
+1. **PQ eligibility.** The registered gate admitted a package on a lexical
+   discovery token alone (any of twelve tokens anywhere in a name,
+   description, dependency name or identifier), which over-approximates the
+   frozen criterion "implementing a NIST post-quantum algorithm or a
+   post-quantum protocol"; ambiguous tokens such as `falcon` admitted
+   packages with no recorded post-quantum implementation. **Change:** §3's
+   gate now has a second, required step: recorded implementation evidence
+   with file and line (`own-op` or `dep-use`, strict disambiguated names;
+   `classify.py` `pq_impl_evidence`), evaluated only on packages that pass
+   the old gate, so it can only narrow. `classify.py --check-narrowing`
+   checks this against the registration's `classes.tsv` row by row; it
+   passed. Classes C and P, ordering and caps are unchanged. classify.py
+   (SHA-256 `9470eaf0cff43ede6cf59657206afc74dcb36261dc8ef183881f8cffe7f01384`)
+   and the rule text of §3's gate, §7's reproduction and Safety were fixed at
+   2026-11-19T20:33:01Z, before the regeneration at 20:33:04Z to 20:34:07Z;
+   after it only result counts, table-column descriptions, §8's count
+   units, §2's names for
+   the drop reasons classify.py already emitted, and this amendment were
+   written (self-attested, like every local time).
+   Regenerated from the recorded inputs (the pinned clones, candidates.tsv,
+   clone-refs.tsv): `classes.tsv`, `repositories.tsv`, `pool.tsv`. No row was
+   dropped or added by hand. Counts, registration -> R1: repositories after
+   the gate 16 -> 9; packages passing the gate 38 -> 14; class C 3 -> 0;
+   class P 9 -> 3; pool 12 -> 3 (arm A all 3; arm B no target). The search,
+   repository filter, pins and their files are unchanged.
+2. **Network boundary.** §7 allowed upstream compilation and execution with
+   `--offline` and proxy variables when `unshare -rn` was unavailable, which
+   does not stop direct sockets. **Change:** that fallback is removed. Every
+   upstream compilation and execution runs only inside an `unshare -rn`
+   namespace whose own shell first proves it has no route; otherwise the
+   reproduction is blocked and the candidate stays model-only (fail
+   closed). The read-only fetch stage is kept separate and runs no upstream
+   code (§7, Safety).
+3. Non-blocking, applied: units. `classes.tsv` holds 751 package rows plus
+   1 `no-Cargo-package` placeholder row, reported as such (§3).
+
+Observed after the R1 run and disclosed here, rule unchanged: `op_name` is
+lexical, so a fn whose name only contains an operation word (for example a
+key accessor such as `encapsulation_key`) counts as an operation; the pool's
+step-2 evidence column shows each admitted package's first evidence.
+
+Between the registrations nothing else happened: no repository content
+beyond the registered mechanical scans (classify.py over the pinned sparse
+checkouts) was examined, no history, issue, PR, documentation, source or
+policy was read, no admission-observation run, model, property, build or
+upstream execution took place, and no network request was made. The R1
+author read the Codex report, the registration's committed files and
+classify.py's outputs.
+
 WORK = `/mnt/build/eon-agents/worktrees/tide-fx-zu4f.14/target/work`.
 TARGET = `/mnt/build/tide-agents/fx-zu4f.14-target`.
 PRIVATE = `~/.cache/eon-agents/tide-lead/fx-zu4f.14-private/`.
@@ -171,7 +228,11 @@ This section changes no pool, eligibility, property or caught criterion.
   relay, key server, RPC endpoint, bootnode or handshake partner, from a
   model, a harness or a test. Everything is local or simulated. The only
   network uses after "go" are read-only GitHub/crates.io GETs for evidence
-  and the single recorded `cargo fetch --locked` per reproduction (§7).
+  and the single recorded `cargo fetch --locked` per reproduction (§7), in a
+  fetch stage that compiles and executes no upstream code. Every upstream
+  compilation and execution runs only inside a network namespace shown to
+  have no route (§7); when that cannot be established, nothing upstream
+  runs (fail closed, R1).
 - **No live keys.** The only stored key material is published test vectors:
   a crate's own committed KAT files and test vectors, or a standard's
   published vectors that the crate's tests name, each with its source path
@@ -186,7 +247,7 @@ This section changes no pool, eligibility, property or caught criterion.
   that candidate fails the reproduction condition and is recorded as
   model-only.
 - Reproduction runs execute only the added reproduction test, by exact name,
-  never a crate's whole test suite, with networking absent (§7).
+  never a crate's whole test suite, inside the isolated stage (§7).
 
 ## Neutral framing
 
@@ -289,18 +350,22 @@ blobless clone from the same GitHub repository, the same read-only source,
 never a mirror.
 
 The bead's last repository condition, "implements a listed algorithm or
-protocol", is decided mechanically at package level by §3's PQ gate: a
-repository stays only when at least one of its packages passes it, else it
-is dropped with `no-pq-evidence-in-any-package` (or `no-Cargo-package`) in
-`repositories.tsv`.
+protocol", is decided mechanically at package level by §3's two-step PQ
+gate: a repository stays only when at least one of its packages passes both
+steps, else it is dropped with `no-Cargo-package`,
+`no-pq-evidence-in-any-package` (no package passes step 1) or
+`no-pq-implementation-evidence-in-any-package` (some pass step 1, none step
+2) in `repositories.tsv`.
 
 Confirmation: 912 requests, 17:00:43Z to 17:31:06Z (no name was
 owner-affiliated or a letter-case duplicate, so every name got a GET).
 Result: **26** kept; 886 dropped (first reasons: 722 under 1,000 stars, 105
 not found, 57 language not Rust, 2 duplicates of an earlier canonical id).
 Clones: 2026-11-19T17:31:20Z to 17:32:48Z, **26** pinned. After the PQ gate
-(§3): **16** repositories kept; 10 dropped (9
-`no-pq-evidence-in-any-package`, 1 `no-Cargo-package`).
+(§3, R1): **9** repositories kept; 17 dropped (1 `no-Cargo-package`, 9
+`no-pq-evidence-in-any-package`, 7
+`no-pq-implementation-evidence-in-any-package`). The registration's
+one-step gate kept 16.
 
 ## 3. Crate-level classes (classify.py)
 
@@ -322,24 +387,91 @@ No macro expansion, cfg_attr path rewrites, `include!`, feature or platform
 selection, or cross-module name resolution; lexical names can be false
 positives. No manual override, post-output exclusion or substitution.
 
-**PQ gate (narrowing).** It applies the bead's repository condition to each
-package, before the classes, so that the pool holds post-quantum code and
-not a large repository's unrelated packages. A package passes when one of
+**PQ gate (narrowing), two steps, both required (amendment R1).** It
+applies the bead's repository condition, "implementing a NIST post-quantum
+algorithm or a post-quantum protocol", to each package, before the classes,
+so that the pool holds post-quantum code and not a large repository's
+unrelated packages. A package is classified only when it passes step 1 AND
+step 2; step 2 is evaluated only for packages that pass step 1, so the R1
+gate can only remove packages that the registration's gate admitted.
+
+*Step 1, discovery token (the registration's gate, unchanged).* One of
 these tokens: `mlkem`, `kyber`, `mldsa`, `dilithium`, `slhdsa`, `sphincs`,
 `fndsa`, `falcon`, `hqc`, `mceliece`, `postquantum`, `rosenpass` occurs, in
 this order of evidence, in (1) its package name, (2) a whitespace-separated
 word of its `description` or one of its `keywords`, (3) a normal or target
 dependency's package name (or the dependency is `oqs`, `oqs-sys` or
-`pqcrypto`, post-quantum implementation crates whose names hold no token),
-or (4) an identifier of a reached non-test file, comments and literals
-masked. Every name, word and identifier is compared after lowercasing and
-deleting every non-alphanumeric character (`ML-KEM-768` gives `mlkem768`,
-`SPHINCS+` gives `sphincs`). The first evidence is recorded as
-`pq_evidence`. A package that fails gets `no-pq-evidence` as its first
-reason for both classes. The gate is lexical: it over-approximates
-"implements" (a crate that only calls a post-quantum library passes, which
-fits the bead's protocols), and a token can name something else; no row is
-changed by hand.
+`pqcrypto`), or (4) an identifier of a reached non-test file, comments and
+literals masked. Every name, word and identifier is compared after
+lowercasing and deleting every non-alphanumeric character (`ML-KEM-768`
+gives `mlkem768`, `SPHINCS+` gives `sphincs`). The first evidence is
+recorded as `pq_evidence`. A package that fails gets `no-pq-evidence` as its
+first reason for both classes. Step 1 is discovery only: on its own it
+admits nothing.
+
+*Step 2, implementation evidence (R1).* The package's own reached non-test
+code, comments and literals masked and test-only items removed, must show
+one of two kinds of evidence, the first found recorded as
+`pq_impl_evidence` with file and line (`classify.py`, `pq_impl_evidence`):
+
+- **Strict names** (`PQ_STRICT`). A listed algorithm by its standard name,
+  `ML-KEM`, `ML-DSA`, `SLH-DSA`, `FN-DSA`, `SPHINCS` or `McEliece` (with
+  `-` or `_` allowed inside, any case); an ambiguous family name only with
+  its parameter set: `Kyber512/768/1024`, `Dilithium2/3/5`,
+  `Falcon512/1024` (or `Falcon-padded-512/1024`), `HQC128/192/256`. So
+  `falcon`, `hqc`, `kyber` and `dilithium` alone never suffice, nor do
+  other schemes (`frodo`, `saber`). A strict name counts only where it
+  starts a word: at the start, after a non-letter, or at a lowercase-to-
+  uppercase camel-case boundary (`X25519MLKEM768`, `HybridMlKem` count;
+  `XmlDsa`, `HTMLDSA`, `falcon_h1` do not). Protocol names (`rosenpass`) and
+  `postquantum` are discovery tokens only: a protocol implementation passes
+  through the algorithms it runs.
+- **Operation names** (`op_name`). A `fn` name, split into words at `_`,
+  case changes and digits, names an operation when its joined words contain
+  `keygen`, `keypair`, `encap` or `decap`, or its words include `sign` or
+  `verify`, or include `key`/`keys` together with `gen`/`generate` (so
+  `signal`, `assign`, `signature`, `key_size` do not count).
+- **Kind 1, `own-op` (the package runs a listed algorithm's operation in its
+  own code).** A `fn` definition with an operation name whose context holds a
+  strict name: the fn name itself, the header (text from `impl`, `trait` or
+  `mod` to its `{`) of any block enclosing it, or a component of the file's
+  path inside the package directory. Recorded as
+  `own-op:FILE:LINE:CONTEXT:FN`. This covers a crate that implements an
+  algorithm and a crate that implements a protocol's step over one (for
+  example a hybrid KEM's `encapsulate` on an ML-KEM type).
+- **Kind 2, `dep-use` (the package's code uses a dedicated post-quantum
+  implementation crate).** A normal or target dependency (renames and
+  `workspace = true` resolved) is a dedicated post-quantum implementation
+  crate: its package name holds a strict name, or it is one of `oqs`,
+  `oqs-sys`, `pqcrypto`, `pqcrypto-kyber`, `pqcrypto-dilithium`,
+  `pqcrypto-falcon`, `pqcrypto-hqc`, `pqc_kyber`, `pqc_dilithium`,
+  `crystals-dilithium`, `fips203`, `fips204`, `fips205` (`PQ_DEDICATED`,
+  fixed now); AND a reached non-test file references it: a path whose first
+  segment is the dependency's Rust name (`use`, inline, or `extern crate`;
+  never a later segment, so `crate::ml_kem` does not count). Recorded as
+  `dep-use:FILE:LINE:PACKAGE`. A general-purpose library that also offers a
+  post-quantum algorithm (for example a TLS or general crypto library) is
+  not dedicated, and selecting its post-quantum item does not pass.
+
+Kind 1 is checked over all reached files (path order, then position) before
+kind 2. A package that passes step 1 and fails step 2 gets
+`no-pq-implementation-evidence` as its first reason for both classes. No
+discovery token alone (a package name, description, keyword, dependency
+entry or identifier) admits a package. Step 2 is lexical and narrows: a
+crate whose post-quantum code is reached only through macros, `include!`,
+trait methods with other names (for example a key exchange's `start` and
+`complete`), or a general-purpose library is excluded, and the record
+states this limit; a wrapper whose operation fn delegates to another
+library passes. No row is changed by hand, no excluded row is backfilled,
+and a pool that shrinks below 10 gives arm A all that remains.
+
+**Narrowing check (R1).** `classify.py --check-narrowing` compares the
+regenerated `classes.tsv` with the registration's (e1c04a4) row by row: the
+same package rows; the same stars, pinned commit, binary flag, file counts
+and step-1 evidence on every row; every row that passes step 2 passed the
+registration's gate with the same class, reasons, line and test counts and
+class evidence; every row that fails step 1 is unchanged; and no row that
+fails step 2 has a class. It fails unless all hold.
 
 **Class C (std concurrency)** and **class P (deterministic logic)**: exactly
 P12 §3's rules and first-failure orders (C: positive std concurrency use in
@@ -356,22 +488,28 @@ P:<reason>` (one reason when they are the same).
 
 `classes.tsv` has one row per package, ordered as the pool is, with stars,
 pinned commit, crate, crate path, class, both reasons, binary flag,
-superset and reached file counts, non-test lines, `#[test]` count, PQ
-evidence and the class evidence. `repositories.tsv` has one row per pinned
-repository with its package count, PQ-gated packages, class C or P packages,
-and the repository filter's outcome.
+superset and reached file counts, non-test lines, `#[test]` count, step-1
+evidence (`pq_evidence`), step-2 evidence with file and line
+(`pq_impl_evidence`, the committed per-crate evidence table) and the class
+evidence. `repositories.tsv` has one row per pinned repository with its
+package count, packages passing step 1 (`pq_packages`) and step 2
+(`pq_impl_packages`), class C or P packages, and the outcome.
 
-Scan interval: 2026-11-19T17:32:56Z to 17:35:56Z, after `--self-test`
-passed. Result: 26 repositories; 25 hold packages; **752** package rows;
-**38** pass the PQ gate (in 16 repositories); **3** class C (none also
-passes P); **9** class P; **740** excluded. First reasons of the excluded:
-700 no-pq-evidence; 12 forbidden-source | forbidden-normal-dependency; 7
-no-production-source; 4 no-std-concurrency-use |
-nontest-lines-outside-200-5000; 4 not-a-workspace-member; 3
-no-std-concurrency-use | forbidden-normal-dependency; 3
-no-std-concurrency-use | std path; 2 no-std-concurrency-use |
-unsafe-block-or-fn; 2 unscannable; 1 forbidden-normal-dependency (both); 1
-no-std-concurrency-use | no-own-#[test]; 1 no-Cargo-package.
+Scan (R1): 2026-11-19T20:33:04Z to 20:34:07Z, after `--self-test` passed,
+with classify.py and this section's rule text frozen at 20:33:01Z (Amendment
+R1). Result: 26 repositories; 25 hold packages; **751** package rows plus 1
+`no-Cargo-package` placeholder row (752 rows in `classes.tsv`); **38** pass
+step 1 (in 16 repositories); **14** pass step 2 (in 9 repositories): 12
+`own-op`, 2 `dep-use`; **0** class C; **3** class P; **749** rows excluded. First reasons of the
+excluded: 700 no-pq-evidence; 24 no-pq-implementation-evidence; 7
+no-production-source; 5 forbidden-source | forbidden-normal-dependency; 4
+not-a-workspace-member; 2 no-std-concurrency-use |
+nontest-lines-outside-200-5000; 2 unscannable; 1 no-std-concurrency-use |
+no-own-#[test]; 1 no-std-concurrency-use | forbidden-normal-dependency; 1
+no-std-concurrency-use | unsafe-block-or-fn; 1 no-std-concurrency-use | std
+path; 1 no-Cargo-package (the placeholder). Narrowing check: passed (752
+rows; step 1 38, step 2 14; class C or P 12 at registration, 3 now; 0
+changed fields, 0 widened rows).
 
 ## 4. Pool
 
@@ -380,15 +518,19 @@ repository full name (case-insensitive), then crate name, then crate path. At
 most 3 per repository, the first 3 in that order. The pool is the first 30,
 or all kept crates when fewer than 30 are kept: `pool.tsv` with pool rank,
 class, also_p, arm-A flag (ranks 1 to 10), repository, stars, crate, crate
-path, pinned commit, non-test lines, PQ evidence and class evidence. The pool
+path, pinned commit, non-test lines, step-1 and step-2 PQ evidence and class
+evidence. The pool
 is immutable after registration: no substitution when a crate has no useful
 history, no portable core, no KAT or no property, and no backfill from
 excluded rows.
 
-Result: 12 kept crates in 8 repositories, fewer than 30, so the **pool is all
-12** (the cap of 3 per repository dropped none; two repositories hold 3 each):
-**3 class C** (ranks 1, 2 and 8) and **9 class P**. Arm A takes ranks 1 to
-10: the 3 class C crates and 7 class P. Arm B takes the 3 class C crates.
+Result (R1): 3 kept crates in 3 repositories, fewer than 30, so the **pool
+is all 3** (the cap of 3 per repository dropped none): **0 class C** and **3
+class P**. The pool is below 10, so **arm A takes all 3** (ranks 1 to 3);
+the gate is not loosened to refill it, and no excluded row is backfilled.
+**Arm B has no target** (no class C pool crate; §6). The registration's pool
+of 12 (3 class C, 9 class P, from 8 repositories) is superseded; its other
+9 crates fail step 2.
 
 ## 5. Admission observations (descriptive, never a catch)
 
@@ -584,6 +726,23 @@ same seeds' inputs, with any randomness supplied as the same bytes the
 model drew (a seeded RNG or the crate's deterministic entry point), never
 ambient OS randomness. Then:
 
+Two stages, kept apart (R1):
+
+1. **Fetch stage (read-only, network allowed, no upstream execution).**
+   `cargo fetch --locked` downloads the locked dependencies; it compiles
+   nothing and runs no build script, proc macro or test. It is the only
+   dependency acquisition (UTC, output, lockfile digest and registry
+   checksums recorded). Evidence GETs (§6, Disclosure) are also this
+   stage's, never the isolated stage's.
+2. **Isolated stage (compile and execute, no network route).** Every
+   compilation and execution of upstream code (build scripts, proc macros,
+   the crate, the test) runs only inside a fresh network namespace made by
+   `unshare -rn`, in the same `sh` that first proves the namespace has no
+   route: the only interface in `/proc/net/dev` is `lo`, `/proc/net/route`
+   holds no route (its header line only) and `/proc/net/ipv6_route` is
+   empty. Only when all three hold does that shell `exec` cargo, offline and
+   locked; the probe's output is recorded with the run.
+
 ```
 bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4 \
   CARGO_TARGET_DIR=/mnt/build/tide-agents/fx-zu4f.14-target \
@@ -592,17 +751,23 @@ bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4 \
 bash ~/.cache/eon-agents/eon-overseer/heavy.sh env CARGO_BUILD_JOBS=4 \
   CARGO_TARGET_DIR=/mnt/build/tide-agents/fx-zu4f.14-target \
   TMPDIR=/mnt/build/tide-agents/fx-zu4f.14-target/tmp \
-  timeout <secs> unshare -rn cargo test --offline --locked \
-  --manifest-path <worktree>/Cargo.toml -p <crate> --test tide_repro \
-  -- --exact <test name> --test-threads=4 </dev/null
+  timeout <secs> unshare -rn sh -c '
+    cat /proc/net/dev /proc/net/route /proc/net/ipv6_route
+    test "$(tail -n +3 /proc/net/dev | cut -d: -f1 | tr -d " ")" = lo || exit 97
+    test "$(wc -l < /proc/net/route)" -le 1 || exit 97
+    test ! -s /proc/net/ipv6_route || exit 97
+    exec cargo test --offline --locked --manifest-path <worktree>/Cargo.toml \
+      -p <crate> --test tide_repro -- --exact <test name> --test-threads=4' </dev/null
 ```
 
-The fetch is the only dependency acquisition (UTC, output, lockfile digest
-and registry checksums recorded). Build and run are offline and, through
-`unshare -rn`, without a network route (`unshare -rn true` succeeded on this
-machine at registration); if unprivileged user namespaces are unavailable
-at run time, the record says so and the run uses `--offline` with
-`http_proxy`/`https_proxy` set to `http://127.0.0.1:9`. A crate without a
+**Fail closed.** If `unshare -rn` fails (for example unprivileged user
+namespaces are unavailable) or the probe exits 97, network isolation is not
+established: the reproduction is recorded as **blocked**, the candidate
+stays **model-only**, and nothing upstream is compiled or run. No fallback
+exists: never `--offline` alone, never proxy variables, never another
+mechanism in place of the probed namespace. (`unshare -rn true` succeeded on
+this machine at registration; that is not evidence for a later run, which
+relies only on its own probe.) A crate without a
 `Cargo.lock` at the pinned commit cannot run `--locked`; that reproduction is
 recorded as blocked, not unlocked. If the pinned commit's own toolchain file
 names a toolchain that is not installed, the run is recorded as blocked, not
@@ -625,7 +790,8 @@ every candidate repository and excluded package by its first reason (in the
 committed TSVs, cited), every arm-B candidate (commit, first parent, first
 failing E criterion, reason, sources read, E2 quote if passed, later
 criteria not assessed), and counts with their units kept apart:
-repositories, packages scanned, PQ-gated, class C and P, pool; per arm
+repositories, package rows (751 packages and the placeholder kept apart),
+step-1 and step-2 PQ-gated, class C and P, pool; per arm
 targeted, screened, unresolved, unportable, modeled, rows and tests by kind
 (generated-input, KAT check, fixed-input), caught; for arm B matched
 commits, candidate rows per crate, unique commits, duplicates and E1-E5
