@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::{Arc, Mutex};
@@ -14,6 +14,7 @@ use rustc_ast::token::{Delimiter, TokenKind};
 use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_ast::visit::{self, Visitor};
 use rustc_driver::{Callbacks, Compilation};
+use rustc_errors::ColorConfig;
 use rustc_hir::def_id::CrateNum;
 use rustc_interface::interface::{Compiler, Config};
 use rustc_middle::ty::TyCtxt;
@@ -134,6 +135,7 @@ struct Admission {
     /// The walk's trust holes, for the trust artifact.
     holes: Holes,
     labels: RustcLabels,
+    color: ColorConfig,
     /// Whether the operator supplied Tide's std (`--tide-std`), whose `#[tide::main]` every
     /// binary's entry point needs (ROOT-1); the driver's own tests on Rust's std have none.
     tide_std: bool,
@@ -156,7 +158,8 @@ impl Callbacks for Admission {
     fn config(&mut self, config: &mut Config) {
         config.file_loader = Some(Box::new(self.sources.clone()));
         let labels = self.labels.clone();
-        config.psess_created = Some(Box::new(move |psess| labels.install(psess)));
+        let color = self.color;
+        config.psess_created = Some(Box::new(move |psess| labels.install(psess, color)));
         // The backstop's roots: a metadata check exports nothing, which leaves a library's mono
         // items without roots, so rustc gets the items a build exports.
         config.override_queries = Some(|_, providers| {
@@ -228,6 +231,20 @@ impl Callbacks for Admission {
     }
 }
 
+/// The operator's arguments without `--color`, in either spelling.
+fn without_color(args: &[String]) -> Vec<&String> {
+    let mut kept = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--color" {
+            args.next();
+        } else if !arg.starts_with("--color=") {
+            kept.push(arg);
+        }
+    }
+    kept
+}
+
 #[derive(Default)]
 struct Invocation {
     source: PathBuf,
@@ -257,6 +274,9 @@ struct Invocation {
     /// `--tide-eval-timeout SECS`: a simulation test's per-evaluation wall-clock limit (300 s).
     timeout: Option<u64>,
     remap: Vec<(PathBuf, String)>,
+    /// `--color`: whether diagnostics carry ANSI color (rustc's spelling; auto when absent, which
+    /// colors only a terminal). It changes no compiler input, so it stays out of `rustc_args`.
+    color: Option<ColorConfig>,
 }
 
 impl Invocation {
@@ -302,6 +322,7 @@ impl Invocation {
                     | "--seed"
                     | "--tide-run-test"
                     | "--tide-eval-timeout"
+                    | "--color"
             ) {
                 let value = inline
                     .or_else(|| args.next().map(String::as_str))
@@ -323,6 +344,14 @@ impl Invocation {
                         this.profile = value.into()
                     }
                     "--error-format" if value == "short" => (),
+                    "--color" if this.color.is_none() => {
+                        this.color = Some(match value {
+                            "auto" => ColorConfig::Auto,
+                            "always" => ColorConfig::Always,
+                            "never" => ColorConfig::Never,
+                            _ => return Err(format!("unsupported argument `{arg}`")),
+                        })
+                    }
                     "--crate-name" => this.name = value.into(),
                     "--out-dir" => this.out = value.into(),
                     "--tide-std" if this.std.is_none() => this.std = Some(value.into()),
@@ -404,6 +433,15 @@ impl Invocation {
             return Err("replay/test execution requires --test --emit=link --tide-std and full admission without grants".into());
         }
         Ok(this)
+    }
+
+    /// Whether diagnostics are colored: `--color=auto`, the default, colors only a terminal.
+    fn colored(&self) -> bool {
+        match self.color {
+            Some(ColorConfig::Always) => true,
+            Some(ColorConfig::Never) => false,
+            _ => io::stderr().is_terminal(),
+        }
     }
 
     fn rustc_args(&self, out: &Path, library_artifact: Option<&Path>) -> Vec<String> {
@@ -519,6 +557,9 @@ impl Invocation {
             out: out.into(),
             holes: Holes::new(),
             labels: RustcLabels::default(),
+            // Decided here, not left to rustc's auto, which also reads TERM, and the driver runs
+            // in a cleared environment.
+            color: if self.colored() { ColorConfig::Always } else { ColorConfig::Never },
             sources,
             tide_std: self.std.is_some(),
             library_artifact: library_artifact.map(Path::to_path_buf),
@@ -639,6 +680,7 @@ impl Invocation {
             link: true,
             profile: self.profile.clone(),
             tested_library: true,
+            color: self.color,
             ..Invocation::default()
         };
         let library_package = library.package_root(cwd)?;
@@ -1193,6 +1235,7 @@ pub fn run() -> Result<ExitCode, String> {
   --tide-run-test NAME [--seed U64]  run one exact recorded test (excludes const tests and test main)
   --replay MANIFEST                 identity-checked replay of one recorded evaluation
   --tide-eval-timeout SECS          a simulation evaluation's wall-clock limit (default 300)
+  --color auto|always|never         diagnostics in color (default auto: only on a terminal)
 Replay is a partial precursor to tide sim, for reviewed code with modeled effects.
 Replay accepts no configuration overrides and has no force option. Artifacts: OUT/target/sim.");
         return Ok(ExitCode::SUCCESS);
@@ -1264,6 +1307,9 @@ Replay accepts no configuration overrides and has no force option. Artifacts: OU
         &[u8::from(invocation.backstop_only)],
     );
     record(&mut key, b"test ice", &[u8::from(invocation.test_ice)]);
+    // A successful build's diagnostics are cached, so colored and plain output never share an entry.
+    let colored = invocation.colored();
+    record(&mut key, b"color", &[u8::from(colored)]);
     let sources = source_snapshot(&source_root, &source, &mut key)?;
     let build = invocation.build_identity(&sources, None)?;
     let manifest = invocation.validate_replay(&build)?;
@@ -1301,8 +1347,10 @@ Replay accepts no configuration overrides and has no force option. Artifacts: OU
     let mut entry = cache.join(&key);
     if !cacheable || !entry.is_dir() {
         let stage = format!("{key}.{}", std::process::id());
+        // The compiler's stderr is a pipe, so `--color=auto` is decided here and passed on.
         let output = Command::new(exe)
-            .args(&args)
+            .args(without_color(&args))
+            .arg(if colored { "--color=always" } else { "--color=never" })
             .arg(format!("--tide-compile={stage}"))
             .env_clear()
             .env(ICE_VAR, ICE_OFF)

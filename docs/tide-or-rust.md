@@ -31,7 +31,7 @@ below.
   accepting incoming connections stays possible until `no_bind()` removes
   it. A program a process capability allows runs with its own full
   authority
-  ([at a glance](at-a-glance.md), item 4).
+  ([core reference, 6.1](../design/reference.md#61-the-rule-and-the-capability-set)).
 - **Concurrency failures that replay.** A `#[sim_test]` runs under a
   simulator of tasks (Tide's units of concurrent work), channels, files,
   local TCP, declared HTTP peers and child processes, the clock and the

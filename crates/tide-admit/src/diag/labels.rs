@@ -215,9 +215,10 @@ impl RustcLabels {
         self.0.lock().unwrap().scope = Some(scope);
     }
 
-    pub fn install(&self, psess: &mut ParseSess) {
-        // The operator interface fixes rustc's output to --error-format=short.
-        let inner = AnnotateSnippetEmitter::new(stderr_destination(ColorConfig::Never))
+    pub fn install(&self, psess: &mut ParseSess, color: ColorConfig) {
+        // The operator interface fixes rustc's output to --error-format=short. `--color` only
+        // styles it: without color the bytes are the same whatever the flag says.
+        let inner = AnnotateSnippetEmitter::new(stderr_destination(color))
             .sm(Some(psess.clone_source_map()))
             .short_message(true);
         psess.dcx().set_emitter(Box::new(Labels {

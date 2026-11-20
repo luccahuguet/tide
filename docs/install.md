@@ -37,8 +37,6 @@ git clone https://github.com/luccahuguet/tide tide
 cd tide
 ```
 
-This URL works once the repository is public.
-
 ## 3. Build the driver
 
 ```sh

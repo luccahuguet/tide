@@ -399,8 +399,8 @@ fn cargo_build(
         .map_err(|e| setup(format!("cargo wrote a message that is not JSON: {e}")))
 }
 
-/// The first line of `command`'s standard output, or `unknown`.
-fn first_line(command: &mut Command) -> String {
+/// The first line of `command`'s standard output, if it ran and succeeded.
+fn first_line(command: &mut Command) -> Option<String> {
     command
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -409,7 +409,63 @@ fn first_line(command: &mut Command) -> String {
         .filter(|out| out.status.success())
         .and_then(|out| String::from_utf8(out.stdout).ok())
         .and_then(|text| text.lines().next().map(str::to_owned))
-        .unwrap_or_else(|| "unknown".into())
+}
+
+/// The variable through which the flake's `tide-demo` app gives the demo its revision: its
+/// sources are a copy in the Nix store, without `.git`, so git cannot name it there.
+pub const REVISION_VAR: &str = "TIDE_REVISION";
+
+/// The variables through which a caller's environment would route git to another repository,
+/// index or object store than the one at a `-C` path: `git rev-parse --local-env-vars`, the set
+/// git itself clears when it moves into a submodule.
+const GIT_LOCAL_ENV_VARS: [&str; 15] = [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+];
+
+/// Step 0's revision of the sources at `root`: git's `HEAD`, marked when the tree has
+/// uncommitted changes, or when git cannot tell whether it has; else `recorded`, the value of
+/// [`REVISION_VAR`], when it is not empty; else `unknown`. Git runs on `root` alone, whatever
+/// repository the caller's environment routes it to.
+pub fn source_revision(root: &Path, recorded: Option<&str>) -> String {
+    let git = || {
+        let mut git = Command::new("git");
+        for var in GIT_LOCAL_ENV_VARS {
+            git.env_remove(var);
+        }
+        git.arg("-C").arg(root);
+        git
+    };
+    if let Some(head) = first_line(git().args(["rev-parse", "HEAD"])) {
+        let status = git()
+            .args(["--no-optional-locks", "status", "--porcelain"])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output();
+        let dirty = match status {
+            Ok(out) if out.status.success() && out.stdout.is_empty() => "",
+            Ok(out) if out.status.success() => " (with uncommitted changes)",
+            _ => " (uncommitted changes unknown)",
+        };
+        return format!("{head}{dirty}");
+    }
+    match recorded {
+        Some(revision) if !revision.is_empty() => revision.to_owned(),
+        _ => "unknown".into(),
+    }
 }
 
 /// A manifest a run recorded, with the trace it exported beside it.
@@ -473,26 +529,8 @@ impl Run {
     /// Step 0: builds the driver and std with the pinned toolchain.
     fn build(root: PathBuf, target: PathBuf, work: PathBuf) -> Result<Run, Failure> {
         step("0. Toolchain and build");
-        let git = || {
-            let mut git = Command::new("git");
-            git.arg("-C").arg(&root);
-            git
-        };
-        let status = git()
-            .args(["status", "--porcelain"])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output();
-        let dirty = match status {
-            Ok(out) if out.status.success() && !out.stdout.is_empty() => {
-                " (with uncommitted changes)"
-            }
-            _ => "",
-        };
-        println!(
-            "revision:  {}{dirty}",
-            first_line(git().args(["rev-parse", "HEAD"]))
-        );
+        let recorded = std::env::var(REVISION_VAR).ok();
+        println!("revision:  {}", source_revision(&root, recorded.as_deref()));
         // The pinned compiler's identity; without it, nothing can be built.
         let channel = pinned_toolchain(&root)?;
         let (toolchain, version) = if on_path(OsStr::new("rustup")).is_some() {

@@ -37,6 +37,68 @@ fn surface_errors_are_errors_even_under_allow_warnings() {
 }
 
 #[test]
+fn color_styles_diagnostics_only_when_asked() {
+    let dir = package("color", "pub fn narrow(n: u64) -> u8 { n as u8 }\n");
+    let run = |flags: &[&str]| {
+        let out = driver(&dir).args(flags).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{flags:?}: {}", stderr(&out));
+        out.stderr
+    };
+    // stderr is a pipe here, so the default (auto) prints no escapes, like --color=never.
+    let plain = run(&[]);
+    assert!(String::from_utf8_lossy(&plain).contains("error: TD0301:"));
+    assert!(!plain.contains(&0x1b), "{}", String::from_utf8_lossy(&plain));
+    assert_eq!(run(&["--color=auto"]), plain);
+    assert_eq!(run(&["--color", "never"]), plain);
+    // --color=always adds escapes and nothing else.
+    let colored = run(&["--color=always"]);
+    let text = String::from_utf8_lossy(&colored);
+    assert!(text.contains("\x1b["), "{text}");
+    assert_eq!(unstyled(&text), String::from_utf8_lossy(&plain));
+    let out = driver(&dir).arg("--color=sometimes").output().unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("unsupported argument `--color=sometimes`"), "{}", stderr(&out));
+}
+
+/// A successful build's warnings replay from the cache, which keeps each color mode's own bytes.
+#[test]
+fn cached_warnings_keep_the_color_asked_for() {
+    let dir = package("color-cache", "pub fn f() { let unused = 1; }\n");
+    let run = |flags: &[&str]| {
+        let out = driver(&dir).args(flags).output().unwrap();
+        assert!(out.status.success(), "{flags:?}: {}", stderr(&out));
+        out.stderr
+    };
+    let colored = run(&["--color=always"]);
+    let text = String::from_utf8_lossy(&colored).into_owned();
+    assert!(text.contains("\x1b[") && text.contains("unused"), "{text}");
+    assert_eq!(entries(&dir), 1);
+    let plain = run(&["--color=never"]);
+    assert!(!plain.contains(&0x1b), "{}", String::from_utf8_lossy(&plain));
+    assert_eq!(unstyled(&text), String::from_utf8_lossy(&plain));
+    assert_eq!(entries(&dir), 2);
+    // Repeats, and the piped default, hit those two entries and print the same bytes.
+    assert_eq!(run(&["--color=always"]), colored);
+    assert_eq!(run(&[]), plain);
+    assert_eq!(run(&["--color=never"]), plain);
+    assert_eq!(entries(&dir), 2);
+}
+
+/// `text` without its ANSI escape sequences.
+fn unstyled(text: &str) -> String {
+    let mut unstyled = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            chars.by_ref().find(|c| c.is_ascii_alphabetic());
+        } else {
+            unstyled.push(c);
+        }
+    }
+    unstyled
+}
+
+#[test]
 fn borrow_labels_preserve_rustc_errors_and_leave_unrelated_borrows_alone() {
     for (name, source, rustc_error, label) in [
         ("closure-return", "pub fn f(s: &str) -> Box<dyn Fn() -> usize> { Box::new(move || s.len()) }", "lifetime may not live long enough", "TD0203"),

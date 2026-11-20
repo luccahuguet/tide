@@ -6,90 +6,52 @@ Rust is memory-safe: up to the compiler's soundness bugs (item 8 below).
 <!-- at-a-glance: docs/at-a-glance.md, copied verbatim; the site's generator checks the copy -->
 ## Tide at a glance
 
-Tide is a subset of Rust, a systems programming language, for code that
-artificial intelligence (AI) agents write and people have to trust. Code in
-it reaches the outside world only through capabilities, values a function is
-handed, and its tests replay a failing run exactly.
+Tide is a subset of Rust for code that AI agents write and people have to
+trust.
 
-1. **It's Rust.** Every Tide program is a valid Rust 2024 crate (a Rust
-   package written to the language's 2024 edition), compiled by rustc, the
-   standard Rust compiler, unmodified and pinned to one nightly version, a
-   dated build. Tide keeps Rust's syntax and compiler, with no fork.
-2. **A checker runs first.** `tide-admit`, Tide's admission checker, checks
-   each crate before rustc compiles it and admits or rejects it. Every
-   rejection by one of its rules carries a numbered diagnostic, a `TD` code
-   such as `TD0501`, whose message says why. Code that rustc itself
-   rejects, such as a call to a function Tide's std lacks, gets rustc's own
-   errors.
-3. **Authority shows in the signature.** Files, the clock, the environment
-   (the variables and arguments a program starts with), the network, other
-   programs and randomness are reachable only through capability values a
-   function is handed: `&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc` and `&Rand`. Tide's standard
-   library, the library every program builds on, has no free function, one
-   called without such a value, that reaches them, printing aside, so a
-   function's parameters bound what it can do, up to rustc's soundness
-   bugs (item 8).
-4. **Authority can be narrowed.** `fs.dir(path, mode)` confines a file
-   capability to one directory, and `only([...])` keeps a network capability
-   to listed hosts (named machines), a process capability to listed programs
-   and an environment capability to listed variables. A network `only`
-   checks the machines a program connects to, and accepting incoming
-   connections stays possible until `no_bind()` removes it. An allowed
-   program runs with its own full authority, so allowing a shell, a program
-   that runs other programs, allows anything.
-5. **Tests replay.** A `#[sim_test]` runs under a simulator of tasks (Tide's
-   units of concurrent work), files, the network, the clock and the
-   environment, where a seed, one number, decides every scheduling choice.
-   `tide-admit` records a failing seed's run and replays it on the same
-   machine with identical event and output traces, the logs of what the run
-   did.
-6. **Any change can get a trust diff.** `tide-admit --tide-diff` summarizes
-   what a change may do: the public functions and types whose authority
-   widened or narrowed, and the `unsafe` sites, code the Rust compiler
-   cannot check, added or removed. Our E3 pilot, a small trial with AI
-   reviewers, tested it as a review aid and found no evidence that it helps,
-   and we published that result.
-7. **Built for agents.** The core reference, the document that teaches the
-   language to an AI model, fits a budget of
-   [25,000 tokens](/design/01-design.md#d14-toolchain-contract-for-agents),
-   the units a model reads text in.
-8. **Known limits.** This first release, an alpha (an early test version),
-   runs on Linux on 64-bit x86 processors (x86_64). Async code, functions
-   that pause and resume later, is left out by design. Threads are parts of
-   a program that run at the same time. Safe code, everything outside
-   `unsafe`, sees their memory writes in one global order, and weaker
-   orderings, which let threads see each other's writes out of order, are
-   planned only behind the `unsafe` grant, an explicit opt-in passed to
-   `tide-admit`. Replay reproduces the simulator's model of a program, not
-   the machine. Admission closes
-   [three known routes](/README.md#forge-routes) through rustc's soundness
-   bugs, compiler bugs that let safe code break Rust's guarantees, and the
-   others stay open.
-9. **Evidence, negatives included.** Our pilot and our searches for real bugs
-   recorded their methods in advance and published every count. How far
-   that order is proven varies by round, and a possible security defect is
-   held privately and appears publicly only as a count. Our screen of all 87
-   malicious-crate advisories in RustSec, Rust's public database of security
-   advisories (a malicious crate is a package published to attack its
-   users), caught none of them. Tide's std had a gap, the screen exposed it,
-   we fixed it, and re-tested under a new registration, a method recorded in
-   advance ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)).
-   That re-test's pool, one crate the screen had already seen, was chosen
-   afterwards, so its outcome was close to predictable: it is not a
-   first-time catch and not a rate. It counts one catch: our port (a rewrite
-   in Tide) of that crate is rejected by admission, as it was in the screen,
-   and a version handed the authority it uses is now admitted. Admission
-   does not judge intent. It makes the authority visible. Every check is
-   consistent with the re-test's registration being anchored, by an
-   OpenTimestamps proof (a timestamp in a public blockchain), before the fix
-   landed, and independent proof of that order is not established. The
-   re-test ran admission and type-checking only. No port was executed. For
-   the pilot and four of the searches, the order of method and results
-   rests on our own records (self-attested). The other searches' method
-   files carry OpenTimestamps proofs, which show only that each file existed
-   by its attestation time, and when those searches examined their
-   candidates rests on our records. The [status page](https://tidelang.com/status/)
-   lists every round with its counts and its qualifier.
+1. **It's Rust.** Every Tide program is a valid Rust 2024 crate, compiled by
+   an unmodified rustc pinned to one nightly. [No fork](/docs/tide-or-rust.md).
+2. **A checker runs first.** [`tide-admit`](/docs/driver.md) admits or
+   rejects each crate before rustc compiles it. Its rules' rejections carry
+   a `TD` code, such as `TD0501`, that says why. What rustc rejects, such as
+   a call to a function Tide's std lacks, gets rustc's errors.
+3. **Authority shows in the signature.** Code reaches the outside world through
+   [capabilities](/design/reference.md#61-the-rule-and-the-capability-set) it is
+   handed (`&Fs`, `&Clock`, `&Env`, `&Net`, `&Proc`, `&Rand`), so a function's
+   parameters bound what it can do. The claim is no accidental ambient authority
+   in admitted safe code, apart from printing and outside the `unsafe` grant, up
+   to [rustc's soundness bugs](/README.md#forge-routes).
+4. **Authority can be narrowed.** `fs.dir(path, mode)` confines files to a
+   directory, and `only([...])` limits hosts, programs or variables
+   ([limits](/docs/tide-or-rust.md#what-tide-gives-you)). A network `only`
+   limits outbound peers, and listening remains possible unless the
+   capability is narrowed with `no_bind()`. An allowed shell allows anything.
+5. **Tests replay.** A `#[sim_test]` runs under a seeded simulator, and
+   `tide-admit` replays a failing run on the same machine with identical
+   traces. Replay reproduces the
+   [simulator's model](/README.md#simulator-fidelity), not the machine.
+6. **Any change can get a trust diff.** `tide-admit --tide-diff` summarizes what
+   a change may do: public items whose declared authority widened or narrowed,
+   and `unsafe` sites added or removed. The
+   [E3 pilot](/README.md#e3-does-the-trust-diff-help-reviewers-pre-registered-pilot-negative)
+   found no evidence that it helps reviewers.
+7. **Built for agents.** The core reference that teaches Tide to a model fits
+   a budget of
+   [25,000 tokens](/design/01-design.md#d14-toolchain-contract-for-agents).
+8. **Known limits.** An alpha, x86_64 Linux only. No async, by design, and safe
+   code sees one memory order ([costs](/docs/tide-or-rust.md#what-it-costs)).
+   Admission closes [three known routes](/README.md#forge-routes) through
+   rustc's soundness bugs, and the others stay open.
+9. **Evidence, negatives included.** One catch, on a later re-test of one
+   screened crate,
+   [not first-time and not a rate](/README.md#a-malicious-crate-rejected-as-written-admitted-only-with-its-authority-declared),
+   its registration before the fix not independently proven
+   ([research/49](/research/49-fx-zu4f.15-chrono-anchor-retest.md)). The malware
+   screen caught 0 of 87. For the pilot and four of the searches, the order of
+   method and results rests on our own records, and the others' timestamps show
+   only when their method files existed. A possible security defect appears
+   publicly only as a count. The [status page](https://tidelang.com/status/)
+   lists every round with its counts and qualifier.
 <!-- /at-a-glance -->
 
 In code, from [examples/capabilities/](examples/capabilities/README.md): the
@@ -354,14 +316,16 @@ Each path runs the [demo](demo/README.md): a seeded simulation finds a lost
 update in a small concurrent service and replays it twice with identical
 traces, the fixed revision passes the same seeds, and the trust diff shows a
 patch widening the service's interface. The alpha runs on x86_64 Linux; the
-browser and Docker paths provide one. The `github.com/luccahuguet/tide` URLs
-work once the repository is public.
+browser and Docker paths provide one.
 
 1. **In the browser, with nothing installed.**
    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/luccahuguet/tide)
    The codespace builds the repository's
    [dev container](.devcontainer/devcontainer.json), the `Dockerfile`'s dev
-   image. In its terminal, run `nix run .#tide-demo`.
+   image. In its terminal, run `nix run .#tide-demo`. The image has no gdb,
+   so step 5, the replay under a debugger, prints `skipped: no gdb`; the
+   rustup path, on a machine with a gdb built with Python on `PATH`, runs it
+   ([demo/README.md](demo/README.md)).
 2. **With rustup and no Nix.** On x86_64 Linux with rustup 1.28 or later,
    git, and a C toolchain at `/usr/bin/cc` and `/usr/bin/ld`, which Cargo and
    the driver link with (on Debian or Ubuntu, `build-essential`):
@@ -382,7 +346,8 @@ work once the repository is public.
 4. **With Docker, on macOS or Windows:** in a clone,
    `docker build --platform linux/amd64 --target try -t tide-try .`, then
    `docker run --rm --platform linux/amd64 tide-try`
-   ([docs/docker.md](docs/docker.md)).
+   ([docs/docker.md](docs/docker.md)). The image holds no `.git`, so the
+   demo's step 0 prints `revision:  unknown`.
 
 Measured on 2026-11-19 on an x86_64 Linux host with 16 CPUs, over its own
 connection, whose bandwidth was not measured;
@@ -392,12 +357,16 @@ capped at 4 cores and 4 jobs. The rustup, `nix run` and Docker runs used 4
 Cargo jobs, and their containers 4 CPUs; the devcontainer's runtime had no
 CPU or Cargo-job cap. The rustup row used rustup's minimal profile; the
 default profile also installs rust-docs, clippy and rustfmt, which the row
-does not count. Download times depend on the connection, and no download
-volume was measured, so the table gives disk and image sizes:
+does not count. The owner measured the Codespaces row's codespace times
+under the conditions the row gives; of them, only the time to a ready
+codespace is approximate, the owner's estimate. Its devcontainer CLI times
+are from the host above. Download times depend on
+the connection, and no download volume was measured, so the table gives
+disk and image sizes:
 
 | Path | Size | Measured time |
 | --- | --- | --- |
-| Codespaces | nothing on your machine; the codespace builds the 6.09 GB dev image, and the demo's build output, 1.3 GiB under `nix run`, goes to the demo's cache directory in the codespace | not yet measured on Codespaces; the devcontainer CLI built the container from a clean clone in 6 minutes, then `nix run .#tide-demo` took 49 s |
+| Codespaces | nothing on your machine; the codespace builds the 6.09 GB dev image, and the demo's build output, 1.3 GiB under `nix run`, goes to the demo's cache directory in the codespace | in a codespace from the dev container configuration "Tide", on GitHub's default 2-core machine in US East, at revision `d48b1aa`: about 10 minutes (an estimate) from Create to a ready codespace, then `nix run .#tide-demo` timed at 2m13.715s real (about 2 min 14 s), measured by the owner; on the host above, the devcontainer CLI built the container from a clean clone in 6 minutes, then `nix run .#tide-demo` took 49 s |
 | rustup | on disk afterwards: about 1.4 GiB in `~/.rustup` (the pinned nightly with `rustc-dev` and `rust-src`), 83 MiB in `~/.cargo`, and 1.3 GiB of build output in `target/` | 19 s to install the toolchain, then 51 s for the first `cargo run` (16 s once built) |
 | `nix run` | a 2.1 GiB closure in the Nix store, plus 1.3 GiB of build output in the demo's cache | 48 s with the closure already in the store; fetching and building it in an empty store took 80 s |
 | Docker | the try image, 2.42 GB on disk, 769 MB as a gzip-compressed `docker save`; built from a clone, with its build stages left in Docker's build cache ([docs/docker.md](docs/docker.md#measured-times)); the run's build output goes with the container | about 3 minutes to build the image, then 36 s to run |

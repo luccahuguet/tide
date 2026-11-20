@@ -90,8 +90,12 @@ target/debug/tide-admit --crate-type=lib --out-dir /tmp/tide-output path/to/pack
 
 The interface accepts one `.rs` entry, `--edition 2024`, `--crate-type lib|bin`,
 `--crate-name NAME`, `--test`, `--emit metadata|link`,
-`--tide-profile debug|release`, `--error-format short`, `--out-dir DIR`, and
+`--tide-profile debug|release`, `--error-format short`,
+`--color auto|always|never`, `--out-dir DIR`, and
 `--tide-grant=unsafe` (value options also accept `=VALUE`).
+`--color`, rustc's spelling, only styles diagnostics with ANSI escapes. The
+default, `auto`, colors them when stderr is a terminal, so piped output, such
+as the conformance runner's, is the same bytes under every value but `always`.
 `--tide-test-backstop`, for the driver's tests, skips the obligation steps of
 the checks before analysis, so the backstop alone decides those routes, and
 `--tide-test-ice` crashes the compiler after expansion.

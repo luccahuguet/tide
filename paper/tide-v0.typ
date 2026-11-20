@@ -8,8 +8,7 @@
 // generates from committed records (paper/figures/README.md); the paper only
 // embeds them, so the build needs no package download and no network.
 // Every link to a file in the repository goes through #repo below, which pins it
-// to one release tag. Until the RC sets them, the repository URL and the tag are
-// placeholders; a build can also pass them with
+// to one release tag. A build can pass another repository or tag with
 // `--input tide-repository=https://github.com/<owner>/<repo> --input tide-tag=<tag>`.
 
 // date: none keeps the PDF byte-identical across builds (no build timestamp).
@@ -27,17 +26,15 @@
 #show figure.caption: set align(start)
 
 // ---- Repository links ------------------------------------------------------
-// The one place the repository URL and the release tag are set (placeholders until the RC).
-#let tide-repository = sys.inputs.at("tide-repository", default: "https://github.com/OWNER/tide")
-#let tide-tag = sys.inputs.at("tide-tag", default: "RC-TAG")
+// The one place the repository URL and the release tag are set.
+#let tide-repository = sys.inputs.at("tide-repository", default: "https://github.com/luccahuguet/tide")
+#let tide-tag = sys.inputs.at("tide-tag", default: "v0-alpha.1")
 // #repo("path") links a repository file at the tag; a path ending in `/` is a directory.
 // The link text is the path, or the optional second argument.
-// While either value is a placeholder, paths print without links (the Status note says so).
-#let links-pending = tide-repository.contains("OWNER") or tide-tag == "RC-TAG"
 #let repo(path, ..text) = {
   let kind = if path.ends-with("/") { "tree" } else { "blob" }
   let label = if text.pos().len() > 0 { text.pos().first() } else { raw(path) }
-  if links-pending { label } else { link(tide-repository + "/" + kind + "/" + tide-tag + "/" + path, label) }
+  link(tide-repository + "/" + kind + "/" + tide-tag + "/" + path, label)
 }
 
 // ---- Figures -------------------------------------------------------------
@@ -93,7 +90,7 @@ A pilot of the _trust diff_, a summary of the authority each exported item gains
 
 _Disclosure._ Tide's code, its design text, and this paper were produced by AI agents (Claude and GPT models: mainly Claude Opus and GPT Sol, with some earlier production code by Claude Fable). The project is AI-led and human-steered: the agents made the other technical choices and reviewed and validated each change, and the author set scope, priorities and direction and made the owner calls. Human-written production code is allowed only as an explicitly marked exception. Under the project's merge rule, a change lands only after an AI supervisor pass, normally a pass by GPT Sol through OpenAI's Codex command-line tool (CLI) and then a Claude Opus review; @sec-built gives the rule and its exceptions (#repo("GOVERNANCE.md")).
 
-_Status._ This paper describes the v0 alpha. It states each claim fully enough to follow on its own; repository paths name the raw evidence (logs, protocols and run records), linked at the release tag. #if links-pending [The public repository and its release tag are still pending, so this build prints those paths without links.] Design decisions are cited by their IDs in the project's decision record (#repo("design/01-design.md")), D0 to D18; #link(<sec-decisions>)[a list at the end] gives the ones cited with a line each. Every measurement in this paper comes from a report in the repository and is cited where it appears. Features of v1 and later tiers are labelled planned.
+_Status._ This paper describes the v0 alpha. It states each claim fully enough to follow on its own; repository paths name the raw evidence (logs, protocols and run records), linked at the release tag #raw(tide-tag). Design decisions are cited by their IDs in the project's decision record (#repo("design/01-design.md")), D0 to D18; #link(<sec-decisions>)[a list at the end] gives the ones cited with a line each. Every measurement in this paper comes from a report in the repository and is cited where it appears. Features of v1 and later tiers are labelled planned.
 
 = Motivation <sec-motivation>
 
