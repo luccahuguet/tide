@@ -146,8 +146,9 @@ the caught rule are unchanged. The Opus review of R2 (Claude Opus 5.5,
    Any of these would tell a reader of the public history that a private,
    dangerous-by-default find sits in one of two named functions.
    **Change:** Disclosure now holds a public-signal rule for this round
-   ("Public signal for arm A"). Until every arm-A candidate is classed
-   non-dangerous and reviewed, or disclosed, the ledger, commit text and
+   ("Public signal for arm A"). From go until every arm-A pool crate has
+   its final outcome and every arm-A candidate is classed non-dangerous and
+   reviewed, or disclosed, the ledger, commit text and
    the public record give no arm-A outcome, total or private-candidate
    count; their only arm-A line is the fixed text `arm A: in progress`, the
    same in every case; and the record states the residual timing leak. The
@@ -187,6 +188,13 @@ constants.
   keeps; proofs pending at `e620d56`, upgraded at `5edef08`.
 - This file as R3 amends it, at the commit that adds this amendment, with
   its OpenTimestamps proof once tide-lead stamps it and upgrades the proof.
+  R3a (2026-11-20, before any run) supersedes that text: the finder
+  re-check of R3 found that the public-signal hold had no start and that
+  its end condition held while arm A had no candidate yet, so interim
+  arm-A totals stayed permitted during the run. R3a states that the hold
+  starts at go and ends no earlier than arm A's last outcome. The go
+  certifies this file at the R3a commit, with its own proof; R3's pending
+  proof is kept as `fx-zu4f.14-protocol.md.r3.ots`.
 
 Between R2 and R3 nothing else happened. The R3 author read the Opus
 review, the fixer briefs, the bead and its comments, and this round's
@@ -373,14 +381,16 @@ with the bead's crypto rules:
   and the committed `pool.tsv` names both with their PQ call sites, so an
   arm total, a count of private candidates or one withheld rank would point
   at one of two named functions. The rule reads the same whether or not a
-  private candidate exists. Until every arm-A candidate is either classed
-  non-dangerous and reviewed, or disclosed (Committing, above), tracker
-  comments, commit subjects and messages, tracked status lines and the
-  public record give no arm-A outcome, no arm-A total and no count of
-  private candidates, for any rank. Their only arm-A line in that period is
-  the fixed text `arm A: in progress`, used in every case. The record states
-  the residual timing leak: the hold ends as soon as arm A has no
-  undisclosed candidate, and can last until disclosure (a fix, or 90 days)
+  private candidate exists. The hold starts at go. It ends no earlier than
+  when every arm-A pool crate has its final outcome and every arm-A
+  candidate is either classed non-dangerous and reviewed, or disclosed
+  (Committing, above). Until then, tracker comments, commit subjects and
+  messages, tracked status lines and the public record give no arm-A
+  outcome, no arm-A total and no count of private candidates, for any rank.
+  Every arm-A progress line in that period, interim ones included, is the
+  fixed text `arm A: in progress`, used in every case. The record states
+  the residual timing leak: the hold ends once arm A's last outcome is in
+  and it has no undisclosed candidate, and can last until disclosure (a fix, or 90 days)
   when it has a dangerous one, so the date when arm-A outcomes appear can
   hint that a private candidate existed. The arm-B line (no target) and
   §5's admission observations are not arm-A outcomes and stay unaffected.
