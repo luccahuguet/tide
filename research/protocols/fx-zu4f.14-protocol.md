@@ -53,10 +53,11 @@ issues; both changed registered rules, so the round re-registers:
 3. Non-blocking, applied: units. `classes.tsv` holds 751 package rows plus
    1 `no-Cargo-package` placeholder row, reported as such (§3).
 
-Observed after the R1 run and disclosed here, rule unchanged: `op_name` is
-lexical, so a fn whose name only contains an operation word (for example a
-key accessor such as `encapsulation_key`) counts as an operation; the pool's
-step-2 evidence column shows each admitted package's first evidence.
+Observed after the R1 scan (classify.py's) and disclosed here, rule
+unchanged: `op_name` is lexical, so a fn whose name only contains an
+operation word (for example a key accessor such as `encapsulation_key`)
+counts as an operation; the pool's step-2 evidence column shows each
+admitted package's first evidence.
 
 Between the registrations nothing else happened: no repository content
 beyond the registered mechanical scans (classify.py over the pinned sparse
@@ -128,6 +129,73 @@ read, no admission-observation run, model, property, build or upstream
 execution took place, and no network request was made. The R2 author read
 the Codex re-check, R1's committed files and classify.py's outputs.
 
+## Amendment R3 (2026-11-20, text only, before any run)
+
+R3 changes only this file's text. It supersedes R2's text of this file at
+commit `5b9298b497e86239deb5efbd4002f598b724b0a2` (proof pending at
+`e620d56`, upgraded at `5edef08`, both kept in history). R2's pool files,
+classify.py, the PQ gate, the classes, the pool, the eligibility rules and
+the caught rule are unchanged. The Opus review of R2 (Claude Opus 5.5,
+2026-11-19, changes required) found two blocking issues, both in the text:
+
+1. **B1, public signal.** Arm A has two crates, and the committed
+   `pool.tsv` names both with their repositories, pinned commits and PQ call
+   sites. The Disclosure section let the ledger and commit text give arm
+   totals and the public record give a count of private candidates, and §8
+   required every pool crate's outcome, so a withheld rank would stand out.
+   Any of these would tell a reader of the public history that a private,
+   dangerous-by-default find sits in one of two named functions.
+   **Change:** Disclosure now holds a public-signal rule for this round
+   ("Public signal for arm A"). Until every arm-A candidate is classed
+   non-dangerous and reviewed, or disclosed, the ledger, commit text and
+   the public record give no arm-A outcome, total or private-candidate
+   count; their only arm-A line is the fixed text `arm A: in progress`, the
+   same in every case; and the record states the residual timing leak. The
+   Read-first disclosure note, the method-reference note, the Committing and
+   Ledger rules, §7 step 5 and §8 defer to it.
+2. **B2, what the pool can test.** §3 said the gate exists "so that the
+   pool holds post-quantum code", and nothing said that R2's pool puts no
+   post-quantum implementation under test. Both pool crates were admitted on
+   `delegate` evidence into `libcrux-ml-kem` (`pool.tsv`, step-3 column),
+   and §7 step 2 makes a row unportable when an external crate's code is on
+   its path. **Change:** §3's gate sentence says the gate admits packages
+   that implement, or call into a dedicated implementation of, a listed
+   algorithm. "Read first" and §8's "does not show" list state the
+   delegation and its consequence: every row that reaches a PQ operation is
+   unportable, so no ML-KEM implementation (or any other listed
+   algorithm's) is tested; arm A reaches only each crate's own non-PQ code;
+   and the randomness angle is answered only descriptively, by §5. §8
+   requires the record to state the re-registration history next to the
+   pool list.
+
+Non-blocking notes, applied as text: N1, §0 and this amendment name the
+registration set the go certifies (below); N2, R1's note now says "R1 scan"
+where it meant classify.py's scan; N3, §8 says that the per-crate listing
+puts negatives first; N4, §3 says that a later round reusing this gate
+treats parameter-size constants as weaker evidence than arithmetic
+constants.
+
+**Registration set the go certifies (N1).**
+- The 8 files unchanged since the registration at commit
+  `e1c04a4a212a68ff2d25ed1b0453a8ffe3208790`, all in POOLDIR:
+  `admission-obs.py`, `candidates.tsv`, `clone-refs.tsv`,
+  `crates-io-hits.tsv`, `queries.jsonl`, `search-hits.tsv`, `search.py`,
+  `star-slices.json`; proofs pending at `edd3804`, upgraded at `bef9bcb`.
+- R2's five files at commit `5b9298b497e86239deb5efbd4002f598b724b0a2`:
+  POOLDIR's `classify.py`, `classes.tsv`, `repositories.tsv` and
+  `pool.tsv`, plus R2's text of this file, which R3 supersedes and history
+  keeps; proofs pending at `e620d56`, upgraded at `5edef08`.
+- This file as R3 amends it, at the commit that adds this amendment, with
+  its OpenTimestamps proof once tide-lead stamps it and upgrades the proof.
+
+Between R2 and R3 nothing else happened. The R3 author read the Opus
+review, the fixer briefs, the bead and its comments, and this round's
+committed files, including `pool.tsv`'s step-3 evidence; nothing beyond that
+committed evidence was examined. No repository content, history, issue, PR,
+documentation, source or policy was read; no scan, admission-observation
+run, model, property, build or upstream execution took place; and no
+network request was made.
+
 WORK = `/mnt/build/eon-agents/worktrees/tide-fx-zu4f.14/target/work`.
 TARGET = `/mnt/build/tide-agents/fx-zu4f.14-target`.
 PRIVATE = `~/.cache/eon-agents/tide-lead/fx-zu4f.14-private/`.
@@ -158,6 +226,14 @@ The builder starts no subagents and posts nothing upstream.
   randomness, RNG reuse, or determinism bugs that a seeded replay shows. The
   admission observations (§5) count where ambient randomness enters such
   code; they are descriptive and never a catch.
+- **What this pool can test (R3).** Both pool crates delegate to
+  `libcrux-ml-kem`: each was admitted on `delegate` evidence, a call to one
+  of its ML-KEM operations, and neither shows `impl` evidence (`pool.tsv`,
+  step-3 column). By §7 step 2, every row whose path reaches a PQ
+  operation is unportable, so no ML-KEM implementation, or any other listed algorithm's,
+  is tested. Arm A reaches only each crate's own non-PQ code, and the
+  randomness angle above is answered only descriptively, by §5's admission
+  observations.
 - **The forward hunt (§7)** writes every property before any run: the
   crate's own KATs as oracles, plus properties quoted from its docs and
   tests. The property list is hashed and timestamped in PRIVATE before any
@@ -171,7 +247,9 @@ The builder starts no subagents and posts nothing upstream.
   nothing that can sign or broadcast anything real.
 - **Disclosure** (below): crypto finds are dangerous by default; drafts stay
   in PRIVATE; Lucca alone sends; a private find counts toward the RC only
-  once it is fixed and disclosed.
+  once it is fixed and disclosed. For this round, the public-signal rule
+  (R3) holds back every arm-A outcome, total and count until it releases
+  them.
 
 Method references, read-only, with SHA-256 (paths on main at the base):
 - fx-zu4f.12 protocol, `research/protocols/fx-zu4f.12-protocol.md`,
@@ -195,15 +273,22 @@ Method references, read-only, with SHA-256 (paths on main at the base):
   conflict exclusion (§7 step 1); KAT checks and fixed-input rows are
   registered and reported apart from generated-input tests (§7 step 5);
   policy sources carry URLs (Disclosure); the record opens with disclosure,
-  then limits (§8); tracker comments carry arm totals only (Disclosure).
+  then limits (§8); tracker comments carry arm totals only, and for arm A
+  in this round nothing beyond the public-signal rule's fixed line
+  (Disclosure, R3).
 
 ## 0. Registration boundary
 
-Step 1 ends with one commit holding this file and POOLDIR, byte-identical to
-WORK. WORK/PROTOCOL-READY names the commit, every committed file's SHA-256,
-the times and the counts. Then the builder stops. Before tide-lead stamps the
-files with OpenTimestamps, records their hashes on the bead, upgrades the
-proofs and sends "go", nothing else happens: no history listing, issue, PR,
+Step 1 ended with one commit (`e1c04a4`) holding this file and POOLDIR,
+byte-identical to WORK, and WORK/PROTOCOL-READY named the commit, every
+committed file's SHA-256, the times and the counts. Re-registrations R1 and
+R2 and the text amendment R3 replaced files as their amendments say. The go
+certifies exactly the registration set that Amendment R3 lists: the 8 files
+unchanged since `e1c04a4` (proofs upgraded at `bef9bcb`), R2's four pool
+files at `5b9298b` (proofs upgraded at `5edef08`), and this file as R3
+amends it, with its own proof. Before tide-lead stamps the files with
+OpenTimestamps, records their hashes on the bead, upgrades the proofs and
+sends "go", nothing else happens: no history listing, issue, PR,
 documentation or source reading beyond classify.py's mechanical pass, no
 security-policy reading, no admission-observation run, no model, no
 property, no build and no upstream execution. Git dates and local logs are
@@ -268,7 +353,9 @@ with the bead's crypto rules:
   reviewed). A dangerous record is committed only after disclosure (a fix is
   out, or 90 days pass, through Lucca). Until then the public record gives
   only a count of private candidates, with no project, crate or revealing
-  detail. Never say a report was sent because its draft exists.
+  detail; in this round the public-signal rule below replaces that count,
+  and the public record gives none. Never say a report was sent because its
+  draft exists.
 - **Counting.** A private find counts toward the RC only once it is fixed and
   disclosed (bead; fx-zu4f.10's 16:56 UTC decision). It must meet the same
   caught rule. When Lucca sends a private report, tide-lead stamps its
@@ -279,8 +366,24 @@ with the bead's crypto rules:
   identifier, because such counts, differenced against a later record, can
   identify a private candidate (reviews/fx-zu4f.12-r2-opus.md, B1). The
   public record follows the same rule for any rank that holds a private
-  candidate. Reading observations go only to WORK/REQUEST and PRIVATE
-  (builder rules).
+  candidate. For arm A in this round, the public-signal rule below applies
+  in place of arm totals. Reading observations go only to WORK/REQUEST and
+  PRIVATE (builder rules).
+- **Public signal for arm A (R3; binds this round).** Arm A has two crates,
+  and the committed `pool.tsv` names both with their PQ call sites, so an
+  arm total, a count of private candidates or one withheld rank would point
+  at one of two named functions. The rule reads the same whether or not a
+  private candidate exists. Until every arm-A candidate is either classed
+  non-dangerous and reviewed, or disclosed (Committing, above), tracker
+  comments, commit subjects and messages, tracked status lines and the
+  public record give no arm-A outcome, no arm-A total and no count of
+  private candidates, for any rank. Their only arm-A line in that period is
+  the fixed text `arm A: in progress`, used in every case. The record states
+  the residual timing leak: the hold ends as soon as arm A has no
+  undisclosed candidate, and can last until disclosure (a fix, or 90 days)
+  when it has a dangerous one, so the date when arm-A outcomes appear can
+  hint that a private candidate existed. The arm-B line (no target) and
+  §5's admission observations are not arm-A outcomes and stay unaffected.
 
 This section changes no pool, eligibility, property or caught criterion.
 
@@ -453,9 +556,10 @@ positives. No manual override, post-output exclusion or substitution.
 
 **PQ gate (narrowing), three steps, all required (amendments R1, R2).** It
 applies the bead's repository condition, "implementing a NIST post-quantum
-algorithm or a post-quantum protocol", to each package, before the classes,
-so that the pool holds post-quantum code and not a large repository's
-unrelated packages. A package is classified only when it passes step 1 AND
+algorithm or a post-quantum protocol", to each package, before the classes.
+It admits packages that implement, or call into a dedicated implementation
+of, a listed algorithm (R3); a large repository's unrelated packages stay
+out. A package is classified only when it passes step 1 AND
 step 2 AND step 3; each step is evaluated only for packages that pass the
 one before, so R1 can only remove packages that the registration's gate
 admitted, and R2 only packages that R1 admitted. Steps 1 and 2 are
@@ -606,7 +710,11 @@ other than the listed ones. A listed value can also occur in unrelated code
 (for example 12289 in another lattice scheme, or a buffer size equal to a
 listed length); such a row is admitted, and the record says the evidence is
 lexical. No row is changed by hand, no excluded row is backfilled, and a
-pool that shrinks below 10 (or to none) gives arm A all that remains.
+pool that shrinks below 10 (or to none) gives arm A all that remains. A
+later round that reuses this gate treats parameter-size constants (the
+SLH-DSA signature lengths and the HQC and McEliece code lengths, which a
+wrapper's buffer check can also hold) as weaker `impl` evidence than
+arithmetic constants such as the moduli (R3, N4).
 
 **Narrowing check (R1, R2).** `classify.py --check-narrowing OLD` compares
 the regenerated `classes.tsv` with an earlier registration's row by row; R2
@@ -848,7 +956,8 @@ exercise it.
      one case, repeated under the seed labels, reported as a fixed check,
      not seeded exploration.
    The record gives the count of rows and tests of each kind beside the
-   first arm-A result and in the counts table.
+   first arm-A result and in the counts table, once the public-signal rule
+   (Disclosure, R3) releases arm-A outcomes.
 6. **Triage and the caught rule** (P12 §7 step 6, P10 §6): a failing seed;
    the lowest failing seed recorded and replayed twice through the driver
    with byte-identical traces; a control model that removes only the
@@ -933,9 +1042,25 @@ disclosure and privacy notice first; then the out-of-class limits and the
 low expected yield; then what the round does not show (supplied properties,
 finite seed sampling, KAT checks as finite fixed-domain checks, fixed-input
 rows, model gaps including every `Rand` replacement, self-attested
-chronology, lexical scan and PQ-gate limits); then caught or not caught per
-arm. List every pool crate (rank, class, outcome, first failure and reason),
-every candidate repository and excluded package by its first reason (in the
+chronology, lexical scan and PQ-gate limits, and the pool's PQ limit (R3):
+both pool crates delegate to `libcrux-ml-kem`; by §7 step 2 every row that
+reaches a PQ operation is unportable, so no ML-KEM implementation, or any
+other listed algorithm's, is tested; arm A reaches only each crate's own
+non-PQ code; and the randomness angle is answered only descriptively, by
+§5); then caught or not caught per arm. Arm-A outcomes, totals, per-crate
+rows and counts enter the record only once the public-signal rule
+(Disclosure, R3) releases them; until then the record's only arm-A text is
+the fixed line `arm A: in progress`, and the record states the residual
+timing leak. List every pool crate (rank, class, outcome, first failure and
+reason), negatives first: every crate and candidate without a catch, each
+with its first failure, comes before any catch. Next to the pool list, state
+the re-registration history: the registration's pool of 12 crates
+(`e1c04a4`), R1's 3 (`6ae022a`, after the Codex supervisor pass found that
+the PQ gate admitted a package on a lexical token alone), and R2's 2
+(`5b9298b`, after the Codex re-check found that names and imports still
+passed as evidence), each a mechanical narrowing, all before any run; and
+R3, a text amendment after the Opus review of R2. List every candidate
+repository and excluded package by its first reason (in the
 committed TSVs, cited), every arm-B candidate (commit, first parent, first
 failing E criterion, reason, sources read, E2 quote if passed, later
 criteria not assessed), and counts with their units kept apart:
