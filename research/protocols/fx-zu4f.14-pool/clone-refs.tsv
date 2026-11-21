@@ -1,0 +1,27 @@
+repository	clone_url	default_branch	head_commit	clone_started_utc	clone_ended_utc	checkout
+cfal/shoes	https://github.com/cfal/shoes.git	master	7680938b96a245a21d9e481ad009205b956e4436	2026-11-19T17:31:20.494485+00:00	2026-11-19T17:31:23.560652+00:00	sparse --no-cone: *.rs Cargo.toml
+DNSCrypt/encrypted-dns-server	https://github.com/DNSCrypt/encrypted-dns-server.git	master	2f2cc489ff8893c167b2eab7274292a699341d9c	2026-11-19T17:31:23.560835+00:00	2026-11-19T17:31:25.014561+00:00	sparse --no-cone: *.rs Cargo.toml
+Eugeny/russh	https://github.com/Eugeny/russh.git	main	56a999871aa134072e4f2a7395fe2de313870e21	2026-11-19T17:31:25.014730+00:00	2026-11-19T17:31:26.694837+00:00	sparse --no-cone: *.rs Cargo.toml
+google/OpenSK	https://github.com/google/OpenSK.git	develop	7b369f097dfa55b84ff9f37d2b176c6ec13c308d	2026-11-19T17:31:26.695008+00:00	2026-11-19T17:31:28.386585+00:00	sparse --no-cone: *.rs Cargo.toml
+Helvesec/rmux	https://github.com/Helvesec/rmux.git	main	1f4571e74f36be0c033c6294d1616c7d3a6fbda1	2026-11-19T17:31:28.386906+00:00	2026-11-19T17:31:33.348889+00:00	sparse --no-cone: *.rs Cargo.toml
+hudikhq/hoodik	https://github.com/hudikhq/hoodik.git	master	4dcfe21135d08b041e41cde116f7ed2a4855e9fd	2026-11-19T17:31:33.349181+00:00	2026-11-19T17:31:35.479941+00:00	sparse --no-cone: *.rs Cargo.toml
+huggingface/candle	https://github.com/huggingface/candle.git	main	cfcbd7186d13271843ce7eb41d25659bd0835850	2026-11-19T17:31:35.480221+00:00	2026-11-19T17:31:37.769705+00:00	sparse --no-cone: *.rs Cargo.toml
+libp2p/rust-libp2p	https://github.com/libp2p/rust-libp2p.git	master	9eb8691cd760418305baab4d87c8f4e23573222f	2026-11-19T17:31:37.770086+00:00	2026-11-19T17:31:40.212219+00:00	sparse --no-cone: *.rs Cargo.toml
+m4b/goblin	https://github.com/m4b/goblin.git	master	cc6beec889d74680d8f77626f508cb9d949dfc23	2026-11-19T17:31:40.212468+00:00	2026-11-19T17:31:42.543463+00:00	sparse --no-cone: *.rs Cargo.toml
+Mesh-LLM/mesh-llm	https://github.com/Mesh-LLM/mesh-llm.git	main	b61f80d0953e61d2f390917afdd2b1b069316e1d	2026-11-19T17:31:42.543648+00:00	2026-11-19T17:31:48.032573+00:00	sparse --no-cone: *.rs Cargo.toml
+mikeroyal/Linux-Guide	https://github.com/mikeroyal/Linux-Guide.git	master	e828e796d474294df59ba0799346294b9e9b36f6	2026-11-19T17:31:48.032810+00:00	2026-11-19T17:31:49.620856+00:00	sparse --no-cone: *.rs Cargo.toml
+mullvad/mullvadvpn-app	https://github.com/mullvad/mullvadvpn-app.git	main	addfc487b145cf00f1c188bdbc93ee2f5a98dd62	2026-11-19T17:31:49.621254+00:00	2026-11-19T17:31:57.271344+00:00	sparse --no-cone: *.rs Cargo.toml
+physicsdolphin/nv-uefi-unlocker	https://github.com/physicsdolphin/nv-uefi-unlocker.git	main	02d72fd5b890208249dbe88166fb527eddb835b4	2026-11-19T17:31:57.271856+00:00	2026-11-19T17:31:59.544467+00:00	sparse --no-cone: *.rs Cargo.toml
+pingooio/pingoo	https://github.com/pingooio/pingoo.git	main	3205a661f51de24caff6e4a2c708ab8e56cbb182	2026-11-19T17:31:59.544849+00:00	2026-11-19T17:32:01.064607+00:00	sparse --no-cone: *.rs Cargo.toml
+plabayo/rama	https://github.com/plabayo/rama.git	main	d23d5780e1426ab2cb52265ffe4965b787fe8f55	2026-11-19T17:32:01.064981+00:00	2026-11-19T17:32:07.497225+00:00	sparse --no-cone: *.rs Cargo.toml
+QuipNetwork/hashsigs-rs	https://github.com/QuipNetwork/hashsigs-rs.git	main	6f4cccaf0d00334bd1aa8320be92b716a18a9d6b	2026-11-19T17:32:07.497765+00:00	2026-11-19T17:32:09.887554+00:00	sparse --no-cone: *.rs Cargo.toml
+rosenpass/rosenpass	https://github.com/rosenpass/rosenpass.git	main	ed07bfab94eba14544dc22f1a6d15caf33733629	2026-11-19T17:32:09.888111+00:00	2026-11-19T17:32:11.835471+00:00	sparse --no-cone: *.rs Cargo.toml
+rpgp/rpgp	https://github.com/rpgp/rpgp.git	main	52750e6f5ca849485c368e0a4acf9a189e9a558f	2026-11-19T17:32:11.835957+00:00	2026-11-19T17:32:13.640274+00:00	sparse --no-cone: *.rs Cargo.toml
+rust-bitcoin/rust-bitcoin	https://github.com/rust-bitcoin/rust-bitcoin.git	master	9584f04a46eed703122ba3dbcd30a1b386131e9b	2026-11-19T17:32:13.640773+00:00	2026-11-19T17:32:17.232408+00:00	sparse --no-cone: *.rs Cargo.toml
+rust-unofficial/awesome-rust	https://github.com/rust-unofficial/awesome-rust.git	main	a18ae59cc17c86950953ecb16bff28910b9537d9	2026-11-19T17:32:17.232896+00:00	2026-11-19T17:32:20.399370+00:00	sparse --no-cone: *.rs Cargo.toml
+rustls/rustls	https://github.com/rustls/rustls.git	main	836e411eccaf7331f4c289aabef0de32474de3b8	2026-11-19T17:32:20.399934+00:00	2026-11-19T17:32:22.520148+00:00	sparse --no-cone: *.rs Cargo.toml
+ruvnet/RuVector	https://github.com/ruvnet/RuVector.git	main	979c31acc57b970c1a7e0771ed527c1703c137e8	2026-11-19T17:32:22.520533+00:00	2026-11-19T17:32:30.676595+00:00	sparse --no-cone: *.rs Cargo.toml
+rvben/rumdl	https://github.com/rvben/rumdl.git	main	2796d2853c8ec149d318208f51db6a21b2a0ae61	2026-11-19T17:32:30.677006+00:00	2026-11-19T17:32:35.270810+00:00	sparse --no-cone: *.rs Cargo.toml
+sozu-proxy/sozu	https://github.com/sozu-proxy/sozu.git	main	c6098095d3a2c1738a90cfbc17865f718d648276	2026-11-19T17:32:35.271310+00:00	2026-11-19T17:32:40.114371+00:00	sparse --no-cone: *.rs Cargo.toml
+stalwartlabs/stalwart	https://github.com/stalwartlabs/stalwart.git	main	3adead91f3c87e7415b58c9ed8e6ec05a5dda521	2026-11-19T17:32:40.114878+00:00	2026-11-19T17:32:43.278459+00:00	sparse --no-cone: *.rs Cargo.toml
+zama-ai/fhevm	https://github.com/zama-ai/fhevm.git	main	a90b5dfc56155f334c4ceb0e0cbec14ee195d60c	2026-11-19T17:32:43.279091+00:00	2026-11-19T17:32:48.052523+00:00	sparse --no-cone: *.rs Cargo.toml
